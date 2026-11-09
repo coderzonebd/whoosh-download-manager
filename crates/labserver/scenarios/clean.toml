@@ -1,0 +1,3 @@
+# The ceiling: no faults at all. Whatever a downloader reaches here is
+# limited by the client, the loopback interface and the CPU.
+description = "No faults; the speed ceiling"

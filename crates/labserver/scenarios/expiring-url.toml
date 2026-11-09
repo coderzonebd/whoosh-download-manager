@@ -1,0 +1,7 @@
+# Signed URLs: /s/expiring-url/<file>?expires=<unix>&sig=<hmac>. Missing,
+# bad or expired signatures get 403. Get a fresh URL from
+# GET /_lab/mint?scenario=expiring-url&file=<file>[&ttl=<secs>].
+description = "Signed URLs that expire after 60 s (403 after expiry); mint via /_lab/mint"
+
+[signed_url]
+ttl_secs = 60

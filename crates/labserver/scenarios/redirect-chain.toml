@@ -1,0 +1,7 @@
+# Three 302 hops before the file (mirror selector -> CDN edge -> object),
+# keeping the query string. The final URL is /s/redirect-chain/_hop/3/<file>.
+description = "Three 302 redirects before the file"
+
+[redirects]
+count = 3
+status = 302

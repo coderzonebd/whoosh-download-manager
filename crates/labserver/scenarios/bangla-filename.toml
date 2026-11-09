@@ -1,0 +1,41 @@
+# Content-Disposition edge cases. The URL names are ASCII; the names a
+# downloader should save under come from the header.
+description = "Content-Disposition variants: RFC 5987 Bangla, plain, and broken non-UTF-8"
+
+# RFC 5987/6266: ASCII fallback plus filename*=UTF-8''<percent-encoded>.
+[[files]]
+name = "bangla.bin"
+size = "1MiB"
+filename = "bangla-report.pdf"
+filename_utf8 = "বাংলা প্রতিবেদন ২০২৬.pdf"
+
+# Only filename*, no ASCII fallback.
+[[files]]
+name = "bangla-star-only.bin"
+size = "1MiB"
+filename_utf8 = "পরীক্ষা.zip"
+
+# Plain ASCII filename with a space and a quote that must be escaped.
+[[files]]
+name = "plain.bin"
+size = "1MiB"
+filename = "annual \"final\" report.pdf"
+
+# Broken: raw Latin-1 bytes (0xE9) in filename=, which is not valid UTF-8.
+[[files]]
+name = "latin1.bin"
+size = "1MiB"
+disposition_raw = 'attachment; filename="r\xe9sum\xe9.pdf"'
+
+# Broken: raw UTF-8 bytes of a Bangla name in a plain filename= (what many
+# real servers send). Valid UTF-8 but not valid per RFC 6266.
+[[files]]
+name = "raw-utf8.bin"
+size = "1MiB"
+disposition_raw = 'attachment; filename="\xe0\xa6\xac\xe0\xa6\xbe\xe0\xa6\x82\xe0\xa6\xb2\xe0\xa6\xbe.txt"'
+
+# Path traversal attempt in the suggested name; the engine must sanitise it.
+[[files]]
+name = "traversal.bin"
+size = "1MiB"
+filename = "../../etc/passwd"

@@ -1,0 +1,7 @@
+# Each 16 KiB chunk is preceded by a 5 ms pause: a server that is slow to
+# produce bytes rather than bandwidth-capped (~3 MB/s per response).
+description = "5 ms pause before every 16 KiB chunk"
+
+[latency]
+chunk_ms = 5
+chunk_size = "16KiB"

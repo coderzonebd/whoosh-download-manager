@@ -1,0 +1,6 @@
+# No Content-Length (chunked transfer on HTTP/1.1). Ranges still work and
+# 206 responses carry Content-Range, which is the only place the size shows.
+description = "No Content-Length (chunked); ranges still honoured"
+
+[ranges]
+chunked = true

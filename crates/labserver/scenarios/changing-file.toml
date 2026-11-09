@@ -1,0 +1,9 @@
+# The file is replaced once, after 32 MiB of it have been served (all
+# requests together): content, ETag and Last-Modified all change. Requests
+# already in flight keep the old version. A correct engine notices the new
+# ETag (or uses If-Range) and restarts instead of stitching two versions.
+description = "Content and ETag change once after 32 MiB served"
+
+[changing]
+after_bytes = "32MiB"
+max_changes = 1
