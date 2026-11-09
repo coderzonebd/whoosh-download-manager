@@ -3,6 +3,8 @@
 // Transport-independent JSON-RPC 2.0 bookkeeping: ids, pending requests,
 // timeouts, notifications.
 
+import { ErrorCode } from "@vayu/api-client";
+
 export type JsonRpcId = number | string;
 
 export interface JsonRpcErrorObject {
@@ -11,10 +13,10 @@ export interface JsonRpcErrorObject {
   data?: unknown;
 }
 
-/** Codes the native host adds to PROTOCOL.md §5 (proposed). */
+/** Codes the native host adds (PROTOCOL.md §5). */
 export const HostErrorCode = {
-  DaemonUnavailable: -32007,
-  MessageTooLarge: -32008,
+  DaemonUnavailable: ErrorCode.DaemonUnavailable,
+  MessageTooLarge: ErrorCode.MessageTooLarge,
 } as const;
 
 /** An error response from the daemon or the host. */

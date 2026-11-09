@@ -12,7 +12,7 @@ Source of truth for types: [`crates/proto/src/lib.rs`](../../crates/proto/src/li
 | Address | `ws://127.0.0.1:<port>/rpc` — loopback only, never `0.0.0.0` |
 | Default port | `47210`; the daemon falls back to a free port if taken |
 | Runtime file | `<data dir>/runtime.json` = `{ "port", "token", "pid", "version" }`, written at start, user-only permissions (0600 / owner-only ACL) |
-| Data dir | Linux `$XDG_DATA_HOME/vayu`, macOS `~/Library/Application Support/vayu`, Windows `%LOCALAPPDATA%\vayu` |
+| Data dir | `$VAYU_DATA_DIR` if set (tests, portable installs); otherwise Linux `$XDG_DATA_HOME/vayu`, macOS `~/Library/Application Support/vayu`, Windows `%LOCALAPPDATA%\vayu`. The daemon and every native client must honour the same rule. |
 
 ### Authentication
 1. The client reads `port` and `token` from the runtime file.
@@ -29,12 +29,16 @@ The extension never opens the WebSocket and never sees the token.
 extension ──native messaging (stdio)──▶ vayu-nmhost ──WebSocket + token──▶ daemon
 ```
 
-- Framing is the browser's: 4-byte native-endian length, then UTF-8 JSON. Host → browser messages are limited to 1 MB by Chrome; the host splits large `download.list` results into pages.
+- Framing is the browser's: 4-byte native-endian length, then UTF-8 JSON. Host → browser messages are limited to 1 MiB by Chrome and Firefox; a larger response is replaced by error `-32008`, so extensions page with `download.list { offset, limit }`.
 - The messages are the same JSON-RPC 2.0 requests, responses and notifications as on the WebSocket. `vayu-nmhost` performs `session.hello` itself and relays everything else verbatim.
-- One extra method answered by the host itself: `nm.status` → `{ "daemonRunning": bool, "daemonVersion"?: string, "hostVersion": string }`.
+- One extra method answered by the host itself: `nm.status` → `NmStatus { daemonRunning, daemonVersion?, hostVersion }`.
+- The host sends `event.nm.status` (same payload) whenever its daemon connection goes up or down. Request ids starting with `nmhost:` are reserved for the host.
+- When the daemon is not running, rejects the token, or the connection drops before an answer, the host answers the request with error `-32007`.
 - Host name: `com.coderzonebd.vayu` (renamed with the product). The host manifest lists the extension IDs allowed to connect.
 
 ## 2. Conventions
+
+- `category` is one of the built-in ids `video`, `music`, `documents`, `compressed`, `programs`, `images`, `other`, or a user-defined name. `queue` is a queue name; absent means the main queue.
 
 - Field names are camelCase. Optional fields are omitted, never `null`.
 - Byte counts and speeds are integers (bytes, bytes per second). Times are Unix milliseconds. Durations are whole seconds.
@@ -47,7 +51,7 @@ extension ──native messaging (stdio)──▶ vayu-nmhost ──WebSocket + 
 | `session.hello` | `HelloParams { token, protocol, client: { name, version } }` | `HelloResult { daemonVersion, protocol, capabilities[] }` |
 | `download.probe` | `ProbeParams { url, request? }` | `ProbeResult { totalBytes?, resumable, filename, contentType?, finalUrl }` |
 | `download.add` | `AddParams { url, request?, filename?, directory?, category?, start = true, mirrors[], checksum? }` | `AddResult { id }` |
-| `download.list` | `ListParams { states[], category? }` | `DownloadSummary[]` |
+| `download.list` | `ListParams { states[], category?, offset?, limit? }` | `DownloadSummary[]` (newest first) |
 | `download.get` | `IdParams { id }` | `DownloadDetail` (summary fields + `segments[]`) |
 | `download.pause` | `IdsParams { ids }` | `null` |
 | `download.resume` | `IdsParams { ids }` | `null` |
@@ -69,10 +73,12 @@ extension ──native messaging (stdio)──▶ vayu-nmhost ──WebSocket + 
 | Method | Params | Rate |
 |---|---|---|
 | `event.download.added` | `DownloadSummary` | on change |
-| `event.download.progress` | `{ items: ProgressItem[] }` (`id, downloadedBytes, totalBytes?, speedBps, etaSecs?, connections`) | batched, ≤ 4 per second |
+| `event.download.progress` | `{ items: ProgressItem[] }` (`id, downloadedBytes, totalBytes?, speedBps, etaSecs?, connections, segments?`; `segments` is `[start, end, downloadedBytes][]`, at most once per second per download) | batched, ≤ 4 per second |
 | `event.download.state` | `{ id, state, error? }` | on change |
 | `event.download.removed` | `{ ids }` | on change |
 | `event.stats` | `Stats` | 1 per second |
+| `event.settings` | `Settings` | after any change |
+| `event.nm.status` | `NmStatus` | native host only, on daemon connect/disconnect |
 
 Clients subscribe implicitly by completing `session.hello`.
 
@@ -88,6 +94,8 @@ Standard JSON-RPC codes, plus:
 | `-32004` | I/O error (disk full, permission denied) |
 | `-32005` | network error |
 | `-32006` | unsupported (capability not available in this build) |
+| `-32007` | daemon unavailable (native host only) |
+| `-32008` | message too large for native messaging (native host only) |
 
 Per-download failures are reported in `DownloadSummary.error` / `event.download.state` as `{ code, message }` with stable codes such as `remote_changed`, `link_expired`, `disk_full`, `ranges_unsupported`.
 

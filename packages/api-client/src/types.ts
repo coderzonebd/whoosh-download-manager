@@ -28,8 +28,21 @@ export const Event = {
   DownloadState: "event.download.state",
   DownloadRemoved: "event.download.removed",
   Stats: "event.stats",
+  /** The full `Settings`, sent to every client after any change. */
+  Settings: "event.settings",
 } as const;
 export type EventName = (typeof Event)[keyof typeof Event];
+
+/** Answered by `vayu-nmhost` itself, never by the daemon (PROTOCOL.md §1). */
+export const HostMethod = { NmStatus: "nm.status" } as const;
+/** Sent by `vayu-nmhost` whenever its daemon connection goes up or down. */
+export const HostEvent = { NmStatus: "event.nm.status" } as const;
+/** Request ids starting with this prefix are reserved for the native host. */
+export const HOST_RESERVED_ID_PREFIX = "nmhost:";
+
+/** Built-in category ids; any other string is a user-defined category. */
+export const BUILT_IN_CATEGORIES = ["video", "music", "documents", "compressed", "programs", "images", "other"] as const;
+export type BuiltInCategory = (typeof BUILT_IN_CATEGORIES)[number];
 
 export const ErrorCode = {
   Unauthorized: -32001,
@@ -38,6 +51,10 @@ export const ErrorCode = {
   Io: -32004,
   Network: -32005,
   Unsupported: -32006,
+  /** Native host only: daemon not running, token rejected, or connection lost. */
+  DaemonUnavailable: -32007,
+  /** Native host only: the response would exceed the browser's 1 MiB limit. */
+  MessageTooLarge: -32008,
 } as const;
 
 export type DownloadId = string;
@@ -118,6 +135,10 @@ export interface AddResult {
 export interface ListParams {
   states?: DownloadState[];
   category?: string;
+  /** Skip this many results (newest first). */
+  offset?: number;
+  /** Return at most this many. Extensions must page: native messaging responses are limited to 1 MiB. */
+  limit?: number;
 }
 
 export interface IdParams {
@@ -166,7 +187,10 @@ export interface DownloadSummary {
   etaSecs?: number;
   connections: number;
   resumable: boolean;
+  /** A built-in id from `BUILT_IN_CATEGORIES` or a user-defined name. */
   category?: string;
+  /** The queue this download belongs to; absent means the main queue. */
+  queue?: string;
   addedAt: UnixMillis;
   completedAt?: UnixMillis;
   error?: ErrorInfo;
@@ -215,6 +239,8 @@ export interface ProgressItem {
   speedBps: number;
   etaSecs?: number;
   connections: number;
+  /** `[start, end, downloadedBytes]` per segment, at most once per second per download. */
+  segments?: [number, number, number][];
 }
 
 export interface ProgressEvent {
@@ -229,6 +255,13 @@ export interface StateEvent {
 
 export interface RemovedEvent {
   ids: DownloadId[];
+}
+
+/** Result of `nm.status` and payload of `event.nm.status` (native host only). */
+export interface NmStatus {
+  daemonRunning: boolean;
+  daemonVersion?: string;
+  hostVersion: string;
 }
 
 // ------------------------------------------------------------ typed method map
@@ -255,6 +288,16 @@ export interface EventMap {
   "event.download.state": StateEvent;
   "event.download.removed": RemovedEvent;
   "event.stats": Stats;
+  "event.settings": Settings;
+}
+
+/** Extra methods and events available only through the native messaging host. */
+export interface HostMethodMap {
+  "nm.status": { params: undefined; result: NmStatus };
+}
+
+export interface HostEventMap {
+  "event.nm.status": NmStatus;
 }
 
 /** The transport-agnostic client every UI codes against (WebSocket, native messaging, or mock). */

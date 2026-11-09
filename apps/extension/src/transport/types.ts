@@ -2,15 +2,8 @@
 
 import type { VayuClient } from "@vayu/api-client";
 
-/**
- * Result of the host-only `nm.status` method (PROTOCOL.md §1). Not in
- * `@vayu/api-client` yet; see the extension README for the proposed addition.
- */
-export interface NmStatus {
-  daemonRunning: boolean;
-  daemonVersion?: string;
-  hostVersion: string;
-}
+/** Result of the host-only `nm.status` method (PROTOCOL.md §1). */
+export type { NmStatus } from "@vayu/api-client";
 
 /** What the popup shows about the connection, whatever the transport. */
 export interface ConnectionStatus {

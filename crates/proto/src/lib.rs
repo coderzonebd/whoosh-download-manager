@@ -48,6 +48,30 @@ pub mod event {
     pub const DOWNLOAD_STATE: &str = "event.download.state";
     pub const DOWNLOAD_REMOVED: &str = "event.download.removed";
     pub const STATS: &str = "event.stats";
+    /// The full `Settings` object, sent to every client after any change.
+    pub const SETTINGS: &str = "event.settings";
+}
+
+/// Answered by `vayu-nmhost` itself, never by the daemon (PROTOCOL.md §1).
+pub mod host {
+    pub const NM_STATUS: &str = "nm.status";
+    /// Sent by the host whenever its daemon connection goes up or down.
+    pub const NM_STATUS_EVENT: &str = "event.nm.status";
+    /// Request ids starting with this prefix are reserved for the host.
+    pub const RESERVED_ID_PREFIX: &str = "nmhost:";
+}
+
+/// Built-in category ids. Users can add their own; any other string is a
+/// user-defined category.
+pub mod category {
+    pub const VIDEO: &str = "video";
+    pub const MUSIC: &str = "music";
+    pub const DOCUMENTS: &str = "documents";
+    pub const COMPRESSED: &str = "compressed";
+    pub const PROGRAMS: &str = "programs";
+    pub const IMAGES: &str = "images";
+    pub const OTHER: &str = "other";
+    pub const BUILT_IN: [&str; 7] = [VIDEO, MUSIC, DOCUMENTS, COMPRESSED, PROGRAMS, IMAGES, OTHER];
 }
 
 /// JSON-RPC error codes beyond the standard -32700..-32600 range.
@@ -58,6 +82,11 @@ pub mod error_code {
     pub const IO: i32 = -32004;
     pub const NETWORK: i32 = -32005;
     pub const UNSUPPORTED: i32 = -32006;
+    /// Native host only: daemon not running, token rejected, or the
+    /// connection was lost before the answer.
+    pub const DAEMON_UNAVAILABLE: i32 = -32007;
+    /// Native host only: the response would exceed the browser's 1 MiB limit.
+    pub const MESSAGE_TOO_LARGE: i32 = -32008;
 }
 
 pub type DownloadId = String;
@@ -193,6 +222,13 @@ pub struct ListParams {
     pub states: Vec<DownloadState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Skip this many results (newest first). Defaults to 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u32>,
+    /// Return at most this many. Defaults to all; extensions must page
+    /// because native messaging responses are limited to 1 MiB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,8 +297,12 @@ pub struct DownloadSummary {
     pub eta_secs: Option<u64>,
     pub connections: u32,
     pub resumable: bool,
+    /// A built-in id from [`category`] or a user-defined name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// The queue this download belongs to; absent means the main queue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<String>,
     pub added_at: UnixMillis,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<UnixMillis>,
@@ -335,6 +375,10 @@ pub struct ProgressItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eta_secs: Option<u64>,
     pub connections: u32,
+    /// Per-segment progress as `[start, end, downloadedBytes]`, included at
+    /// most once per second per download, so UIs need not poll `download.get`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Vec<(u64, u64, u64)>>,
 }
 
 /// `event.download.progress`: batched, at most 4 per second.
@@ -350,6 +394,16 @@ pub struct StateEvent {
     pub state: DownloadState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+}
+
+/// Result of `nm.status` and payload of `event.nm.status` (native host only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NmStatus {
+    pub daemon_running: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon_version: Option<String>,
+    pub host_version: String,
 }
 
 #[cfg(test)]
@@ -392,6 +446,7 @@ mod tests {
                 connections: 2,
                 resumable: true,
                 category: None,
+                queue: None,
                 added_at: 0,
                 completed_at: None,
                 error: None,
@@ -401,5 +456,31 @@ mod tests {
         let v = serde_json::to_value(&d).unwrap();
         assert_eq!(v["downloadedBytes"], json!(5));
         assert_eq!(v["segments"], json!([]));
+    }
+
+    #[test]
+    fn progress_segments_are_compact_triples() {
+        let p = ProgressItem {
+            id: "dl_1".into(),
+            downloaded_bytes: 7,
+            total_bytes: None,
+            speed_bps: 0,
+            eta_secs: None,
+            connections: 1,
+            segments: Some(vec![(0, 10, 7)]),
+        };
+        assert_eq!(
+            serde_json::to_value(&p).unwrap()["segments"],
+            json!([[0, 10, 7]])
+        );
+    }
+
+    #[test]
+    fn nm_status_matches_the_host() {
+        let s: NmStatus =
+            serde_json::from_value(json!({ "daemonRunning": false, "hostVersion": "0.0.1" }))
+                .unwrap();
+        assert!(!s.daemon_running);
+        assert_eq!(s.daemon_version, None);
     }
 }
