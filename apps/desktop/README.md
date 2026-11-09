@@ -4,8 +4,13 @@ The Tauri 2 desktop app. Today it renders [`@vayu/ui`](../../packages/ui) on
 the mock daemon; in Phase 1 it links the engine and talks to the real API.
 GPL-3.0-or-later.
 
-- Window size, position and maximised state are remembered
-  (`tauri-plugin-window-state`, saved from Rust; no JS permission needed).
+- Window size, position and maximised state are remembered, from Rust (no
+  JS permission). Position/maximised use `tauri-plugin-window-state`; the
+  size is saved as the webview's content size (`src-tauri/src/window_size.rs`)
+  because on GTK/Wayland `inner_size()` includes client-side decorations and
+  the plugin's round trip grew the window by ~40×77 px per launch. Wayland
+  does not let apps read or set their position, so only size and maximised
+  state apply there.
 - Tray icon with *Show Vayu* / *Quit*; left-click shows the window. The UI
   pushes "Vayu — ↓ 12.5 MB/s · 3 active" into the tooltip once a second
   (`set_tray_tooltip` command). Linux app indicators do not display
@@ -32,5 +37,6 @@ On a memory-constrained machine: `export CARGO_BUILD_JOBS=2`.
 
 ```bash
 corepack pnpm --filter @vayu/desktop typecheck
-cargo clippy -p vayu-desktop -- -D warnings
+cargo clippy -p vayu-desktop --all-targets -- -D warnings
+cargo test -p vayu-desktop
 ```

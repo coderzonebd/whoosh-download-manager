@@ -3643,6 +3643,8 @@ dependencies = [
 name = "vayu-desktop"
 version = "0.0.1"
 dependencies = [
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-window-state",
