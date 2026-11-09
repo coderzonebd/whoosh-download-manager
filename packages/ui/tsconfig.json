@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["svelte", "vite/client"]
+  },
+  "include": ["src", "test", "demo", "vite.config.ts"]
+}
