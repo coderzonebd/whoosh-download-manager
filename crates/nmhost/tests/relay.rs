@@ -83,8 +83,17 @@ impl FakeDaemon {
 
         let task = tokio::spawn(async move {
             loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    return;
+                // Commands must be heard between connections too, or `stop()`
+                // would wait forever once the host has already hung up.
+                let stream = tokio::select! {
+                    accepted = listener.accept() => match accepted {
+                        Ok((stream, _)) => stream,
+                        Err(_) => return,
+                    },
+                    cmd = commands_rx.recv() => match cmd {
+                        Some(Cmd::Send(_)) => continue, // nobody connected
+                        Some(Cmd::Close) | None => return,
+                    },
                 };
                 let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
                     continue;
@@ -165,9 +174,12 @@ impl FakeDaemon {
     }
 
     /// A clean shutdown: close frame, then the listener goes away.
-    async fn stop(self) {
+    async fn stop(mut self) {
         let _ = self.commands.send(Cmd::Close);
-        let _ = self.task.await;
+        if tokio::time::timeout(WAIT, &mut self.task).await.is_err() {
+            self.task.abort();
+            panic!("fake daemon did not stop");
+        }
     }
 }
 

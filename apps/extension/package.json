@@ -11,7 +11,7 @@
     "package": "node scripts/build.mjs --zip",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
-    "test:e2e": "node scripts/build.mjs --target chromium && vitest run --config vitest.e2e.config.ts"
+    "test:e2e": "node scripts/build.mjs && vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
     "@vayu/api-client": "workspace:*"

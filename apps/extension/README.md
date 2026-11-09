@@ -67,14 +67,17 @@ There is no options page yet; settings live in `storage.local` under `settings` 
 ```bash
 corepack pnpm --filter @vayu/extension typecheck
 corepack pnpm --filter @vayu/extension test        # vitest unit tests
-corepack pnpm --filter @vayu/extension test:e2e    # builds, then runs Chrome for Testing
+corepack pnpm --filter @vayu/extension test:e2e    # builds, then runs Chrome for Testing and Firefox
 ```
 
 Unit tests (`test/`): capture rules, request context (cookie header order, referer, user agent), file name and URL handling, the hand-off race (accept, refuse, host missing, timeout + late accept/failure, browser finished first, cancel refused), the capture controller, the native-messaging transport (fail-fast, reconnect, idle close, status), links, sniffer, settings, and the manifest (the `key` really produces the ID that `vayu-nmhost` allows).
 
-End-to-end (`e2e/`): starts Chrome for Testing headless with the unpacked `dist/chromium` and a fake native host (`e2e/fake-host.mjs`) registered in a temporary profile, serves pages from a local HTTP server, and checks: the pinned ID; no host → the browser keeps the download; popup status and counts; a clicked link reaches the host with cookie, referer, user agent and file name, and the browser copy is cancelled and erased; hover → `net.preconnect` with the origin only; daemon unavailable → the browser keeps it; daemon too slow → the browser keeps it and the late daemon copy is removed. It looks for Chrome for Testing in `~/.cache/ms-playwright` (or `VAYU_E2E_CHROME`) and skips when there is none. It does not touch your real profile or `~/Downloads`.
+End-to-end (`e2e/`), both with a fake native host (`e2e/fake-host.mjs`) and pages from a local HTTP server, never touching your real profile or `~/Downloads`:
 
-Not automated: Firefox (no Playwright support for loading extensions into stock Firefox; test by hand as above), the context-menu items (native menus cannot be clicked from CDP), and the media sniffer in a real page.
+- `capture.e2e.test.ts` — Chrome for Testing, headless, with the unpacked `dist/chromium` (Playwright attaches over CDP; its own download handling is switched off because it bypasses extensions). Checks: the pinned ID; no host → the browser keeps the download; popup status and counts; a clicked link reaches the host with cookie, referer, user agent and file name, and the browser copy is cancelled and erased; hover → `net.preconnect` with the origin only; daemon unavailable → the browser keeps it; daemon too slow → the browser keeps it and the late daemon copy is removed. Looks for Chrome for Testing in `~/.cache/ms-playwright` (or `VAYU_E2E_CHROME`).
+- `firefox.e2e.test.ts` — stock Firefox (140+), headless, `dist/firefox` installed as a temporary add-on over WebDriver BiDi, host manifest under a temporary `HOME`. Checks the `downloads.onCreated` path: the gecko ID; a captured download reaches the host with cookie, referer and user agent and the running browser copy is cancelled; daemon unavailable → the browser finishes it. Uses `/usr/bin/firefox` (or `VAYU_E2E_FIREFOX`).
+
+Each suite skips when its browser is missing. Not automated: the context-menu items (native menus cannot be clicked from CDP or BiDi) and the media sniffer on real sites.
 
 ## Layout
 

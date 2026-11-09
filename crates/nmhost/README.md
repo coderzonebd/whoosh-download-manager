@@ -84,8 +84,8 @@ target/release/vayu-nmhost --unregister
 
 `$XDG_CONFIG_HOME` is honoured on Linux. Browsers installed as Flatpak or Snap cannot start native hosts outside their sandbox without extra setup; that is out of scope here.
 
-**Tested:** Linux (unit tests, plus an end-to-end run with Chrome for Testing in `apps/extension`).
-**Not tested yet:** macOS and Windows registration (written from the browsers' documentation; the Windows registry code compiles only on Windows). Vivaldi on Windows may read Chrome's key instead of its own; registering for both covers that.
+**Tested:** Linux — unit tests; Chrome for Testing and Firefox 159 end-to-end runs in `apps/extension`; and Firefox 159 starting a host from the manifest that `--register --browser firefox` wrote (`~/.mozilla/native-messaging-hosts`).
+**Not tested yet:** macOS and Windows registration (written from the browsers' documentation). The crate, including the registry code, passes `cargo check` and `cargo clippy -D warnings` for `x86_64-pc-windows-gnu`, but has never run on Windows. Vivaldi on Windows may read Chrome's key instead of its own; registering for both covers that.
 
 ## Data directory and runtime file
 
