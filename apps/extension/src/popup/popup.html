@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Vayu</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Vayu</h1>
+        <span id="status" class="status" data-state="checking" role="status">Checking…</span>
+      </header>
+      <p id="detail" class="detail"></p>
+
+      <dl id="counts" class="counts" hidden>
+        <div><dt>Active</dt><dd id="active">0</dd></div>
+        <div><dt>Queued</dt><dd id="queued">0</dd></div>
+      </dl>
+
+      <div class="toggles">
+        <label><input type="checkbox" id="capture" /> Catch browser downloads</label>
+        <label id="site-row" hidden><input type="checkbox" id="site" /> Catch downloads on <span id="site-host"></span></label>
+        <p class="hint">Hold <kbd>Alt</kbd> while clicking a link to let the browser download it.</p>
+      </div>
+
+      <section aria-labelledby="media-title">
+        <h2 id="media-title">Media on this page</h2>
+        <ul id="media"></ul>
+        <p id="media-empty" class="muted">None detected yet.</p>
+      </section>
+
+      <p id="last" class="muted"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
