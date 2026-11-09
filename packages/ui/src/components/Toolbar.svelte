@@ -160,6 +160,12 @@
       display: none;
     }
   }
+  @container vy-app (max-width: 600px) {
+    /* the list switches to cards on its own at this width */
+    .segmented {
+      display: none;
+    }
+  }
   @container vy-app (max-width: 760px) {
     .nav-toggle {
       display: inline-flex;

@@ -61,6 +61,8 @@ export class AppState {
   /** Id awaiting a fresh URL. */
   refreshId = $state<string | undefined>(undefined);
   menu = $state.raw<{ id: string; x: number; y: number } | undefined>(undefined);
+  /** Bumped to ask the download list to take keyboard focus. */
+  listFocus = $state(0);
 
 
   readonly #off: (() => void)[] = [];
@@ -173,6 +175,7 @@ export class AppState {
     }
     this.store.selectOnly(id);
     this.prefs.detailOpen = true;
+    this.listFocus++;
   }
 
   describe(err: unknown): string {

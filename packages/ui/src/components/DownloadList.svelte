@@ -21,7 +21,10 @@
   const { store, prefs, i18n } = app;
   const { t } = i18n;
 
-  const layout = $derived(prefs.layout);
+  /** Below this width the table cannot breathe (extension popup, phone): cards it is. */
+  const NARROW = 560;
+  let width = $state(1024);
+  const layout = $derived(width < NARROW ? "modern" : prefs.layout);
   const rowH = $derived(ROW_HEIGHT[layout]);
   const headerH = $derived(layout === "classic" ? HEADER_HEIGHT : 0);
   const items = $derived(store.visible);
@@ -45,9 +48,11 @@
     const el = scroller;
     if (!el) return;
     if (el.clientHeight > 0) viewport = el.clientHeight;
+    if (el.clientWidth > 0) width = el.clientWidth;
     const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h) viewport = h;
+      const r = entries[0]?.contentRect;
+      if (r?.height) viewport = r.height;
+      if (r?.width) width = r.width;
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -67,6 +72,14 @@
       if (scroller) scroller.scrollTop = 0;
       scrollTop = 0;
     });
+  });
+
+  // Someone (a toast's "Show", the add dialog) asked for focus: take it after
+  // any closing dialog has handed focus back to its trigger.
+  $effect(() => {
+    if (app.listFocus === 0) return;
+    const t = setTimeout(() => scroller?.focus(), 0);
+    return () => clearTimeout(t);
   });
 
   // Keep the active row in view when it changes (keyboard, reveal from a toast).
@@ -109,6 +122,8 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    // Keys typed on a column header button (sort, resize) are theirs, not the grid's.
+    if (e.target !== scroller) return;
     const cur = activeIndex;
     const page = pageSize(viewport, rowH, headerH);
     switch (e.key) {

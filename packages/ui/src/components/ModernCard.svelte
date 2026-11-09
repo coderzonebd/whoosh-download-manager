@@ -87,6 +87,7 @@
         <button
           class="vy-btn vy-btn--icon vy-btn--sm"
           tabindex="-1"
+          onmousedown={(e) => e.preventDefault()}
           aria-label={primary.label}
           title={primary.label}
           onclick={(e) => {
@@ -97,7 +98,7 @@
           <Icon name={primary.icon} size={15} />
         </button>
       {/if}
-      <button class="vy-btn vy-btn--icon vy-btn--sm" tabindex="-1" aria-label={t("menu.label", { name: d.filename })} title={t("menu.label", { name: d.filename })} onclick={openMenu}>
+      <button class="vy-btn vy-btn--icon vy-btn--sm" tabindex="-1" onmousedown={(e) => e.preventDefault()} aria-label={t("menu.label", { name: d.filename })} title={t("menu.label", { name: d.filename })} onclick={openMenu}>
         <Icon name="more" size={15} />
       </button>
     </div>
@@ -150,6 +151,10 @@
     justify-content: space-between;
     gap: var(--vy-space-3);
     min-inline-size: 0;
+  }
+  .title > :global(.badge) {
+    /* the file name truncates, the status never does */
+    flex: none;
   }
   .name {
     font-weight: var(--vy-font-weight-semibold);

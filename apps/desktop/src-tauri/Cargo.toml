@@ -1,0 +1,27 @@
+[package]
+name = "vayu-desktop"
+description = "Vayu desktop app: a Tauri 2 window around the shared Svelte UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "vayu_desktop_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vayu-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-window-state = "2"
+
+[lints]
+workspace = true

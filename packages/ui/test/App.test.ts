@@ -75,6 +75,8 @@ describe("App shell", () => {
 
   it("sorts by a column and announces it with aria-sort", async () => {
     const { grid, user } = await setup();
+    const downloading = rows(grid).find((r) => r.dataset.state === "downloading") as HTMLElement;
+    await user.click(downloading); // a selection Space could wrongly act on
     const name = within(grid).getByRole("columnheader", { name: "Name" });
     expect(name).toHaveAttribute("aria-sort", "none");
     await user.click(within(name).getByRole("button"));
@@ -83,6 +85,10 @@ describe("App shell", () => {
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })));
     await user.click(within(name).getByRole("button"));
     expect(name).toHaveAttribute("aria-sort", "descending");
+    // Space on a header sorts; it must not also pause/resume the selection.
+    await user.keyboard(" ");
+    expect(name).toHaveAttribute("aria-sort", "ascending");
+    expect(downloading.dataset.state).toBe("downloading");
   });
 
   it("resizes a column from the keyboard (Alt+Arrow)", async () => {
@@ -179,6 +185,7 @@ describe("App shell", () => {
     const added = rows(grid).find((r) => r.textContent?.includes("my thesis.pdf"));
     expect(added).toBeDefined();
     expect(added).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(grid).toHaveFocus()); // keyboard work continues in the list
     expect(within(screen.getByRole("region", { name: "Notifications" })).getByText("Added “my thesis.pdf”")).toBeInTheDocument();
   });
 
