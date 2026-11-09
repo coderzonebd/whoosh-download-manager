@@ -1,0 +1,309 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Generated from src/tokens.ts by `pnpm --filter @vayu/design-tokens build`. Do not edit. */
+
+:root {
+  --vy-font-sans: "Inter Variable", Inter, "Noto Sans Bengali Variable", "Noto Sans Bengali", "Nirmala UI", "Kohinoor Bangla", "Bangla Sangam MN", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --vy-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --vy-font-size-xs: 0.6875rem;
+  --vy-font-size-sm: 0.75rem;
+  --vy-font-size-md: 0.8125rem;
+  --vy-font-size-lg: 0.9375rem;
+  --vy-font-size-xl: 1.125rem;
+  --vy-font-size-2xl: 1.375rem;
+  --vy-font-size-3xl: 1.75rem;
+  --vy-font-weight-regular: 400;
+  --vy-font-weight-medium: 500;
+  --vy-font-weight-semibold: 600;
+  --vy-font-weight-bold: 700;
+  --vy-line-height-tight: 1.25;
+  --vy-line-height-normal: 1.5;
+  --vy-line-height-relaxed: 1.65;
+  --vy-letter-spacing-tight: -0.011em;
+  --vy-letter-spacing-normal: 0;
+  --vy-letter-spacing-wide: 0.04em;
+  --vy-space-0: 0;
+  --vy-space-1: 0.25rem;
+  --vy-space-2: 0.5rem;
+  --vy-space-3: 0.75rem;
+  --vy-space-4: 1rem;
+  --vy-space-5: 1.25rem;
+  --vy-space-6: 1.5rem;
+  --vy-space-8: 2rem;
+  --vy-space-10: 2.5rem;
+  --vy-space-12: 3rem;
+  --vy-space-px: 1px;
+  --vy-space-0-5: 0.125rem;
+  --vy-space-1-5: 0.375rem;
+  --vy-space-2-5: 0.625rem;
+  --vy-radius-xs: 3px;
+  --vy-radius-sm: 5px;
+  --vy-radius-md: 8px;
+  --vy-radius-lg: 12px;
+  --vy-radius-xl: 16px;
+  --vy-radius-full: 9999px;
+  --vy-duration-instant: 80ms;
+  --vy-duration-fast: 140ms;
+  --vy-duration-normal: 200ms;
+  --vy-duration-slow: 320ms;
+  --vy-duration-progress: 250ms;
+  --vy-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --vy-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --vy-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --vy-ease-linear: linear;
+  --vy-z-base: 0;
+  --vy-z-sticky: 10;
+  --vy-z-dropdown: 100;
+  --vy-z-overlay: 200;
+  --vy-z-dialog: 300;
+  --vy-z-toast: 400;
+  --vy-size-control-sm: 1.625rem;
+  --vy-size-control-md: 2rem;
+  --vy-size-control-lg: 2.5rem;
+  --vy-size-row-dense: 1.875rem;
+  --vy-size-row-card: 4.75rem;
+  --vy-size-sidebar: 15rem;
+  --vy-size-toolbar: 3.25rem;
+  --vy-size-statusbar: 1.75rem;
+  --vy-size-focus-width: 2px;
+  --vy-size-focus-offset: 2px;
+}
+
+/* Light is the default. */
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --vy-color-bg: #f5f6f8;
+  --vy-color-bg-sunken: #eff1f4;
+  --vy-color-surface: #ffffff;
+  --vy-color-surface-raised: #ffffff;
+  --vy-color-surface-hover: #f2f4f7;
+  --vy-color-surface-active: #e8ebf0;
+  --vy-color-selection: #e8f0fd;
+  --vy-color-selection-strong: #d6e5fd;
+  --vy-color-border: #e3e6eb;
+  --vy-color-border-strong: #7d8696;
+  --vy-color-text: #161a21;
+  --vy-color-text-muted: #4f5868;
+  --vy-color-text-subtle: #5f6878;
+  --vy-color-text-on-accent: #ffffff;
+  --vy-color-accent: #1a5fd6;
+  --vy-color-accent-hover: #1752ba;
+  --vy-color-accent-active: #13469e;
+  --vy-color-accent-subtle: #e8f0fd;
+  --vy-color-accent-text: #1654c0;
+  --vy-color-focus: #1a5fd6;
+  --vy-color-success: #178547;
+  --vy-color-success-text: #126b39;
+  --vy-color-success-subtle: #e2f4e9;
+  --vy-color-warning: #c46a00;
+  --vy-color-warning-text: #874900;
+  --vy-color-warning-subtle: #fff0d9;
+  --vy-color-danger: #d02f39;
+  --vy-color-danger-text: #ad222b;
+  --vy-color-danger-subtle: #fde8e9;
+  --vy-color-info: #7445d6;
+  --vy-color-info-text: #5f35b8;
+  --vy-color-info-subtle: #f1ebfd;
+  --vy-color-neutral: #7d8697;
+  --vy-color-progress-track: #e4e7ec;
+  --vy-color-segment-alt: #3f7be3;
+  --vy-color-scrim: rgb(15 18 24 / 0.38);
+  --vy-shadow-sm: 0 1px 2px rgb(16 24 40 / 0.06);
+  --vy-shadow-md: 0 4px 12px -2px rgb(16 24 40 / 0.10), 0 2px 4px -2px rgb(16 24 40 / 0.06);
+  --vy-shadow-lg: 0 18px 44px -10px rgb(16 24 40 / 0.24), 0 4px 12px -4px rgb(16 24 40 / 0.10);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --vy-color-bg: #0e1014;
+  --vy-color-bg-sunken: #121419;
+  --vy-color-surface: #16181d;
+  --vy-color-surface-raised: #1e2128;
+  --vy-color-surface-hover: #1d2027;
+  --vy-color-surface-active: #252932;
+  --vy-color-selection: #1a2944;
+  --vy-color-selection-strong: #1f3459;
+  --vy-color-border: #272b33;
+  --vy-color-border-strong: #646d7d;
+  --vy-color-text: #e8ebf0;
+  --vy-color-text-muted: #a7afbc;
+  --vy-color-text-subtle: #939caa;
+  --vy-color-text-on-accent: #08101f;
+  --vy-color-accent: #5b98ff;
+  --vy-color-accent-hover: #76a9ff;
+  --vy-color-accent-active: #91baff;
+  --vy-color-accent-subtle: #172744;
+  --vy-color-accent-text: #86b4ff;
+  --vy-color-focus: #86b4ff;
+  --vy-color-success: #3ccf86;
+  --vy-color-success-text: #5bd99b;
+  --vy-color-success-subtle: #0f2d1e;
+  --vy-color-warning: #f0a33a;
+  --vy-color-warning-text: #f5b764;
+  --vy-color-warning-subtle: #33250f;
+  --vy-color-danger: #ff6470;
+  --vy-color-danger-text: #ff8a92;
+  --vy-color-danger-subtle: #3a161a;
+  --vy-color-info: #a586ff;
+  --vy-color-info-text: #bba3ff;
+  --vy-color-info-subtle: #251c44;
+  --vy-color-neutral: #6f798a;
+  --vy-color-progress-track: #272b33;
+  --vy-color-segment-alt: #3e76d8;
+  --vy-color-scrim: rgb(0 0 0 / 0.55);
+  --vy-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --vy-shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --vy-shadow-lg: 0 22px 52px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06), inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+
+[data-theme="high-contrast"] {
+  color-scheme: dark;
+  --vy-color-bg: #000000;
+  --vy-color-bg-sunken: #000000;
+  --vy-color-surface: #000000;
+  --vy-color-surface-raised: #0a0a0a;
+  --vy-color-surface-hover: #1c1c1c;
+  --vy-color-surface-active: #262626;
+  --vy-color-selection: #002f6c;
+  --vy-color-selection-strong: #003f8f;
+  --vy-color-border: #c8c8c8;
+  --vy-color-border-strong: #ffffff;
+  --vy-color-text: #ffffff;
+  --vy-color-text-muted: #f0f0f0;
+  --vy-color-text-subtle: #e2e2e2;
+  --vy-color-text-on-accent: #000000;
+  --vy-color-accent: #ffd60a;
+  --vy-color-accent-hover: #ffe14d;
+  --vy-color-accent-active: #ffeb85;
+  --vy-color-accent-subtle: #2e2700;
+  --vy-color-accent-text: #ffd60a;
+  --vy-color-focus: #ffd60a;
+  --vy-color-success: #4dff8f;
+  --vy-color-success-text: #4dff8f;
+  --vy-color-success-subtle: #002a12;
+  --vy-color-warning: #ffb020;
+  --vy-color-warning-text: #ffc04d;
+  --vy-color-warning-subtle: #2e1f00;
+  --vy-color-danger: #ff6b6b;
+  --vy-color-danger-text: #ff8f8f;
+  --vy-color-danger-subtle: #330000;
+  --vy-color-info: #cdb0ff;
+  --vy-color-info-text: #d9c2ff;
+  --vy-color-info-subtle: #1f0f40;
+  --vy-color-neutral: #bdbdbd;
+  --vy-color-progress-track: #3a3a3a;
+  --vy-color-segment-alt: #fff099;
+  --vy-color-scrim: rgb(0 0 0 / 0.8);
+  --vy-shadow-sm: none;
+  --vy-shadow-md: 0 0 0 1px #ffffff;
+  --vy-shadow-lg: 0 0 0 2px #ffffff;
+  --vy-size-focus-width: 3px;
+}
+
+/* data-theme absent or "system": follow the OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]), [data-theme="system"] {
+    color-scheme: dark;
+    --vy-color-bg: #0e1014;
+    --vy-color-bg-sunken: #121419;
+    --vy-color-surface: #16181d;
+    --vy-color-surface-raised: #1e2128;
+    --vy-color-surface-hover: #1d2027;
+    --vy-color-surface-active: #252932;
+    --vy-color-selection: #1a2944;
+    --vy-color-selection-strong: #1f3459;
+    --vy-color-border: #272b33;
+    --vy-color-border-strong: #646d7d;
+    --vy-color-text: #e8ebf0;
+    --vy-color-text-muted: #a7afbc;
+    --vy-color-text-subtle: #939caa;
+    --vy-color-text-on-accent: #08101f;
+    --vy-color-accent: #5b98ff;
+    --vy-color-accent-hover: #76a9ff;
+    --vy-color-accent-active: #91baff;
+    --vy-color-accent-subtle: #172744;
+    --vy-color-accent-text: #86b4ff;
+    --vy-color-focus: #86b4ff;
+    --vy-color-success: #3ccf86;
+    --vy-color-success-text: #5bd99b;
+    --vy-color-success-subtle: #0f2d1e;
+    --vy-color-warning: #f0a33a;
+    --vy-color-warning-text: #f5b764;
+    --vy-color-warning-subtle: #33250f;
+    --vy-color-danger: #ff6470;
+    --vy-color-danger-text: #ff8a92;
+    --vy-color-danger-subtle: #3a161a;
+    --vy-color-info: #a586ff;
+    --vy-color-info-text: #bba3ff;
+    --vy-color-info-subtle: #251c44;
+    --vy-color-neutral: #6f798a;
+    --vy-color-progress-track: #272b33;
+    --vy-color-segment-alt: #3e76d8;
+    --vy-color-scrim: rgb(0 0 0 / 0.55);
+    --vy-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --vy-shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.04);
+    --vy-shadow-lg: 0 22px 52px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06), inset 0 1px 0 rgb(255 255 255 / 0.05);
+  }
+}
+
+@media (prefers-color-scheme: dark) and (prefers-contrast: more) {
+  :root:not([data-theme]), [data-theme="system"] {
+    color-scheme: dark;
+    --vy-color-bg: #000000;
+    --vy-color-bg-sunken: #000000;
+    --vy-color-surface: #000000;
+    --vy-color-surface-raised: #0a0a0a;
+    --vy-color-surface-hover: #1c1c1c;
+    --vy-color-surface-active: #262626;
+    --vy-color-selection: #002f6c;
+    --vy-color-selection-strong: #003f8f;
+    --vy-color-border: #c8c8c8;
+    --vy-color-border-strong: #ffffff;
+    --vy-color-text: #ffffff;
+    --vy-color-text-muted: #f0f0f0;
+    --vy-color-text-subtle: #e2e2e2;
+    --vy-color-text-on-accent: #000000;
+    --vy-color-accent: #ffd60a;
+    --vy-color-accent-hover: #ffe14d;
+    --vy-color-accent-active: #ffeb85;
+    --vy-color-accent-subtle: #2e2700;
+    --vy-color-accent-text: #ffd60a;
+    --vy-color-focus: #ffd60a;
+    --vy-color-success: #4dff8f;
+    --vy-color-success-text: #4dff8f;
+    --vy-color-success-subtle: #002a12;
+    --vy-color-warning: #ffb020;
+    --vy-color-warning-text: #ffc04d;
+    --vy-color-warning-subtle: #2e1f00;
+    --vy-color-danger: #ff6b6b;
+    --vy-color-danger-text: #ff8f8f;
+    --vy-color-danger-subtle: #330000;
+    --vy-color-info: #cdb0ff;
+    --vy-color-info-text: #d9c2ff;
+    --vy-color-info-subtle: #1f0f40;
+    --vy-color-neutral: #bdbdbd;
+    --vy-color-progress-track: #3a3a3a;
+    --vy-color-segment-alt: #fff099;
+    --vy-color-scrim: rgb(0 0 0 / 0.8);
+    --vy-shadow-sm: none;
+    --vy-shadow-md: 0 0 0 1px #ffffff;
+    --vy-shadow-lg: 0 0 0 2px #ffffff;
+    --vy-size-focus-width: 3px;
+  }
+}
+
+/* Bangla conjuncts and vowel signs need taller lines than Latin. */
+:lang(bn) {
+  --vy-line-height-normal: 1.65;
+  --vy-line-height-tight: 1.4;
+}
+
+/* Motion is decoration here, never information: drop it when asked. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vy-duration-instant: 0ms;
+    --vy-duration-fast: 0ms;
+    --vy-duration-normal: 0ms;
+    --vy-duration-slow: 0ms;
+    --vy-duration-progress: 0ms;
+  }
+}
