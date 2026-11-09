@@ -1,0 +1,28 @@
+[package]
+name = "vayu-nmhost"
+description = "Native messaging host: relays the browser extension's JSON-RPC to the vayu daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "vayu-nmhost"
+path = "src/main.rs"
+
+[dependencies]
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
+vayu-proto.workspace = true
+
+[lints]
+workspace = true
+
+[target."cfg(windows)".dependencies]
+winreg = "0.56"
