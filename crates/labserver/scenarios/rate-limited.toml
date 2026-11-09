@@ -1,0 +1,11 @@
+# Like conn-cap-2 but the API-gateway flavour: 429 Too Many Requests with
+# Retry-After, cap of 4.
+description = "Max 4 concurrent requests per IP (429 + Retry-After), 5 MB/s per connection"
+
+[limits]
+max_conns_per_ip = 4
+refuse = "429"
+retry_after_secs = 2
+
+[bandwidth]
+per_conn = "5MB/s"

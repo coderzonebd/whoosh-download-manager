@@ -1,0 +1,6 @@
+# The whole scenario shares one 20 MB/s pipe (all clients together), like a
+# saturated origin. Extra connections cannot help; they only cost politeness.
+description = "20 MB/s total for everyone; extra connections do not help"
+
+[bandwidth]
+global = "20MB/s"

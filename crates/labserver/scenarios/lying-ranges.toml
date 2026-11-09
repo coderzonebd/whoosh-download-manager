@@ -1,0 +1,6 @@
+# Advertises Accept-Ranges: bytes but then ignores Range and sends 200 with
+# the full file. An engine must check for a real 206 before segmenting.
+description = "Advertises Accept-Ranges but ignores Range (200 full)"
+
+[ranges]
+mode = "advertise-ignore"

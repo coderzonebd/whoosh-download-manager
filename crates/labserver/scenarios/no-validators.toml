@@ -1,0 +1,7 @@
+# Neither ETag nor Last-Modified: an engine cannot prove on resume that the
+# file did not change, and If-Range can never match.
+description = "No ETag and no Last-Modified"
+
+[validators]
+etag = false
+last_modified = false

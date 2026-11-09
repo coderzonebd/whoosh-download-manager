@@ -1,0 +1,7 @@
+# Connections die at random: on average one TCP reset per 50 MiB sent.
+# A good engine resumes the broken range on a fresh connection and loses at
+# most the bytes in flight.
+description = "Random TCP resets, ~1 per 50 MiB sent"
+
+[resets]
+prob_per_mb = 0.02

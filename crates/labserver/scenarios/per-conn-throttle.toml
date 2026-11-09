@@ -1,0 +1,6 @@
+# The CDN case: every TCP connection is capped, so more connections help.
+# A downloader using N connections should approach N x 2 MB/s.
+description = "2 MB/s per TCP connection; more connections help"
+
+[bandwidth]
+per_conn = "2MB/s"

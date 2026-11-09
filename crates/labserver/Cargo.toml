@@ -1,0 +1,49 @@
+[package]
+name = "vayu-labserver"
+description = "Deterministic, fault-injecting HTTP test server for engine tests and the benchmark harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "vayu-labserver"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bytes.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+futures.workspace = true
+vayu-core.workspace = true
+
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
+httpdate = "1"
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["server-auto", "tokio"] }
+# `ring` instead of the default aws-lc-rs: no C/cmake build, much lighter to compile.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+sha2 = "0.10"
+socket2 = "0.6"
+toml = "1"
+
+[dev-dependencies]
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+
+[lints]
+workspace = true
