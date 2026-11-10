@@ -1,0 +1,699 @@
+//! Shared test doubles: a fault-injecting `RangeSource`, a lossy storage
+//! that forgets unflushed writes on a simulated crash, and helpers.
+//!
+//! Everything runs on tokio's paused clock, so throttles, stalls and
+//! time-to-first-byte are exact and tests take no wall-clock time.
+
+#![allow(dead_code, missing_debug_implementations)]
+
+use std::collections::{HashMap, VecDeque};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
+
+use bytes::Bytes;
+use futures::StreamExt;
+use futures::future::BoxFuture;
+use tokio::time::Instant;
+use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
+use vayu_core::{
+    ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, Storage,
+    StorageProvider, Validators,
+};
+use vayu_engine::{Engine, EngineConfig, EngineDeps};
+use vayu_proto::service::Service;
+use vayu_proto::{AddParams, DownloadDetail, DownloadState, IdParams};
+
+pub const KIB: u64 = 1024;
+pub const MIB: u64 = 1024 * 1024;
+
+pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Deterministic pseudo-random content, distinct per seed (so mixed
+/// versions are detectable) and per 64 KiB block (so misplaced bytes are).
+/// Built from one random block with memcpy: fast even in debug builds.
+pub fn content(len: u64, seed: u64) -> Bytes {
+    const B: usize = 64 * 1024;
+    let mut block = vec![0u8; B + 4096];
+    fastrand::Rng::with_seed(seed).fill(&mut block);
+    let len = len as usize;
+    let mut v = Vec::with_capacity(len);
+    let mut i = 0u64;
+    while v.len() < len {
+        let rot = (i as usize).wrapping_mul(1031) % 4096;
+        let take = B.min(len - v.len());
+        let start = v.len();
+        v.extend_from_slice(&block[rot..rot + take]);
+        let stamp = (i ^ seed.rotate_left(17)).to_le_bytes();
+        let n = stamp.len().min(take);
+        v[start..start + n].copy_from_slice(&stamp[..n]);
+        i += 1;
+    }
+    Bytes::from(v)
+}
+
+// --------------------------------------------------------------- source
+
+/// What happens to one request (by 1-based open number).
+#[derive(Debug, Clone, Default)]
+pub struct ReqPlan {
+    /// Extra time before the response headers.
+    pub ttfb: Duration,
+    /// Bytes per second for this response.
+    pub rate: Option<u64>,
+    /// Pause for `.1` once `.0` bytes of this response were sent.
+    pub stall: Option<(u64, Duration)>,
+    /// Reset after this many bytes of this response.
+    pub reset_after: Option<u64>,
+    /// Fail the request outright.
+    pub fail: Option<SourceError>,
+}
+
+pub type Script = Arc<dyn Fn(u64, &OpenRequest) -> ReqPlan + Send + Sync>;
+
+#[derive(Debug, Clone, Copy)]
+pub enum Cap {
+    /// 429/503 with this `Retry-After`.
+    Throttle(Option<Duration>),
+    /// Excess connections are reset.
+    Reset,
+}
+
+#[derive(Clone)]
+pub struct Cfg {
+    pub chunk: usize,
+    /// What the probe reports.
+    pub accepts_ranges: bool,
+    /// Whether ranged requests are really honoured.
+    pub honours_ranges: bool,
+    pub size_known: bool,
+    pub validators: bool,
+    pub per_conn_bps: Option<u64>,
+    pub global_bps: Option<u64>,
+    pub ttfb: Duration,
+    pub cap: Option<(usize, Cap)>,
+    /// Switch to the next version after this many bytes were served (once
+    /// per version, while versions remain).
+    pub change_after: Option<u64>,
+    /// Links expire after this many bytes were served.
+    pub expire_after: Option<u64>,
+    pub filename: Option<String>,
+    pub content_type: Option<String>,
+}
+
+impl Default for Cfg {
+    fn default() -> Self {
+        Self {
+            chunk: 64 * KIB as usize,
+            accepts_ranges: true,
+            honours_ranges: true,
+            size_known: true,
+            validators: true,
+            per_conn_bps: None,
+            global_bps: None,
+            ttfb: Duration::ZERO,
+            cap: None,
+            change_after: None,
+            expire_after: None,
+            filename: None,
+            content_type: None,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct SrcState {
+    pub version: usize,
+    pub served: u64,
+    pub since_change: u64,
+    pub active: usize,
+    pub peak: usize,
+    pub opens: u64,
+    pub expired: bool,
+    pub ranges: Vec<Option<(u64, u64)>>,
+    pub probe_failures: VecDeque<SourceError>,
+}
+
+pub struct Bucket {
+    rate: f64,
+    st: Mutex<(f64, Option<Instant>)>,
+}
+
+impl Bucket {
+    pub fn new(rate: u64) -> Self {
+        Self {
+            rate: rate as f64,
+            st: Mutex::new((0.0, None)),
+        }
+    }
+
+    pub async fn take(&self, n: usize) {
+        let wait = {
+            let mut s = lock(&self.st);
+            let now = Instant::now();
+            let last = s.1.unwrap_or(now);
+            let burst = (self.rate * 0.02).max(16.0 * 1024.0);
+            s.0 = (s.0 + now.saturating_duration_since(last).as_secs_f64() * self.rate).min(burst);
+            s.1 = Some(now);
+            s.0 -= n as f64;
+            (s.0 < 0.0).then(|| Duration::from_secs_f64(-s.0 / self.rate))
+        };
+        if let Some(w) = wait {
+            tokio::time::sleep(w).await;
+        }
+    }
+}
+
+/// A `RangeSource` over in-memory versions of a file, with faults.
+pub struct FaultSource {
+    label: String,
+    versions: Vec<Bytes>,
+    pub cfg: Cfg,
+    script: Option<Script>,
+    global: Option<Arc<Bucket>>,
+    pub st: Arc<Mutex<SrcState>>,
+}
+
+impl FaultSource {
+    pub fn new(data: Bytes) -> Self {
+        Self::with_versions(vec![data])
+    }
+
+    pub fn with_versions(versions: Vec<Bytes>) -> Self {
+        Self::build(versions, Cfg::default(), None)
+    }
+
+    pub fn build(versions: Vec<Bytes>, cfg: Cfg, script: Option<Script>) -> Self {
+        let global = cfg.global_bps.map(|r| Arc::new(Bucket::new(r)));
+        Self {
+            label: "fault".into(),
+            versions,
+            cfg,
+            script,
+            global,
+            st: Arc::new(Mutex::new(SrcState::default())),
+        }
+    }
+
+    pub fn cfg(mut self, f: impl FnOnce(&mut Cfg)) -> Self {
+        f(&mut self.cfg);
+        self.global = self.cfg.global_bps.map(|r| Arc::new(Bucket::new(r)));
+        self
+    }
+
+    pub fn script(
+        mut self,
+        s: impl Fn(u64, &OpenRequest) -> ReqPlan + Send + Sync + 'static,
+    ) -> Self {
+        self.script = Some(Arc::new(s));
+        self
+    }
+
+    pub fn opens(&self) -> u64 {
+        lock(&self.st).opens
+    }
+
+    pub fn peak(&self) -> usize {
+        lock(&self.st).peak
+    }
+
+    pub fn served(&self) -> u64 {
+        lock(&self.st).served
+    }
+
+    pub fn version(&self) -> usize {
+        lock(&self.st).version
+    }
+
+    pub fn expire(&self) {
+        lock(&self.st).expired = true;
+    }
+
+    pub fn fail_next_probe(&self, e: SourceError) {
+        lock(&self.st).probe_failures.push_back(e);
+    }
+
+    pub fn data(&self, version: usize) -> Bytes {
+        self.versions[version].clone()
+    }
+
+    fn validators_of(&self, v: usize) -> Validators {
+        Validators {
+            etag: self.cfg.validators.then(|| format!("\"v{}\"", v + 1)),
+            last_modified: None,
+            size: self.cfg.size_known.then_some(self.versions[v].len() as u64),
+        }
+    }
+}
+
+struct ActiveGuard(Arc<Mutex<SrcState>>);
+
+impl Drop for ActiveGuard {
+    fn drop(&mut self) {
+        lock(&self.0).active -= 1;
+    }
+}
+
+struct Body {
+    data: Bytes,
+    pos: usize,
+    chunk: usize,
+    rate: Option<u64>,
+    global: Option<Arc<Bucket>>,
+    plan: ReqPlan,
+    stalled: bool,
+    shared: Arc<Mutex<SrcState>>,
+    change_after: Option<u64>,
+    expire_after: Option<u64>,
+    versions: usize,
+    done: bool,
+    _guard: ActiveGuard,
+}
+
+async fn next_chunk(mut b: Body) -> Option<(Result<Bytes, SourceError>, Body)> {
+    if b.done || b.pos >= b.data.len() {
+        return None;
+    }
+    if let Some((after, dur)) = b.plan.stall
+        && !b.stalled
+        && b.pos as u64 >= after
+    {
+        b.stalled = true;
+        tokio::time::sleep(dur).await;
+    }
+    if let Some(after) = b.plan.reset_after
+        && b.pos as u64 >= after
+    {
+        b.done = true;
+        return Some((Err(SourceError::Transient("connection reset".into())), b));
+    }
+    let n = b.chunk.min(b.data.len() - b.pos);
+    if let Some(r) = b.rate {
+        tokio::time::sleep(Duration::from_secs_f64(n as f64 / r as f64)).await;
+    }
+    if let Some(g) = &b.global {
+        g.take(n).await;
+    }
+    let c = b.data.slice(b.pos..b.pos + n);
+    b.pos += n;
+    {
+        let mut s = lock(&b.shared);
+        s.served += n as u64;
+        s.since_change += n as u64;
+        if let Some(after) = b.change_after
+            && s.since_change >= after
+            && s.version + 1 < b.versions
+        {
+            s.version += 1;
+            s.since_change = 0;
+        }
+        if b.expire_after.is_some_and(|e| s.served >= e) {
+            s.expired = true;
+        }
+    }
+    Some((Ok(c), b))
+}
+
+impl RangeSource for FaultSource {
+    fn label(&self) -> &str {
+        &self.label
+    }
+
+    fn probe(&self) -> BoxFuture<'_, Result<RemoteMeta, SourceError>> {
+        Box::pin(async move {
+            if !self.cfg.ttfb.is_zero() {
+                tokio::time::sleep(self.cfg.ttfb).await;
+            }
+            let mut s = lock(&self.st);
+            if let Some(e) = s.probe_failures.pop_front() {
+                return Err(e);
+            }
+            if s.expired {
+                return Err(SourceError::LinkExpired("403".into()));
+            }
+            let v = self.validators_of(s.version);
+            Ok(RemoteMeta {
+                size: v.size,
+                accepts_ranges: self.cfg.accepts_ranges,
+                etag: v.etag,
+                last_modified: None,
+                filename: self.cfg.filename.clone(),
+                content_type: self.cfg.content_type.clone(),
+                final_url: None,
+                protocol: Some(Protocol::Http1),
+            })
+        })
+    }
+
+    fn open(&self, req: OpenRequest) -> BoxFuture<'_, Result<ByteStream, SourceError>> {
+        Box::pin(async move {
+            let n = {
+                let mut s = lock(&self.st);
+                s.opens += 1;
+                s.ranges.push(req.range.map(|r| (r.start, r.end)));
+                s.opens
+            };
+            let plan = self.script.as_ref().map(|f| f(n, &req)).unwrap_or_default();
+            let ttfb = self.cfg.ttfb + plan.ttfb;
+            if !ttfb.is_zero() {
+                tokio::time::sleep(ttfb).await;
+            }
+            if let Some(e) = plan.fail.clone() {
+                return Err(e);
+            }
+            let body = {
+                let mut s = lock(&self.st);
+                if s.expired {
+                    return Err(SourceError::LinkExpired("403".into()));
+                }
+                if let Some((max, cap)) = self.cfg.cap
+                    && s.active >= max
+                {
+                    return Err(match cap {
+                        Cap::Throttle(ra) => SourceError::Throttled {
+                            message: "503".into(),
+                            retry_after: ra,
+                        },
+                        Cap::Reset => SourceError::Transient("connection reset".into()),
+                    });
+                }
+                let v = s.version;
+                if req.expect.conflicts_with(&self.validators_of(v)) {
+                    return Err(SourceError::RemoteChanged);
+                }
+                let data = &self.versions[v];
+                let body = match req.range {
+                    Some(r) => {
+                        if !self.cfg.honours_ranges {
+                            return Err(SourceError::RangesUnsupported);
+                        }
+                        if r.end > data.len() as u64 || r.is_empty() {
+                            return Err(SourceError::RemoteChanged);
+                        }
+                        data.slice(r.start as usize..r.end as usize)
+                    }
+                    None => data.clone(),
+                };
+                s.active += 1;
+                s.peak = s.peak.max(s.active);
+                body
+            };
+            let b = Body {
+                data: body,
+                pos: 0,
+                chunk: self.cfg.chunk,
+                rate: plan.rate.or(self.cfg.per_conn_bps),
+                global: self.global.clone(),
+                plan,
+                stalled: false,
+                shared: self.st.clone(),
+                change_after: self.cfg.change_after,
+                expire_after: self.cfg.expire_after,
+                versions: self.versions.len(),
+                done: false,
+                _guard: ActiveGuard(self.st.clone()),
+            };
+            Ok(futures::stream::unfold(b, next_chunk).boxed())
+        })
+    }
+}
+
+// --------------------------------------------------------------- crash fs
+
+/// Storage that keeps a volatile and a durable copy of every file: writes
+/// go to the volatile copy, `flush` copies it to the durable one, and
+/// [`CrashFs::crash`] throws away everything not flushed. Every operation
+/// yields once, so a kill can land between any two of them.
+#[derive(Default)]
+pub struct CrashFs {
+    files: Arc<Mutex<HashMap<PathBuf, Arc<CrashFile>>>>,
+    finished: Arc<Mutex<HashMap<PathBuf, Bytes>>>,
+}
+
+pub struct CrashFile {
+    path: PathBuf,
+    volatile: Mutex<Vec<u8>>,
+    durable: Mutex<Vec<u8>>,
+    files: Arc<Mutex<HashMap<PathBuf, Arc<CrashFile>>>>,
+    finished: Arc<Mutex<HashMap<PathBuf, Bytes>>>,
+}
+
+impl CrashFs {
+    /// Power cut: every unflushed write is lost.
+    pub fn crash(&self) {
+        for f in lock(&self.files).values() {
+            let d = lock(&f.durable).clone();
+            *lock(&f.volatile) = d;
+        }
+    }
+
+    pub fn finished(&self) -> HashMap<PathBuf, Bytes> {
+        lock(&self.finished).clone()
+    }
+}
+
+impl Storage for CrashFile {
+    fn preallocate(&self, len: u64) -> BoxFuture<'_, io::Result<()>> {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            let mut v = lock(&self.volatile);
+            if (v.len() as u64) < len {
+                v.resize(len as usize, 0);
+            }
+            Ok(())
+        })
+    }
+
+    fn write_at(&self, offset: u64, data: Bytes) -> BoxFuture<'_, io::Result<()>> {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            let mut v = lock(&self.volatile);
+            let end = offset as usize + data.len();
+            if v.len() < end {
+                v.resize(end, 0);
+            }
+            v[offset as usize..end].copy_from_slice(&data);
+            Ok(())
+        })
+    }
+
+    fn read_at(&self, offset: u64, len: usize) -> BoxFuture<'_, io::Result<Bytes>> {
+        Box::pin(async move {
+            let v = lock(&self.volatile);
+            let s = (offset as usize).min(v.len());
+            let e = (s + len).min(v.len());
+            Ok(Bytes::copy_from_slice(&v[s..e]))
+        })
+    }
+
+    fn flush(&self) -> BoxFuture<'_, io::Result<()>> {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            let v = lock(&self.volatile).clone();
+            *lock(&self.durable) = v;
+            tokio::task::yield_now().await;
+            Ok(())
+        })
+    }
+
+    fn finish<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            let mut done = lock(&self.finished);
+            if done.contains_key(final_path) {
+                return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+            }
+            // Rename: the part file is gone, the final file is durable.
+            let v = lock(&self.volatile).clone();
+            *lock(&self.durable) = v.clone();
+            done.insert(final_path.to_path_buf(), Bytes::from(v));
+            lock(&self.files).remove(&self.path);
+            Ok(())
+        })
+    }
+}
+
+impl StorageProvider for CrashFs {
+    fn open<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<Arc<dyn Storage>>> {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            let f = lock(&self.files)
+                .entry(path.to_path_buf())
+                .or_insert_with(|| {
+                    Arc::new(CrashFile {
+                        path: path.to_path_buf(),
+                        volatile: Mutex::new(Vec::new()),
+                        durable: Mutex::new(Vec::new()),
+                        files: self.files.clone(),
+                        finished: self.finished.clone(),
+                    })
+                })
+                .clone();
+            Ok(f as Arc<dyn Storage>)
+        })
+    }
+
+    fn remove<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
+        Box::pin(async move {
+            lock(&self.files).remove(path);
+            lock(&self.finished).remove(path);
+            Ok(())
+        })
+    }
+}
+
+// --------------------------------------------------------------- harness
+
+pub const URL: &str = "https://lab.test/files/data.bin";
+pub const DIR: &str = "/dl";
+
+pub fn config() -> EngineConfig {
+    let mut c = EngineConfig::new(DIR);
+    c.rng_seed = Some(7);
+    c
+}
+
+pub struct Lab {
+    pub engine: Arc<Engine>,
+    pub sources: Arc<MemSourceFactory>,
+    pub storage: Arc<MemStorageProvider>,
+    pub journal: Arc<MemJournal>,
+    pub state: Arc<MemStateStore>,
+}
+
+impl Lab {
+    pub async fn new(cfg: EngineConfig) -> Self {
+        let sources = Arc::new(MemSourceFactory::default());
+        let storage = Arc::new(MemStorageProvider::default());
+        let journal = Arc::new(MemJournal::default());
+        let state = Arc::new(MemStateStore::default());
+        let engine = Engine::start(
+            EngineDeps {
+                sources: sources.clone(),
+                storage: storage.clone(),
+                journal: journal.clone(),
+                state: state.clone(),
+            },
+            cfg,
+        )
+        .await
+        .unwrap();
+        Self {
+            engine,
+            sources,
+            storage,
+            journal,
+            state,
+        }
+    }
+
+    pub fn deps(&self) -> EngineDeps {
+        EngineDeps {
+            sources: self.sources.clone(),
+            storage: self.storage.clone(),
+            journal: self.journal.clone(),
+            state: self.state.clone(),
+        }
+    }
+
+    pub fn serve(&self, url: &str, src: Arc<FaultSource>) -> Arc<FaultSource> {
+        self.sources.insert(url, src.clone());
+        src
+    }
+
+    pub async fn add(&self, url: &str) -> String {
+        self.engine.add(add_params(url)).await.unwrap().id
+    }
+
+    pub fn file(&self, name: &str) -> Option<Bytes> {
+        self.storage.finished(&Path::new(DIR).join(name))
+    }
+}
+
+pub fn add_params(url: &str) -> AddParams {
+    AddParams {
+        url: url.into(),
+        request: None,
+        filename: None,
+        directory: None,
+        category: None,
+        start: true,
+        mirrors: vec![],
+        checksum: None,
+    }
+}
+
+pub async fn detail(engine: &Engine, id: &str) -> DownloadDetail {
+    engine.get(IdParams { id: id.into() }).await.unwrap()
+}
+
+/// Polls (on the paused clock) until the download reaches one of `states`.
+/// Panics after `limit` of virtual time.
+pub async fn wait_for(
+    engine: &Engine,
+    id: &str,
+    states: &[DownloadState],
+    limit: Duration,
+) -> DownloadDetail {
+    let t0 = Instant::now();
+    loop {
+        let d = detail(engine, id).await;
+        if states.contains(&d.summary.state) {
+            return d;
+        }
+        assert!(
+            t0.elapsed() < limit,
+            "download {id} still {:?} after {limit:?} ({:?})",
+            d.summary.state,
+            d.summary.error
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// Waits for `Completed` and returns the virtual time it took.
+pub async fn finish(engine: &Engine, id: &str, limit: Duration) -> (DownloadDetail, Duration) {
+    let t0 = Instant::now();
+    let d = wait_for(
+        engine,
+        id,
+        &[DownloadState::Completed, DownloadState::Failed],
+        limit,
+    )
+    .await;
+    assert_eq!(
+        d.summary.state,
+        DownloadState::Completed,
+        "failed: {:?}",
+        d.summary.error
+    );
+    (d, t0.elapsed())
+}
+
+/// Reads every byte of a stream (for assertions on sources).
+pub async fn read_all(mut s: ByteStream) -> Result<Vec<u8>, SourceError> {
+    let mut v = Vec::new();
+    while let Some(c) = s.next().await {
+        v.extend_from_slice(&c?);
+    }
+    Ok(v)
+}
+
+pub fn assert_same(got: &[u8], want: &[u8]) {
+    assert_eq!(got.len(), want.len(), "length differs");
+    if got != want {
+        let i = got.iter().zip(want).position(|(a, b)| a != b).unwrap_or(0);
+        panic!("content differs first at byte {i}");
+    }
+}
+
+/// Log to the test output (`RUST_LOG=vayu_engine=debug`).
+pub fn trace() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_test_writer()
+        .try_init();
+}
