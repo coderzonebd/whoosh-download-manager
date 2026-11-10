@@ -175,19 +175,7 @@ impl HttpSource {
                 return Err(e);
             }
         };
-        let v = classify::validators(h, size);
-        let meta = RemoteMeta {
-            size,
-            accepts_ranges,
-            etag: v.etag,
-            last_modified: v.last_modified,
-            filename: h
-                .get(header::CONTENT_DISPOSITION)
-                .and_then(|v| filename_from_content_disposition(v.as_bytes())),
-            content_type: classify::content_type(h),
-            final_url: Some(url.to_string()),
-            protocol: Some(protocol(resp.version)),
-        };
+        let meta = remote_meta(&resp, &url, size, accepts_ranges);
         // A 206 has one byte left to read, so the connection is ready for
         // the first `open`; a 200 is the whole file: close that connection.
         let limit = if resp.status == StatusCode::OK
@@ -241,6 +229,91 @@ impl HttpSource {
             expected,
             self.client.cfg.idle_timeout,
         )))
+    }
+}
+
+impl HttpSource {
+    /// `probe` and the body from offset 0 in one request: `Range: bytes=0-`.
+    async fn do_start(&self) -> Result<(RemoteMeta, ByteStream), SourceError> {
+        let range = [(header::RANGE, HeaderValue::from_static("bytes=0-"))];
+        let Fetched { resp, url } = self.fetch(&range).await?;
+        let h = &resp.headers;
+        // (size, accepts_ranges, body bytes to deliver)
+        let (size, accepts_ranges, expected) = match resp.status.as_u16() {
+            206 => match classify::content_range(h) {
+                // The body runs to the end of the entity. A server that sends
+                // only a prefix (`0-K/N`, K+1 < N) gets a short body:
+                // `Transient` after K+1 correct bytes, never a clean end.
+                Some(ContentRange::Bytes {
+                    first: 0,
+                    last,
+                    total,
+                }) if last.checked_add(1).is_some() => (total, true, total.or(last.checked_add(1))),
+                // A range that does not start at 0 (or none at all): do what
+                // probe-then-open would: the whole entity, unranged.
+                other => {
+                    let total = match other {
+                        Some(ContentRange::Bytes { total, .. }) => total,
+                        _ => None,
+                    };
+                    let meta = remote_meta(&resp, &url, total, false);
+                    resp.body.drain(0, INLINE_WAIT).await;
+                    let stream = self
+                        .do_open(OpenRequest {
+                            range: None,
+                            expect: meta.validators(),
+                        })
+                        .await?;
+                    return Ok((meta, stream));
+                }
+            },
+            // The range was ignored: the whole entity. As in `probe`, only a
+            // real 206 counts as range support (`lying-ranges` advertises
+            // `Accept-Ranges` and ignores `Range`).
+            200 => {
+                let len = classify::content_length(h);
+                (len, false, len)
+            }
+            // `bytes=0-` of an empty file.
+            416 => match classify::content_range(h) {
+                Some(ContentRange::Unsatisfied { total: 0 }) => {
+                    let meta = remote_meta(&resp, &url, Some(0), false);
+                    resp.body.drain(DRAIN_LIMIT, INLINE_WAIT).await;
+                    return Ok((meta, body::empty()));
+                }
+                _ => return Err(SourceError::Fatal("HTTP 416 to bytes=0-".into())),
+            },
+            _ => {
+                let e = classify::status_error(resp.status, h);
+                resp.body.drain(DRAIN_LIMIT, INLINE_WAIT).await;
+                return Err(e);
+            }
+        };
+        let meta = remote_meta(&resp, &url, size, accepts_ranges);
+        let stream = Box::pin(CheckedBody::new(
+            resp.body,
+            expected,
+            self.client.cfg.idle_timeout,
+        ));
+        Ok((meta, stream))
+    }
+}
+
+/// What a probe-like response says about the remote file.
+fn remote_meta(resp: &Response, url: &Url, size: Option<u64>, accepts_ranges: bool) -> RemoteMeta {
+    let h = &resp.headers;
+    let v = classify::validators(h, size);
+    RemoteMeta {
+        size,
+        accepts_ranges,
+        etag: v.etag,
+        last_modified: v.last_modified,
+        filename: h
+            .get(header::CONTENT_DISPOSITION)
+            .and_then(|v| filename_from_content_disposition(v.as_bytes())),
+        content_type: classify::content_type(h),
+        final_url: Some(url.to_string()),
+        protocol: Some(protocol(resp.version)),
     }
 }
 
@@ -315,5 +388,11 @@ impl RangeSource for HttpSource {
 
     fn open(&self, req: OpenRequest) -> BoxFuture<'_, Result<ByteStream, SourceError>> {
         self.do_open(req).boxed()
+    }
+
+    /// One `GET` with `Range: bytes=0-`: the probe's metadata and the body
+    /// from offset 0, one round trip sooner than probe-then-open.
+    fn start(&self) -> BoxFuture<'_, Result<(RemoteMeta, ByteStream), SourceError>> {
+        self.do_start().boxed()
     }
 }
