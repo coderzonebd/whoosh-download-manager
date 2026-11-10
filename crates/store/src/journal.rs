@@ -400,7 +400,7 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use vayu_core::source::RemoteMeta;
-    use vayu_core::{ByteRange, RangeSet};
+    use vayu_core::{ByteRange, Finishing, RangeSet};
 
     /// A checkpoint whose JSON grows with `ranges`; 200 ranges ≈ 6 KiB,
     /// enough to force a slot past 4 KiB.
@@ -416,7 +416,11 @@ mod tests {
             done: RangeSet::from_ranges(
                 (0..ranges).map(|i| ByteRange::new(i * 1000 + n, i * 1000 + n + 500).unwrap()),
             ),
-            finishing: None,
+            // Every third one is finishing, so every test below covers it.
+            finishing: n.is_multiple_of(3).then(|| Finishing {
+                name: format!("file ({n}).iso"),
+                len: n * 1000 + 7,
+            }),
         }
     }
 
@@ -747,6 +751,33 @@ mod tests {
         assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
         assert!(j.load(&id).await.is_err());
         assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
+    }
+
+    /// `Checkpoint::finishing` (contract amendment 2) round-trips, and a
+    /// journal written before the field existed still loads, as `None`.
+    #[tokio::test]
+    async fn finishing_round_trips_and_old_journals_load() {
+        let d = tempfile::tempdir().unwrap();
+        let j = FileJournal::open(d.path()).unwrap();
+        let id = "fin".to_string();
+        let finishing = cp(3, 2);
+        assert!(finishing.finishing.is_some());
+        j.commit(&id, &finishing).await.unwrap();
+        assert_eq!(j.load(&id).await.unwrap(), Some(finishing));
+        let plain = cp(4, 2);
+        assert!(plain.finishing.is_none());
+        j.commit(&id, &plain).await.unwrap();
+        assert_eq!(j.load(&id).await.unwrap(), Some(plain.clone()));
+
+        // A slot exactly as the previous build wrote it: no `finishing` key.
+        let old_json = r#"{"meta":{"size":4,"accepts_ranges":true,"etag":"\"etag-4\"","last_modified":null,"filename":null,"content_type":null,"final_url":"https://example.test/file?token=4","protocol":null},"done":[{"start":4,"end":504},{"start":1004,"end":1504}]}"#;
+        let old = format::encode(0, 1, old_json.as_bytes());
+        let id = "old".to_string();
+        std::fs::write(j.path_for(&id).unwrap(), &old).unwrap();
+        assert_eq!(j.load(&id).await.unwrap(), Some(plain.clone()));
+        // And the next commit continues the series.
+        j.commit(&id, &cp(6, 1)).await.unwrap();
+        assert_eq!(j.load(&id).await.unwrap(), Some(cp(6, 1)));
     }
 
     #[test]
