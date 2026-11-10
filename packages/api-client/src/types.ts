@@ -25,6 +25,7 @@ export type MethodName = (typeof Method)[keyof typeof Method];
 
 export const Event = {
   DownloadAdded: "event.download.added",
+  DownloadUpdated: "event.download.updated",
   DownloadProgress: "event.download.progress",
   DownloadState: "event.download.state",
   DownloadRemoved: "event.download.removed",
@@ -297,6 +298,8 @@ export interface MethodMap {
 
 export interface EventMap {
   "event.download.added": DownloadSummary;
+  /** The summary again after its name, size or category changed; replace your copy. */
+  "event.download.updated": DownloadSummary;
   "event.download.progress": ProgressEvent;
   "event.download.state": StateEvent;
   "event.download.removed": RemovedEvent;

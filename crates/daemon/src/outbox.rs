@@ -33,7 +33,8 @@ pub enum Item {
     /// A serialised response; the permit limits in-flight requests until the
     /// response is actually written.
     Response(String, Option<OwnedSemaphorePermit>),
-    Event(Notification),
+    /// Boxed: a `Notification` is several times larger than the others.
+    Event(Box<Notification>),
     Progress(ProgressSlot),
     Stats(Stats),
     Close(u16, String),
@@ -175,7 +176,7 @@ impl Outbox {
                     self.notify.notify_one();
                     return Pushed::Overflow;
                 }
-                let seq = inner.push(Item::Event(lossless));
+                let seq = inner.push(Item::Event(Box::new(lossless)));
                 inner.last_barrier = Some(seq);
                 inner.lossless_queued += 1;
                 Pushed::Queued

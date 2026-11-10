@@ -232,6 +232,36 @@ async fn file_names_follow_the_priority_and_never_collide() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn clients_hear_the_servers_name_when_it_arrives() {
+    // Added under the URL's name (`dl`), the server's name comes with the
+    // first response: clients get the whole summary again as `updated`.
+    let lab = Lab::new(config()).await;
+    let u = "https://lab.test/download.php?file=x";
+    lab.serve(
+        u,
+        Arc::new(
+            FaultSource::new(content(KIB, 1)).cfg(|c| c.filename = Some("Episode 5.mp4".into())),
+        ),
+    );
+    let mut events = lab.engine.subscribe();
+    let id = lab.add(u).await;
+    finish(&lab.engine, &id, LONG).await;
+    let (mut added, mut updated) = (None, Vec::new());
+    while let Some(Some(n)) = events.next().now_or_never() {
+        match n {
+            Notification::DownloadAdded(s) if s.id == id => added = Some(s.filename),
+            Notification::DownloadUpdated(s) if s.id == id => updated.push(s),
+            _ => {}
+        }
+    }
+    assert_eq!(added.as_deref(), Some("download.php"));
+    let last = updated.last().expect("an updated event");
+    assert_eq!(last.filename, "Episode 5.mp4");
+    assert_eq!(last.category.as_deref(), Some("video"));
+    assert_eq!(last.total_bytes, Some(KIB));
+}
+
+#[tokio::test(start_paused = true)]
 async fn categories_come_from_the_extension_unless_given() {
     let lab = Lab::new(config()).await;
     let u = "https://lab.test/v/movie.mkv";

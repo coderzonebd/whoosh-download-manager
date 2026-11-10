@@ -92,6 +92,7 @@ extension ──native messaging (stdio)──▶ vayu-nmhost ──WebSocket + 
 | Method | Params | Rate |
 |---|---|---|
 | `event.download.added` | `DownloadSummary` | on change |
+| `event.download.updated` | `DownloadSummary` | when the name, size, category or other descriptive fields change after `added` (e.g. the server's file name arrives with the first response, or the finished file got a numbered name); replace the client's copy |
 | `event.download.progress` | `{ items: ProgressItem[] }` (`id, downloadedBytes, totalBytes?, speedBps, etaSecs?, connections, segments?`; `segments` is `[start, end, downloadedBytes][]`, at most once per second per download) | batched, ≤ 4 per second |
 | `event.download.state` | `{ id, state, error? }` | on change |
 | `event.download.removed` | `{ ids }` | on change |

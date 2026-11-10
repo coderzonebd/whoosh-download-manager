@@ -133,6 +133,7 @@ export class AppState {
     const c = this.client;
     this.#off.push(
       c.on("event.download.added", (d) => this.store.upsert(d)),
+      c.on("event.download.updated", (d) => this.store.upsert(d)),
       c.on("event.download.progress", (e) => this.store.applyProgress(e.items)),
       c.on("event.download.removed", (e) => {
         this.store.remove(e.ids);
