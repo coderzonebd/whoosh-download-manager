@@ -1,0 +1,11 @@
+# Used by BuildKit for `docker build -f packaging/docker/Dockerfile .`
+# (a Dockerfile-specific ignore file, so the repo root needs none).
+.git
+**/node_modules
+**/target
+**/dist
+apps/*/src-tauri/gen
+bench-results
+tmp
+.env
+.env.*

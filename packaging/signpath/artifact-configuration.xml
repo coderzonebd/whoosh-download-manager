@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration used by release.yml (all three signing
+  requests: the desktop exe, the installers, the CLI binaries).
+
+  The GitHub artifact SignPath receives is a zip of the files at its root;
+  this signs every .exe and .msi in it with Authenticode. Paste it into the
+  SignPath project as its default artifact configuration (SignPath keeps its
+  own copy; this file is the reviewed source). Check it with SignPath's
+  "Validate" button: the element and attribute names here follow their
+  documentation but have not been run against a real project yet.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="*.exe" min-matches="0" max-matches="unbounded">
+      <authenticode-sign />
+    </pe-file>
+    <msi-file path="*.msi" min-matches="0" max-matches="unbounded">
+      <authenticode-sign />
+    </msi-file>
+  </zip-file>
+</artifact-configuration>

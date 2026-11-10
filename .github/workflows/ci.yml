@@ -1,0 +1,182 @@
+# CI: lint, build and test on every PR and on pushes to main / phase branches.
+#
+# Every third-party action is pinned to a full commit SHA (version in the
+# comment); Dependabot keeps them current (.github/dependabot.yml).
+name: CI
+
+on:
+  push:
+    branches: [main, "phase*/**"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+# Least privilege: jobs only read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  # One run per PR / branch; a new push cancels the superseded run
+  # (except on main, where every commit keeps its own result).
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: short
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  NODE_VERSION: "24"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  workflows:
+    name: Lint workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint (checksum-verified)
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+      - name: actionlint (runs shellcheck on every run block)
+        run: |
+          shellcheck --version
+          "$RUNNER_TEMP/actionlint" -color
+      - name: shellcheck the workflow scripts
+        run: shellcheck .github/scripts/*.sh
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustc --version
+          cargo --version
+      - name: Install Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # PRs restore the cache but only main / phase branches write it.
+          save-if: ${{ github.event_name == 'push' }}
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace --locked
+
+  js:
+    name: TypeScript (typecheck, test, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: pnpm -r typecheck
+      - run: pnpm -r test
+      - run: pnpm -r build
+      - name: Generated files are committed
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::'pnpm -r build' changed tracked files (e.g. design-tokens/src/tokens.css). Rebuild and commit them."
+            exit 1
+          fi
+
+  extension-e2e:
+    name: Extension e2e (Chrome for Testing + Firefox)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Non-blocking until it has proven stable on hosted runners.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Chrome for Testing (Playwright's chromium build)
+        working-directory: apps/extension
+        # Full Chrome for Testing only; the suite runs it with --headless=new.
+        run: pnpm exec playwright-core install --with-deps --no-shell chromium
+      - name: Point the tests at both browsers
+        # The suites skip silently when a browser is missing; fail here instead.
+        run: |
+          chrome=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux64/chrome | sort -V | tail -n 1)
+          firefox=$(command -v firefox || true)
+          test -x "$chrome" || { echo "::error::Chrome for Testing not found"; exit 1; }
+          test -n "$firefox" || { echo "::error::Firefox not found on the runner"; exit 1; }
+          "$chrome" --version
+          "$firefox" --version
+          echo "VAYU_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
+          echo "VAYU_E2E_FIREFOX=$firefox" >> "$GITHUB_ENV"
+      - name: e2e tests
+        run: pnpm --filter @vayu/extension test:e2e
+
+  docker:
+    name: Docker image (labserver stand-in for the daemon)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Skeleton: build-only, not part of the required gate yet.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: docker build
+        run: docker build --file packaging/docker/Dockerfile --tag vayu-labserver:ci .
+      - name: Smoke test
+        run: |
+          docker run --rm vayu-labserver:ci --help
+          test "$(docker run --rm --entrypoint id vayu-labserver:ci -u)" != "0"
+
+  # Single required check for branch protection (matrix job names change).
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [workflows, rust, js]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: All required jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = success ] || exit 1
+          done
