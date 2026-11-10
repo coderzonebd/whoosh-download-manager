@@ -150,9 +150,13 @@ struct HardkillArgs {
     /// Downloads running at once in each round.
     #[arg(long, default_value_t = 3)]
     concurrent: usize,
-    /// Longest wait between a daemon start and its kill, milliseconds.
-    #[arg(long, default_value_t = 800)]
+    /// Longest wait between a daemon start and its kill, milliseconds (keep
+    /// it above the engine's 2 s checkpoint interval).
+    #[arg(long, default_value_t = 4000)]
     max_delay_ms: u64,
+    /// Kills per round at most; then the round finishes undisturbed.
+    #[arg(long, default_value_t = 4)]
+    max_kills_per_round: u32,
     /// Scratch space; use a real disk (default ~/.cache/vayu-bench/work).
     #[arg(long)]
     work_dir: Option<PathBuf>,
@@ -212,6 +216,7 @@ fn cmd_hardkill(a: HardkillArgs) -> Result<()> {
             .unwrap_or_else(|| fetch::cache_dir().join("work")),
         concurrent: a.concurrent,
         max_delay: std::time::Duration::from_millis(a.max_delay_ms),
+        max_kills_per_round: a.max_kills_per_round,
         round_timeout: std::time::Duration::from_secs(600),
         quiet: a.quiet,
     };

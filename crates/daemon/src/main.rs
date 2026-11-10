@@ -15,6 +15,12 @@ use vayu_proto::service::Service;
 
 const EXIT_ALREADY_RUNNING: u8 = 3;
 
+/// See `Args::worker_threads`. Live measurements (Phase 1, 16 connections
+/// over HTTPS on a ~15–35 MB/s link): 1 worker 3.8 CPU-s/GB, 2 workers 5.9,
+/// 8 workers 8.3, aria2c 4.2, at the same throughput. One core decrypts TLS
+/// at about 1 GB/s; raise this only for multi-gigabit links.
+const DEFAULT_WORKER_THREADS: u16 = 1;
+
 /// The vayu download daemon: serves the local JSON-RPC API on 127.0.0.1.
 #[derive(Debug, Parser)]
 #[command(name = "vayu-daemon", version = VERSION)]
@@ -37,6 +43,13 @@ struct Args {
     /// platform's data directory.
     #[arg(long)]
     data_dir: Option<PathBuf>,
+
+    /// Worker threads of the async runtime (1–64). Few is better: idle
+    /// workers parking and waking on every network burst cost more CPU than
+    /// the downloads, and one core decrypts TLS far faster than real links.
+    #[arg(long, env = "VAYU_WORKER_THREADS", default_value_t = DEFAULT_WORKER_THREADS,
+          value_parser = clap::value_parser!(u16).range(1..=64))]
+    worker_threads: u16,
 
     /// Started in the background by `vayu`: no logging to stderr, and SIGHUP
     /// is ignored.
@@ -67,6 +80,7 @@ fn main() -> ExitCode {
         }
     };
     let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(usize::from(args.worker_threads))
         .enable_all()
         .build()
     {

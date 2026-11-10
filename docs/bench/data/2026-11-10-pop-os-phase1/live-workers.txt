@@ -1,0 +1,13 @@
+# Live link: runtime worker threads (engine before write gathering), interleaved 20 s windows
+vayu-c16-w1 29.9 MB/s cpu=2.23 s => 3.77 s/GB targets: 
+vayu-c16-w2 27.5 MB/s cpu=2.65 s => 4.81 s/GB targets: 
+aria2c-x16 30.1 MB/s cpu=2.39 s => 3.98 s/GB 
+vayu-c16-w8 20.0 MB/s cpu=2.83 s => 7.07 s/GB targets: 
+vayu-c16-w1 35.3 MB/s cpu=2.56 s => 3.65 s/GB targets: 
+vayu-c16-w2 25.1 MB/s cpu=2.95 s => 5.90 s/GB targets: 
+aria2c-x16 19.0 MB/s cpu=1.6 s => 4.21 s/GB 
+vayu-c16-w8 14.2 MB/s cpu=2.32 s => 8.28 s/GB targets: 
+vayu-c16-w1 14.5 MB/s cpu=1.53 s => 5.27 s/GB targets: 
+vayu-c16-w2 17.4 MB/s cpu=2.14 s => 6.29 s/GB targets: 
+aria2c-x16 14.4 MB/s cpu=1.4 s => 5.00 s/GB 
+vayu-c16-w8 12.7 MB/s cpu=2.29 s => 9.16 s/GB targets: 

@@ -28,6 +28,9 @@ pub const MIB: u64 = 1 << 20;
 pub enum T {
     /// `http://`, HTTP/1.1.
     H1,
+    /// `https://`, HTTP/1.1 only (`http2: false`), like an HTTP/1.1-only
+    /// HTTPS server.
+    H1s,
     /// `https://`, ALPN h2.
     H2,
     /// `https://` with HTTP/3 advertised; requests go over QUIC once the
@@ -38,7 +41,7 @@ pub enum T {
 impl T {
     pub fn protocol(self) -> Protocol {
         match self {
-            T::H1 => Protocol::Http1,
+            T::H1 | T::H1s => Protocol::Http1,
             T::H2 => Protocol::Http2,
             T::H3 => Protocol::Http3,
         }
@@ -70,6 +73,9 @@ fn make_factory(
     tweak: impl FnOnce(&mut NetConfig),
 ) -> Arc<HttpSourceFactory> {
     let mut cfg = test_config(lab);
+    if t == T::H1s {
+        cfg.http2 = false;
+    }
     tweak(&mut cfg);
     let factory = HttpSourceFactory::new(cfg);
     if t == T::H3 {
@@ -121,7 +127,7 @@ impl Lab {
     pub fn origin_url(&self, path: &str) -> String {
         match self.t {
             T::H1 => format!("http://{}{path}", self.lab.http_addr()),
-            T::H2 | T::H3 => format!(
+            T::H1s | T::H2 | T::H3 => format!(
                 "https://localhost:{}{path}",
                 self.lab.https_addr().unwrap().port()
             ),

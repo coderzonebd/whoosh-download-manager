@@ -1,0 +1,18 @@
+# Live link, before the performance fixes (2026-11-10, pop-os, Wi-Fi)
+# Full 6.6 GB runs, sequential (vayu, wget, aria2c; network speed changed between them):
+RESULT vayu secs=278.153459918 size=6608496187 MBps=23.7 cpu_s=54.77 maxrss_kb=24000 sha=e52cda86af4f5185 name=<6.6 GB mp4 from a public HTTPS server>
+RESULT wget secs=321.159114036 size=6608496187 MBps=20.5 cpu_s=26.57 maxrss_kb=9840 sha=e52cda86af4f5185 name=<6.6 GB mp4 from a public HTTPS server>
+RESULT aria2c-x16 secs=156.795161442 size=6608496187 MBps=42.1 cpu_s=22 maxrss_kb=31348 sha=e52cda86af4f5185 name=<6.6 GB mp4 from a public HTTPS server>
+# Interleaved 20 s windows (NIC rx bytes; daemon CPU for vayu):
+vayu-c16   11.3 MB/s cpu=1.98 s => 9.00 s/GB targets: 
+aria2c-x16 17.0 MB/s cpu=1.54 s => 4.52 s/GB 
+vayu-auto  15.7 MB/s cpu=2.36 s => 7.61 s/GB targets: to=8 to=16 
+vayu-c16   21.0 MB/s cpu=2.95 s => 7.02 s/GB targets: 
+aria2c-x16 24.6 MB/s cpu=2.03 s => 4.14 s/GB 
+vayu-auto  20.8 MB/s cpu=1.96 s => 4.78 s/GB targets: to=8 to=2 to=1 
+vayu-c16   21.4 MB/s cpu=3.03 s => 7.21 s/GB targets: 
+aria2c-x16 21.8 MB/s cpu=1.94 s => 4.51 s/GB 
+vayu-auto  20.3 MB/s cpu=1.80 s => 4.50 s/GB targets: to=8 to=2 to=1 
+vayu-c16   26.8 MB/s cpu=3.80 s => 7.16 s/GB targets: 
+aria2c-x16 18.1 MB/s cpu=1.68 s => 4.66 s/GB 
+vayu-auto  13.8 MB/s cpu=1.83 s => 6.77 s/GB targets: to=8 to=2 to=4 

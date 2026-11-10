@@ -45,8 +45,15 @@ pub struct Options {
     pub work_dir: PathBuf,
     /// Downloads running at once in each round.
     pub concurrent: usize,
-    /// Longest wait between a daemon start and its kill.
+    /// Longest wait between a daemon start and its kill. Keep it above the
+    /// engine's checkpoint interval (2 s), or downloads that can only
+    /// resume from a checkpoint never make progress.
     pub max_delay: Duration,
+    /// Kills per round at most (1..=this, random); then the round's
+    /// downloads finish undisturbed. Downloads that cannot resume by design
+    /// (no ranges, no validators) restart from zero after every kill, so an
+    /// unbounded kill loop would never let them finish.
+    pub max_kills_per_round: u32,
     /// A round that has not finished after this long counts as failed.
     pub round_timeout: Duration,
     pub quiet: bool,
@@ -241,7 +248,9 @@ pub fn run(lab: &Lab, opts: &Options) -> Result<Summary> {
         }
 
         let round_start = Instant::now();
-        loop {
+        let budget = rng.u32(1..=opts.max_kills_per_round.max(1));
+        let mut round_kills = 0;
+        while round_kills < budget && s.kills < opts.kills {
             // Kill early sometimes (start-up, probe, preallocation), else
             // anywhere up to max_delay.
             let delay = if rng.u8(..5) == 0 {
@@ -261,6 +270,7 @@ pub fn run(lab: &Lab, opts: &Options) -> Result<Summary> {
             }
             d.kill()?;
             s.kills += 1;
+            round_kills += 1;
             d = Daemon::start(&paths)?;
             if !opts.quiet && s.kills.is_multiple_of(50) {
                 eprintln!(

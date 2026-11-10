@@ -171,14 +171,15 @@ Windows also `<>:"|?*` → `_`).
 scripts/cargo-slot.sh cargo test -p vayu-net
 ```
 
-About 150 tests, ~20–60 s on the development laptop (debug build, load
+About 170 tests, ~20–60 s on the development laptop (debug build, load
 5–10):
 
 - unit tests (`src/`): Content-Disposition and sanitising, header
   filtering and redirects, `Content-Range`/`Retry-After` parsing, status and
   error classification, `Alt-Svc` parsing and cache, Happy Eyeballs;
 - `tests/scenarios.rs`: every labserver scenario, each run over HTTP/1.1
-  (`http://`), HTTP/2 (`https://`, ALPN) and HTTP/3 (QUIC; trusting
+  (`http://`), HTTP/1.1 over TLS (`http2: false`), HTTP/2 (`https://`,
+  ALPN) and HTTP/3 (QUIC; trusting
   `lab.cert_der()`): clean, concurrency (16 opens on 16 connections),
   keep-alive reuse, lying-ranges, no-range, changing-file, expiring-url,
   rate-limited, conn-cap-2, conn-cap-reset, resets mid-body, stalls, the
@@ -209,17 +210,25 @@ machine starved for minutes can still trip them.
 cargo run --release -p vayu-net --example throughput -- --compare
 ```
 
-Options: `--transports h1,h2,h3 --conns 1,4,16 --file 100m.bin --gb 1
---runs 5 --threads 4 --cache-mb 256 --compare`, and `--attach "<READY line>"`
-to use a server started separately with `--serve` (e.g. to `strace` the
-client alone). The labserver runs in a
-child process (this binary with `--serve`) so `getrusage(RUSAGE_SELF)` is the
-client's CPU alone. Each run moves `--gb` GB: N workers each fetch their Nth
-of the file over and over, one ranged request per pass (as the engine
-does), on connections warmed by an unmeasured pass. `--compare` times
-`wget` and `curl` fetching the same bytes over one HTTP/1.1 connection (CPU
-from `RUSAGE_CHILDREN`). `100m.bin` with a 256 MiB cache keeps the server
-from regenerating content (the machine had ~1.3 GB of RAM free).
+Options: `--transports h1,h1s,h2,h3 --conns 1,4,16 --file 100m.bin --gb 1
+--runs 5 --threads 4 --cache-mb 256 --compare`, `--scenario <name>` (any
+labserver scenario, e.g. `per-conn-throttle`), `--rate <MB/s>` (adds and
+uses a scenario capping every connection at that rate), and
+`--attach "<READY line>"` to use a server started separately with `--serve`
+(e.g. to `strace` the client alone). Transports: `h1` plain HTTP/1.1, `h1s`
+HTTP/1.1 over TLS (`http2: false`, like an HTTP/1.1-only HTTPS server), `h2`,
+`h3`.
+
+The labserver runs in a child process (this binary with `--serve`) so
+`getrusage(RUSAGE_SELF)` is the client's CPU alone. Each run moves `--gb`
+GB: N workers each fetch their Nth of the file over and over, one ranged
+request per pass (as the engine does), on connections warmed by an
+unmeasured pass. `--compare` runs other clients on the same scenario and
+connection counts for `h1`/`h1s` (CPU from `RUSAGE_CHILDREN`): `curl` as N
+processes each fetching its Nth with `-r` to `/dev/null`, `aria2c -x N -s N
+-k 1M` (writing to `/dev/shm`, so its numbers include writing the file),
+and `wget` for one connection. `100m.bin` with a 256 MiB cache keeps the
+server from regenerating content (the machine had ~1.3 GB of RAM free).
 
 ### Results
 
@@ -274,6 +283,61 @@ Reading it:
   HTTPS hosts that advertise `h3`, HTTP/3 therefore costs several times the
   CPU of HTTP/2** (on loopback; unmeasured on real links, where the rates
   are lower). `NetConfig { http3: false, .. }` turns it off.
+
+### Slow arrival over HTTPS (2026-11-10, performance review)
+
+The live report was 7.1 CPU s/GB for the whole daemon against aria2c's 4.5
+at 16 connections on a 12–42 MB/s HTTPS/HTTP/1.1 link, with many ~9 KiB
+reads and many futex calls. Reproduced on loopback with `per-conn-throttle`
+(2 MB/s per connection, so small bursts and many wake-ups), HTTP/1.1 over
+TLS, one 100 MiB pass per run, client runtime 4 worker threads, load 1–5:
+
+| client | 1 conn | 4 conns | 16 conns |
+|---|---:|---:|---:|
+| vayu-net, before | 3.97 | 3.24 | 2.64 |
+| **vayu-net, now** | 4.27 | 3.38 | 2.57 |
+| curl (N processes, `-r`) | 5.20 | 6.34 | 7.76 |
+| wget | 4.91 | | |
+| aria2c `-x N -s N -k 1M` (writes to `/dev/shm`) | 6.91 | 5.07 | 4.09 |
+
+(client CPU seconds per GB; before/now differ only by noise at this rate.)
+vayu-net's read path costs less per GB than every other client, and its
+cost falls as connections are added; the excess seen on the live link is
+not in this layer.
+
+What decides the cost is the **runtime's worker count** (same scenario):
+
+| worker threads | 1 | 2 | 4 | 8 |
+|---|---:|---:|---:|---:|
+| 16 connections, CPU s/GB | 1.82 | 2.24 | 2.62 | 2.74 |
+| 4 connections, CPU s/GB | 2.39 | 2.83 | 3.15 | 3.26 |
+| 16 connections, futex calls per 0.2 GB | 35 | 9,926 | 12,916 | 17,019 |
+
+Under load (average 4–14) 8 workers reached 6.4 CPU s/GB against 2.4 for
+one: every burst that arrives wakes a parked worker. The futexes are the
+runtime parking and unparking idle workers, not this crate. A daemon whose
+downloads run on a runtime with few workers (1–2; one core decrypts TLS at
+~1 GB/s, far above real links) saves most of it.
+
+Tried and measured, then **not kept**:
+
+- *Large ciphertext reads under rustls* (rustls asks the socket for 4 KiB
+  at a time): a 128 KiB read-ahead buffer cut `recvfrom` calls 5× (95,786 →
+  19,028 per 0.3 GB at 16 connections) but **raised** system time in five
+  interleaved rounds out of five (0.22–0.36 s vs 0.15–0.17 s per 0.3 GB),
+  probably from the extra window-update ACKs a fully drained socket sends.
+- *Coalescing decrypted records into larger chunks*: chunks were already
+  one arrival burst each (~20 KB here; up to 1 MiB on fast links), never
+  one 16 KiB record; no change in chunks, syscalls or CPU.
+- *A fixed 128 KiB hyper read buffer* instead of the adaptive one: no
+  measurable change.
+- `SO_RCVLOWAT` was not tried: the tail of a response below the watermark
+  would stall a keep-alive connection.
+
+Kept: **AES-128-GCM offered before AES-256-GCM** (browsers' order; same
+suites): on a fast TLS stream (`clean`, one connection, one thread) the
+median fell from ~1.03 to ~0.90 CPU s/GB in four interleaved rounds; no
+change at 2 MB/s, where decryption is not the main cost.
 
 ## Not covered
 
