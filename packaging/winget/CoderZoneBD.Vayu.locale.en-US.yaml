@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+# TEMPLATE: names and URLs are placeholders (see README.md).
+PackageIdentifier: CoderZoneBD.Vayu
+PackageVersion: 0.0.1
+PackageLocale: en-US
+Publisher: CoderZone BD
+PublisherUrl: https://github.com/coderzonebd
+PublisherSupportUrl: https://github.com/coderzonebd/vayu/issues
+PackageName: Vayu
+PackageUrl: https://github.com/coderzonebd/vayu
+License: GPL-3.0-or-later
+LicenseUrl: https://github.com/coderzonebd/vayu/blob/main/LICENSE.md
+Copyright: Copyright © 2026 CoderZone BD and contributors
+ShortDescription: Fast, open-source download manager
+Description: >-
+  A free download manager built on one Rust engine: many connections per file,
+  instant resume after a crash or power cut, and a browser extension that hands
+  downloads over with their cookies and referrer.
+Moniker: vayu
+Tags:
+  - download-manager
+  - downloader
+  - accelerator
+  - open-source
+ReleaseNotesUrl: https://github.com/coderzonebd/vayu/releases/tag/v0.0.1
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0

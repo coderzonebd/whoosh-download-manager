@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest something new or better.
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would it solve?
+      description: Describe the situation and why the current behaviour falls short.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and prior art
+      description: Workarounds you use today, or how other tools handle it (describe behaviour; do not paste their code or artwork).
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Desktop app
+        - Browser extension
+        - Engine / daemon
+        - Mobile
+        - Packaging / distribution
+        - Other / not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and the master plan (MASTER-PLAN.md §3).
+          required: true

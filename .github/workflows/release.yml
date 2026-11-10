@@ -1,0 +1,582 @@
+# Release: builds every artifact for a v* tag and attaches them to a DRAFT
+# GitHub release. Nothing is ever published automatically; a maintainer
+# reviews the draft and presses "Publish". See docs/release.md.
+#
+# workflow_dispatch = dry run: builds (and signs, when configured) everything
+# and keeps the artifacts on the run, without creating a release.
+#
+# Signing steps switch on only when their secrets exist, so the pipeline
+# works unsigned from the first push.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  NODE_VERSION: "24"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  meta:
+    name: Version check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      windows-bundles: ${{ steps.version.outputs.windows-bundles }}
+      source-date-epoch: ${{ steps.version.outputs.source-date-epoch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag and manifest versions agree
+        id: version
+        run: |
+          set -euo pipefail
+          cargo_v=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          tauri_v=$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)
+          desktop_v=$(jq -r .version apps/desktop/package.json)
+          extension_v=$(jq -r .version apps/extension/package.json)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=${GITHUB_REF_NAME#v}; else version=$tauri_v; fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::'$version' is not a release version (x.y.z or x.y.z-pre)"; exit 1
+          fi
+          bad=0
+          for pair in "Cargo.toml=$cargo_v" "apps/desktop/src-tauri/tauri.conf.json=$tauri_v" \
+                      "apps/desktop/package.json=$desktop_v" "apps/extension/package.json=$extension_v"; do
+            if [ "${pair#*=}" != "$version" ]; then
+              echo "::error file=${pair%%=*}::version is ${pair#*=}, the tag says $version"; bad=1
+            fi
+          done
+          [ "$bad" = 0 ]
+          # WiX (MSI) rejects pre-release versions, so pre-releases ship NSIS only.
+          case "$version" in
+            *-*) prerelease=true;  windows_bundles=nsis ;;
+            *)   prerelease=false; windows_bundles=nsis,msi ;;
+          esac
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "windows-bundles=$windows_bundles"
+            echo "source-date-epoch=$(git log -1 --format=%ct)"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Building $version (prerelease: $prerelease)" >> "$GITHUB_STEP_SUMMARY"
+
+  desktop:
+    name: Desktop (${{ matrix.platform }})
+    needs: meta
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            # Oldest supported glibc for the AppImage / .deb / .rpm.
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb,rpm
+          - platform: macos-universal
+            os: macos-15
+            target: universal-apple-darwin
+            bundles: app,dmg
+          - platform: windows-x64
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: "" # from meta: nsis,msi (nsis only for pre-releases)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
+      TARGET: ${{ matrix.target }}
+      BUNDLES: ${{ matrix.bundles || needs.meta.outputs.windows-bundles }}
+      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
+      APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+      UPDATER_KEY_PRESENT: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "false" # release builds start clean
+      - name: Decide on updater artifacts
+        # The Tauri CLI refuses createUpdaterArtifacts without plugins.updater
+        # in tauri.conf.json, so both the key and the configured public key
+        # must exist (the app has no updater plugin yet).
+        run: |
+          has_pubkey=$(node -p "Boolean(require('./apps/desktop/src-tauri/tauri.conf.json').plugins?.updater?.pubkey)")
+          if [ "$UPDATER_KEY_PRESENT" = true ] && [ "$has_pubkey" = true ]; then
+            echo "UPDATER_ARTIFACTS=true" >> "$GITHUB_ENV"
+          else
+            if [ "$UPDATER_KEY_PRESENT" = true ]; then
+              echo "::warning::TAURI_SIGNING_PRIVATE_KEY is set but tauri.conf.json has no plugins.updater.pubkey; no updater artifacts."
+            fi
+            echo "UPDATER_ARTIFACTS=false" >> "$GITHUB_ENV"
+          fi
+      - name: Rust toolchain (rust-toolchain.toml) and targets
+        run: |
+          rustup toolchain install
+          if [ "$TARGET" = universal-apple-darwin ]; then
+            rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          else
+            rustup target add "$TARGET"
+          fi
+          rustc --version
+          # Strip build-machine paths from the binaries (reproducibility).
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/vayu --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf file
+
+      # ---- macOS: Developer ID + notarization (Tauri CLI signs the .app) ----
+      - name: Configure Developer ID signing and notarization
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: .github/scripts/apple-signing-env.sh
+
+      # ---- Linux and macOS: one tauri build ----
+      - name: Build and bundle
+        if: runner.os != 'Windows'
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          args=(--ci --target "$TARGET" --bundles "$BUNDLES")
+          if [ "$UPDATER_ARTIFACTS" = true ]; then
+            args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          fi
+          pnpm tauri build "${args[@]}"
+      - name: Sign and notarize the .dmg
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_ENABLED == 'true'
+        run: |
+          for dmg in target/"$TARGET"/release/bundle/dmg/*.dmg; do
+            .github/scripts/macos-sign.sh "$dmg"
+            .github/scripts/macos-notarize.sh "$dmg"
+          done
+
+      # ---- Windows: build, sign the exe, bundle, sign the installers ----
+      - name: Build the executable
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        run: pnpm tauri build --ci --target "$TARGET" --no-bundle
+      - name: Stage the executable for signing
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p staging/exe
+          cp "target/$TARGET/release/vayu-desktop.exe" staging/exe/
+      - name: Upload the unsigned executable
+        id: unsigned-exe
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signpath-desktop-exe
+          path: staging/exe/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign the executable (SignPath)
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed/exe
+      - name: Use the signed executable
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        run: cp signed/exe/vayu-desktop.exe "target/$TARGET/release/vayu-desktop.exe"
+      - name: Bundle the installers
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        # --no-binary-patching: patching would rewrite (and unsign) the exe.
+        run: pnpm tauri bundle --ci --target "$TARGET" --bundles "$BUNDLES" --no-binary-patching
+      - name: Stage the installers for signing
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p staging/installers
+          cp target/"$TARGET"/release/bundle/nsis/*-setup.exe staging/installers/
+          if [ -d target/"$TARGET"/release/bundle/msi ]; then
+            cp target/"$TARGET"/release/bundle/msi/*.msi staging/installers/
+          fi
+      - name: Upload the unsigned installers
+        id: unsigned-installers
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signpath-desktop-installers
+          path: staging/installers/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign the installers (SignPath)
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed/installers
+      - name: Use the signed installers
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        run: cp signed/installers/* staging/installers/
+      - name: Updater signatures for the installers
+        if: runner.os == 'Windows' && env.UPDATER_ARTIFACTS == 'true'
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for f in ../../staging/installers/*.exe ../../staging/installers/*.msi; do
+            [ -e "$f" ] || continue
+            pnpm tauri signer sign --app-version "$VERSION" "$f"
+          done
+
+      # ---- All platforms: collect ----
+      - name: Collect release assets
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          bundle="target/$TARGET/release/bundle"
+          case "$RUNNER_OS" in
+            Linux)
+              cp "$bundle"/appimage/*.AppImage* "$bundle"/deb/*.deb* "$bundle"/rpm/*.rpm* out/ ;;
+            macOS)
+              cp "$bundle"/dmg/*.dmg out/
+              # The updater archive is named after the app only; add version and arch.
+              for f in "$bundle"/macos/*.app.tar.gz*; do
+                [ -e "$f" ] || continue
+                name=$(basename "$f"); cp "$f" "out/${name/.app.tar.gz/_${VERSION}_universal.app.tar.gz}"
+              done ;;
+            Windows)
+              cp staging/installers/* out/
+              # Portable build: the (signed) executable alone; needs the WebView2 runtime.
+              7z a -tzip -mx=9 "out/Vayu_${VERSION}_x64_portable.zip" "./target/$TARGET/release/vayu-desktop.exe" >/dev/null ;;
+          esac
+          ls -l out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-desktop-${{ matrix.platform }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  binaries:
+    name: Binaries (${{ matrix.platform }})
+    needs: meta
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            os: ubuntu-22.04
+            targets: x86_64-unknown-linux-gnu
+          - platform: linux-arm64
+            os: ubuntu-22.04-arm
+            targets: aarch64-unknown-linux-gnu
+          - platform: macos-universal
+            os: macos-15
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+          - platform: windows-x64
+            os: windows-2025
+            targets: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
+      TARGETS: ${{ matrix.targets }}
+      PLATFORM: ${{ matrix.platform }}
+      BINARIES: vayu-nmhost vayu-labserver
+      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
+      APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain (rust-toolchain.toml) and targets
+        run: |
+          rustup toolchain install
+          # shellcheck disable=SC2086 # TARGETS is a list
+          rustup target add $TARGETS
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/vayu --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          for t in $TARGETS; do
+            cargo build --release --locked --target "$t" -p vayu-nmhost -p vayu-labserver
+          done
+      - name: Stage the binaries
+        run: |
+          set -euo pipefail
+          mkdir -p staging/bin
+          for b in $BINARIES; do
+            case "$PLATFORM" in
+              macos-universal)
+                lipo -create -output "staging/bin/$b" \
+                  "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b" ;;
+              windows-*) cp "target/$TARGETS/release/$b.exe" staging/bin/ ;;
+              *) cp "target/$TARGETS/release/$b" staging/bin/ ;;
+            esac
+          done
+          ls -l staging/bin
+
+      - name: Configure Developer ID signing and notarization
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_ENABLED == 'true'
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: .github/scripts/apple-signing-env.sh
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_ENABLED == 'true'
+        run: |
+          .github/scripts/macos-sign.sh staging/bin/*
+          ditto -c -k staging/bin "$RUNNER_TEMP/notarize.zip"
+          .github/scripts/macos-notarize.sh "$RUNNER_TEMP/notarize.zip"
+
+      - name: Upload the unsigned binaries
+        id: unsigned-bin
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signpath-binaries
+          path: staging/bin/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Sign (SignPath)
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned-bin.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed/bin
+      - name: Use the signed binaries
+        if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
+        run: cp signed/bin/* staging/bin/
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # GNU tar for --sort/--owner/--mtime (macOS runners ship it as gtar).
+          tar=tar; if command -v gtar > /dev/null; then tar=gtar; fi
+          for b in $BINARIES; do
+            dir="$b-$VERSION-$PLATFORM"
+            mkdir -p "pkg/$dir"
+            cp staging/bin/"$b"* LICENSE-APACHE "pkg/$dir/"
+            cp "crates/${b#vayu-}/README.md" "pkg/$dir/README.md"
+            if [ "$RUNNER_OS" = Windows ]; then
+              (cd pkg && 7z a -tzip -mx=9 "../out/$dir.zip" "$dir" >/dev/null)
+            else
+              # Deterministic tarball: sorted entries, fixed owner and mtime.
+              "$tar" --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
+                -C pkg -cf - "$dir" | gzip -n -9 > "out/$dir.tar.gz"
+            fi
+          done
+          ls -l out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-binaries-${{ matrix.platform }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  extension:
+    name: Extension (store builds)
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "false"
+      - name: Build the store zips (no development key)
+        working-directory: apps/extension
+        run: node scripts/build.mjs --store --zip
+      - name: Store manifests carry no key
+        run: |
+          for t in chromium firefox; do
+            jq -e 'has("key") | not' "apps/extension/dist/$t/manifest.json" > /dev/null \
+              || { echo "::error::dist/$t/manifest.json still has a key"; exit 1; }
+          done
+          mkdir -p out
+          cp apps/extension/dist/*-store.zip out/
+          ls -l out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-extension
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  sbom:
+    name: SBOM (CycloneDX)
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-cyclonedx@0.5.9
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "false"
+      - name: Rust SBOMs (one per workspace crate, all targets)
+        run: |
+          set -euo pipefail
+          cargo cyclonedx --format json --spec-version 1.5 --target all
+          mkdir -p out
+          for f in $(git ls-files -o --exclude-standard -- '*.cdx.json'); do
+            crate=$(basename "$f" .cdx.json)
+            mv "$f" "out/$crate-$VERSION.cargo.cdx.json"
+          done
+      - name: npm SBOMs (shipped apps, production dependencies)
+        run: |
+          pnpm --filter @vayu/desktop --filter @vayu/extension sbom \
+            --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --prod \
+            --split --out "out/%s-%v.npm.cdx.json"
+          ls -l out
+          test "$(find out -name '*.cdx.json' | wc -l)" -ge 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-sbom
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Draft GitHub release
+    needs: [meta, desktop, binaries, extension, sbom]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # create the draft release and upload assets
+      id-token: write # Sigstore certificate for the provenance attestation
+      attestations: write # store the attestation
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+      SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Source archive
+        run: |
+          git archive --format=tar --prefix="vayu-$VERSION/" "$GITHUB_SHA" \
+            | gzip -n -9 > "dist/vayu-$VERSION-source.tar.gz"
+      - name: Updater manifest (latest.json)
+        run: |
+          node .github/scripts/updater-manifest.mjs dist "$VERSION" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+      - name: SHA256SUMS
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort \
+            | xargs -d '\n' sha256sum -- > SHA256SUMS
+          cat SHA256SUMS
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --json isDraft --jq .isDraft > is_draft 2>/dev/null; then
+            if [ "$(cat is_draft)" != true ]; then
+              echo "::error::Release $TAG is already published; refusing to change it."; exit 1
+            fi
+            gh release upload "$TAG" dist/* --clobber
+          else
+            notes="$RUNNER_TEMP/notes.md"
+            {
+              echo "## Verify your download"
+              echo
+              echo '```bash'
+              echo "sha256sum --check --ignore-missing SHA256SUMS"
+              echo "gh attestation verify <file> --repo $GITHUB_REPOSITORY"
+              echo '```'
+              echo
+              echo "Details: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/release.md#verifying-a-download"
+              echo
+            } > "$notes"
+            flags=(--draft --verify-tag --title "vayu $VERSION" --generate-notes --notes-file "$notes")
+            if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+            gh release create "$TAG" "${flags[@]}" dist/*
+          fi
+          {
+            echo "### Draft release $TAG"
+            echo "Review the assets, then publish it by hand:"
+            echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases"
+          } >> "$GITHUB_STEP_SUMMARY"

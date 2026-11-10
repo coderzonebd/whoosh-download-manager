@@ -1,0 +1,26 @@
+# CODEOWNERS (placeholder)
+#
+# Owners are requested for review automatically, and can be made required with
+# branch protection ("Require review from Code Owners"). Every line is
+# commented out until the GitHub organisation and teams exist: an owner that
+# does not resolve makes GitHub flag the whole file as invalid.
+#
+# Later rules win. Suggested layout (replace the team names):
+#
+# *                                   @coderzonebd/vayu-maintainers
+#
+# # Engine, protocol and the API contract (changes in three places together)
+# /crates/                            @coderzonebd/vayu-engine
+# /crates/proto/                      @coderzonebd/vayu-engine @coderzonebd/vayu-ui
+# /packages/api-client/src/types.ts   @coderzonebd/vayu-engine @coderzonebd/vayu-ui
+# /docs/api/                          @coderzonebd/vayu-engine @coderzonebd/vayu-ui
+#
+# # Applications and shared UI
+# /apps/                              @coderzonebd/vayu-ui
+# /packages/                          @coderzonebd/vayu-ui
+#
+# # Release engineering: CI, signing, packaging
+# /.github/                           @coderzonebd/vayu-release
+# /packaging/                         @coderzonebd/vayu-release
+# /docs/release.md                    @coderzonebd/vayu-release
+# /SECURITY.md                        @coderzonebd/vayu-maintainers

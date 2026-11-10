@@ -30,6 +30,8 @@
     "active": true,
     "targets": "all",
     "category": "Utility",
+    "publisher": "CoderZone BD",
+    "copyright": "Copyright © 2026 CoderZone BD and contributors",
     "shortDescription": "Fast, open-source download manager",
     "license": "GPL-3.0-or-later",
     "icon": [
@@ -38,6 +40,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-"
+    }
   }
 }

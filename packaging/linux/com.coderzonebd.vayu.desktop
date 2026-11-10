@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Vayu
+GenericName=Download Manager
+Comment=Fast, open-source download manager
+Exec=vayu-desktop
+Icon=com.coderzonebd.vayu
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;downloader;accelerator;resume;
+StartupNotify=true
