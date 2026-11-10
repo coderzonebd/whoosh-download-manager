@@ -115,8 +115,10 @@ pub struct Tuning {
     /// Each connection gathers contiguous bytes and hands them to storage
     /// in one `write_at` of up to this many bytes (0 = one write per network
     /// chunk), or sooner once the oldest gathered byte waited
-    /// `write_coalesce_delay`. One write per ~10 KiB network chunk costs a
-    /// writer-thread wake-up and a `pwrite` each; gathering cuts both.
+    /// `write_coalesce_delay` (a timer: also when the source goes quiet),
+    /// at the end of a range, and before a connection leaves. One write per
+    /// ~10 KiB network chunk costs a writer-thread wake-up and a `pwrite`
+    /// each; gathering cuts both.
     pub write_coalesce: usize,
     pub write_coalesce_delay: Duration,
     /// Durability cadence: `Storage::flush` then `Journal::commit` at least

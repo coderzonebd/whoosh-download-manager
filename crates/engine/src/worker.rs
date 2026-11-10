@@ -2,9 +2,15 @@
 //!
 //! The data path per chunk is: one atomic add for the byte counter, one
 //! clock read, an optional speed-limit reservation, the segment claim (a
-//! short uncontended lock), a zero-copy `Bytes` slice and the storage
-//! write. No allocation of our own; the `BoxFuture` from `write_at` is the
-//! storage contract's.
+//! short uncontended lock) and a copy into the connection's gather buffer.
+//! Gathered bytes go to storage in one `write_at` per `write_coalesce`
+//! (256 KiB) — or sooner: once the oldest of them has waited
+//! `write_coalesce_delay` (a timer, so a connection that goes quiet still
+//! writes them), at the end of the range, and before the connection leaves.
+//! A chunk at least `write_coalesce` long is written as is, without a copy.
+//! The only allocations are one gather buffer per write (reused once
+//! storage dropped the previous one) and the `BoxFuture` the `write_at`
+//! contract returns.
 
 use std::io;
 use std::sync::Arc;
@@ -160,12 +166,24 @@ async fn pump(job: Job) -> Exit {
         }};
     }
     loop {
-        // The stream is polled first: when data is ready, the cancellation
-        // future is never registered.
-        let next = tokio::select! {
-            biased;
-            c = stream.next() => c,
-            _ = cancel.cancelled() => leave!(Exit::Cancelled),
+        // The stream is polled first: when data is ready, neither the
+        // cancellation future nor the gather timer is registered.
+        let next = loop {
+            let due = gather.since.map(|t| t + coalesce_delay);
+            tokio::select! {
+                biased;
+                c = stream.next() => break c,
+                _ = cancel.cancelled() => leave!(Exit::Cancelled),
+                // Gathered bytes waited long enough while the source is
+                // quiet: write them now, keep waiting for data.
+                _ = tokio::time::sleep_until(due.unwrap_or_else(Instant::now)), if due.is_some() => {
+                    match gather.flush(&seg, &*storage).await {
+                        Ok(true) => return Exit::Finished,
+                        Ok(false) => {}
+                        Err(e) => return Exit::Storage(e),
+                    }
+                }
+            }
         };
         let chunk = match next {
             Some(Ok(c)) => c,
@@ -211,11 +229,15 @@ async fn pump(job: Job) -> Exit {
                 last,
             } => {
                 if gather.claims > 0 && offset != gather.end() {
-                    // Not contiguous (never expected): write what we have.
+                    // Not contiguous (never expected): write what we have,
+                    // then handle this claim as usual. The range cannot be
+                    // complete while this claim is unwritten.
                     match gather.flush(&seg, &*storage).await {
-                        Ok(true) => return Exit::Finished,
-                        Ok(false) => {}
-                        Err(e) => return Exit::Storage(e),
+                        Ok(done) => debug_assert!(!done, "range complete before a later claim"),
+                        Err(e) => {
+                            seg.abort_writes(1); // this claim, not gathered yet
+                            return Exit::Storage(e);
+                        }
                     }
                 }
                 let n = to - from;
