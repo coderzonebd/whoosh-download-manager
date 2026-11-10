@@ -1,5 +1,7 @@
-//! Write gathering: one `write_at` per ~512 KiB per connection instead of
-//! one per network chunk, without changing what counts as written.
+//! Write gathering: one `write_at` per `Tuning::write_coalesce` (256 KiB)
+//! per connection instead of one per network chunk, without changing what
+//! counts as written, and never holding gathered bytes longer than
+//! `write_coalesce_delay`, even when the source goes quiet.
 
 mod common;
 
@@ -136,7 +138,6 @@ async fn network_chunks_are_gathered_into_few_writes() {
     );
     let writes = r.storage.counts.writes.load(Ordering::Relaxed);
     let chunks = size / (16 * KIB);
-    // 16 MiB / 512 KiB = 32 full writes, plus one partial per range end.
     let gather = Tuning::default().write_coalesce as u64;
     // Full gathers, plus one partial write per range end.
     assert!(
@@ -173,8 +174,8 @@ async fn a_slow_connection_still_writes_within_the_delay() {
         ..Tuning::default()
     })
     .await;
-    // 64 KiB/s in 16 KiB chunks: a chunk every 250 ms, far below 512 KiB
-    // per write; the 200 ms delay must still write them out promptly.
+    // 64 KiB/s in 16 KiB chunks: a chunk every 250 ms, far below one gather
+    // (256 KiB) per write; the 200 ms delay must still write them promptly.
     let size = MIB;
     let data = content(size, 3);
     let src = small_chunks(data.clone(), 64 * KIB);
@@ -226,6 +227,52 @@ async fn gathered_bytes_survive_a_hedge_takeover_and_a_pause() {
     };
     r.engine.pause(ids.clone()).await.unwrap();
     r.engine.resume(ids).await.unwrap();
+    finish(&r.engine, &id, LONG).await;
+    assert_same(
+        &r.storage
+            .inner
+            .finished(&Path::new(DIR).join("data.bin"))
+            .unwrap(),
+        &data,
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn gathered_bytes_are_written_when_the_source_goes_quiet() {
+    // One connection, no stall handling: only the gather timer can write
+    // what arrived before the source went silent.
+    let r = rig(Tuning {
+        fixed_connections: Some(1),
+        stall_min: Duration::from_secs(3600),
+        first_byte_timeout: Duration::from_secs(3600),
+        ..Tuning::default()
+    })
+    .await;
+    let size = 4 * MIB;
+    let data = content(size, 5);
+    let src = Arc::new(
+        FaultSource::new(data.clone())
+            .cfg(|c| {
+                c.chunk = 16 * KIB as usize;
+                c.per_conn_bps = Some(8 * MIB);
+            })
+            // 64 KiB (well under one gather), then a minute of silence.
+            .script(|n, _| ReqPlan {
+                stall: (n == 1).then_some((64 * KIB, Duration::from_secs(60))),
+                ..ReqPlan::default()
+            }),
+    );
+    r.sources.insert(URL, src.clone());
+    let id = r.engine.add(add_params(URL)).await.unwrap().id;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(src.served(), 64 * KIB, "the source went quiet");
+    let d = detail(&r.engine, &id).await;
+    assert_eq!(
+        d.summary.downloaded_bytes,
+        64 * KIB,
+        "gathered bytes written within the delay, not held through the silence"
+    );
+    assert_eq!(r.storage.counts.writes.load(Ordering::Relaxed), 1);
     finish(&r.engine, &id, LONG).await;
     assert_same(
         &r.storage

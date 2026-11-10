@@ -45,7 +45,10 @@ impl EngineConfig {
 /// see the crate README for what each one trades off.
 #[derive(Debug, Clone)]
 pub struct Tuning {
-    /// Connections a download starts with when its host has no profile.
+    /// Connections a download starts with when its host has no profile
+    /// (8, as IDM: on links where connections help, starting there instead
+    /// of at 4 gave 3–8 % more throughput in the link model; on a shared
+    /// bottleneck it only means coming down later).
     pub initial_connections: u16,
     /// Pin every download to this many connections and disable learning
     /// (the bench's 1/4/16-connection runs). Still capped by
@@ -75,18 +78,22 @@ pub struct Tuning {
     /// per sample (slow start).
     pub tune_warm_rtts: f64,
     pub tune_warm_rise: f64,
-    /// A step is decided at once only when its effect clears `tune_z`
-    /// standard errors; otherwise the base count is measured again (A-B-A)
-    /// so drift cancels out.
+    /// Base and trial windows alternate (A-B-A-B-A …, so drift cancels)
+    /// until the comparison clears `tune_z` standard errors, for at most
+    /// `tune_rounds` trial windows. A climb needs its lower confidence bound
+    /// (and two paired comparisons, unless the gain is obvious) above
+    /// `climb_gain`; after the last round an unclear climb is not taken and
+    /// an unclear step down is taken if its estimate holds `keep_ratio`.
     pub tune_z: f64,
-    /// After settling, try one step up again this often (doubling, up to
-    /// 5 min, while it does not pay).
+    pub tune_rounds: u32,
+    /// After settling, try one step again this often, alternately up and
+    /// down (doubling, up to 5 min, while that changes nothing).
     pub tune_reprobe: Duration,
-    /// A larger connection count is kept only if it raises throughput by at
-    /// least this fraction.
+    /// A doubling is kept when its gain's lower confidence bound is at
+    /// least this (4 %: with cheap connections, clear small gains count).
     pub climb_gain: f64,
-    /// A smaller connection count is kept if it delivers at least this
-    /// fraction of the best throughput seen.
+    /// A halving is kept when it delivers at least this fraction of the
+    /// count above it (97 %; between the two bars the count stays put).
     pub keep_ratio: f64,
     /// Time constant of the per-connection throughput EWMA.
     pub ewma_tau: Duration,
@@ -115,8 +122,10 @@ pub struct Tuning {
     /// Each connection gathers contiguous bytes and hands them to storage
     /// in one `write_at` of up to this many bytes (0 = one write per network
     /// chunk), or sooner once the oldest gathered byte waited
-    /// `write_coalesce_delay`. One write per ~10 KiB network chunk costs a
-    /// writer-thread wake-up and a `pwrite` each; gathering cuts both.
+    /// `write_coalesce_delay` (a timer: also when the source goes quiet),
+    /// at the end of a range, and before a connection leaves. One write per
+    /// ~10 KiB network chunk costs a writer-thread wake-up and a `pwrite`
+    /// each; gathering cuts both.
     pub write_coalesce: usize,
     pub write_coalesce_delay: Duration,
     /// Durability cadence: `Storage::flush` then `Journal::commit` at least
@@ -151,7 +160,7 @@ pub struct Tuning {
 impl Default for Tuning {
     fn default() -> Self {
         Self {
-            initial_connections: 4,
+            initial_connections: 8,
             fixed_connections: None,
             min_split: MIB,
             split_align: 64 * 1024,
@@ -164,9 +173,10 @@ impl Default for Tuning {
             tune_warm_rtts: 4.0,
             tune_warm_rise: 0.10,
             tune_z: 2.0,
+            tune_rounds: 4,
             tune_reprobe: Duration::from_secs(30),
-            climb_gain: 0.15,
-            keep_ratio: 0.93,
+            climb_gain: 0.04,
+            keep_ratio: 0.97,
             ewma_tau: Duration::from_millis(400),
             stall_min: Duration::from_millis(250),
             stall_factor: 12.0,

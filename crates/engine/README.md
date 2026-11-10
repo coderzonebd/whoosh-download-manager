@@ -75,17 +75,21 @@ to first byte, and the time of its last chunk.
   still ends in `failed` instead of hanging.
 
 **Learned connection count (#3).** Start at the host's
-`HostProfile::best_connections`, else `initial_connections` (4), capped by
-`Settings::max_connections_per_download` and the host's
-`max_ok_connections`. Measure the base count, try 2n and keep it while it
-adds ≥ `climb_gain` (15 %); if the very first doubling does not pay, halve
-while the throughput stays ≥ `keep_ratio` (93 %) of the best seen, so it
-settles at 1–2 connections when more do not help (loopback, a shared
-bottleneck) and climbs to the cap under per-connection limits. After
-settling it re-probes one step up every `tune_reprobe` (30 s, doubling up to
-5 min while that does not pay), because conditions change during a long
-download. Built for real links, where a new connection needs several round
-trips of slow start and throughput swings ±30 % second to second:
+`HostProfile::best_connections`, else `initial_connections` (8, as IDM),
+capped by `Settings::max_connections_per_download` and the host's
+`max_ok_connections`. Measure the base count, try 2n and keep it when the
+gain is *clearly* at least `climb_gain` (4 %: per-connection CPU is small
+now, so small real gains count); while doubling pays, keep doubling. If the
+very first doubling added about nothing (≤ 2 %), halve while the lower
+count still delivers `keep_ratio` (97 %) of the one above it, so it comes
+down to 1–2 connections when more do not help (loopback, a shared
+bottleneck). After a small but real gain it does not walk down (fewer would
+be slower; the old "8, 4, 2, 4" on the live link). After settling it
+re-probes one step every `tune_reprobe` (30 s, doubling up to 5 min while
+nothing changes), alternately up and down: conditions change during a long
+download, and a step that noise faked is taken back. Built for real links,
+where a new connection needs several round trips of slow start and
+throughput swings ±30 % second to second:
 - *windows sized from the run*: at least `max(tune_window, tune_rtt_windows
   × median TTFB)` (200 ms on loopback, ≈ 1–4 s on the internet), extended
   up to `tune_window_max` (4 s) until the relative standard error of its
@@ -93,21 +97,33 @@ trips of slow start and throughput swings ±30 % second to second:
 - *a warm-up* after every change: every connection streaming, then at least
   `max(tune_window / 2, 4 × TTFB)`, and longer while throughput still rises
   > 10 % per sample (slow start);
-- *decisions beyond noise*: a step is taken or refused at once only when the
-  effect clears 2 × the windows' combined relative standard error;
-  otherwise the base count is measured again and the trial is judged
-  against the mean of the base windows before and after it (A-B-A, which
-  cancels drift); a confirmed step down must also hold up beyond one
-  standard error, so noise alone never takes the count below the best one.
+- *paired, alternating comparisons*: after the first base and trial windows
+  they alternate (B T B T B …, up to `tune_rounds` = 4 trials); each trial
+  window is compared with the mean of the base windows on either side of
+  it, which cancels drift, and the error of the mean ratio is the larger of
+  the windows' own and the spread of the ratios. A climb is taken when its
+  lower confidence bound (2 standard errors) clears 4 % after two such
+  pairs, or at once for an obvious gain (≥ 25 % beyond the noise); an
+  unclear climb after the last round is not taken. A step down always needs
+  alternating windows and is taken when it clearly holds 97 %, or after the
+  last round when its estimate does.
 
-In a link model with the reported conditions (3.8 MB/s per connection,
-±30 % noise, ±25 % drift, 300 ms TTFB, slow start; 100 seeds, 180 s), the
-final count was: per-connection link 16 in 100 % (single 200 ms windows:
-21 % stuck at 4); a link that 8 connections saturate: 8 in 80 %, 16 in
-20 %, never below 8 (single windows: 21 % stuck at 4); a shared 20 MB/s
-bottleneck: 2 in 94 %, 1 in 4 %, 4 in 2 % (single windows: anywhere from 1
-to 16). `cargo test -p vayu-engine --lib outcome_statistics -- --ignored
---nocapture` prints these. `Throttled` (429/503,
+In a link model with the reported conditions (±30 % noise, ±25 % drift over
+40 s, 300 ms TTFB, slow start with a 0.8 s time constant; 100 seeds, 180 s,
+`cargo test -p vayu-engine --lib outcome_statistics -- --ignored
+--nocapture`), final accepted count and mean throughput:
+
+| link | single 200 ms windows, 15 %, start 4 (the old behaviour) | this tuner, start 4 | this tuner, start 8 (default) |
+|---|---|---|---|
+| 3.8 MB/s per connection | 4: 44 %, 16: 56 % — 41.2 MB/s | 16: 100 % — 56.3 MB/s | 16: 100 % — 58.2 MB/s |
+| saturated by 8 connections (~30 MB/s) | 4: 45 %, 16: 55 % — 23.7 | 8: 100 % — 29.4 | 8: 99 %, 16: 1 % — 29.7 |
+| +8 % per doubling up to 16 (the live link) | 1–2: 30 %, 4: 62 %, 8: 8 % — 23.2 | 4: 18 %, 8: 81 %, 16: 1 % — 25.0 | 8: 18 %, 16: 82 % — 26.8 (ideal 27.2) |
+| shared 20 MB/s | 1: 38 %, 2: 16 %, 4: 39 %, 8: 7 % | 2: 92 %, 1/4/8: 8 % | 4: 92 %, 1/8/16: 8 % |
+| clean loopback | 1: 100 % | 1: 100 % | 1: 100 % |
+
+Starting at 8 is worth 3–8 % where connections help; on a shared bottleneck
+it costs only connections, not speed, and the count comes down (4 or
+fewer in 93 % of runs after 3 min). `Throttled` (429/503,
 refused under load), or two pre-first-byte failures within 2 s while others
 work, set a ceiling at the number of accepted connections (halving at most
 once per backoff round when none work) and settle. Learning pauses while a
@@ -166,8 +182,8 @@ cost the store a writer-thread wake-up and a `pwrite` each (in the daemon:
 58k futex calls for 426 MB). Each connection therefore gathers the
 contiguous bytes it claimed into one buffer and hands them to storage in a
 single `write_at` of up to `write_coalesce` (256 KiB), or sooner when the
-oldest gathered byte has waited `write_coalesce_delay` (200 ms), or when its
-range ends. Gathered bytes are claimed (nobody else fetches them) but count
+oldest gathered byte has waited `write_coalesce_delay` (200 ms; a timer, so
+this holds when the source goes quiet too), or when its range ends. Gathered bytes are claimed (nobody else fetches them) but count
 as written only when their write resolves, so the journal never claims them
 early. They are always written before the connection leaves — finished,
 failed, cancelled, or overtaken by a hedge — so a range is never handed over
@@ -287,7 +303,7 @@ and ends every subscription.
 
 | Knob | Default | Trade-off |
 |---|---|---|
-| `initial_connections` | 4 | start count without a host profile |
+| `initial_connections` | 8 | start count without a host profile |
 | `fixed_connections` | none | pin every download's count, no learning (`AddParams::connections` pins one) |
 | `min_split` | 1 MiB | smaller = better tail balance, more requests |
 | `split_align` | 64 KiB | split points round down to this |
@@ -296,9 +312,9 @@ and ends every subscription.
 | `tune_rtt_windows` | 16 | a window spans at least this many median TTFBs |
 | `tune_sample`, `tune_target_rse` | 100 ms, 0.02 | windows grow until their samples' RSE is this low |
 | `tune_warm_rtts`, `tune_warm_rise` | 4, 0.10 | warm-up: at least 4 TTFBs, longer while rising > 10 % per sample |
-| `tune_z` | 2.0 | noise margin (in standard errors) for deciding without A-B-A |
-| `tune_reprobe` | 30 s | re-probe upward after settling (doubling up to 5 min) |
-| `climb_gain` / `keep_ratio` | 0.15 / 0.93 | when more / fewer connections are worth it |
+| `tune_z`, `tune_rounds` | 2.0, 4 | confidence (standard errors) a step needs; most trial windows of an alternating comparison |
+| `tune_reprobe` | 30 s | re-probe one step, alternately up and down, after settling (doubling up to 5 min) |
+| `climb_gain` / `keep_ratio` | 0.04 / 0.97 | a doubling's gain must clearly reach 4 %; a halving must keep 97 % |
 | `ewma_tau` | 400 ms | speed smoothing |
 | `write_coalesce`, `write_coalesce_delay` | 256 KiB, 200 ms | bytes gathered per `write_at`, and the longest a gathered byte waits |
 | `stall_min`, `stall_factor` | 250 ms, 12 | stall = silent ≥ max(floor, factor × chunk gap) |
@@ -330,9 +346,9 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 
 | Suite | What |
 |---|---|
-| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, a shared one does not climb, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander |
+| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, +8 % per doubling climbs (≥ 2/3 of seeds to 16, never below 4), a shared one spends ≤ 10 % of the time above the start and comes down over 10 min, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander |
 | `tests/scenarios.rs` (29) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
-| `tests/coalesce.rs` (4) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), gathered bytes survive a hedge takeover and a pause |
+| `tests/coalesce.rs` (5) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), a source that goes silent mid-buffer has its gathered bytes written by the timer, gathered bytes survive a hedge takeover and a pause |
 | `tests/service.rs` (19) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/contract.rs` (9) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic), and adopting a file finished before a crash (plain, under a numbered name, not with the wrong length, decided by the checksum) |
