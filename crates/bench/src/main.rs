@@ -54,6 +54,11 @@ enum Cmd {
     /// Manual mode for GUI-only clients: serve a file, a person downloads it,
     /// measure from labserver's side.
     Manual(ManualArgs),
+    /// Crash test (Phase 1 gate): SIGKILL the real vayu daemon at random
+    /// moments while it downloads from labserver, restart it, and verify
+    /// every finished file byte for byte. Exits 1 on any corrupt, duplicate
+    /// or unfinished download.
+    Hardkill(HardkillArgs),
     /// Internal: measurement wrapper around one client process.
     #[command(name = "__measure", hide = true)]
     Measure {
@@ -132,6 +137,37 @@ struct RunArgs {
 }
 
 #[derive(Debug, Args)]
+struct HardkillArgs {
+    /// Stop after this many kills.
+    #[arg(long, default_value_t = 1000)]
+    kills: u32,
+    /// Seed of the kill schedule and download mix (default: from the clock).
+    #[arg(long)]
+    seed: Option<u64>,
+    /// The `vayu` CLI to test; `vayu-daemon` must be next to it.
+    #[arg(long, default_value = "target/release/vayu")]
+    vayu: PathBuf,
+    /// Downloads running at once in each round.
+    #[arg(long, default_value_t = 3)]
+    concurrent: usize,
+    /// Longest wait between a daemon start and its kill, milliseconds.
+    #[arg(long, default_value_t = 800)]
+    max_delay_ms: u64,
+    /// Scratch space; use a real disk (default ~/.cache/vayu-bench/work).
+    #[arg(long)]
+    work_dir: Option<PathBuf>,
+    #[arg(long)]
+    lab_url: Option<String>,
+    #[arg(long, default_value_t = 256)]
+    cache_mb: usize,
+    /// Write the summary (JSON) here as well.
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    quiet: bool,
+}
+
+#[derive(Debug, Args)]
 struct ManualArgs {
     /// Client label (abdm, fdm, idm-gui, …).
     #[arg(long)]
@@ -156,6 +192,50 @@ struct ManualArgs {
     out: PathBuf,
 }
 
+fn cmd_hardkill(a: HardkillArgs) -> Result<()> {
+    let lab = match &a.lab_url {
+        Some(url) => vayu_bench::lab::Lab::connect(url)?,
+        None => vayu_bench::lab::Lab::start(a.cache_mb)?,
+    };
+    let seed = a.seed.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    });
+    let opts = vayu_bench::hardkill::Options {
+        kills: a.kills,
+        seed,
+        vayu: std::path::absolute(&a.vayu)?,
+        work_dir: a
+            .work_dir
+            .unwrap_or_else(|| fetch::cache_dir().join("work")),
+        concurrent: a.concurrent,
+        max_delay: std::time::Duration::from_millis(a.max_delay_ms),
+        round_timeout: std::time::Duration::from_secs(600),
+        quiet: a.quiet,
+    };
+    let summary = vayu_bench::hardkill::run(&lab, &opts)?;
+    let json = serde_json::to_string_pretty(&summary)?;
+    println!("{json}");
+    if let Some(p) = &a.output {
+        std::fs::write(p, &json)?;
+    }
+    if !summary.passed() {
+        anyhow::bail!(
+            "hardkill FAILED: {} corrupt, {} with leftovers, {} unfinished",
+            summary.corrupt,
+            summary.leftovers,
+            summary.unfinished
+        );
+    }
+    eprintln!(
+        "hardkill passed: {} kills, {} downloads verified, 0 corrupt",
+        summary.kills, summary.verified
+    );
+    Ok(())
+}
+
 fn parse_bins(b: &BinArgs) -> Result<BTreeMap<String, PathBuf>> {
     b.bins
         .iter()
@@ -175,6 +255,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Run(a) => cmd_run(a, &raw),
+        Cmd::Hardkill(a) => cmd_hardkill(a),
         Cmd::Report { dir, output } => {
             let meta = runner::read_meta(&dir)?;
             let runs = runner::read_runs(&dir)?;

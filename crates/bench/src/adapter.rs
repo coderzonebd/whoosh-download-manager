@@ -657,9 +657,84 @@ impl Adapter for Manual {
     }
 }
 
+// ---------------------------------------------------------------- vayu --
+
+/// Runs the daemon in the foreground, waits for its runtime file, then
+/// `vayu --no-start get`, then stops the daemon. `sh` is the measured
+/// child and waits for both, so `RUSAGE_CHILDREN` counts the daemon's CPU
+/// and memory too, and the time includes the daemon's start (like Gopeed's
+/// server). Positional parameters avoid any quoting of URLs or headers.
+const VAYU_SCRIPT: &str = r#"vayu="$1"; daemon="$2"; shift 2
+"$daemon" >"$VAYU_DATA_DIR.log" 2>&1 &
+d=$!
+i=0
+while [ ! -s "$VAYU_DATA_DIR/runtime.json" ]; do
+  kill -0 "$d" 2>/dev/null || exit 3
+  i=$((i + 1))
+  if [ "$i" -gt 2000 ]; then kill "$d"; wait "$d"; exit 3; fi
+  sleep 0.005
+done
+"$vayu" --no-start get "$@"
+rc=$?
+kill "$d"
+wait "$d"
+exit "$rc"
+"#;
+
+/// vayu itself: the engine behind the daemon, driven by the CLI (Unix only:
+/// the wrapper is a POSIX shell script).
+#[derive(Debug, Default)]
+pub struct Vayu;
+
+impl Adapter for Vayu {
+    fn id(&self) -> &str {
+        "vayu"
+    }
+    fn description(&self) -> &str {
+        "vayu (this project): daemon + `vayu get`, learned connection count"
+    }
+    fn tool(&self) -> &str {
+        "vayu"
+    }
+    fn settings(&self) -> String {
+        "vayu-daemon (foreground) + vayu --no-start get -o <dir> [-c N]".into()
+    }
+    fn invocation(&self, program: &Path, job: &Job) -> Invocation {
+        let mut inv = base_invocation(program, job);
+        inv.program = PathBuf::from("/bin/sh");
+        let data_dir = job.state_dir.join("vayu-data");
+        inv.env
+            .push((os("VAYU_DATA_DIR"), data_dir.into_os_string()));
+        let mut args = vec![
+            os("-c"),
+            os(VAYU_SCRIPT),
+            os("vayu-bench-wrapper"),
+            program.as_os_str().to_owned(),
+            program.with_file_name("vayu-daemon").into_os_string(),
+            os(job.url),
+            os("-o"),
+            job.out_dir.as_os_str().to_owned(),
+        ];
+        if let Conn::Fixed(n) = job.conn {
+            args.push(os("-c"));
+            args.push(os(n.clamp(1, 64).to_string()));
+        }
+        for (k, v) in job.headers {
+            args.push(os("-H"));
+            args.push(os(format!("{k}: {v}")));
+        }
+        inv.args = args;
+        inv
+    }
+    fn is_control_file(&self, name: &str) -> bool {
+        name.ends_with(".vayu-part")
+    }
+}
+
 /// Every adapter the harness knows, in report order.
 pub fn all() -> Vec<Arc<dyn Adapter>> {
     vec![
+        Arc::new(Vayu),
         Arc::new(Curl),
         Arc::new(Wget),
         Arc::new(Aria2::aria2c()),
@@ -736,6 +811,35 @@ mod tests {
                 .any(|(k, v)| k == "HOME" && v == Path::new("/run/state").as_os_str())
         );
         assert!(inv.api.is_none());
+    }
+
+    #[test]
+    fn vayu_runs_daemon_and_cli_under_one_shell() {
+        let h = cookie();
+        let inv = Vayu.invocation(Path::new("/opt/vayu/vayu"), &job(&h, Conn::Fixed(99)));
+        assert_eq!(inv.program, Path::new("/bin/sh"));
+        let a = strs(&inv);
+        assert_eq!(a[0], "-c");
+        assert!(a[1].contains("--no-start get"));
+        assert_eq!(
+            a[2..],
+            [
+                "vayu-bench-wrapper",
+                "/opt/vayu/vayu",
+                "/opt/vayu/vayu-daemon",
+                "http://127.0.0.1:1/s/clean/10m.bin?x=1",
+                "-o",
+                "/run/out",
+                "-c",
+                "64",
+                "-H",
+                "Cookie: vayu_session=lab-ok",
+            ]
+        );
+        assert!(inv.env.iter().any(
+            |(k, v)| k == "VAYU_DATA_DIR" && v == Path::new("/run/state/vayu-data").as_os_str()
+        ));
+        assert!(Vayu.is_control_file("10m.bin.vayu-part"));
     }
 
     #[test]
