@@ -22,6 +22,18 @@ const MIB: u64 = 1 << 20;
 /// Pause between reaching a reset point and sending the RST.
 const RESET_DRAIN: Duration = Duration::from_millis(20);
 
+/// A response yields to the scheduler after this many bytes.
+///
+/// The body is always ready when it is not throttled, and hyper keeps
+/// pulling chunks and writing them for as long as the socket takes them;
+/// tokio only forces a yield after 128 socket writes (up to ~128 MiB here).
+/// Under load every worker then sits in such a poll for tens of
+/// milliseconds and nobody polls the I/O driver, so a new connection's
+/// accept, request and first byte wait 50–500 ms. `yield_now` defers the
+/// task until its worker has polled the driver, which bounds that wait to
+/// one round of 256 KiB per busy connection.
+const YIELD_EVERY: u64 = 256 * 1024;
+
 /// Everything needed to stream `[start, end)` of one file version.
 #[derive(Debug)]
 pub(crate) struct BodyPlan {
@@ -81,6 +93,7 @@ struct St {
     reset_at: Option<u64>,
     stall_at: Option<u64>,
     rng: Rng,
+    since_yield: u64,
 }
 
 fn min_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {
@@ -125,6 +138,7 @@ impl St {
             reset_at,
             stall_at,
             rng,
+            since_yield: 0,
             plan,
         }
     }
@@ -133,6 +147,10 @@ impl St {
         if self.pos >= self.plan.end {
             self.plan.guard = None;
             return None;
+        }
+        if self.since_yield >= YIELD_EVERY {
+            self.since_yield = 0;
+            tokio::task::yield_now().await;
         }
         let rt = self.plan.rt.clone();
         if let Some(stall) = rt.sc.stalls
@@ -191,6 +209,7 @@ impl St {
         let data = block.slice(off..off + len as usize);
         self.pos += len;
         self.sent += len;
+        self.since_yield += len;
         rt.stats.sent(len);
         self.plan.file.served.fetch_add(len, Relaxed);
         if self.pos >= self.plan.end {
