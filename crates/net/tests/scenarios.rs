@@ -275,15 +275,31 @@ async fn resets_mid_body(t: T) {
     .await;
     let src = lab.source("reset", "1m.bin");
     let m = src.probe().await.unwrap();
-    for _ in 0..3 {
-        let s = src
-            .open(open_req(Some(r(0, MIB)), m.validators()))
-            .await
-            .unwrap();
-        let (bytes, e) = read_all(s).await;
-        assert!(matches!(e, Some(SourceError::Transient(_))), "{e:?}");
-        assert!((bytes.len() as u64) <= 256 * 1024, "{}", bytes.len());
-        lab.verify("reset", "1m.bin", 0, &bytes);
+    for i in 0..3 {
+        match src.open(open_req(Some(r(0, MIB)), m.validators())).await {
+            Ok(s) => {
+                let (bytes, e) = read_all(s).await;
+                assert!(matches!(e, Some(SourceError::Transient(_))), "{i}: {e:?}");
+                assert!((bytes.len() as u64) <= 256 * 1024, "{}", bytes.len());
+                lab.verify("reset", "1m.bin", 0, &bytes);
+            }
+            // Labserver resets 20 ms after the reset point, and a reset
+            // discards what the server has not transmitted yet (a TCP RST
+            // or an HTTP/3 RESET_STREAM alike). On a loaded machine that can
+            // include the response head: then it is a reset before the
+            // head, which the contract calls `Throttled`.
+            Err(e) => assert!(
+                matches!(
+                    e,
+                    SourceError::Throttled {
+                        retry_after: None,
+                        ..
+                    }
+                ),
+                "open {i}: {e:?}; {:?}",
+                lab.lab.stats("reset")
+            ),
+        }
     }
     let st = lab.lab.stats("reset").unwrap();
     assert_eq!(st.requests, 4, "probe + 3 opens, no hidden retries");
