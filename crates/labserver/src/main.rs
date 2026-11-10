@@ -24,6 +24,11 @@ struct Args {
     /// Do not start the HTTPS listener.
     #[arg(long)]
     no_tls: bool,
+    /// Serve HTTP/3 (QUIC) on this UDP port and advertise it with Alt-Svc.
+    /// Without a value (or 0): the HTTPS port's number (any free port with
+    /// --no-tls).
+    #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "0")]
+    h3_port: Option<u16>,
     /// Extra scenario directory (*.toml); same names override built-ins.
     #[arg(long)]
     scenarios: Option<PathBuf>,
@@ -63,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
         bind: args.bind,
         http_port: args.port,
         tls_port: (!args.no_tls).then_some(args.tls_port),
+        h3_port: args.h3_port,
         scenarios,
         cache_bytes: args.cache_mb << 20,
         ..LabConfig::default()
@@ -81,6 +87,12 @@ async fn main() -> anyhow::Result<()> {
     if let Some(a) = lab.https_addr() {
         println!(
             "  https  https://localhost:{}  (ALPN h2, http/1.1; cert at /_lab/cert.pem)",
+            a.port()
+        );
+    }
+    if let Some(a) = lab.h3_addr() {
+        println!(
+            "  h3     https://localhost:{}  (HTTP/3 over QUIC, UDP; Alt-Svc on the TCP listeners)",
             a.port()
         );
     }

@@ -8,6 +8,9 @@ It must never be the bottleneck, and every byte it sends can be verified.
   a pure function of `(seed, o)`. Any range can be regenerated and checked.
 - **HTTP/1.1 and HTTP/2**: h2c (prior knowledge) on the plain port; TLS with a
   self-signed certificate and ALPN `h2` / `http/1.1` on the TLS port.
+- **HTTP/3** (opt-in, `--h3-port`): QUIC on UDP, by default on the same port
+  number as TLS, same certificate, advertised by `Alt-Svc: h3=":<port>"` on
+  every TCP response. Same routes, scenarios, faults and stats.
 - **Scenarios** in TOML, all served at once under `/s/<scenario>/<file>`:
   latency, per-connection and global bandwidth caps, per-IP concurrency caps
   (503, 429 or TCP reset), random TCP resets, stalls, redirect chains, signed
@@ -27,6 +30,7 @@ cargo run --release -p vayu-labserver
 vayu-labserver listening
   http   http://127.0.0.1:18080  (HTTP/1.1, h2c prior knowledge)
   https  https://localhost:18443  (ALPN h2, http/1.1; cert at /_lab/cert.pem)
+  h3     https://localhost:18443  (HTTP/3 over QUIC, UDP; Alt-Svc on the TCP listeners)   # with --h3-port
 scenarios:
   clean              No faults; the speed ceiling
   ...
@@ -34,10 +38,11 @@ scenarios:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--bind <ip>` | `127.0.0.1` | Address for both listeners |
+| `--bind <ip>` | `127.0.0.1` | Address for all listeners |
 | `--port <n>` | `18080` | HTTP/1.1 + h2c port (`0` = any free port) |
 | `--tls-port <n>` | `18443` | HTTPS port |
 | `--no-tls` | | Don't start the HTTPS listener |
+| `--h3-port [<n>]` | off | Serve HTTP/3 on this UDP port and advertise it with `Alt-Svc`. Without a value (or `0`): the `--tls-port` number (any free port with `--no-tls`) |
 | `--scenarios <dir>` | | Load `*.toml` from a directory; same names override the built-ins |
 | `--no-builtin` | | Serve only `--scenarios` |
 | `--cache-mb <n>` | `256` | Memory for cached 64 KiB content blocks |
@@ -52,6 +57,7 @@ curl http://127.0.0.1:18080/s/clean/100m.bin.sha256
 curl --http2-prior-knowledge -o /dev/null http://127.0.0.1:18080/s/clean/100m.bin
 curl -s http://127.0.0.1:18080/_lab/cert.pem > lab.pem
 curl --cacert lab.pem -o /dev/null https://localhost:18443/s/clean/100m.bin
+curl --http3-only --cacert lab.pem -o /dev/null https://localhost:18443/s/clean/100m.bin   # needs --h3-port and a curl built with HTTP/3
 curl -s http://127.0.0.1:18080/_lab/stats/clean
 ```
 
@@ -90,7 +96,11 @@ Every scenario without a `[[files]]` list serves the default set:
 `chunked`), strong `ETag` and `Last-Modified` (unless disabled;
 `Last-Modified` is 2026-01-01T00:00:00Z plus one hour per version, fixed for
 reproducibility), `Content-Disposition` when configured, and
-`x-lab-version: <n>` (the file version, for debugging).
+`x-lab-version: <n>` (the file version, for debugging). With HTTP/3 on, every
+response from the TCP listeners (plain and TLS, `/_lab/` included) carries
+`Alt-Svc: h3=":<udp port>"`; HTTP/3 responses don't. Per RFC 9114 §3.1.2 a
+client only uses it for `https://` origins (it is harmless on plain HTTP,
+and lets tests check that an engine ignores it there).
 
 Ranges: one `bytes=a-b`, `bytes=a-` or `bytes=-n` gets `206` with
 `Content-Range`; a start past the end (or `-0`, or any range of an empty file)
@@ -140,15 +150,15 @@ chunk_ms = 0                # delay before every body chunk
 chunk_size = "64KiB"        # chunk size for chunk_ms (max 64 KiB)
 
 [bandwidth]
-per_conn = "2MB/s"          # per TCP connection; HTTP/2 streams on one connection share it
+per_conn = "2MB/s"          # per TCP or QUIC connection; HTTP/2 and HTTP/3 streams on one connection share it
 global = "50MB/s"           # whole scenario, all clients together
 
 [limits]                    # per client IP, counted like nginx limit_conn (in-flight responses)
 max_conns_per_ip = 2
-refuse = "503"              # "503" | "429" | "reset" (TCP RST, no response)
+refuse = "503"              # "503" | "429" | "reset" (TCP RST, no response; HTTP/3: CONNECTION_CLOSE)
 retry_after_secs = 1        # Retry-After on 503/429; HTTP/1.1 also gets Connection: close
 
-[resets]                    # TCP RST mid-body
+[resets]                    # TCP RST mid-body (HTTP/3: CONNECTION_CLOSE, see below)
 after_bytes = "8MiB"        # every response, after this many body bytes
 prob_per_mb = 0.02          # probability per MiB sent
 max = 10                    # stop after this many resets (until /_lab/reset)
@@ -192,6 +202,29 @@ every redirect hop). See `vayu_labserver::sign`.
   RST discards unsent data). On HTTP/2 a reset kills the whole connection, not
   one stream. With `prob_per_mb`, the reset point can be byte 0, in which case
   the RST may arrive before the response head.
+- **Resets on HTTP/3.** QUIC has no RST. The server closes the whole QUIC
+  connection with an application `CONNECTION_CLOSE`: error code
+  `H3_INTERNAL_ERROR` (`0x102`), reason `lab: injected reset`. Like HTTP/2,
+  every stream on that connection fails, not just one. Differences from a
+  TCP RST:
+  - The client gets a QUIC error carrying the code and reason (quinn:
+    `ConnectionError::ApplicationClosed`) rather than a bare `ECONNRESET`;
+    the close is an authenticated packet from the server process, not a
+    kernel-generated RST, and the client's UDP socket stays usable.
+  - Just before the close, every response still in flight is reset with
+    `RESET_STREAM` (same code), so a client can see that stream error a
+    moment before the connection error. This discards data the server had
+    queued but not sent, as a RST does, so the client gets *up to* the
+    reset point (after the same 20 ms drain). It also works around
+    quinn-proto 0.11 never sending a `CONNECTION_CLOSE` that is queued
+    behind a full congestion window (it ignores ACKs once closing); without
+    it the client would only notice at its idle timeout.
+
+  The same applies to `refuse = "reset"`, where the refused request's
+  stream is reset before any response head.
+- **HTTP/3 keep-alive.** The QUIC endpoint sends a PING every 5 s, so a
+  stall longer than the idle timeout (30 s) keeps the connection up, like a
+  quiet TCP connection.
 - **Stalls** pause the body and then continue; `duration_ms` longer than a
   client's read timeout makes it give up, which is the point.
 - **Bandwidth caps** are a GCRA token bucket in virtual time with 50 ms of
@@ -275,9 +308,9 @@ All under `/_lab/`; JSON unless noted.
 
 - `active_requests`: responses in flight (each HTTP/2 stream counts). What
   `[limits]` caps.
-- `open_connections`: TCP connections that have sent at least one request to
-  this scenario and are still open, idle keep-alive included. HTTP/2 streams
-  share one.
+- `open_connections`: TCP or QUIC connections that have sent at least one
+  request to this scenario and are still open, idle keep-alive included.
+  HTTP/2 and HTTP/3 streams share one.
 - `peak_*`: highest value since start or the last reset. For politeness, the
   bench harness should report `clients[ip].peak_open_connections` (and
   `peak_active_requests`).
@@ -302,6 +335,8 @@ async fn engine_survives_resets() {
 
     let url = lab.url("flaky", "100m.bin");          // http://127.0.0.1:<port>/s/flaky/100m.bin
     let https = lab.https_url("clean", "1g.bin");    // https://localhost:<port>/... ; trust lab.cert_der()
+    // HTTP/3 is opt-in: LabConfig { h3_port: Some(0), .. } (0 = the TLS port's number),
+    // then lab.h3_addr() / lab.h3_url("clean", "1g.bin") (UDP; same cert).
     // ... run the engine ...
     let expected = lab.file("flaky", "100m.bin").unwrap();
     // expected.verify(offset, &bytes) / expected.sha256(expected.full())
@@ -325,8 +360,9 @@ cargo run --release -p vayu-labserver --example throughput -- --conns 4 --secs 5
 ```
 
 Add `--raw` for a hand-written HTTP/1.1 client (measures the server rather
-than hyper's client), `--h2`, `--tls`, `--file 1g.bin --cache-mb 0` (every
-block generated on the fly), `--threads N`.
+than hyper's client), `--h2`, `--tls`, `--h3` (quinn + h3 client, one
+request stream at a time per QUIC connection), `--file 1g.bin --cache-mb 0`
+(every block generated on the fly), `--threads N`.
 
 Measured 2026-11-10 on an Intel i5-10210U (4 cores / 8 threads, 1.6 GHz base,
 DDR4, no SHA extensions), release build, client and server in one process on
@@ -346,6 +382,17 @@ vary a lot.
 | HTTP/1.1 over TLS, 2 connections | 1.21 | 1.47 |
 | HTTP/2 over TLS, 2 connections | 1.25 | 1.26 |
 | `curl -o /dev/null` (curl's own limit), 1 connection | 1.5 | |
+
+HTTP/3 was measured later the same day under heavier load (load average
+8–10, other sessions compiling), 5 runs of 3 s, with HTTP/1.1 over TLS
+re-measured alongside for scale:
+
+| Configuration (load 8–10) | Median GB/s | Best GB/s |
+|---|---|---|
+| HTTP/3, 1 QUIC connection | 0.26 | 0.33 |
+| HTTP/3, 2 QUIC connections | 0.43 | 0.52 |
+| HTTP/3, 3 QUIC connections | 0.45 | 0.52 |
+| HTTP/1.1 over TLS, 2 connections (same session) | 1.12 | 1.49 |
 
 ¹ Measured before block generation stopped zero-filling its buffer, which made
 generation ~60 % faster in a micro-benchmark (6.1 vs 3.8 GB/s per core
@@ -367,6 +414,14 @@ What this means:
   what real downloaders reach over HTTP/2 or TLS, but a benchmark of raw
   engine speed should use plain HTTP/1.1. Raising the HTTP/2 ceiling (bigger
   DATA frames than one 64 KiB block per frame) is a possible follow-up.
+- HTTP/3 is another ~2.5× below TLS over TCP: userspace QUIC (quinn) with
+  ~1.4 KB packets, per-packet AEAD and header protection, ACK processing and
+  one endpoint driver task, on both ends of the loopback. Letting the server
+  use 64 KB packets on loopback (MTU discovery up to 65 000 instead of
+  quinn's 1452) only moved it to ~0.33 / 0.50 GB/s for 1 / 2 connections,
+  so packet count is not the main cost, and the realistic 1452 stays. Half
+  a GB/s is still above what HTTP/3 downloaders reach on real links; compare
+  engines over HTTP/3 with each other, not with the HTTP/1.1 numbers.
 
 ## Not covered
 
@@ -374,8 +429,9 @@ What this means:
   namespace or interface (root). `ttfb_ms`/`chunk_ms` emulate server
   think-time, not the network path, so TCP slow start and loss recovery are
   untouched. Run the bench under `netem` for those.
-- **HTTP/3 / QUIC** — not implemented yet (follow-up: `quinn` + `h3`, with
-  `Alt-Svc` advertisement on the TCP listeners).
+- **QUIC-specific behaviour**: 0-RTT (off), connection migration, per-stream
+  resets (`RESET_STREAM`; injected resets close the whole connection), and
+  QUIC-level loss or reordering. HTTP/3 has no server push either.
 - **h2c via `Upgrade: h2c`** — only prior-knowledge h2c is supported (what
   clients actually use).
 - **`multipart/byteranges`** — multi-range requests get the whole file.
@@ -395,3 +451,10 @@ throttle accuracy (per-connection and global, ±10 %), connection caps (503,
 429, RST), real TCP resets, stalls, latency, changing-file ETags, URL expiry,
 cookie/referer gates, redirects, `Content-Disposition` bytes, HTTP/2 over TLS,
 HTTP/1.1 over TLS, h2c, peak connection counting and the control API.
+`tests/h3.rs` covers HTTP/3 with a quinn + h3 client: byte-exact full and
+ranged GETs (several streams on one connection), HEAD, 416, sidecars and the
+control API over HTTP/3, `Alt-Svc` on both TCP listeners (and its absence
+when HTTP/3 is off), per-QUIC-connection and global throttles (+10 % / −15 %:
+a debug-build QUIC client on a loaded machine can fall behind the cap),
+connection/stream counting in the stats, and resets and `refuse = "reset"`
+closing the QUIC connection with `0x102`.

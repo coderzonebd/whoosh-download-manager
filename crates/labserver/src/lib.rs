@@ -4,11 +4,12 @@
 //! serves virtual files whose bytes are a pure function of `(seed, offset)`
 //! ([`VirtualFile`]), over HTTP/1.1 and HTTP/2 (h2c prior knowledge on the
 //! plain port; ALPN `h2`/`http/1.1` on the TLS port with a self-signed
-//! certificate), and misbehaves on demand per [`Scenario`]: latency,
-//! per-connection and global bandwidth caps, per-IP concurrency caps, TCP
-//! resets, stalls, redirect chains, expiring signed URLs, cookie/referer
-//! gates, missing ranges/lengths/validators, changing files and odd
-//! `Content-Disposition` headers.
+//! certificate) and, opt-in, HTTP/3 over QUIC ([`LabConfig::h3_port`],
+//! advertised with `Alt-Svc`). It misbehaves on demand per [`Scenario`]:
+//! latency, per-connection and global bandwidth caps, per-IP concurrency
+//! caps, connection resets, stalls, redirect chains, expiring signed URLs,
+//! cookie/referer gates, missing ranges/lengths/validators, changing files
+//! and odd `Content-Disposition` headers.
 //!
 //! ```no_run
 //! # async fn demo() -> Result<(), vayu_labserver::LabError> {
@@ -24,6 +25,7 @@
 //! # Ok(()) }
 //! ```
 
+use http::HeaderValue;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -37,6 +39,7 @@ mod conn;
 pub mod content;
 mod control;
 mod handler;
+mod quic;
 pub mod scenario;
 mod server;
 pub mod sign;
@@ -46,6 +49,9 @@ mod tls;
 pub mod units;
 
 pub use content::VirtualFile;
+/// Application error code and reason of an injected reset on HTTP/3 (the
+/// QUIC connection is closed with them; see the README).
+pub use quic::{RESET_CODE as H3_RESET_CODE, RESET_REASON as H3_RESET_REASON};
 pub use scenario::{FileSpec, Scenario, ScenarioError};
 pub use stats::{ClientStats, ScenarioStats};
 pub use vayu_core::ByteRange;
@@ -72,12 +78,16 @@ pub enum LabError {
 /// How to start a [`LabServer`].
 #[derive(Debug, Clone)]
 pub struct LabConfig {
-    /// Address to bind both listeners to. Default `127.0.0.1`.
+    /// Address to bind all listeners to. Default `127.0.0.1`.
     pub bind: IpAddr,
     /// Plain HTTP/1.1 + h2c port; 0 (default) picks a free port.
     pub http_port: u16,
     /// HTTPS port; `None` disables TLS. Default `Some(0)` (free port).
     pub tls_port: Option<u16>,
+    /// HTTP/3 (QUIC) UDP port; `None` (default) disables HTTP/3. `Some(0)`
+    /// uses the same number as the TLS port (any free port if TLS is off).
+    /// When on, both TCP listeners send `Alt-Svc: h3=":<port>"`.
+    pub h3_port: Option<u16>,
     /// Scenarios to serve. Default: the built-in set ([`scenario::builtin`]).
     pub scenarios: Vec<Scenario>,
     /// Memory for cached content blocks. Default 128 MiB.
@@ -93,6 +103,7 @@ impl Default for LabConfig {
             bind: IpAddr::V4(Ipv4Addr::LOCALHOST),
             http_port: 0,
             tls_port: Some(0),
+            h3_port: None,
             scenarios: scenario::builtin(),
             cache_bytes: 128 << 20,
             cert_names: vec!["localhost".into(), "127.0.0.1".into(), "::1".into()],
@@ -123,6 +134,7 @@ impl LabConfig {
 pub struct LabServer {
     http: SocketAddr,
     https: Option<SocketAddr>,
+    h3: Option<SocketAddr>,
     shared: Arc<Shared>,
     cert_der: Option<Vec<u8>>,
     shutdown: watch::Sender<bool>,
@@ -132,7 +144,7 @@ pub struct LabServer {
 impl LabServer {
     /// Binds the listeners and starts serving on the current tokio runtime.
     pub async fn start(config: LabConfig) -> Result<Self, LabError> {
-        let tls = match config.tls_port {
+        let tls = match config.tls_port.or(config.h3_port) {
             Some(_) => {
                 let mut names = config.cert_names.clone();
                 let bind = config.bind.to_string();
@@ -153,27 +165,41 @@ impl LabServer {
 
         let listener = TcpListener::bind((config.bind, config.http_port)).await?;
         let http = listener.local_addr()?;
+        let (tls_listener, endpoint) = match &tls {
+            Some(t) => bind_tls_and_h3(config.bind, config.tls_port, config.h3_port, t).await?,
+            None => (None, None),
+        };
+        let h3 = endpoint
+            .as_ref()
+            .map(quinn::Endpoint::local_addr)
+            .transpose()?;
+        let alt_svc = h3.and_then(|a| HeaderValue::from_str(&format!("h3=\":{}\"", a.port())).ok());
+
         tasks.push(tokio::spawn(server::accept_loop(
             listener,
             None,
+            alt_svc.clone(),
             shared.clone(),
             rx.clone(),
         )));
-
         let mut https = None;
-        if let (Some(port), Some(t)) = (config.tls_port, &tls) {
-            let listener = TcpListener::bind((config.bind, port)).await?;
+        if let (Some(listener), Some(t)) = (tls_listener, &tls) {
             https = Some(listener.local_addr()?);
             tasks.push(tokio::spawn(server::accept_loop(
                 listener,
                 Some(t.acceptor.clone()),
+                alt_svc,
                 shared.clone(),
-                rx,
+                rx.clone(),
             )));
+        }
+        if let Some(ep) = endpoint {
+            tasks.push(tokio::spawn(quic::accept_loop(ep, shared.clone(), rx)));
         }
         Ok(Self {
             http,
             https,
+            h3,
             shared,
             cert_der: tls.map(|t| t.cert_der),
             shutdown: tx,
@@ -191,6 +217,11 @@ impl LabServer {
         self.https
     }
 
+    /// The HTTP/3 (QUIC, UDP) endpoint, if enabled.
+    pub fn h3_addr(&self) -> Option<SocketAddr> {
+        self.h3
+    }
+
     /// `http://<addr>/s/<scenario>/<file>`.
     pub fn url(&self, scenario: &str, file: &str) -> String {
         format!("http://{}/s/{scenario}/{file}", self.http)
@@ -202,7 +233,15 @@ impl LabServer {
             .map(|a| format!("https://localhost:{}/s/{scenario}/{file}", a.port()))
     }
 
-    /// The self-signed certificate (DER) clients must trust for HTTPS.
+    /// `https://localhost:<udp port>/s/<scenario>/<file>`, if HTTP/3 is
+    /// enabled. The same as [`LabServer::https_url`] when the ports match.
+    pub fn h3_url(&self, scenario: &str, file: &str) -> Option<String> {
+        self.h3
+            .map(|a| format!("https://localhost:{}/s/{scenario}/{file}", a.port()))
+    }
+
+    /// The self-signed certificate (DER) clients must trust for HTTPS and
+    /// HTTP/3.
     pub fn cert_der(&self) -> Option<&[u8]> {
         self.cert_der.as_deref()
     }
@@ -280,6 +319,44 @@ impl LabServer {
         let _ = self.shutdown.send(true);
         for t in self.tasks.drain(..) {
             let _ = t.await;
+        }
+    }
+}
+
+/// Binds the TLS listener and the HTTP/3 endpoint, as configured. With
+/// `h3_port` 0 the endpoint takes the TLS port's number; if the OS picked
+/// that port and the UDP port of the same number is taken, both are
+/// rebound.
+async fn bind_tls_and_h3(
+    bind: IpAddr,
+    tls_port: Option<u16>,
+    h3_port: Option<u16>,
+    tls: &tls::Tls,
+) -> Result<(Option<TcpListener>, Option<quinn::Endpoint>), LabError> {
+    let mut attempts = 0;
+    loop {
+        let listener = match tls_port {
+            Some(port) => Some(TcpListener::bind((bind, port)).await?),
+            None => None,
+        };
+        let Some(h3_port) = h3_port else {
+            return Ok((listener, None));
+        };
+        let udp_port = match (h3_port, &listener) {
+            (0, Some(l)) => l.local_addr()?.port(),
+            (p, _) => p,
+        };
+        match quic::endpoint(SocketAddr::new(bind, udp_port), tls.quic.clone()) {
+            Ok(ep) => return Ok((listener, Some(ep))),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::AddrInUse
+                    && h3_port == 0
+                    && tls_port == Some(0)
+                    && attempts < 20 =>
+            {
+                attempts += 1;
+            }
+            Err(e) => return Err(e.into()),
         }
     }
 }

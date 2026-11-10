@@ -1,5 +1,6 @@
-//! Listeners and per-connection serving.
+//! TCP listeners and per-connection serving (HTTP/3 is in `quic.rs`).
 
+use http::HeaderValue;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto;
@@ -20,6 +21,7 @@ const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) async fn accept_loop(
     listener: TcpListener,
     tls: Option<TlsAcceptor>,
+    alt_svc: Option<HeaderValue>,
     shared: Arc<Shared>,
     mut shutdown: watch::Receiver<bool>,
 ) {
@@ -40,6 +42,7 @@ pub(crate) async fn accept_loop(
             tcp,
             peer,
             tls.clone(),
+            alt_svc.clone(),
             shared.clone(),
             shutdown.clone(),
         ));
@@ -65,6 +68,7 @@ async fn serve_conn(
     tcp: TcpStream,
     peer: SocketAddr,
     tls: Option<TlsAcceptor>,
+    alt_svc: Option<HeaderValue>,
     shared: Arc<Shared>,
     mut shutdown: watch::Receiver<bool>,
 ) {
@@ -75,6 +79,7 @@ async fn serve_conn(
         shared: shared.clone(),
         conn: ctl.clone(),
         tls: tls.is_some(),
+        alt_svc,
     };
     let svc = service_fn(move |req| handler::handle(req, ctx.clone()));
     let b = builder();
