@@ -1380,6 +1380,8 @@ impl Driver {
             cancel: cancel.clone(),
             limiter: self.inner.limiter.clone(),
             epoch: self.epoch,
+            coalesce: self.t.write_coalesce,
+            coalesce_delay: self.t.write_coalesce_delay,
         }));
         self.workers.insert(
             wid,
@@ -1601,6 +1603,7 @@ impl Driver {
         let max = self.inner.max_connections();
         let limited = self.inner.limiter.limited();
         let recv = self.recv_total;
+        let ttfb = self.median_ttfb();
         let Some(tuner) = self.tuner.as_mut() else {
             return;
         };
@@ -1612,6 +1615,7 @@ impl Driver {
             streaming,
             work_left,
             limited,
+            ttfb,
         });
         if tuner.target() != before {
             tracing::debug!(id = %self.id, from = before, to = tuner.target(), "connection target");

@@ -48,14 +48,17 @@ async fn per_connection_throttle_climbs_to_many_connections() {
     let data = content(size, 2);
     let src = lab.serve(
         URL,
-        Arc::new(FaultSource::new(data.clone()).cfg(|c| c.per_conn_bps = Some(2 * MIB))),
+        Arc::new(FaultSource::new(data.clone()).cfg(|c| {
+            c.per_conn_bps = Some(MIB / 2);
+            c.chunk = 16 * KIB as usize;
+        })),
     );
     let id = lab.add(URL).await;
     let (_, took) = finish(&lab.engine, &id, LONG).await;
     assert_same(&lab.file("data.bin").unwrap(), &data);
-    // One connection would take 24 s; 16 take 1.5 s.
+    // One connection would take 96 s, four 24 s; sixteen take 6 s.
     assert!(src.peak() >= 12, "peak {}", src.peak());
-    assert!(took < Duration::from_secs(4), "took {took:?}");
+    assert!(took < Duration::from_secs(12), "took {took:?}");
     let p = lab.state.host_profile(host()).await.unwrap().unwrap();
     assert!(p.best_connections.unwrap() >= 12, "{p:?}");
 }
@@ -63,7 +66,7 @@ async fn per_connection_throttle_climbs_to_many_connections() {
 #[tokio::test(start_paused = true)]
 async fn global_throttle_settles_on_few_connections() {
     let lab = Lab::new(config()).await;
-    let size = 24 * MIB;
+    let size = 64 * MIB;
     let data = content(size, 3);
     lab.serve(
         URL,
@@ -72,7 +75,8 @@ async fn global_throttle_settles_on_few_connections() {
     let id = lab.add(URL).await;
     let (_, took) = finish(&lab.engine, &id, LONG).await;
     assert_same(&lab.file("data.bin").unwrap(), &data);
-    assert!(took < Duration::from_millis(3300), "took {took:?}");
+    // 8 s at the limit: trying fewer connections costs (almost) nothing.
+    assert!(took < Duration::from_millis(8800), "took {took:?}");
     let p = lab.state.host_profile(host()).await.unwrap().unwrap();
     assert!(p.best_connections.unwrap() <= 2, "{p:?}");
 }
@@ -624,4 +628,43 @@ async fn stalled_hedges_time_out_and_the_owner_is_replaced() {
     assert_same(&lab.file("data.bin").unwrap(), &data);
     assert!(took < Duration::from_secs(10), "took {took:?}");
     assert!(src.opens() >= 5, "opens {}", src.opens());
+}
+
+/// A real-ish link: 300 ms to the first byte, slow start, ±30 % jitter on
+/// every chunk. Noise must not keep the count low.
+fn wifi_like(data: bytes::Bytes, per_conn: u64, global: Option<u64>) -> Arc<FaultSource> {
+    Arc::new(FaultSource::new(data).cfg(|c| {
+        c.chunk = 16 * KIB as usize;
+        c.per_conn_bps = Some(per_conn);
+        c.global_bps = global;
+        c.ttfb = Duration::from_millis(300);
+        c.ramp = Duration::from_millis(800);
+        c.noise = 0.3;
+    }))
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_noisy_slow_starting_link_still_climbs() {
+    let lab = Lab::new(config()).await;
+    let data = content(48 * MIB, 40);
+    let src = lab.serve(URL, wifi_like(data.clone(), 256 * KIB, None));
+    let id = lab.add(URL).await;
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    assert!(src.peak() >= 12, "peak {}", src.peak());
+    let p = lab.state.host_profile(host()).await.unwrap().unwrap();
+    assert!(p.best_connections.unwrap() >= 8, "{p:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_noisy_saturated_link_is_not_walked_down() {
+    let lab = Lab::new(config()).await;
+    let data = content(64 * MIB, 41);
+    // Eight connections fill the link; one or two get a quarter of it.
+    lab.serve(URL, wifi_like(data.clone(), 512 * KIB, Some(3 * MIB)));
+    let id = lab.add(URL).await;
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    let p = lab.state.host_profile(host()).await.unwrap().unwrap();
+    assert!(p.best_connections.unwrap() >= 8, "{p:?}");
 }
