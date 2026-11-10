@@ -737,3 +737,52 @@ async fn a_resume_during_a_pause_wins() {
     finish(&lab.engine, &id, LONG).await;
     assert_same(&lab.file("data.bin").unwrap(), &data);
 }
+
+async fn lose_part_file_then_resume(validators: bool) {
+    let lab = Lab::new(config()).await;
+    let size = 8 * MIB;
+    let data = content(size, 14);
+    lab.serve(
+        URL,
+        Arc::new(FaultSource::new(data.clone()).cfg(|c| {
+            c.per_conn_bps = Some(MIB);
+            c.validators = validators;
+        })),
+    );
+    let id = lab.add(URL).await;
+    tokio::time::sleep(Duration::from_millis(900)).await;
+    lab.engine
+        .pause(IdsParams {
+            ids: vec![id.clone()],
+        })
+        .await
+        .unwrap();
+    assert!(
+        !lab.journal
+            .load(&id)
+            .await
+            .unwrap()
+            .unwrap()
+            .done
+            .is_empty()
+    );
+    // The part file disappears (deleted, or renamed by a finish whose
+    // journal update was lost).
+    vayu_core::StorageProvider::remove(&*lab.storage, &Path::new(DIR).join("data.bin.vayu-part"))
+        .await
+        .unwrap();
+    lab.engine
+        .resume(IdsParams {
+            ids: vec![id.clone()],
+        })
+        .await
+        .unwrap();
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_missing_part_file_is_downloaded_again() {
+    lose_part_file_then_resume(true).await;
+    lose_part_file_then_resume(false).await;
+}

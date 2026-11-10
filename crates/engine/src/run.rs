@@ -487,7 +487,22 @@ impl Driver {
         self.meta.last_modified = expect.last_modified.clone();
         self.expect = expect;
         if !done.is_empty() {
-            done = self.tail_verify(done).await?;
+            let verified = self.tail_verify(done.clone()).await?;
+            if verified != done {
+                // Stop claiming what failed verification before anything
+                // overwrites it (shrinking needs no flush).
+                let cp = Checkpoint {
+                    meta: self.meta.clone(),
+                    done: verified.clone(),
+                };
+                self.inner
+                    .deps
+                    .journal
+                    .commit(&self.id, &cp)
+                    .await
+                    .map_err(io_failed)?;
+            }
+            done = verified;
         }
         if size > 0 {
             let storage = self.open_storage().await?;
@@ -568,7 +583,7 @@ impl Driver {
         let storage = self.open_storage().await?;
         let expect = self.expect.clone();
         let parallel = usize::from(self.tuner.as_ref().map_or(4, Tuner::target)).max(1);
-        let first: Vec<(ByteRange, ByteRange, Result<bool, SourceError>)> = stream::iter(windows)
+        let first: Vec<(ByteRange, ByteRange, Result<Tail, SourceError>)> = stream::iter(windows)
             .map(|(r, win)| {
                 let (source, storage, expect) = (source.clone(), storage.clone(), expect.clone());
                 async move { (r, win, compare(&*source, &*storage, &expect, win).await) }
@@ -579,16 +594,30 @@ impl Driver {
         let no_validators = self.expect.etag.is_none() && self.expect.last_modified.is_none();
         let mut out = done.clone();
         for (range, win, res) in first {
-            let mut ok = match res {
-                Ok(ok) => ok,
+            let mut verdict = match res {
+                Ok(v) => v,
                 Err(_) => self.compare_retrying(win).await?,
             };
             let mut win = win;
             let mut walked = 0;
-            while !ok {
-                if no_validators {
-                    tracing::info!(id = %self.id, "tail mismatch without validators; restarting");
-                    return Err(Abort::Remote);
+            loop {
+                match verdict {
+                    Tail::Match => break,
+                    Tail::LocalShort => {
+                        // The local copy is gone or truncated: nothing of
+                        // this range can be trusted, and the server is not
+                        // to blame.
+                        out.remove(ByteRange {
+                            start: range.start,
+                            end: win.end,
+                        });
+                        break;
+                    }
+                    Tail::Mismatch if no_validators => {
+                        tracing::info!(id = %self.id, "tail mismatch without validators; restarting");
+                        return Err(Abort::Remote);
+                    }
+                    Tail::Mismatch => {}
                 }
                 out.remove(win);
                 walked += 1;
@@ -607,13 +636,13 @@ impl Driver {
                     start: win.start - w,
                     end: win.start,
                 };
-                ok = self.compare_retrying(win).await?;
+                verdict = self.compare_retrying(win).await?;
             }
         }
         Ok(out)
     }
 
-    async fn compare_retrying(&mut self, win: ByteRange) -> Result<bool, Abort> {
+    async fn compare_retrying(&mut self, win: ByteRange) -> Result<Tail, Abort> {
         loop {
             let storage = self.open_storage().await?;
             match compare(&*self.source(), &*storage, &self.expect, win).await {
@@ -703,7 +732,13 @@ impl Driver {
         self.tasks.abort_all();
         while self.tasks.join_next().await.is_some() {}
         self.workers.clear();
-        self.ckpt = None;
+        // Let a commit in flight land before anything newer (an empty
+        // checkpoint on restart, the final one on stop) is written.
+        if let Some(c) = self.ckpt.take()
+            && let Err(e) = c.await
+        {
+            tracing::warn!(id = %self.id, "checkpoint failed: {e}");
+        }
     }
 
     /// Flush and commit what is written, when stopping without finishing.
@@ -850,10 +885,9 @@ impl Driver {
     async fn transfer_stream(&mut self) -> Result<(), Abort> {
         self.committable = false;
         loop {
-            let seg = match self.size {
-                Some(n) => Segment::new(0, n),
-                None => Segment::open_ended(0),
-            };
+            // Always read to the end of the response: a body of another
+            // length is another version, never cut or padded to fit.
+            let seg = Segment::open_ended(0);
             self.segs = vec![seg.clone()];
             self.spawn(Work::Own(seg.clone()));
             let mut tick = tokio::time::interval_at(Instant::now() + self.t.tick, self.t.tick);
@@ -874,6 +908,10 @@ impl Driver {
             match exit {
                 Exit::Finished => {
                     let snap = seg.snapshot();
+                    if self.size.is_some_and(|n| n != snap.end) {
+                        tracing::info!(id = %self.id, "response length differs from the probe");
+                        return Err(Abort::Remote);
+                    }
                     self.size = Some(snap.end);
                     self.live.total.store(snap.end, Ordering::Relaxed);
                     let end = snap.end;
@@ -1353,7 +1391,7 @@ impl Driver {
 
         if self.ranged {
             self.tune(now);
-            self.hedge_stalls(now);
+            self.hedge_stalls(now)?;
             let due = now.duration_since(self.last_commit) >= self.t.checkpoint_interval
                 || written.saturating_sub(self.committed) >= self.t.checkpoint_bytes;
             if due && self.ckpt.is_none() {
@@ -1417,43 +1455,67 @@ impl Driver {
     }
 
     /// Hedge connections that went silent, even above the target (up to
-    /// `max_extra_hedges`): whichever of the two delivers first wins.
-    fn hedge_stalls(&mut self, now: Instant) {
-        if now < self.open_gate {
-            return;
-        }
+    /// `max_extra_hedges`): whichever of the two delivers first wins. A
+    /// hedge that never delivers is cancelled (freeing the range for the
+    /// next one); once a range's hedges are spent, its stalled owner is
+    /// cancelled instead and the range handed to a fresh connection, as a
+    /// failure round (so a server that stalls everything still ends in
+    /// `failed`).
+    fn hedge_stalls(&mut self, now: Instant) -> Result<(), Abort> {
         let limit_bytes = self.stall_limit();
         let limit_first = self.first_byte_limit();
         let now_us = now_us_since(self.epoch, now);
-        let room = (usize::from(self.target()) + usize::from(self.t.max_extra_hedges))
+        let gated = now < self.open_gate;
+        let mut room = (usize::from(self.target()) + usize::from(self.t.max_extra_hedges))
             .saturating_sub(self.active());
-        let mut stalled = Vec::new();
+        let mut hedge = Vec::new();
+        let mut give_up = Vec::new();
+        let mut replace = Vec::new();
         for (wid, w) in &self.workers {
-            if w.cancelling || stalled.len() >= room {
+            if w.cancelling {
                 continue;
             }
             let n = w.seg.snapshot();
-            if n.owner != Some(*wid)
-                || n.challenger.is_some()
-                || n.hedges >= self.t.max_hedges_per_range
-                || n.remaining() == 0
-            {
+            if n.remaining() == 0 {
                 continue;
             }
             let last = w.counters.last_us.load(Ordering::Relaxed);
-            let is_stalled = if last != 0 {
+            let stalled = if last != 0 {
                 Duration::from_micros(now_us.saturating_sub(last)) >= limit_bytes
             } else {
                 now.duration_since(w.started) >= limit_first
             };
-            if is_stalled {
-                stalled.push(w.seg.clone());
+            if !stalled {
+                continue;
+            }
+            if n.challenger == Some(*wid) {
+                give_up.push(*wid);
+            } else if n.owner == Some(*wid) && n.challenger.is_none() {
+                if n.hedges < self.t.max_hedges_per_range {
+                    if !gated && room > 0 {
+                        room -= 1;
+                        hedge.push(w.seg.clone());
+                    }
+                } else {
+                    replace.push(*wid);
+                }
             }
         }
-        for seg in stalled {
+        for wid in give_up.iter().chain(&replace) {
+            if let Some(w) = self.workers.get_mut(wid) {
+                w.cancelling = true;
+                w.cancel.cancel();
+            }
+        }
+        if !replace.is_empty() {
+            tracing::debug!(id = %self.id, n = replace.len(), "replacing stalled connections");
+            self.note_failure(&SourceError::Transient("connection stalled".into()), None)?;
+        }
+        for seg in hedge {
             tracing::debug!(id = %self.id, start = seg.start, "hedging a stalled connection");
             self.spawn(Work::Hedge(seg, HedgeKind::Stall));
         }
+        Ok(())
     }
 
     fn written_total(&self) -> u64 {
@@ -1548,13 +1610,27 @@ fn panicked(e: tokio::task::JoinError) -> Abort {
     Abort::Out(Outcome::Failed(error_info("internal", e.to_string())))
 }
 
-/// Fetch `win` and compare it with what storage holds there.
+/// What a re-fetched tail window says about the local copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tail {
+    Match,
+    Mismatch,
+    /// Storage holds less than the journal claims (part file gone or
+    /// truncated): local damage, whatever the validators say.
+    LocalShort,
+}
+
+/// Compare what storage holds at `win` with a fresh fetch of it.
 async fn compare(
     source: &dyn RangeSource,
     storage: &dyn Storage,
     expect: &Validators,
     win: ByteRange,
-) -> Result<bool, SourceError> {
+) -> Result<Tail, SourceError> {
+    let local = match storage.read_at(win.start, win.len() as usize).await {
+        Ok(b) if b.len() as u64 == win.len() => b,
+        _ => return Ok(Tail::LocalShort),
+    };
     let mut s = source
         .open(OpenRequest {
             range: Some(win),
@@ -1568,11 +1644,11 @@ async fn compare(
     if remote.len() as u64 != win.len() {
         return Err(SourceError::Transient("short tail response".into()));
     }
-    let local = storage
-        .read_at(win.start, win.len() as usize)
-        .await
-        .map_err(|e| SourceError::Transient(format!("read back failed: {e}")))?;
-    Ok(local[..] == remote[..])
+    Ok(if local[..] == remote[..] {
+        Tail::Match
+    } else {
+        Tail::Mismatch
+    })
 }
 
 impl std::fmt::Debug for Driver {

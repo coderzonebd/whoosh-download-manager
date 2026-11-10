@@ -548,3 +548,80 @@ async fn empty_files_complete() {
     finish(&lab.engine, &id, LONG).await;
     assert_eq!(lab.file("data.bin").unwrap().len(), 0);
 }
+
+#[tokio::test(start_paused = true)]
+async fn empty_files_complete_without_ranges() {
+    let lab = Lab::new(config()).await;
+    lab.serve(
+        URL,
+        Arc::new(FaultSource::new(bytes::Bytes::new()).cfg(|c| {
+            c.accepts_ranges = false;
+            c.honours_ranges = false;
+        })),
+    );
+    let id = lab.add(URL).await;
+    finish(&lab.engine, &id, Duration::from_secs(10)).await;
+    assert_eq!(lab.file("data.bin").unwrap().len(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_body_longer_than_the_probe_is_never_cut() {
+    let lab = Lab::new(config()).await;
+    // No ranges, no validators, chunked: only the probe's length is known,
+    // and the body is longer.
+    lab.serve(
+        URL,
+        Arc::new(FaultSource::new(content(5 * MIB, 30)).cfg(|c| {
+            c.accepts_ranges = false;
+            c.honours_ranges = false;
+            c.size_known = false;
+            c.validators = false;
+            c.probe_size = Some(4 * MIB);
+        })),
+    );
+    let id = lab.add(URL).await;
+    let d = wait_for(
+        &lab.engine,
+        &id,
+        &[DownloadState::Failed, DownloadState::Completed],
+        LONG,
+    )
+    .await;
+    assert_eq!(d.summary.state, DownloadState::Failed);
+    assert_eq!(d.summary.error.unwrap().code, "remote_changed");
+    assert!(lab.file("data.bin").is_none(), "no truncated file");
+}
+
+#[tokio::test(start_paused = true)]
+async fn stalled_hedges_time_out_and_the_owner_is_replaced() {
+    let mut cfg = config();
+    cfg.tuning = Tuning {
+        fixed_connections: Some(1),
+        ..Tuning::default()
+    };
+    let lab = Lab::new(cfg).await;
+    let data = content(4 * MIB, 31);
+    let src = lab.serve(
+        URL,
+        Arc::new(
+            FaultSource::new(data.clone())
+                .cfg(|c| c.per_conn_bps = Some(8 * MIB))
+                .script(|n, _| ReqPlan {
+                    // The owner goes silent for an hour; every hedge hangs
+                    // before its headers; only a replacement gets through.
+                    stall: (n == 1).then_some((MIB, Duration::from_secs(3600))),
+                    ttfb: if (2..=4).contains(&n) {
+                        Duration::from_secs(3600)
+                    } else {
+                        Duration::ZERO
+                    },
+                    ..ReqPlan::default()
+                }),
+        ),
+    );
+    let id = lab.add(URL).await;
+    let (_, took) = finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    assert!(took < Duration::from_secs(10), "took {took:?}");
+    assert!(src.opens() >= 5, "opens {}", src.opens());
+}

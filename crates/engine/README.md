@@ -68,7 +68,11 @@ to first byte, and the time of its last chunk.
   one silent for `endgame_silence` (60 ms, or 3 expected chunk gaps) counts as
   never finishing. A slow-hedge takes over as soon as it delivers.
 - At most `max_hedges_per_range` (3) hedges per range; hedges respect the
-  retry backoff.
+  retry backoff. A hedge that never delivers is itself stall-checked and
+  cancelled, freeing the range for the next one. Once a range's hedges are
+  spent, its stalled owner is cancelled and the range handed to a fresh
+  connection, counted as a failure round, so a server that stalls everything
+  still ends in `failed` instead of hanging.
 
 **Learned connection count (#3).** Start at the host's
 `HostProfile::best_connections`, else `initial_connections` (4), capped by
@@ -103,7 +107,9 @@ file) and starts again after backoff. A server that advertised ranges and
 then ignored them (`RangesUnsupported` mid-download, labserver
 `lying-ranges`) switches the download to this mode and discards everything
 it wrote, since none of it can be trusted. Requests stay pinned to the
-probed validators, so a changed file is never cut or padded.
+probed validators, and every response is read to its end: a body whose
+length differs from the probed size is a different version
+(`RemoteChanged`), never cut or padded to fit.
 
 **Remote changed (#6) — never mix versions.** `RemoteChanged` from any
 request (or validators that conflict with the journal on resume, or a tail
@@ -124,8 +130,9 @@ against the journalled ones; a conflict is treated as `RemoteChanged`.
 **Durability (#8).** Every byte goes through `Storage`. Every
 `checkpoint_interval` (2 s) or `checkpoint_bytes` (64 MiB) of new bytes,
 whichever first: `storage.flush()` *then* `journal.commit()` (never the
-reverse), off the scheduler loop and one at a time; also on pause, shutdown,
-`needs_refresh` and failure. The journal records only the contiguous prefix
+reverse), off the scheduler loop and one at a time (a commit in flight is
+awaited before any newer one, including the empty checkpoint of a restart);
+also on pause, shutdown, `needs_refresh` and failure. The journal records only the contiguous prefix
 of each range whose writes resolved before the snapshot. Preallocation when
 the size is known. Records are saved on every state change and every
 `record_interval` (3 s) while running; writes to the `StateStore` are
@@ -137,7 +144,11 @@ restart (as #6). Otherwise every journalled range's last `tail_verify_len`
 mismatch drops that window and walks back window by window (up to
 `tail_walkback` = 16, then the whole range is dropped). Without an ETag or
 Last-Modified (labserver `no-validators`) a mismatch cannot tell local damage
-from a new remote version, so the download restarts from zero.
+from a new remote version, so the download restarts from zero. Storage
+holding less than the journal claims (part file deleted or truncated) is
+local damage whatever the validators say: that range is dropped, without
+touching the network error budget. The trimmed set is committed before any
+connection overwrites the dropped bytes.
 
 **Checksums (#10).** `AddParams::checksum` (sha256/sha512/sha1/md5, hex,
 validated at `add`) is verified in `verifying` by reading the file back; a
@@ -242,14 +253,15 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | Suite | What |
 |---|---|
 | unit (`src/`) | segment claims/splits/hedge takeover, tuner paths, names, categories, checksums, limiter, event bus, backoff |
-| `tests/scenarios.rs` | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files |
-| `tests/service.rs` | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, probe, preconnect |
+| `tests/scenarios.rs` (27) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers |
+| `tests/service.rs` (19) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
 | `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
-Beyond the defaults, the long batches were run once on 2026-11-10: the crash
-model over seeds 0–3299 (3,300 cases, 1–5 kills each, ≈ 9,900 kills; 0
-corrupt files) and the property test over 1,500 schedules, all passing. Run
+Beyond the defaults, the long batches were run on 2026-11-10: the crash
+model over seeds 0–3299 and 5000–6999 (5,300 cases, 1–5 kills each,
+≈ 16,000 kills; 0 corrupt files) and the property test over 2,100
+schedules, all passing. Run
 them with the built test binaries, e.g.
 `VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
 The real gate (1,000 hard kills of the daemon process with `vayu-store` on

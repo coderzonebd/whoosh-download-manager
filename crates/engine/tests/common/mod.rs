@@ -102,6 +102,8 @@ pub struct Cfg {
     pub expire_after: Option<u64>,
     pub filename: Option<String>,
     pub content_type: Option<String>,
+    /// The size the probe claims, when it should lie.
+    pub probe_size: Option<u64>,
 }
 
 impl Default for Cfg {
@@ -120,6 +122,7 @@ impl Default for Cfg {
             expire_after: None,
             filename: None,
             content_type: None,
+            probe_size: None,
         }
     }
 }
@@ -336,7 +339,7 @@ impl RangeSource for FaultSource {
             }
             let v = self.validators_of(s.version);
             Ok(RemoteMeta {
-                size: v.size,
+                size: self.cfg.probe_size.or(v.size),
                 accepts_ranges: self.cfg.accepts_ranges,
                 etag: v.etag,
                 last_modified: None,
