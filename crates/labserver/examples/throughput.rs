@@ -8,15 +8,16 @@
 //! cargo run --release -p vayu-labserver --example throughput -- --conns 4 --secs 5
 //! cargo run --release -p vayu-labserver --example throughput -- --file 1g.bin --cache-mb 0   # generation-bound
 //! cargo run --release -p vayu-labserver --example throughput -- --h2 --tls
+//! cargo run --release -p vayu-labserver --example throughput -- --h3 --conns 2
 //! ```
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use clap::Parser;
 use http_body_util::{BodyExt, Empty};
 use hyper::client::conn::{http1, http2};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rustls::pki_types::{CertificateDer, ServerName};
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -44,9 +45,13 @@ struct Args {
     /// Use TLS.
     #[arg(long)]
     tls: bool,
+    /// Use HTTP/3 over QUIC (quinn + h3 client; one stream at a time per
+    /// QUIC connection).
+    #[arg(long, conflicts_with_all = ["h2", "tls"])]
+    h3: bool,
     /// Plain-socket HTTP/1.1 client (no hyper on the client side), reading
     /// into a cache-sized 256 KiB buffer: measures the server, not the client.
-    #[arg(long, conflicts_with_all = ["h2", "tls"])]
+    #[arg(long, conflicts_with_all = ["h2", "tls", "h3"])]
     raw: bool,
     /// Tokio worker threads (client and server share the runtime); 0 = one per CPU.
     #[arg(long, default_value_t = 0)]
@@ -194,6 +199,86 @@ async fn worker(
     total
 }
 
+/// One QUIC connection to `addr`, trusting `cert_der`, with receive
+/// windows and socket buffers sized for loopback speed.
+async fn h3_connect(
+    addr: SocketAddr,
+    cert_der: &[u8],
+) -> (
+    h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
+    quinn::Endpoint,
+) {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(CertificateDer::from(cert_der.to_vec())).unwrap();
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    tls.alpn_protocols = vec![b"h3".to_vec()];
+    let mut transport = quinn::TransportConfig::default();
+    transport
+        .stream_receive_window((16u32 << 20).into())
+        .receive_window((64u32 << 20).into());
+    let mut cfg = quinn::ClientConfig::new(Arc::new(
+        quinn::crypto::rustls::QuicClientConfig::try_from(tls).unwrap(),
+    ));
+    cfg.transport_config(Arc::new(transport));
+    let socket = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let sock = socket2::SockRef::from(&socket);
+    let _ = sock.set_recv_buffer_size(4 << 20);
+    let _ = sock.set_send_buffer_size(4 << 20);
+    let mut endpoint = quinn::Endpoint::new(
+        quinn::EndpointConfig::default(),
+        None,
+        socket,
+        Arc::new(quinn::TokioRuntime),
+    )
+    .unwrap();
+    endpoint.set_default_client_config(cfg);
+    let conn = endpoint.connect(addr, "localhost").unwrap().await.unwrap();
+    let (mut driver, send) = h3::client::new(h3_quinn::Connection::new(conn))
+        .await
+        .unwrap();
+    tokio::spawn(async move {
+        let _ = std::future::poll_fn(|cx| driver.poll_close(cx)).await;
+    });
+    (send, endpoint)
+}
+
+/// One QUIC connection, one HTTP/3 request stream at a time.
+async fn h3_worker(
+    addr: SocketAddr,
+    args: Arc<Args>,
+    cert: Vec<u8>,
+    slice: (u64, u64),
+    deadline: Instant,
+) -> u64 {
+    let (send, _endpoint) = h3_connect(addr, &cert).await;
+    let mut total = 0;
+    while Instant::now() < deadline {
+        let req = http::Request::get(format!(
+            "https://localhost:{}/s/clean/{}",
+            addr.port(),
+            args.file
+        ))
+        .header("range", format!("bytes={}-{}", slice.0, slice.1 - 1))
+        .body(())
+        .unwrap();
+        let mut stream = send.clone().send_request(req).await.unwrap();
+        stream.finish().await.unwrap();
+        stream.recv_response().await.unwrap();
+        while let Some(chunk) = stream.recv_data().await.unwrap() {
+            total += chunk.remaining() as u64;
+            if Instant::now() >= deadline {
+                return total;
+            }
+        }
+    }
+    total
+}
+
 fn main() {
     let args = Arc::new(Args::parse());
     let mut rt = tokio::runtime::Builder::new_multi_thread();
@@ -208,11 +293,14 @@ async fn run(args: Arc<Args>) {
         scenarios: vec![Scenario::clean("clean")],
         cache_bytes: args.cache_mb << 20,
         tls_port: args.tls.then_some(0),
+        h3_port: args.h3.then_some(0),
         ..LabConfig::default()
     })
     .await
     .unwrap();
-    let addr = if args.tls {
+    let addr = if args.h3 {
+        lab.h3_addr().unwrap()
+    } else if args.tls {
         lab.https_addr().unwrap()
     } else {
         lab.http_addr()
@@ -228,6 +316,9 @@ async fn run(args: Arc<Args>) {
             let slice = (i * size / n, (i + 1) * size / n);
             if args.raw {
                 tokio::spawn(raw_worker(addr, args.clone(), slice, deadline))
+            } else if args.h3 {
+                let cert = cert.clone().unwrap();
+                tokio::spawn(h3_worker(addr, args.clone(), cert, slice, deadline))
             } else {
                 tokio::spawn(worker(addr, args.clone(), cert.clone(), slice, deadline))
             }
@@ -244,6 +335,8 @@ async fn run(args: Arc<Args>) {
         n,
         if args.raw {
             "raw http/1.1"
+        } else if args.h3 {
+            "h3"
         } else if args.h2 {
             "h2"
         } else {

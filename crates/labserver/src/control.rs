@@ -2,7 +2,6 @@
 
 use http::header::{self, HeaderValue};
 use http::{Method, Request, Response, StatusCode};
-use hyper::body::Incoming;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -51,7 +50,7 @@ struct Digest {
     sha256: String,
 }
 
-fn query(req: &Request<Incoming>) -> BTreeMap<String, String> {
+fn query<B>(req: &Request<B>) -> BTreeMap<String, String> {
     req.uri()
         .query()
         .unwrap_or("")
@@ -68,7 +67,7 @@ fn bad(msg: &str) -> Response<Body> {
     text(StatusCode::BAD_REQUEST, format!("{msg}\n"))
 }
 
-pub(crate) async fn handle(req: Request<Incoming>, rest: &str, ctx: &ReqCtx) -> Response<Body> {
+pub(crate) async fn handle<B>(req: Request<B>, rest: &str, ctx: &ReqCtx) -> Response<Body> {
     let shared = &ctx.shared;
     let q = query(&req);
     let scenario_param = || -> Result<_, Box<Response<Body>>> {

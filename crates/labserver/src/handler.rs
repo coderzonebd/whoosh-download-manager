@@ -5,7 +5,6 @@ use http::header::{self, HeaderMap, HeaderValue};
 use http::{Method, Request, Response, StatusCode, Version};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Empty, Full};
-use hyper::body::Incoming;
 use std::convert::Infallible;
 use std::io;
 use std::sync::Arc;
@@ -26,7 +25,10 @@ pub(crate) type Body = BoxBody<Bytes, io::Error>;
 pub(crate) struct ReqCtx {
     pub shared: Arc<Shared>,
     pub conn: Arc<ConnCtl>,
+    /// Requests arrive over TLS (HTTPS or HTTP/3): `https` origins.
     pub tls: bool,
+    /// `Alt-Svc` to add to every response (TCP listeners with HTTP/3 on).
+    pub alt_svc: Option<HeaderValue>,
 }
 
 pub(crate) fn empty(status: StatusCode) -> Response<Body> {
@@ -61,13 +63,11 @@ fn not_found() -> Response<Body> {
     text(StatusCode::NOT_FOUND, "not found\n")
 }
 
-/// The service function for every connection.
-pub(crate) async fn handle(
-    req: Request<Incoming>,
-    ctx: ReqCtx,
-) -> Result<Response<Body>, Infallible> {
+/// The service function for every connection. The request body is never
+/// read, so any body type works (hyper's `Incoming`, `()` for HTTP/3).
+pub(crate) async fn handle<B>(req: Request<B>, ctx: ReqCtx) -> Result<Response<Body>, Infallible> {
     let path = req.uri().path().to_owned();
-    let resp = if let Some(rest) = path.strip_prefix("/s/") {
+    let mut resp = if let Some(rest) = path.strip_prefix("/s/") {
         serve_scenario(req, rest, &ctx).await
     } else if let Some(rest) = path.strip_prefix("/_lab/") {
         crate::control::handle(req, rest, &ctx).await
@@ -76,10 +76,13 @@ pub(crate) async fn handle(
     } else {
         not_found()
     };
+    if let Some(v) = &ctx.alt_svc {
+        resp.headers_mut().insert(header::ALT_SVC, v.clone());
+    }
     Ok(resp)
 }
 
-async fn serve_scenario(req: Request<Incoming>, rest: &str, ctx: &ReqCtx) -> Response<Body> {
+async fn serve_scenario<B>(req: Request<B>, rest: &str, ctx: &ReqCtx) -> Response<Body> {
     let Some((name, tail)) = rest.split_once('/') else {
         return not_found();
     };
@@ -107,8 +110,8 @@ fn parse_hop(tail: &str) -> Option<(u32, &str)> {
     }
 }
 
-async fn serve_file(
-    req: Request<Incoming>,
+async fn serve_file<B>(
+    req: Request<B>,
     tail: &str,
     rt: &Arc<ScenarioRt>,
     ctx: &ReqCtx,
@@ -281,8 +284,8 @@ fn hv(s: &str) -> HeaderValue {
 
 /// Redirects, signatures and access gates. `Some` is the response to send
 /// instead of the file.
-fn gatekeep(
-    req: &Request<Incoming>,
+fn gatekeep<B>(
+    req: &Request<B>,
     hop: u32,
     file: &str,
     rt: &ScenarioRt,
@@ -371,7 +374,7 @@ pub(crate) fn origin<B>(req: &Request<B>, ctx: &ReqCtx) -> String {
     format!("{scheme}://{host}")
 }
 
-async fn refuse(req: &Request<Incoming>, rt: &ScenarioRt, ctx: &ReqCtx) -> Response<Body> {
+async fn refuse<B>(req: &Request<B>, rt: &ScenarioRt, ctx: &ReqCtx) -> Response<Body> {
     let limits = rt.sc.limits.unwrap_or(crate::scenario::LimitConfig {
         max_conns_per_ip: 1,
         refuse: Refuse::ServiceUnavailable,
@@ -382,8 +385,8 @@ async fn refuse(req: &Request<Incoming>, rt: &ScenarioRt, ctx: &ReqCtx) -> Respo
         Refuse::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
         Refuse::Reset => {
             ctx.conn.kill();
-            // The connection task drops the connection (RST) before any
-            // response is written.
+            // The connection task drops the connection (RST; on HTTP/3 a
+            // CONNECTION_CLOSE) before any response is written.
             return std::future::pending().await;
         }
     };
