@@ -700,3 +700,110 @@ pub fn trace() {
         .with_test_writer()
         .try_init();
 }
+
+/// A `StateStore` whose record and host-profile saves take time, to widen
+/// race windows deterministically on the paused clock.
+pub struct SlowState {
+    pub inner: MemStateStore,
+    pub save_delay: Mutex<Duration>,
+    pub profile_delay: Mutex<Duration>,
+}
+
+impl SlowState {
+    pub fn new() -> Self {
+        Self {
+            inner: MemStateStore::default(),
+            save_delay: Mutex::new(Duration::ZERO),
+            profile_delay: Mutex::new(Duration::ZERO),
+        }
+    }
+}
+
+impl vayu_core::StateStore for SlowState {
+    fn load_downloads(&self) -> BoxFuture<'_, io::Result<Vec<vayu_core::DownloadRecord>>> {
+        self.inner.load_downloads()
+    }
+    fn save_download<'a>(
+        &'a self,
+        record: &'a vayu_core::DownloadRecord,
+    ) -> BoxFuture<'a, io::Result<()>> {
+        Box::pin(async move {
+            let d = *lock(&self.save_delay);
+            if !d.is_zero() {
+                tokio::time::sleep(d).await;
+            }
+            self.inner.save_download(record).await
+        })
+    }
+    fn delete_downloads<'a>(&'a self, ids: &'a [String]) -> BoxFuture<'a, io::Result<()>> {
+        self.inner.delete_downloads(ids)
+    }
+    fn get_value<'a>(&'a self, key: &'a str) -> BoxFuture<'a, io::Result<Option<String>>> {
+        self.inner.get_value(key)
+    }
+    fn set_value<'a>(&'a self, key: &'a str, json: &'a str) -> BoxFuture<'a, io::Result<()>> {
+        self.inner.set_value(key, json)
+    }
+    fn host_profile<'a>(
+        &'a self,
+        host: &'a str,
+    ) -> BoxFuture<'a, io::Result<Option<vayu_core::HostProfile>>> {
+        self.inner.host_profile(host)
+    }
+    fn save_host_profile<'a>(
+        &'a self,
+        profile: &'a vayu_core::HostProfile,
+    ) -> BoxFuture<'a, io::Result<()>> {
+        Box::pin(async move {
+            let d = *lock(&self.profile_delay);
+            if !d.is_zero() {
+                tokio::time::sleep(d).await;
+            }
+            self.inner.save_host_profile(profile).await
+        })
+    }
+}
+
+/// An engine over `SlowState` (plus the usual in-memory parts).
+pub async fn slow_lab(cfg: EngineConfig) -> (Lab, Arc<SlowState>) {
+    let sources = Arc::new(MemSourceFactory::default());
+    let storage = Arc::new(MemStorageProvider::default());
+    let journal = Arc::new(MemJournal::default());
+    let slow = Arc::new(SlowState::new());
+    let engine = Engine::start(
+        EngineDeps {
+            sources: sources.clone(),
+            storage: storage.clone(),
+            journal: journal.clone(),
+            state: slow.clone(),
+        },
+        cfg,
+    )
+    .await
+    .unwrap();
+    (
+        Lab {
+            engine,
+            sources,
+            storage,
+            journal,
+            state: Arc::new(MemStateStore::default()),
+        },
+        slow,
+    )
+}
+
+/// A source whose probe panics (to check a panicking run still ends).
+pub struct PanicSource;
+
+impl RangeSource for PanicSource {
+    fn label(&self) -> &str {
+        "panic"
+    }
+    fn probe(&self) -> BoxFuture<'_, Result<RemoteMeta, SourceError>> {
+        Box::pin(async { panic!("probe exploded") })
+    }
+    fn open(&self, _req: OpenRequest) -> BoxFuture<'_, Result<ByteStream, SourceError>> {
+        Box::pin(async { panic!("open exploded") })
+    }
+}

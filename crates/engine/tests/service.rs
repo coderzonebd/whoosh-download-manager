@@ -509,7 +509,7 @@ async fn secrets_are_cleared_once_complete() {
     assert_eq!(req.cookie, None);
     assert_eq!(req.headers.len(), 1);
     assert_eq!(req.headers[0].name, "Accept");
-    assert_eq!(req.referer.as_deref(), Some("https://lab.test/"));
+    assert_eq!(req.referer, None, "the referer is cleared too");
 }
 
 #[tokio::test(start_paused = true)]

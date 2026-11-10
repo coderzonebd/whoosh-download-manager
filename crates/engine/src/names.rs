@@ -53,7 +53,16 @@ pub(crate) fn sanitize(raw: &str) -> Option<String> {
             c => c,
         })
         .collect();
-    let trimmed = s.trim_matches(|c: char| c.is_whitespace() || c == '.');
+    let mut trimmed = s.trim_matches(|c: char| c.is_whitespace() || c == '.');
+    // A name ending in our part suffix could be another download's
+    // in-progress file: drop the suffix.
+    while trimmed.len() >= PART_SUFFIX.len()
+        && trimmed.is_char_boundary(trimmed.len() - PART_SUFFIX.len())
+        && trimmed[trimmed.len() - PART_SUFFIX.len()..].eq_ignore_ascii_case(PART_SUFFIX)
+    {
+        trimmed = trimmed[..trimmed.len() - PART_SUFFIX.len()]
+            .trim_matches(|c: char| c.is_whitespace() || c == '.');
+    }
     if trimmed.is_empty() {
         return None;
     }
@@ -212,6 +221,12 @@ mod tests {
         assert_eq!(sanitize("dir/").as_deref(), None);
         assert_eq!(sanitize("").as_deref(), None);
         assert_eq!(sanitize("বাংলা ফাইল.pdf").as_deref(), Some("বাংলা ফাইল.pdf"));
+        assert_eq!(sanitize("x.zip.vayu-part").as_deref(), Some("x.zip"));
+        assert_eq!(
+            sanitize("x.zip.VAYU-PART.vayu-part").as_deref(),
+            Some("x.zip")
+        );
+        assert_eq!(sanitize(".vayu-part").as_deref(), Some("vayu-part"));
         let long = format!("{}.iso", "ক".repeat(200));
         let s = sanitize(&long).unwrap();
         assert!(s.len() <= MAX_LEN && s.ends_with(".iso"), "{s}");

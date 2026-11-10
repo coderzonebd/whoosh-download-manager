@@ -129,12 +129,41 @@ pub(crate) struct RunSpec {
     pub auto_name: bool,
 }
 
-pub(crate) async fn run(
+/// Runs a download and makes sure it always ends: a panic anywhere in the
+/// run still applies a final state (`failed`, code `internal`) and frees
+/// the queue slot, instead of leaving the download marked running forever.
+pub(crate) async fn supervise(
     inner: Arc<Inner>,
     spec: RunSpec,
-    mut stop: watch::Receiver<Option<StopReason>>,
+    stop: watch::Receiver<Option<StopReason>>,
     done: watch::Sender<bool>,
 ) {
+    use futures::FutureExt;
+    let id = spec.record.id.clone();
+    let generation = spec.generation;
+    let ran = std::panic::AssertUnwindSafe(run(inner.clone(), spec, stop))
+        .catch_unwind()
+        .await;
+    if let Err(panic) = ran {
+        let what = panic
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "panic".into());
+        tracing::error!(id, "download run panicked: {what}");
+        inner
+            .run_ended(
+                &id,
+                generation,
+                Outcome::Failed(error_info("internal", format!("internal error: {what}"))),
+                Vec::new(),
+            )
+            .await;
+    }
+    let _ = done.send(true);
+}
+
+async fn run(inner: Arc<Inner>, spec: RunSpec, mut stop: watch::Receiver<Option<StopReason>>) {
     let id = spec.record.id.clone();
     let generation = spec.generation;
     let mut d = Driver::new(inner.clone(), spec);
@@ -166,7 +195,6 @@ pub(crate) async fn run(
     inner
         .run_ended(&id, generation, outcome, d.segment_infos())
         .await;
-    let _ = done.send(true);
 }
 
 async fn stopped(rx: &mut watch::Receiver<Option<StopReason>>) -> StopReason {
@@ -394,8 +422,15 @@ impl Driver {
                 meta.content_type.as_deref(),
             );
             if name != self.filename {
-                name = self.inner.unique_name(&self.directory, &name, &self.id);
-                self.filename = name;
+                // Checked and stored in one critical section (two probes
+                // naming the same file must not share a part file).
+                if let Some(reserved) =
+                    self.inner
+                        .reserve_name(&self.id, self.generation, &name, self.category_auto)
+                {
+                    name = reserved;
+                    self.filename = name;
+                }
             }
         }
         self.name_fixed = true;
@@ -477,9 +512,13 @@ impl Driver {
             // Pin every request to the version we already hold.
             expect.etag = expect.etag.or(cp.meta.etag);
             expect.last_modified = expect.last_modified.or(cp.meta.last_modified);
-            for r in cp.done.ranges() {
-                if let Some(c) = ByteRange::new(r.start.min(size), r.end.min(size)) {
-                    done.insert(c);
+            // Ranges are only meaningful for a checkpoint of this size (a
+            // stream attempt journals no size and no ranges).
+            if cp.meta.size == Some(size) {
+                for r in cp.done.ranges() {
+                    if let Some(c) = ByteRange::new(r.start.min(size), r.end.min(size)) {
+                        done.insert(c);
+                    }
                 }
             }
         }
@@ -503,6 +542,13 @@ impl Driver {
                     .map_err(io_failed)?;
             }
             done = verified;
+        }
+        if done.is_empty() {
+            // Nothing journalled: whatever a `<name>.vayu-part` already holds
+            // (a removed download that kept its files, a crash before the
+            // first commit, an older version) is not ours. Start from an
+            // empty file, so `finish` can never move stale bytes along.
+            self.discard().await?;
         }
         if size > 0 {
             let storage = self.open_storage().await?;
@@ -895,7 +941,10 @@ impl Driver {
             let joined = loop {
                 tokio::select! {
                     Some(j) = self.tasks.join_next() => break j,
-                    _ = tick.tick() => self.on_tick().await?,
+                    _ = tick.tick() => {
+                        self.on_tick().await?;
+                        self.stream_idle_check()?;
+                    }
                 }
             };
             let (wid, exit) = match joined {
@@ -933,10 +982,42 @@ impl Driver {
                 }
                 Exit::Storage(e) => return Err(io_failed(e).into()),
                 Exit::Lost | Exit::Cancelled => {
+                    tokio::time::sleep_until(self.open_gate).await;
                     self.discard().await?;
                 }
             }
         }
+    }
+
+    /// Stream mode cannot hedge (no ranges), so a response silent for
+    /// `stream_idle_timeout` (before or after its first byte) is cancelled
+    /// and the download starts again from zero, as a failure round.
+    fn stream_idle_check(&mut self) -> Result<(), Abort> {
+        let now = Instant::now();
+        let now_us = now_us_since(self.epoch, now);
+        let limit = self.t.stream_idle_timeout;
+        let mut stalled = false;
+        for w in self.workers.values_mut() {
+            if w.cancelling {
+                continue;
+            }
+            let last = w.counters.last_us.load(Ordering::Relaxed);
+            let silent = if last != 0 {
+                Duration::from_micros(now_us.saturating_sub(last))
+            } else {
+                now.duration_since(w.started)
+            };
+            if silent >= limit {
+                w.cancelling = true;
+                w.cancel.cancel();
+                stalled = true;
+            }
+        }
+        if stalled {
+            tracing::debug!(id = %self.id, "stream stalled; starting again");
+            self.note_failure(&SourceError::Transient("stream stalled".into()), None)?;
+        }
+        Ok(())
     }
 
     // ------------------------------------------------------- scheduling
@@ -1318,15 +1399,20 @@ impl Driver {
         if self.consecutive > self.t.error_budget {
             return Err(Outcome::Failed(source_info(err)).into());
         }
-        let delay = retry_after.unwrap_or_else(|| {
-            backoff(
-                self.t.retry_base,
-                self.t.retry_cap,
-                self.consecutive,
-                &mut self.rng,
-            )
-        });
-        self.open_gate = self.open_gate.max(now + delay);
+        // `Retry-After` is honoured up to `retry_cap`: a server asking for a
+        // day must not park the download outside the error budget.
+        let delay = retry_after
+            .unwrap_or_else(|| {
+                backoff(
+                    self.t.retry_base,
+                    self.t.retry_cap,
+                    self.consecutive,
+                    &mut self.rng,
+                )
+            })
+            .min(self.t.retry_cap);
+        let until = now.checked_add(delay).unwrap_or(now + self.t.retry_cap);
+        self.open_gate = self.open_gate.max(until);
         Ok(())
     }
 

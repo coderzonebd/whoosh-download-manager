@@ -102,6 +102,8 @@ struct Entry {
     last_segments: Vec<SegmentInfo>,
     last_progress: Option<(u64, u64, u32)>,
     last_segments_sent: Option<Instant>,
+    /// `remove` is in progress: never start this download again.
+    removing: bool,
 }
 
 struct St {
@@ -133,6 +135,15 @@ fn is_active(s: DownloadState) -> bool {
         s,
         DownloadState::Probing | DownloadState::Downloading | DownloadState::Verifying
     )
+}
+
+/// Forget what was captured for this download only: the cookie, auth-like
+/// headers, a POST body (CSRF tokens, credentials) and the referer.
+fn scrub(req: &mut vayu_proto::RequestContext) {
+    req.cookie = None;
+    req.body_base64 = None;
+    req.referer = None;
+    req.headers.retain(|h| !is_secret_header(&h.name));
 }
 
 /// Header names cleared from the stored request once a download completes.
@@ -186,6 +197,7 @@ impl Engine {
                     last_segments: Vec::new(),
                     last_progress: None,
                     last_segments_sent: None,
+                    removing: false,
                 },
             );
         }
@@ -249,24 +261,30 @@ impl Inner {
             .clamp(1, u32::from(u16::MAX)) as u16
     }
 
-    /// `name`, or `name (n).ext`, so no other unfinished download in `dir`
-    /// uses the same in-progress file.
-    pub(crate) fn unique_name(&self, dir: &Path, name: &str, except: &str) -> String {
-        let st = lock(&self.st);
-        let taken: HashSet<String> = st
-            .downloads
-            .values()
-            .filter(|e| e.record.id != except && e.record.state != DownloadState::Completed)
-            .filter(|e| Path::new(&e.record.directory) == dir)
-            .map(|e| e.record.filename.to_lowercase())
-            .collect();
-        if !taken.contains(&name.to_lowercase()) {
-            return name.to_string();
+    /// Reserve a unique name for a running download (a probe improved
+    /// it): computed and stored in the same critical section, so two
+    /// downloads can never end up with the same in-progress file. Returns
+    /// the name now in the record, or `None` if this run is stale.
+    pub(crate) fn reserve_name(
+        &self,
+        id: &str,
+        generation: u64,
+        wanted: &str,
+        category_auto: bool,
+    ) -> Option<String> {
+        let mut st = lock(&self.st);
+        let e = st.downloads.get(id)?;
+        if e.generation != generation {
+            return None;
         }
-        (1..)
-            .map(|n| names::numbered(name, n))
-            .find(|c| !taken.contains(&c.to_lowercase()))
-            .unwrap_or_else(|| name.to_string())
+        let dir = PathBuf::from(&e.record.directory);
+        let name = unique_in(&st, &dir, wanted, id);
+        let e = st.downloads.get_mut(id)?;
+        if e.record.filename != name && category_auto {
+            e.record.category = Some(category_for(&name).to_string());
+        }
+        e.record.filename = name.clone();
+        Some(name)
     }
 
     /// Persist the current record of `id` (no-op if it was removed).
@@ -349,6 +367,13 @@ impl Inner {
             if e.generation != generation {
                 return;
             }
+            // The latest stop request wins (a resume that arrived while the
+            // run was stopping turned Pause into Restart). Read under the
+            // lock that `resume`/`pause`/`refresh_url` also hold.
+            let outcome = match (&outcome, e.run.as_ref().and_then(|r| *r.stop.borrow())) {
+                (Outcome::Stopped(_), Some(latest)) => Outcome::Stopped(latest),
+                _ => outcome,
+            };
             e.run = None;
             e.last_segments = segments;
             if let Some(l) = &e.live {
@@ -364,8 +389,7 @@ impl Inner {
                     e.record.completed_at = Some(unix_millis());
                     // Secrets were captured for this download only.
                     if let Some(req) = e.record.request.as_mut() {
-                        req.cookie = None;
-                        req.headers.retain(|h| !is_secret_header(&h.name));
+                        scrub(req);
                     }
                     (DownloadState::Completed, None)
                 }
@@ -427,7 +451,7 @@ impl Inner {
         let mut queued: Vec<(i64, u64, DownloadId)> = st
             .downloads
             .values()
-            .filter(|e| e.run.is_none() && e.record.state == DownloadState::Queued)
+            .filter(|e| e.run.is_none() && !e.removing && e.record.state == DownloadState::Queued)
             .map(|e| (e.record.added_at, e.seq, e.record.id.clone()))
             .collect();
         queued.sort();
@@ -463,7 +487,7 @@ impl Inner {
                 live,
                 auto_name: e.auto_name,
             };
-            tokio::spawn(run::run(self.clone(), spec, stop_rx, done_tx));
+            tokio::spawn(run::supervise(self.clone(), spec, stop_rx, done_tx));
         }
     }
 
@@ -663,23 +687,18 @@ impl Inner {
         let auto_name = user_name.is_none();
         let name = names::resolve(user_name.as_deref(), None, &p.url, None);
         let id = new_id();
-        let name = self.unique_name(Path::new(&directory), &name, &id);
         if names::part_path(Path::new(&directory), &name).is_none() {
             return Err(ServiceError::invalid_params("filename is not usable"));
         }
-        let category = p
-            .category
-            .clone()
-            .filter(|c| !c.trim().is_empty())
-            .unwrap_or_else(|| category_for(&name).to_string());
-        let record = DownloadRecord {
+        let user_category = p.category.clone().filter(|c| !c.trim().is_empty());
+        let mut record = DownloadRecord {
             id: id.clone(),
             url: p.url,
             request: p.request,
             mirrors: p.mirrors,
             filename: name,
             directory,
-            category: Some(category),
+            category: None,
             queue: None,
             state: if p.start {
                 DownloadState::Queued
@@ -696,6 +715,10 @@ impl Inner {
         };
         let summary = {
             let mut st = lock(&self.st);
+            // Pick the name and store it in one critical section.
+            record.filename = unique_in(&st, Path::new(&record.directory), &record.filename, &id);
+            record.category =
+                Some(user_category.unwrap_or_else(|| category_for(&record.filename).to_string()));
             let seq = st.seq;
             st.seq += 1;
             let entry = Entry {
@@ -708,6 +731,7 @@ impl Inner {
                 last_segments: Vec::new(),
                 last_progress: None,
                 last_segments_sent: None,
+                removing: false,
             };
             let summary = self.summary(&entry);
             st.downloads.insert(id.clone(), entry);
@@ -787,22 +811,25 @@ impl Inner {
         }
         let mut waits = Vec::new();
         let mut changed = Vec::new();
-        for id in &ids {
-            if let Some(rx) = self.signal_stop(id, StopReason::Pause) {
-                waits.push(rx);
-                continue;
-            }
+        {
+            // One critical section: pump cannot start a download between
+            // "not running" and "paused".
             let mut st = lock(&self.st);
-            if let Some(e) = st.downloads.get_mut(id)
-                && e.run.is_none()
-                && matches!(
+            for id in &ids {
+                let Some(e) = st.downloads.get_mut(id) else {
+                    continue;
+                };
+                if let Some(run) = &e.run {
+                    run.stop.send_replace(Some(StopReason::Pause));
+                    waits.push(run.done.clone());
+                } else if matches!(
                     e.record.state,
                     DownloadState::Queued | DownloadState::NeedsRefresh
-                )
-            {
-                e.record.state = DownloadState::Paused;
-                e.record.error = None;
-                changed.push(id.clone());
+                ) {
+                    e.record.state = DownloadState::Paused;
+                    e.record.error = None;
+                    changed.push(id.clone());
+                }
             }
         }
         for id in &changed {
@@ -855,11 +882,21 @@ impl Inner {
 
     async fn remove(self: &Arc<Self>, p: RemoveParams) -> ServiceResult<()> {
         self.validate_ids(&p.ids)?;
-        let waits: Vec<_> = p
-            .ids
-            .iter()
-            .filter_map(|id| self.signal_stop(id, StopReason::Remove))
-            .collect();
+        let waits: Vec<_> = {
+            // Mark and stop in one critical section, so pump can never
+            // start a download that is being removed.
+            let mut st = lock(&self.st);
+            p.ids
+                .iter()
+                .filter_map(|id| {
+                    let e = st.downloads.get_mut(id)?;
+                    e.removing = true;
+                    let run = e.run.as_ref()?;
+                    run.stop.send_replace(Some(StopReason::Remove));
+                    Some(run.done.clone())
+                })
+                .collect()
+        };
         wait_all(waits).await;
         let removed: Vec<DownloadRecord> = {
             let _g = self.save_lock.lock().await;
@@ -923,14 +960,9 @@ impl Inner {
             .sources
             .source(&p.url, p.request.as_ref())
             .map_err(|e| ServiceError::invalid_params(e.to_string()))?;
-        let was_running = match self.signal_stop(&p.id, StopReason::Restart) {
-            Some(rx) => {
-                wait_all(vec![rx]).await;
-                true
-            }
-            None => false,
-        };
-        let state_changed = {
+        // Store the new URL first, then stop a running download: its
+        // restart is spawned from the record, so it must already hold it.
+        let (wait, state_changed) = {
             let mut st = lock(&self.st);
             let Some(e) = st.downloads.get_mut(&p.id) else {
                 return Err(ServiceError::not_found(&p.id));
@@ -939,23 +971,27 @@ impl Inner {
             if p.request.is_some() {
                 e.record.request = p.request;
             }
-            let restart = was_running
-                || matches!(
-                    e.record.state,
-                    DownloadState::NeedsRefresh | DownloadState::Failed
-                );
-            if restart && e.record.state != DownloadState::Queued {
+            if let Some(run) = &e.run {
+                run.stop.send_replace(Some(StopReason::Restart));
+                (Some(run.done.clone()), false)
+            } else if matches!(
+                e.record.state,
+                DownloadState::NeedsRefresh | DownloadState::Failed
+            ) {
                 e.record.state = DownloadState::Queued;
                 e.record.error = None;
-                true
+                (None, true)
             } else {
-                false
+                (None, false)
             }
         };
         if state_changed {
             self.emit_state_and_save(&p.id).await;
         } else {
             self.save(&p.id).await;
+        }
+        if let Some(rx) = wait {
+            wait_all(vec![rx]).await;
         }
         self.pump();
         Ok(())
@@ -1025,6 +1061,26 @@ impl Inner {
         self.closed.store(true, Ordering::Release);
         self.bus.close();
     }
+}
+
+/// `name`, or `name (n).ext`, so no other unfinished download in `dir`
+/// uses the same in-progress file. Callers hold the state lock until the
+/// name is stored.
+fn unique_in(st: &St, dir: &Path, name: &str, except: &str) -> String {
+    let taken: HashSet<String> = st
+        .downloads
+        .values()
+        .filter(|e| e.record.id != except && e.record.state != DownloadState::Completed)
+        .filter(|e| Path::new(&e.record.directory) == dir)
+        .map(|e| e.record.filename.to_lowercase())
+        .collect();
+    if !taken.contains(&name.to_lowercase()) {
+        return name.to_string();
+    }
+    (1..)
+        .map(|n| names::numbered(name, n))
+        .find(|c| !taken.contains(&c.to_lowercase()))
+        .unwrap_or_else(|| name.to_string())
 }
 
 fn eta(downloaded: u64, total: Option<u64>, speed: u64) -> Option<u64> {

@@ -88,6 +88,9 @@ pub struct Tuning {
     /// flight above the connection target.
     pub max_hedges_per_range: u32,
     pub max_extra_hedges: u16,
+    /// Without ranges nothing can be hedged: a response silent this long
+    /// is dropped and the download starts again from zero.
+    pub stream_idle_timeout: Duration,
     /// Durability cadence: `Storage::flush` then `Journal::commit` at least
     /// this often, or after this many new bytes, whichever comes first.
     pub checkpoint_interval: Duration,
@@ -137,6 +140,7 @@ impl Default for Tuning {
             endgame_silence: Duration::from_millis(60),
             max_hedges_per_range: 3,
             max_extra_hedges: 4,
+            stream_idle_timeout: Duration::from_secs(20),
             checkpoint_interval: Duration::from_secs(2),
             checkpoint_bytes: 64 * MIB,
             record_interval: Duration::from_secs(3),

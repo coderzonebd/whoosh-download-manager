@@ -97,7 +97,9 @@ run ends.
 back by `Retry-After` when given, else `min(retry_cap, retry_base ×
 2^(n−1))` with jitter in the upper half (50 ms base, 30 s cap), `n` = failure
 rounds since the last byte arrived. Failures within one backoff window count
-as one round. After `error_budget` (10) rounds without a single byte, the
+as one round. `Retry-After` is honoured up to `retry_cap` (a server asking
+for a day must not park a download outside the error budget). After
+`error_budget` (10) rounds without a single byte, the
 download fails with `ErrorInfo { code: SourceError::code(), message }`.
 Connections that finish normally are replaced at once, backoff or not.
 
@@ -109,7 +111,9 @@ then ignored them (`RangesUnsupported` mid-download, labserver
 it wrote, since none of it can be trusted. Requests stay pinned to the
 probed validators, and every response is read to its end: a body whose
 length differs from the probed size is a different version
-(`RemoteChanged`), never cut or padded to fit.
+(`RemoteChanged`), never cut or padded to fit. Nothing can be hedged
+without ranges, so a response silent for `stream_idle_timeout` (20 s) is
+dropped and the download starts again from zero, as a failure round.
 
 **Remote changed (#6) — never mix versions.** `RemoteChanged` from any
 request (or validators that conflict with the journal on resume, or a tail
@@ -148,7 +152,11 @@ from a new remote version, so the download restarts from zero. Storage
 holding less than the journal claims (part file deleted or truncated) is
 local damage whatever the validators say: that range is dropped, without
 touching the network error budget. The trimmed set is committed before any
-connection overwrites the dropped bytes.
+connection overwrites the dropped bytes. A ranged start with nothing
+journalled (a new download, a crash before the first commit, a journal of
+another size) always starts from an empty in-progress file: whatever an
+existing `<name>.vayu-part` holds (say, a removed download that kept its
+files) is never moved along into the finished file.
 
 **Checksums (#10).** `AddParams::checksum` (sha256/sha512/sha1/md5, hex,
 validated at `add`) is verified in `verifying` by reading the file back; a
@@ -162,7 +170,10 @@ again (last path component only, no control or Windows-reserved characters,
 no leading/trailing dots or spaces, `CON`/`LPT1`… defused, ≤ 245 bytes keeping
 the extension) and the final path must be a single component inside the
 directory. Downloads write to `<name>.vayu-part`, unique among unfinished
-downloads in that directory, then `Storage::finish`; on `AlreadyExists`:
+downloads in that directory (chosen and stored in one critical section, so concurrent
+downloads never share one), then `Storage::finish`; a name ending in
+`.vayu-part` loses that suffix (it could be another download's part file);
+on `AlreadyExists`:
 `name (1).ext`, `name (2).ext`, … (`a (1).tar.gz` keeps double extensions).
 The name can still change after the first probe only while no journal exists
 for the download.
@@ -190,9 +201,10 @@ speed limit and connection cap to running downloads, and broadcasts
 `event.settings`.
 
 **Security (#15).** When a download completes, the stored request loses its
-cookie and every header whose name contains `auth`, `token`, `api-key`,
-`apikey`, `session`, `secret` or `csrf` (`Authorization`,
-`Proxy-Authorization`, `X-Auth-Token`, …).
+cookie, the POST body (`bodyBase64`: CSRF tokens, credentials), the referer
+and every header whose name contains `auth`, `token`, `api-key`, `apikey`,
+`session`, `secret` or `csrf` (`Authorization`, `Proxy-Authorization`,
+`X-Auth-Token`, …). `remove` deletes the whole record.
 
 **Service semantics (#16).** `list`: newest first, `states`/`category`
 filters, `offset`/`limit`. `get`: summary plus segments (live while running,
@@ -201,7 +213,13 @@ the last known otherwise). Errors: `-32002` unknown id, `-32003` wrong state
 after `shutdown`), `-32602` bad params (empty or unsupported URL, unusable
 file name, relative directory, unknown checksum algorithm or wrong length).
 `add { start: false }` adds the download `paused`. `pause` waits until the
-download has flushed and committed. `shutdown` stops every download,
+download has flushed and committed. `pause`, `remove` and `refresh_url`
+decide and act on a download in one critical section with the queue, so
+the queue can never start a download being paused or removed, and a
+refreshed running download restarts on the new URL. When a stop races a
+`resume`, the latest request wins (read under the same lock when the run
+ends). A run that panics still ends: `failed` with code `internal`, its
+queue slot freed. `shutdown` stops every download,
 flushes, commits, saves records as `queued` (so the next start resumes them)
 and ends every subscription.
 
@@ -228,6 +246,7 @@ and ends every subscription.
 | `first_byte_factor`, `first_byte_timeout` | 4, 5 s | stall before the first byte |
 | `hedge_gain`, `endgame_silence` | 2.0, 60 ms | endgame hedging |
 | `max_hedges_per_range`, `max_extra_hedges` | 3, 4 | hedge bounds |
+| `stream_idle_timeout` | 20 s | silence before a no-range stream starts over |
 | `checkpoint_interval`, `checkpoint_bytes` | 2 s, 64 MiB | flush + commit cadence |
 | `record_interval` | 3 s | record saves while running |
 | `retry_base`, `retry_cap` | 50 ms, 30 s | backoff |
@@ -255,12 +274,13 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | unit (`src/`) | segment claims/splits/hedge takeover, tuner paths, names, categories, checksums, limiter, event bus, backoff |
 | `tests/scenarios.rs` (27) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers |
 | `tests/service.rs` (19) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
+| `tests/regressions.rs` (11) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. Nine of them fail on the pre-fix code; the name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
 | `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
-model over seeds 0–3299 and 5000–6999 (5,300 cases, 1–5 kills each,
-≈ 16,000 kills; 0 corrupt files) and the property test over 2,100
+model over seeds 0–3299, 5000–6999 and 10000–11999 (7,300 cases, 1–5 kills
+each, ≈ 22,000 kills; 0 corrupt files) and the property test over 2,700
 schedules, all passing. Run
 them with the built test binaries, e.g.
 `VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
@@ -344,4 +364,4 @@ handle may reach a file newly opened at the same path.
   one connection stays there even if conditions change.
 - Checksums are verified by reading the file back after the download.
 - Hedging is not possible in stream mode (no ranges): a stalled single
-  stream waits for the source's idle timeout.
+  stream is only replaced after `stream_idle_timeout`, from zero.
