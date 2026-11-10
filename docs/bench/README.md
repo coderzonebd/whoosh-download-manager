@@ -29,14 +29,17 @@ B=target/release/vayu-bench
 $B fetch
 $B list                 # every client should show a path and a version
 
-# 2. The run. Close what you can; note the load average. ~1-2 h here.
-$B run --seed 20261110 --label "$(date -u +%F)-$(hostname)"
+# 2. The run. Close what you can; note the load average. ~1 h here.
+$B run --seed 20261110 --cache-mb 128 --label "$(date -u +%F)-$(hostname)"
 
 # 3. The report.
 $B report docs/bench/data/<date>-<host> -o my-baseline.md
 ```
 
-`--seed 20261110` reproduces the baseline's run order exactly; any seed is
+`--cache-mb 128` is labserver's content cache (the baseline machine had
+little free RAM; the 100 MiB files fit, the 1 GiB file is regenerated on
+every pass, the same for every client). `--seed 20261110` reproduces the
+baseline's run order exactly; any seed is
 fine for an independent check. `meta.json` records the command, the client
 binaries' SHA-256, the machine and its load, so a rerun can be compared
 like for like. Interrupted? `$B run --resume docs/bench/data/<dir>` continues
@@ -68,10 +71,11 @@ twice in a block is skipped for the rest of it.
 
 ### Reading the numbers
 
-- **time** = client start → labserver sends the last byte. This is the speed
-  metric; it is measured by the same instrument for every client (including
-  GUI clients in manual mode) and excludes exit artefacts. **exit** (process
-  exit) is shown next to it.
+- **time** = client start → download complete: process exit for clients
+  that exit when done (curl, wget, aria2c, aria2-next); for clients that
+  rename a partial file when done but then linger (MDM, Surge), the moment
+  the complete file appears, after which the harness stops them; Gopeed's
+  REST API reporting done. **exit** (process exit) is shown next to it.
 - **peak conns** is politeness: how many connections a client opened at once.
   On `global-throttle` extra connections cannot help, so they only cost the
   server.
@@ -133,12 +137,15 @@ They have no headless mode, so the harness measures them from labserver's
 side: `vayu-bench manual --client abdm --scenario <s> --file <f> --runs 3
 --watch-dir <their download folder>`. It prints the URL, you paste it into
 the app, and the harness records labserver's first request → last byte,
-peak connections, and the downloaded file's SHA-256. A manual run's clock
-starts at the client's first request, so human reaction time is excluded —
-but so is the client's start-up and connection setup, which CLI clients pay
-inside their *time*. Manual *time* therefore slightly flatters the GUI
-client (by roughly a CLI client's TTFB); compare accordingly, and never
-with *exit*.
+peak connections, and the downloaded file's SHA-256. Manual *time* is
+measured entirely on the server side, so it is not directly comparable
+with the CLI clients' *time*: it starts at the client's first request
+(excluding human reaction time, but also the client's start-up, which CLI
+clients pay), and it ends when labserver hands out the last byte, which on
+loopback is earlier than the client receiving it (the kernel buffers
+megabytes per connection). Both effects flatter the GUI client, by tens of
+milliseconds on the files here; use files of 100 MiB or more and compare
+with that in mind.
 
 ## Real internet (user-run only)
 

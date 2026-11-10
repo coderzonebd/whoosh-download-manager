@@ -16,8 +16,14 @@ use std::path::Path;
 pub enum NameCheck {
     /// Exactly the name the header asks for.
     Expected,
+    /// The expected name with characters Windows forbids (`<>:"/\|?*`)
+    /// replaced or dropped, or a traversal reduced to one safe component
+    /// other than the basename: acceptable.
+    Sanitized,
     /// The ASCII `filename=` fallback although a `filename*` was sent.
     AsciiFallback,
+    /// The header's raw bytes used as the name, undecoded (not valid UTF-8).
+    RawBytes,
     /// Ignored the header and used the URL's last segment.
     UrlName,
     /// Some other name (mangled encoding, replaced characters, …).
@@ -27,14 +33,17 @@ pub enum NameCheck {
 }
 
 impl NameCheck {
+    /// Expected or an acceptable sanitisation.
     pub fn is_ok(self) -> bool {
-        matches!(self, NameCheck::Expected)
+        matches!(self, NameCheck::Expected | NameCheck::Sanitized)
     }
 
     pub fn label(self) -> &'static str {
         match self {
             NameCheck::Expected => "expected",
+            NameCheck::Sanitized => "sanitised",
             NameCheck::AsciiFallback => "ASCII fallback",
+            NameCheck::RawBytes => "undecoded bytes",
             NameCheck::UrlName => "URL name",
             NameCheck::Altered => "altered",
             NameCheck::Escaped => "ESCAPED DIR",
@@ -60,8 +69,46 @@ pub fn expected(scenario: &str, file: &str) -> Option<(&'static str, Option<&'st
     })
 }
 
-/// Grades the name a client saved `file` under. `escaped` is true when the
-/// client wrote outside its download directory.
+/// How the raw header bytes look as a name after [`escape_name`], for the
+/// file whose header is not valid UTF-8.
+fn raw_form(file: &str) -> Option<&'static str> {
+    (file == "latin1.bin").then_some("r\\xe9sum\\xe9.pdf")
+}
+
+/// `name` with every character Windows forbids in file names replaced by
+/// `_`, and with them removed.
+fn windows_safe(name: &str) -> [String; 2] {
+    let bad = |c: char| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+    [
+        name.chars().map(|c| if bad(c) { '_' } else { c }).collect(),
+        name.chars().filter(|c| !bad(*c)).collect(),
+    ]
+}
+
+/// A file name as text: valid UTF-8 as is, other bytes as `\xNN`.
+pub fn escape_name(name: &std::ffi::OsStr) -> String {
+    #[cfg(unix)]
+    {
+        use std::fmt::Write as _;
+        use std::os::unix::ffi::OsStrExt;
+        let mut out = String::new();
+        for chunk in name.as_bytes().utf8_chunks() {
+            out.push_str(chunk.valid());
+            for b in chunk.invalid() {
+                let _ = write!(out, "\\x{b:02x}");
+            }
+        }
+        out
+    }
+    #[cfg(not(unix))]
+    {
+        name.to_string_lossy().into_owned()
+    }
+}
+
+/// Grades the name a client saved `file` under (as [`escape_name`] shows
+/// it). `escaped` is true when the client wrote outside its download
+/// directory.
 pub fn grade(scenario: &str, file: &str, saved: &str, escaped: bool) -> Option<NameCheck> {
     if escaped {
         return Some(NameCheck::Escaped);
@@ -77,9 +124,13 @@ pub fn grade(scenario: &str, file: &str, saved: &str, escaped: bool) -> Option<N
         NameCheck::AsciiFallback
     } else if base == file {
         NameCheck::UrlName
-    } else if file == "traversal.bin" && !base.contains("..") && !base.is_empty() {
-        // Any single, contained component is a correct sanitisation.
-        NameCheck::Expected
+    } else if file == "traversal.bin" && !base.is_empty() && base != ".." {
+        // Contained (not escaped) single component: a safe sanitisation.
+        NameCheck::Sanitized
+    } else if windows_safe(want).contains(&base) {
+        NameCheck::Sanitized
+    } else if Some(base.as_str()) == raw_form(file) {
+        NameCheck::RawBytes
     } else {
         NameCheck::Altered
     })
@@ -101,6 +152,8 @@ mod tests {
             NameCheck::AsciiFallback
         );
         assert_eq!(g("bangla.bin", "bangla.bin"), NameCheck::UrlName);
+        assert_eq!(g("latin1.bin", "résumé.pdf"), NameCheck::Expected);
+        assert_eq!(g("latin1.bin", "r\\xe9sum\\xe9.pdf"), NameCheck::RawBytes);
         assert_eq!(
             g("latin1.bin", "r\u{fffd}sum\u{fffd}.pdf"),
             NameCheck::Altered
@@ -111,10 +164,18 @@ mod tests {
         );
         assert_eq!(
             g("plain.bin", "annual _final_ report.pdf"),
+            NameCheck::Sanitized
+        );
+        assert_eq!(
+            g("plain.bin", "annual final report.pdf"),
+            NameCheck::Sanitized
+        );
+        assert_eq!(
+            g("plain.bin", "annual 'final' report.pdf"),
             NameCheck::Altered
         );
         assert_eq!(g("traversal.bin", "passwd"), NameCheck::Expected);
-        assert_eq!(g("traversal.bin", "etc_passwd"), NameCheck::Expected);
+        assert_eq!(g("traversal.bin", ".._.._etc_passwd"), NameCheck::Sanitized);
         assert_eq!(g("traversal.bin", "traversal.bin"), NameCheck::UrlName);
         assert_eq!(
             grade("bangla-filename", "traversal.bin", "passwd", true),
@@ -122,6 +183,17 @@ mod tests {
         );
         assert_eq!(grade("clean", "1m.bin", "1m.bin", false), None);
         assert!(NameCheck::Expected.is_ok());
+        assert!(NameCheck::Sanitized.is_ok());
         assert!(!NameCheck::AsciiFallback.is_ok());
+        assert!(!NameCheck::RawBytes.is_ok());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn escapes_invalid_utf8() {
+        use std::os::unix::ffi::OsStrExt;
+        let raw = std::ffi::OsStr::from_bytes(b"r\xe9sum\xe9.pdf");
+        assert_eq!(escape_name(raw), "r\\xe9sum\\xe9.pdf");
+        assert_eq!(escape_name(std::ffi::OsStr::new("বাংলা.txt")), "বাংলা.txt");
     }
 }

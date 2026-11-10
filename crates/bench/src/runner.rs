@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::adapter::{self, Adapter, ApiScript, Conn, Job, Mode};
+use crate::adapter::{self, Adapter, ApiScript, Completion, Conn, Job, Mode};
 use crate::fetch::{self, Installed};
 use crate::lab::Lab;
 use crate::measure::{self, Measured, unix_us};
@@ -268,15 +268,25 @@ pub struct RunRecord {
     /// 1-minute load average when the run started.
     pub load1: Option<f64>,
     pub outcome: Outcome,
-    /// Client spawn to exit (API clients: to the task reporting done).
+    /// Client spawn to the download being complete: process exit for
+    /// clients that exit when done; the final file appearing (complete,
+    /// control files gone) for clients that linger; the API reporting done
+    /// for API clients. **The speed metric.**
+    #[serde(default)]
+    pub done_s: Option<f64>,
+    /// Client spawn to process exit (for lingering clients that the harness
+    /// stopped once done: to that stop).
     pub wall_s: Option<f64>,
-    /// Client spawn to the last response body byte leaving labserver
-    /// (capped at `wall_s`): the download's duration on the wire, free of
-    /// client exit artifacts. The primary speed metric for lab runs.
+    /// Client spawn to the last response body byte labserver handed to a
+    /// connection (capped at `wall_s`). Informational: kernel socket
+    /// buffers hold megabytes on loopback, so this precedes the client's
+    /// receipt, by more for clients with many connections.
     #[serde(default)]
     pub last_byte_s: Option<f64>,
-    /// `size / time`, MiB/s, for successful runs, where time is
-    /// `last_byte_s` when known, else `wall_s`.
+    /// How completion was detected.
+    #[serde(default)]
+    pub completion: Option<Completion>,
+    /// `size / done_s`, MiB/s, for successful runs.
     pub throughput_mib_s: Option<f64>,
     /// Client spawn to the first response body byte leaving labserver.
     pub ttfb_s: Option<f64>,
@@ -327,8 +337,10 @@ impl RunRecord {
             started_unix_us: unix_us(),
             load1: sys::loadavg().map(|l| l[0]),
             outcome: Outcome::Error,
+            done_s: None,
             wall_s: None,
             last_byte_s: None,
+            completion: None,
             throughput_mib_s: None,
             ttfb_s: None,
             server_transfer_s: None,
@@ -358,10 +370,10 @@ impl RunRecord {
         }
     }
 
-    /// The run's duration for speed statistics: time to the last byte when
-    /// labserver saw it, else process wall time.
+    /// The run's duration for speed statistics: time to completion (older
+    /// records without it: process wall time).
     pub fn time_s(&self) -> Option<f64> {
-        self.last_byte_s.or(self.wall_s)
+        self.done_s.or(self.wall_s)
     }
 
     /// The key that identifies a planned run (for `--resume`).
@@ -925,12 +937,15 @@ fn run_one_inner(
     rec.started_unix_us = unix_us();
     rec.load1 = sys::loadavg().map(|l| l[0]);
     let mut running = measure::start(&ctx.opts.shim_exe, &inv, &base)?;
-    let (measured, done_unix_us, timed_out, api_note) = match &inv.api {
-        None => match running.wait(t.timeout) {
+    let completion = a.completion();
+    rec.completion = Some(completion);
+    let (measured, done_unix_us, timed_out, api_note) = match (&inv.api, completion) {
+        (Some(script), _) => drive_api(&mut running, script, t.timeout),
+        (None, Completion::FinalFile) => wait_final_file(&mut running, a, &out, t.size, t.timeout),
+        (None, _) => match running.wait(t.timeout) {
             Some(m) => (m, None, false, None),
             None => (running.stop(Duration::from_secs(3)), None, true, None),
         },
-        Some(script) => drive_api(&mut running, script, t.timeout),
     };
     drop(running);
 
@@ -940,11 +955,14 @@ fn run_one_inner(
     rec.cpu_user_s = measured.cpu_user_us.map(|u| u as f64 / 1e6);
     rec.cpu_sys_s = measured.cpu_sys_us.map(|u| u as f64 / 1e6);
     rec.max_rss_mib = measured.max_rss_kib.map(|k| k as f64 / 1024.0);
-    let wall_us = match done_unix_us {
+    rec.wall_s = Some(measured.wall_us as f64 / 1e6);
+    let done_us = match done_unix_us {
         Some(d) => d.saturating_sub(measured.spawn_unix_us),
         None => measured.wall_us,
     };
-    rec.wall_s = Some(wall_us as f64 / 1e6);
+    if !timed_out {
+        rec.done_s = Some(done_us as f64 / 1e6);
+    }
     if let Some(e) = &measured.spawn_error {
         rec.note = Some(e.clone());
     }
@@ -992,7 +1010,11 @@ fn run_one_inner(
         }
         Some(path) => {
             let rel = path.strip_prefix(&out).unwrap_or(&path);
-            let name = rel.to_string_lossy().into_owned();
+            let name = rel
+                .iter()
+                .map(names::escape_name)
+                .collect::<Vec<_>>()
+                .join("/");
             let size = std::fs::metadata(&path)?.len();
             rec.output_size = Some(size);
             rec.name_check = names::grade(t.scenario, t.file, &name, escaped);
@@ -1006,7 +1028,7 @@ fn run_one_inner(
         }
     }
     if rec.outcome == Outcome::Ok
-        && let (Some(w), Some(s)) = (rec.time_s(), rec.output_size)
+        && let (Some(w), Some(s)) = (rec.done_s, rec.output_size)
         && w > 0.0
     {
         rec.throughput_mib_s = Some(s as f64 / (1024.0 * 1024.0) / w);
@@ -1103,6 +1125,58 @@ fn find_output(a: &dyn Adapter, root: &Path, out: &Path) -> (Option<PathBuf>, Ve
         })
         .collect();
     (chosen, extras, escaped)
+}
+
+/// Whether `out` holds a finished download: a file of the expected size (any
+/// size if unknown) and none of the client's control/partial files.
+fn final_file_ready(a: &dyn Adapter, out: &Path, size: Option<u64>) -> bool {
+    let Ok(rd) = std::fs::read_dir(out) else {
+        return false;
+    };
+    let mut found = false;
+    for e in rd.flatten() {
+        if a.is_control_file(&e.file_name().to_string_lossy()) {
+            return false;
+        }
+        if let Ok(m) = e.metadata()
+            && m.is_file()
+            && size.is_none_or(|s| m.len() == s)
+        {
+            found = true;
+        }
+    }
+    found
+}
+
+/// Waits for a [`Completion::FinalFile`] client: polls the download
+/// directory every 5 ms; once the file is complete, records the time and
+/// stops the lingering process.
+fn wait_final_file(
+    running: &mut measure::Running,
+    a: &dyn Adapter,
+    out: &Path,
+    size: Option<u64>,
+    timeout: Duration,
+) -> (Measured, Option<u64>, bool, Option<String>) {
+    let deadline = running.started + timeout;
+    loop {
+        if let Some(m) = running.wait(Duration::from_millis(5)) {
+            return (m, None, false, None);
+        }
+        if final_file_ready(a, out, size) {
+            let done = unix_us();
+            let m = running.stop(Duration::from_secs(5));
+            return (
+                m,
+                Some(done),
+                false,
+                Some("stopped by the harness once its file was complete".into()),
+            );
+        }
+        if Instant::now() > deadline {
+            return (running.stop(Duration::from_secs(3)), None, true, None);
+        }
+    }
 }
 
 /// Drives an API client: waits for its server, submits the download, polls
@@ -1361,6 +1435,7 @@ pub fn manual(opts: &ManualOptions) -> Result<PathBuf> {
             rec.wall_s = Some(b.saturating_sub(a) as f64 / 1e6);
             rec.server_transfer_s = rec.wall_s;
             rec.last_byte_s = rec.wall_s;
+            rec.done_s = rec.wall_s;
             rec.started_unix_us = a;
         }
         if let (Some(a), Some(b)) = (st.first_request_unix_us, st.first_byte_unix_us) {
@@ -1471,6 +1546,26 @@ mod tests {
     }
 
     #[test]
+    fn final_file_detection() {
+        let base = std::env::temp_dir().join(format!("vayu-bench-final-{}", std::process::id()));
+        let (_, out, _) = run_dirs(&base).unwrap();
+        let s = adapter::Surge;
+        assert!(!final_file_ready(&s, &out, Some(4)), "empty");
+        std::fs::write(out.join("f.bin.surge"), b"ab").unwrap();
+        assert!(!final_file_ready(&s, &out, Some(4)), "partial only");
+        std::fs::write(out.join("f.bin"), b"abcd").unwrap();
+        assert!(
+            !final_file_ready(&s, &out, Some(4)),
+            "control file still there"
+        );
+        std::fs::remove_file(out.join("f.bin.surge")).unwrap();
+        assert!(final_file_ready(&s, &out, Some(4)));
+        assert!(!final_file_ready(&s, &out, Some(5)), "wrong size");
+        assert!(final_file_ready(&s, &out, None));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
     fn records_round_trip() {
         let mut r = RunRecord::new(3, "curl", "clean", "1m.bin", 2);
         r.outcome = Outcome::Corrupt;
@@ -1486,7 +1581,13 @@ mod tests {
         let mut t = back;
         t.wall_s = Some(4.0);
         assert_eq!(t.time_s(), Some(4.0));
-        t.last_byte_s = Some(0.2);
-        assert_eq!(t.time_s(), Some(0.2), "last byte wins over exit");
+        t.last_byte_s = Some(0.1);
+        assert_eq!(
+            t.time_s(),
+            Some(4.0),
+            "server-side last byte is not completion"
+        );
+        t.done_s = Some(0.2);
+        assert_eq!(t.time_s(), Some(0.2), "completion wins over exit");
     }
 }

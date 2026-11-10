@@ -5,7 +5,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
-use crate::names::NameCheck;
 use crate::runner::{Meta, Outcome, RunRecord};
 use crate::stats::{Summary, mann_whitney};
 
@@ -128,7 +127,7 @@ struct ClientRow<'a> {
     client: &'a str,
     total: usize,
     ok: usize,
-    /// Time statistics (time to last byte, or wall time without a lab).
+    /// Time statistics (time to completion).
     wall: Option<Summary>,
     walls: Vec<f64>,
     /// Median process exit time.
@@ -189,7 +188,7 @@ fn headlines(
     let _ = writeln!(
         o,
         "Fastest client per scenario among those whose every run was correct, by median \
-         *time* (start to last byte), with the runner-up and the Mann-Whitney U p-value \
+         *time* (start to completion), with the runner-up and the Mann-Whitney U p-value \
          between the two. Computed from the tables below.\n"
     );
     let _ = writeln!(
@@ -401,13 +400,18 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
     );
     let _ = writeln!(
         o,
-        "- **Metrics:** *time* (the speed metric) = client process start to the last response \
-         body byte leaving labserver, i.e. how long the download took on the wire, measured by \
-         the same instrument for every client; *exit* = client process start to exit (API \
-         clients: server start to the task reporting done, polled every 10 ms), shown \
-         separately because some clients linger after the download (Surge's \
-         `--exit-when-done` checks every 2 s after a 2 s delay; MDM's CLI reports on a 0.5 s \
-         tick); *MiB/s* = file size / time; *TTFB* = \
+        "- **Metrics:** *time* (the speed metric) = client process start to the download \
+         being complete: process exit for curl, wget, aria2c and aria2-next, which exit as \
+         soon as the file is done; for MDM and Surge, which download into a partial file, \
+         rename it when done and then linger (MDM's CLI reports on a 0.5 s tick; Surge's \
+         `--exit-when-done` first checks after 4 s), the moment the download directory holds \
+         the full-size file and no partial/control file (polled every 5 ms; the harness then \
+         stops the process); for Gopeed, its REST API reporting the task done (polled every \
+         10 ms; time counts from the server's start). *exit* = start to process exit (or to \
+         that stop). labserver's last-byte timestamp (`last_byte_s` in the raw data) is \
+         not used for speed: on loopback the kernel buffers megabytes per connection, so the \
+         server finishes well before the client, and more so for many-connection clients. \
+         *MiB/s* = file size / time; *TTFB* = \
          client start to the first body byte leaving labserver; *peak conns* = most TCP \
          connections the client held open to the scenario at once (idle keep-alive \
          included; max over all runs, failed ones too) and *peak reqs* = most in-flight \
@@ -481,7 +485,7 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
     let _ = writeln!(o, "## Overview\n");
     let _ = writeln!(
         o,
-        "Median *time* (start to last byte) in seconds over successful runs (**bold** = fastest; `k/N` = only k \
+        "Median *time* (start to completion) in seconds over successful runs (**bold** = fastest; `k/N` = only k \
          of N runs correct; ✗ = none correct).\n"
     );
     let header = |o: &mut String| {
@@ -687,8 +691,10 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
         let _ = writeln!(o, "## File names (`Content-Disposition`)\n");
         let _ = writeln!(
             o,
-            "The name each client saved under (from its last run; a grade other than \
-             *expected* is a wrong file name). Expected: RFC 6266 — `filename*` wins over \
+            "The name each client saved under (from its last run; ✓ = *expected*, or \
+             *sanitised*: characters Windows forbids replaced, or a traversal reduced to one \
+             safe name; anything else is a wrong file name; bytes that are not UTF-8 are shown \
+             as `\\xNN`). Expected: RFC 6266 — `filename*` wins over \
              `filename`; raw bytes decoded as UTF-8 when valid, else Latin-1; directory parts \
              stripped and the file kept inside the download directory.\n"
         );
@@ -720,11 +726,7 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
                     None => String::new(),
                     Some(r) => match (&r.output_name, r.name_check) {
                         (Some(n), Some(g)) => {
-                            let mark = if g == NameCheck::Expected {
-                                "✓"
-                            } else {
-                                "✗"
-                            };
+                            let mark = if g.is_ok() { "✓" } else { "✗" };
                             format!("{mark} {} ({})", shown_name(n), g.label())
                         }
                         (Some(n), None) => shown_name(n),
@@ -847,6 +849,7 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
 mod tests {
     use super::*;
     use crate::adapter::{Conn, Mode};
+    use crate::names::NameCheck;
     use crate::runner::{ClientMeta, MatrixRow};
     use crate::sys::Machine;
 

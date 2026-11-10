@@ -53,6 +53,23 @@ pub struct Job<'a> {
     pub port: u16,
 }
 
+/// How the harness tells that a download is complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Completion {
+    /// The process exits as soon as the file is done (curl, wget, aria2).
+    Exit,
+    /// The client downloads into a partial/control file and renames it at
+    /// the end, but its process lingers afterwards (Surge's
+    /// `--exit-when-done` polls every 2 s; MDM's CLI reports on a 0.5 s
+    /// tick). Done = the download directory holds a file of the expected
+    /// size and none of the client's control files; the harness then stops
+    /// the process.
+    FinalFile,
+    /// The client's API reports the task done.
+    Api,
+}
+
 /// How the harness drives a client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -118,6 +135,13 @@ pub trait Adapter: Send + Sync + fmt::Debug {
     /// (control files, journals); ignored when looking for the output.
     fn is_control_file(&self, _name: &str) -> bool {
         false
+    }
+    /// How completion is detected (see [`Completion`]).
+    fn completion(&self) -> Completion {
+        match self.mode() {
+            Mode::Api => Completion::Api,
+            _ => Completion::Exit,
+        }
     }
     /// The settings that matter for reproducing this adapter's numbers.
     fn settings(&self) -> String {
@@ -402,6 +426,9 @@ impl Adapter for Mdm {
     fn is_control_file(&self, name: &str) -> bool {
         name.ends_with(".mdm.json") || name.ends_with(".mdmpart") || name.ends_with(".part")
     }
+    fn completion(&self) -> Completion {
+        Completion::FinalFile
+    }
 }
 
 // --------------------------------------------------------------- Surge --
@@ -455,6 +482,9 @@ impl Adapter for Surge {
     }
     fn is_control_file(&self, name: &str) -> bool {
         name.ends_with(".surge") || name.ends_with(".part")
+    }
+    fn completion(&self) -> Completion {
+        Completion::FinalFile
     }
 }
 
@@ -795,6 +825,12 @@ mod tests {
             ]
         );
         assert!(!Surge.supports_headers());
+        assert_eq!(Surge.completion(), Completion::FinalFile);
+        assert!(Surge.is_control_file("10m.bin.surge"));
+        assert_eq!(Mdm.completion(), Completion::FinalFile);
+        assert!(Mdm.is_control_file("100m.bin.mdm.part"));
+        assert_eq!(Curl.completion(), Completion::Exit);
+        assert_eq!(Gopeed.completion(), Completion::Api);
     }
 
     #[test]

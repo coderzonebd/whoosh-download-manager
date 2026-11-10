@@ -37,23 +37,23 @@ Each run is one client downloading one file from one scenario, cold:
    private `HOME`/`XDG_*` directory, so no config, host profile, HSTS cache
    or resume journal survives between runs, and the user's `~/.curlrc`,
    `~/.wgetrc`, `~/.aria2/aria2.conf` never apply.
-3. Wait for it to exit (or, for API clients, for the task to report done),
-   up to the scenario's timeout; then SIGTERM, then SIGKILL the process
-   group.
+3. Wait until the download is complete (see `done_s` below), up to the
+   scenario's timeout; then SIGTERM, then SIGKILL the process group.
 4. Read labserver's stats, find the downloaded file, SHA-256 it and compare
    with `/_lab/digest` (every version, for the changing file).
 
 | Field (`runs.jsonl`) | Meaning |
 |---|---|
-| `last_byte_s` | Client start → labserver hands out the last response body byte. **The speed metric** for lab runs: the same instrument for every client, free of exit artefacts (Surge's `--exit-when-done` cannot exit before ~4 s; MDM's CLI reports on a 0.5 s tick). Capped at `wall_s`. |
-| `wall_s` | Client start → process exit (API clients: server start → task done, polled every 10 ms). Shown as *exit* in the report. |
-| `throughput_mib_s` | File size / `last_byte_s` (or `wall_s` without a lab), successful runs only. |
+| `done_s` | Client start → download complete. **The speed metric.** How "complete" is detected depends on the client (`completion`): `exit` — the process exits as soon as the file is done (curl, wget, aria2c, aria2-next); `final-file` — the client downloads into a partial file, renames it when done and then lingers (MDM's CLI reports on a 0.5 s tick; Surge's `--exit-when-done` first checks after 4 s), so done = the download directory holds the full-size file and none of the client's control/partial files (polled every 5 ms), after which the harness stops it; `api` — Gopeed's REST API reports the task done (polled every 10 ms, counted from the server's start). |
+| `wall_s` | Client start → process exit (or the harness stopping a lingering client). Shown as *exit* in the report. |
+| `last_byte_s` | Client start → labserver hands the last body byte to a connection. Informational only: on loopback the kernel buffers megabytes per connection, so the server finishes before the client does, and earlier still for clients with many connections. |
+| `throughput_mib_s` | File size / `done_s`, successful runs only. |
 | `ttfb_s` | Client start → first response body byte leaving labserver. |
 | `peak_connections` | Most TCP connections the client held to the scenario at once, idle keep-alive included (`clients[ip].peak_open_connections`): the politeness metric. |
 | `peak_active_requests` | Most in-flight requests at once (HTTP/2 streams count). |
 | `cpu_user_s`, `cpu_sys_s`, `max_rss_mib` | `getrusage(RUSAGE_CHILDREN)` in the wrapper, whose only child is the client: its CPU time (helpers it waited for included) and peak RSS. Unix only. |
 | `outcome` | `ok` (bytes match), `corrupt` (full size, wrong bytes), `incomplete`, `no-output`, `timeout`, `skipped` (two timeouts already in this block), `error` (harness problem). |
-| `output_name`, `name_check` | The name the client saved under; for `bangla-filename`, graded against RFC 6266 (`expected`, `ascii-fallback`, `url-name`, `altered`, `escaped`). The download directory is nested three levels deep so a client following `../../etc/passwd` writes somewhere the harness sees it. |
+| `output_name`, `name_check` | The name the client saved under (bytes that are not UTF-8 as `\xNN`); for `bangla-filename`, graded against RFC 6266: `expected`, `sanitized` (Windows-forbidden characters replaced, or a traversal reduced to one safe component — acceptable), `ascii-fallback`, `raw-bytes`, `url-name`, `altered`, `escaped`. The download directory is nested three levels deep so a client following `../../etc/passwd` writes somewhere the harness sees it. |
 | `requests`, `status`, `refused`, `resets_injected`, `stalls_injected`, `bytes_sent` | labserver's view of the run. |
 | `load1` | 1-minute load average when the run started. |
 
@@ -66,7 +66,7 @@ These fields come from labserver's `first_request_unix_us`,
 
 Per (scenario, file, client), over successful runs: median, p90 (linear
 interpolation, R type 7), min. Between clients: two-sided Mann-Whitney U on
-`last_byte_s`, exact null distribution when there are no ties and both
+`done_s`, exact null distribution when there are no ties and both
 samples have ≤ 30 values, otherwise the normal approximation with tie and
 continuity correction. With 7 runs per client, complete separation gives
 p = 2/C(14,7) ≈ 0.00058, so the Phase 1 bar of p < 0.01 is reachable with
@@ -149,7 +149,8 @@ vayu-bench manual --client abdm --scenario clean --file 100m.bin --runs 3 \
 The harness starts labserver, prints the URL (and any header the scenario
 needs), and waits. Paste the URL into the app; when labserver has sent the
 whole file and the client has had no request in flight for one second, the
-run ends (or press Enter). Time is labserver's first request → last byte;
+run ends (or press Enter). Time is labserver's first request → last byte
+(server-side, so it flatters the GUI client slightly: see docs/bench);
 peak connections come from labserver; with `--watch-dir` the newest file
 there is hashed. Results go to `docs/bench/data/<date>-<host>-manual-<client>/`
 and render with `vayu-bench report` like any run set.
@@ -161,10 +162,11 @@ vayu-bench run --real-internet [--url name=https://…] --runs 3
 ```
 
 Off by default and never run in CI: it uses third-party bandwidth and the
-numbers depend on your connection. Default targets are public speed-test
-files (Hetzner, OVH, Tele2). There is no reference digest, so a run counts
-as correct when its SHA-256 matches the most common hash among all clients'
-downloads of that file; politeness and TTFB are not available.
+numbers depend on your connection. Default targets are 100 MB static files
+on the Hetzner, OVH and Tele2 speed-test servers. There is no reference
+digest, so a run counts as correct when its SHA-256 matches the most
+common hash among all clients' downloads of that file; politeness and TTFB
+are not available.
 
 ## Tests
 
