@@ -104,6 +104,11 @@ pub struct Cfg {
     pub content_type: Option<String>,
     /// The size the probe claims, when it should lie.
     pub probe_size: Option<u64>,
+    /// Slow start: a response begins at 1/16 of its rate and approaches it
+    /// with this time constant.
+    pub ramp: Duration,
+    /// Multiplicative jitter of every chunk's pacing (uniform ±`noise`).
+    pub noise: f64,
 }
 
 impl Default for Cfg {
@@ -123,6 +128,8 @@ impl Default for Cfg {
             filename: None,
             content_type: None,
             probe_size: None,
+            ramp: Duration::ZERO,
+            noise: 0.0,
         }
     }
 }
@@ -263,6 +270,10 @@ impl Drop for ActiveGuard {
 struct Body {
     data: Bytes,
     pos: usize,
+    born: Instant,
+    ramp: Duration,
+    noise: f64,
+    rng: fastrand::Rng,
     chunk: usize,
     rate: Option<u64>,
     global: Option<Arc<Bucket>>,
@@ -295,7 +306,13 @@ async fn next_chunk(mut b: Body) -> Option<(Result<Bytes, SourceError>, Body)> {
     }
     let n = b.chunk.min(b.data.len() - b.pos);
     if let Some(r) = b.rate {
-        tokio::time::sleep(Duration::from_secs_f64(n as f64 / r as f64)).await;
+        let mut rate = r as f64;
+        if !b.ramp.is_zero() {
+            let t = b.born.elapsed().as_secs_f64() / b.ramp.as_secs_f64();
+            rate *= 1.0 - (15.0 / 16.0) * (-t).exp();
+        }
+        let jitter = 1.0 + b.noise * (2.0 * b.rng.f64() - 1.0);
+        tokio::time::sleep(Duration::from_secs_f64(n as f64 / rate * jitter)).await;
     }
     if let Some(g) = &b.global {
         g.take(n).await;
@@ -407,6 +424,10 @@ impl RangeSource for FaultSource {
             let b = Body {
                 data: body,
                 pos: 0,
+                born: Instant::now(),
+                ramp: self.cfg.ramp,
+                noise: self.cfg.noise,
+                rng: fastrand::Rng::with_seed(n),
                 chunk: self.cfg.chunk,
                 rate: plan.rate.or(self.cfg.per_conn_bps),
                 global: self.global.clone(),

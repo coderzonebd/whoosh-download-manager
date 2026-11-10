@@ -59,8 +59,29 @@ pub struct Tuning {
     /// tunes the connection count. Finished connections are refilled
     /// immediately, not on the tick.
     pub tick: Duration,
-    /// Length of one measurement window of the connection-count hill climb.
+    /// Connection-count measurement windows (see `tuner.rs`): at least
+    /// `max(tune_window, tune_rtt_windows × median time-to-first-byte)`,
+    /// extended up to `tune_window_max` until the relative standard error
+    /// of `tune_sample`-long throughput samples is at most
+    /// `tune_target_rse`.
     pub tune_window: Duration,
+    pub tune_window_max: Duration,
+    pub tune_rtt_windows: f64,
+    pub tune_sample: Duration,
+    pub tune_target_rse: f64,
+    /// Warm-up before a window: at least `max(tune_window / 2,
+    /// tune_warm_rtts × median TTFB)` after every connection streams, and
+    /// longer while throughput still rises by more than `tune_warm_rise`
+    /// per sample (slow start).
+    pub tune_warm_rtts: f64,
+    pub tune_warm_rise: f64,
+    /// A step is decided at once only when its effect clears `tune_z`
+    /// standard errors; otherwise the base count is measured again (A-B-A)
+    /// so drift cancels out.
+    pub tune_z: f64,
+    /// After settling, try one step up again this often (doubling, up to
+    /// 5 min, while it does not pay).
+    pub tune_reprobe: Duration,
     /// A larger connection count is kept only if it raises throughput by at
     /// least this fraction.
     pub climb_gain: f64,
@@ -91,6 +112,13 @@ pub struct Tuning {
     /// Without ranges nothing can be hedged: a response silent this long
     /// is dropped and the download starts again from zero.
     pub stream_idle_timeout: Duration,
+    /// Each connection gathers contiguous bytes and hands them to storage
+    /// in one `write_at` of up to this many bytes (0 = one write per network
+    /// chunk), or sooner once the oldest gathered byte waited
+    /// `write_coalesce_delay`. One write per ~10 KiB network chunk costs a
+    /// writer-thread wake-up and a `pwrite` each; gathering cuts both.
+    pub write_coalesce: usize,
+    pub write_coalesce_delay: Duration,
     /// Durability cadence: `Storage::flush` then `Journal::commit` at least
     /// this often, or after this many new bytes, whichever comes first.
     pub checkpoint_interval: Duration,
@@ -129,6 +157,14 @@ impl Default for Tuning {
             split_align: 64 * 1024,
             tick: Duration::from_millis(50),
             tune_window: Duration::from_millis(200),
+            tune_window_max: Duration::from_secs(4),
+            tune_rtt_windows: 16.0,
+            tune_sample: Duration::from_millis(100),
+            tune_target_rse: 0.02,
+            tune_warm_rtts: 4.0,
+            tune_warm_rise: 0.10,
+            tune_z: 2.0,
+            tune_reprobe: Duration::from_secs(30),
             climb_gain: 0.15,
             keep_ratio: 0.93,
             ewma_tau: Duration::from_millis(400),
@@ -141,6 +177,8 @@ impl Default for Tuning {
             max_hedges_per_range: 3,
             max_extra_hedges: 4,
             stream_idle_timeout: Duration::from_secs(20),
+            write_coalesce: 256 * 1024,
+            write_coalesce_delay: Duration::from_millis(200),
             checkpoint_interval: Duration::from_secs(2),
             checkpoint_bytes: 64 * MIB,
             record_interval: Duration::from_secs(3),

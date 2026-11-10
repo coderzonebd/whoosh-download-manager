@@ -77,12 +77,37 @@ to first byte, and the time of its last chunk.
 **Learned connection count (#3).** Start at the host's
 `HostProfile::best_connections`, else `initial_connections` (4), capped by
 `Settings::max_connections_per_download` and the host's
-`max_ok_connections`. In windows of `tune_window` (200 ms, after every
-connection streams plus a 100 ms warm-up): try 2n and keep it while it adds
-≥ `climb_gain` (15 %); if the very first doubling does not pay, halve while
-the throughput stays ≥ `keep_ratio` (93 %) of the best seen — so it settles
-at 1–2 connections when more do not help (loopback, a global throttle) and
-climbs to the cap under per-connection throttles. `Throttled` (429/503,
+`max_ok_connections`. Measure the base count, try 2n and keep it while it
+adds ≥ `climb_gain` (15 %); if the very first doubling does not pay, halve
+while the throughput stays ≥ `keep_ratio` (93 %) of the best seen, so it
+settles at 1–2 connections when more do not help (loopback, a shared
+bottleneck) and climbs to the cap under per-connection limits. After
+settling it re-probes one step up every `tune_reprobe` (30 s, doubling up to
+5 min while that does not pay), because conditions change during a long
+download. Built for real links, where a new connection needs several round
+trips of slow start and throughput swings ±30 % second to second:
+- *windows sized from the run*: at least `max(tune_window, tune_rtt_windows
+  × median TTFB)` (200 ms on loopback, ≈ 1–4 s on the internet), extended
+  up to `tune_window_max` (4 s) until the relative standard error of its
+  100 ms throughput samples is ≤ 2 %;
+- *a warm-up* after every change: every connection streaming, then at least
+  `max(tune_window / 2, 4 × TTFB)`, and longer while throughput still rises
+  > 10 % per sample (slow start);
+- *decisions beyond noise*: a step is taken or refused at once only when the
+  effect clears 2 × the windows' combined relative standard error;
+  otherwise the base count is measured again and the trial is judged
+  against the mean of the base windows before and after it (A-B-A, which
+  cancels drift); a confirmed step down must also hold up beyond one
+  standard error, so noise alone never takes the count below the best one.
+
+In a link model with the reported conditions (3.8 MB/s per connection,
+±30 % noise, ±25 % drift, 300 ms TTFB, slow start; 100 seeds, 180 s), the
+final count was: per-connection link 16 in 100 % (single 200 ms windows:
+21 % stuck at 4); a link that 8 connections saturate: 8 in 80 %, 16 in
+20 %, never below 8 (single windows: 21 % stuck at 4); a shared 20 MB/s
+bottleneck: 2 in 94 %, 1 in 4 %, 4 in 2 % (single windows: anywhere from 1
+to 16). `cargo test -p vayu-engine --lib outcome_statistics -- --ignored
+--nocapture` prints these. `Throttled` (429/503,
 refused under load), or two pre-first-byte failures within 2 s while others
 work, set a ceiling at the number of accepted connections (halving at most
 once per backoff round when none work) and settle. Learning pauses while a
@@ -135,6 +160,20 @@ mixed files here in the Phase 0 baseline).
 `download.refreshUrl` swaps the URL (and request context, when given) and
 continues from the journal after the fresh probe's validators were checked
 against the journalled ones; a conflict is treated as `RemoteChanged`.
+
+**Write gathering.** A network chunk is ~10 KiB; one `write_at` per chunk
+cost the store a writer-thread wake-up and a `pwrite` each (in the daemon:
+58k futex calls for 426 MB). Each connection therefore gathers the
+contiguous bytes it claimed into one buffer and hands them to storage in a
+single `write_at` of up to `write_coalesce` (256 KiB), or sooner when the
+oldest gathered byte has waited `write_coalesce_delay` (200 ms), or when its
+range ends. Gathered bytes are claimed (nobody else fetches them) but count
+as written only when their write resolves, so the journal never claims them
+early. They are always written before the connection leaves — finished,
+failed, cancelled, or overtaken by a hedge — so a range is never handed over
+with a hole; if the whole run is stopped (tasks aborted) they are simply
+fetched again. A chunk at least `write_coalesce` long is written as is,
+without a copy; `write_coalesce = 0` restores one write per chunk.
 
 **Durability (#8).** Every byte goes through `Storage`. Every
 `checkpoint_interval` (2 s) or `checkpoint_bytes` (64 MiB) of new bytes,
@@ -253,9 +292,15 @@ and ends every subscription.
 | `min_split` | 1 MiB | smaller = better tail balance, more requests |
 | `split_align` | 64 KiB | split points round down to this |
 | `tick` | 50 ms | sampling/hedge/tuner cadence (refills are immediate) |
-| `tune_window` | 200 ms | longer = steadier measurements, slower learning |
+| `tune_window`, `tune_window_max` | 200 ms, 4 s | shortest and longest measurement window |
+| `tune_rtt_windows` | 16 | a window spans at least this many median TTFBs |
+| `tune_sample`, `tune_target_rse` | 100 ms, 0.02 | windows grow until their samples' RSE is this low |
+| `tune_warm_rtts`, `tune_warm_rise` | 4, 0.10 | warm-up: at least 4 TTFBs, longer while rising > 10 % per sample |
+| `tune_z` | 2.0 | noise margin (in standard errors) for deciding without A-B-A |
+| `tune_reprobe` | 30 s | re-probe upward after settling (doubling up to 5 min) |
 | `climb_gain` / `keep_ratio` | 0.15 / 0.93 | when more / fewer connections are worth it |
 | `ewma_tau` | 400 ms | speed smoothing |
+| `write_coalesce`, `write_coalesce_delay` | 256 KiB, 200 ms | bytes gathered per `write_at`, and the longest a gathered byte waits |
 | `stall_min`, `stall_factor` | 250 ms, 12 | stall = silent ≥ max(floor, factor × chunk gap) |
 | `first_byte_factor`, `first_byte_timeout` | 4, 5 s | stall before the first byte |
 | `hedge_gain`, `endgame_silence` | 2.0, 60 ms | endgame hedging |
@@ -285,8 +330,9 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 
 | Suite | What |
 |---|---|
-| unit (`src/`) | segment claims/splits/hedge takeover, tuner paths, names, categories, checksums, limiter, event bus, backoff |
-| `tests/scenarios.rs` (27) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers |
+| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, a shared one does not climb, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander |
+| `tests/scenarios.rs` (29) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
+| `tests/coalesce.rs` (4) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), gathered bytes survive a hedge takeover and a pause |
 | `tests/service.rs` (19) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/contract.rs` (9) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic), and adopting a file finished before a crash (plain, under a numbered name, not with the wrong length, decided by the checksum) |
@@ -294,10 +340,11 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
-model over seeds 0–3299, 5000–6999, 10000–11999 and 20000–21999 (9,300
-cases, 1–5 kills each, ≈ 28,000 kills; 0 corrupt files; the last 2,000 also
-with exactly one finished file each) and the property test over 3,300
-schedules, all passing. Run
+model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999 and
+30000–31999 (11,300 cases, 1–5 kills each, ≈ 34,000 kills; 0 corrupt files;
+the last 4,000 also with exactly one finished file each, the last 2,000
+with write gathering) and the property test over 3,900 schedules, all
+passing. Run
 them with the built test binaries, e.g.
 `VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
 The real gate (1,000 hard kills of the daemon process with `vayu-store` on
@@ -311,38 +358,69 @@ per-request script (TTFB, rate, stall, reset, failure).
 
 ## Benchmarks
 
-`examples/throughput.rs` pushes data through the engine in-process (a
-zero-copy pattern source, a storage that discards writes) with 1, 4 and 16
-fixed connections and reports throughput and CPU seconds per GB — the
-engine's own cost; network and disk come on top:
+`examples/throughput.rs` pushes data through the engine in-process from a
+zero-copy pattern source, with fixed connection counts, and reports
+throughput, CPU seconds per GB (median over runs) and `write_at` calls per
+GiB:
 
 ```sh
 scripts/cargo-slot.sh cargo build --release -p vayu-engine --example throughput
-target/release/examples/throughput 1 64 3   # GiB, chunk KiB, runs
+# GiB, chunk KiB, runs, storage (null|thread), MB/s per connection (0 = unpaced), connections
+target/release/examples/throughput 0.25 8 5 thread 4 16
+VAYU_COALESCE=0 target/release/examples/throughput 0.25 8 5 thread 4 16   # one write per chunk
 ```
 
-Results on the Phase 0 bench machine (i5-10210U, 8 threads; load average
-≈ 11 from parallel builds, 2026-11-10), 16 GiB per run, best of 3, multi-thread
-runtime with 4 workers:
+`null` storage discards writes inline (the engine's own cost). `thread`
+models `vayu-store`: a bounded 8 MiB buffer, one channel message to a writer
+thread per `write_at`, one `pwrite` per message into an unlinked temp file.
+With a per-connection rate the source paces chunks like a network, so the
+writer sleeps between writes as it does on a real link.
 
-| chunk | connections | GiB/s | CPU s per GB | ≈ CPU per chunk |
-|---|---:|---:|---:|---:|
-| 64 KiB | 1 | 219 | 0.005 | 0.3 µs |
-| 64 KiB | 4 | 277 | 0.012 | 0.7 µs |
-| 64 KiB | 16 | 290 | 0.011 | 0.7 µs |
-| 16 KiB | 1 | 44 | 0.025 | 0.4 µs |
-| 16 KiB | 4 | 61 | 0.059 | 0.9 µs |
-| 16 KiB | 16 | 73 | 0.049 | 0.8 µs |
+Write gathering, on the Phase 0 bench machine (i5-10210U, 8 threads;
+2026-11-10, load ≤ 3), 0.25 GiB, 16 connections at 4 MB/s each, `thread`
+storage, median of 5:
 
-For scale: in the Phase 0 baseline, wget spent 0.84 CPU s on 1 GiB over
-loopback, almost all of it in the kernel. The engine's own share is about
-1 % of that at 64 KiB chunks. More connections cost more CPU per byte
-(cross-thread wake-ups), one reason the tuner prefers fewer connections when
-they are as fast. The per-chunk path allocates nothing of its own; the one
-allocation per chunk is the `BoxFuture` the `Storage::write_at` contract
-returns.
+| chunk | gather | `write_at` per GiB | CPU s per GB |
+|---|---|---:|---:|
+| 8 KiB | off (one per chunk) | 131,072 | 2.81 |
+| 8 KiB | 128 KiB | 8,192 | 2.83 |
+| 8 KiB | **256 KiB (default)** | **4,096** | **2.51** |
+| 8 KiB | 512 KiB | 2,112 | 2.62 |
+| 16 KiB | off | 65,536 | 1.84 |
+| 16 KiB | 256 KiB | 4,096 | 1.91 |
+| 16 KiB | 512 KiB | 2,048 | 1.94 |
+
+Calls to storage drop 16–32×. In this model, where each write is cheap (a
+channel send and a page-cache `pwrite`), the CPU effect is within −11 % to
++5 %: the saved per-write work roughly pays for the gather copy, and most of
+the CPU here is the per-chunk pacing, which stands in for the network read
+path. In the daemon each write cost far more (futex wake-ups were 88 % of
+syscall time), so the saving there should be larger. That is to be
+confirmed on the live link. Bigger gathers did not help in the unpaced
+runs: 16 connections × 512 KiB of buffers no longer fit this CPU's 6 MB
+L3, and the copy becomes memory-bound. Hence 256 KiB.
+
+The engine's own data path (`null` storage, unpaced, 16 GiB, best of 3,
+before gathering; load ≈ 11):
+
+| chunk | connections | GiB/s | CPU s per GB |
+|---|---:|---:|---:|
+| 64 KiB | 1 | 219 | 0.005 |
+| 64 KiB | 16 | 290 | 0.011 |
+| 16 KiB | 1 | 44 | 0.025 |
+| 16 KiB | 16 | 73 | 0.049 |
+
+Gathering adds a copy, about 0.05–0.1 CPU s per GB at one connection and up
+to 0.2 at 16 when buffers spill out of cache. A
+`Storage::write_vectored_at` (one `pwritev` of the received chunks) would
+remove it (see proposals).
 
 ## Contract proposals
+
+Open: **`Storage::write_vectored_at(offset, Vec<Bytes>)`** (or `write_at`
+taking several buffers): the engine could hand over the received chunks of
+a gather as they are and the store issue one `pwritev`, removing the gather
+copy (about 0.05–0.2 CPU s per GB).
 
 All four from the first round were applied on `phase1/engine` (ADR 0005,
 amendment 1) and are implemented here: `AddParams::connections`,
