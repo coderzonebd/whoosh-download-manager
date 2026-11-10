@@ -79,6 +79,7 @@ mod tls;
 
 pub use config::{DEFAULT_USER_AGENT, NetConfig};
 pub use filename::{filename_from_content_disposition, sanitize_filename};
+pub use pool::PoolStats;
 pub use source::HttpSource;
 
 use client::Client;
@@ -141,6 +142,13 @@ impl HttpSourceFactory {
                 .alt_svc
                 .remember(&origin, altsvc::H3Alt { host: None, port }, ttl);
         }
+    }
+
+    /// What the connection pool holds right now (all origins): open
+    /// connections per protocol and requests in flight on multiplexed
+    /// ones. For diagnostics and tests.
+    pub fn pool_stats(&self) -> PoolStats {
+        self.client.pool.stats()
     }
 
     /// The configuration in use.

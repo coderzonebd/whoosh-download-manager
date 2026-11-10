@@ -446,3 +446,25 @@ pub fn query(target: &str) -> HashMap<String, String> {
         })
         .unwrap_or_default()
 }
+
+/// Sleeps until a labserver signed path (`…?expires=<unix secs>&sig=…`) is
+/// past its expiry by the server's own rule (`now > expires`, in whole
+/// seconds), whatever the load: no fixed sleep.
+pub async fn sleep_past_expiry(path: &str) {
+    let expires: u64 = query(path)["expires"].parse().unwrap();
+    let past = std::time::UNIX_EPOCH + Duration::from_secs(expires + 1);
+    if let Ok(wait) = past.duration_since(std::time::SystemTime::now()) {
+        tokio::time::sleep(wait + Duration::from_millis(50)).await;
+    }
+}
+
+/// The client's own view of `t`'s connections: (open connections, requests
+/// in flight on them), from the factory's pool.
+pub fn client_conns(f: &HttpSourceFactory, t: T) -> (usize, usize) {
+    let st = f.pool_stats();
+    match t {
+        T::H1 | T::H1s => (st.http1_busy + st.http1_idle, st.http1_busy),
+        T::H2 => (st.http2, st.streams),
+        T::H3 => (st.http3, st.streams),
+    }
+}

@@ -95,8 +95,9 @@ async fn clean(t: T) {
 }
 
 /// Contract point 1: sixteen requests in flight at once, each its own
-/// request on its own connection (HTTP/2 and HTTP/3 too, by default).
-/// `per-conn-throttle` (2 MB/s per connection) keeps them in flight.
+/// request on its own connection (HTTP/2 and HTTP/3 too, by default). The
+/// client's pool is the witness (labserver's live counts change as fast
+/// responses finish under load; only its peaks are stable).
 async fn concurrent_opens(t: T) {
     let sc = "per-conn-throttle";
     let lab = Lab::new(t).await;
@@ -114,12 +115,15 @@ async fn concurrent_opens(t: T) {
         }
     });
     let streams = futures::future::join_all(opens).await;
-    let st = lab.lab.stats(sc).unwrap();
+    // All 16 held at once: 16 requests in flight, on 16 connections.
     assert_eq!(
-        st.peak_active_requests, n,
-        "all {n} requests in flight at once: {st:?}"
+        client_conns(&lab.factory, t),
+        (n as usize, n as usize),
+        "{:?}",
+        lab.factory.pool_stats()
     );
-    assert_eq!(st.open_connections, n, "one connection per request: {st:?}");
+    let st = lab.lab.stats(sc).unwrap();
+    assert_eq!(st.peak_open_connections, n, "one connection each: {st:?}");
     let reads = streams.into_iter().map(read_all);
     for (i, (bytes, err)) in futures::future::join_all(reads)
         .await
@@ -226,13 +230,13 @@ async fn expiring_url(t: T) {
     let lab = Lab::new(t).await;
     let path = lab
         .lab
-        .mint_path("expiring-url", "1m.bin", Some(Duration::from_secs(1)))
+        .mint_path("expiring-url", "1m.bin", Some(Duration::from_secs(3)))
         .unwrap();
     let src = lab.factory.source(&lab.origin_url(&path), None).unwrap();
     let m = src.probe().await.unwrap();
     let b = fetch(&*src, Some(r(0, 1000)), m.validators()).await;
     lab.verify("expiring-url", "1m.bin", 0, &b);
-    tokio::time::sleep(Duration::from_millis(2100)).await;
+    sleep_past_expiry(&path).await;
     let e = open_err(&*src, Some(r(0, 1000)), m.validators()).await;
     assert!(matches!(e, SourceError::LinkExpired(_)), "{e:?}");
     // Unsigned: forbidden at once.
@@ -352,7 +356,10 @@ async fn stall(t: T) {
 
 /// The idle backstop fires when no byte arrives for `idle_timeout`.
 async fn idle_backstop(t: T) {
-    let toml = "[stalls]\nafter_bytes = \"256KiB\"\nduration_ms = 5000";
+    // The stall outlasts any plausible scheduling delay, so the error itself
+    // proves the backstop fired during it: had it not, the body would
+    // complete after the stall, without an error. No wall-clock bound.
+    let toml = "[stalls]\nafter_bytes = \"256KiB\"\nduration_ms = 30000";
     let lab = Lab::with(t, custom("stall", toml), |c| {
         c.idle_timeout = Duration::from_millis(700)
     })
@@ -363,13 +370,11 @@ async fn idle_backstop(t: T) {
         .open(open_req(Some(r(0, MIB)), m.validators()))
         .await
         .unwrap();
-    let t0 = Instant::now();
     let (bytes, e) = read_all(s).await;
     assert!(
         matches!(&e, Some(SourceError::Transient(m)) if m.contains("no data")),
         "{e:?}"
     );
-    assert!(t0.elapsed() < Duration::from_secs(4), "{:?}", t0.elapsed());
     lab.verify("stall", "1m.bin", 0, &bytes);
 }
 
@@ -626,42 +631,70 @@ async fn alt_svc_switches_to_h3() {
 }
 
 /// QUIC to a port where nobody answers: TCP takes over after the fallback
-/// delay, and HTTP/3 is not tried again for a while.
+/// delay, and HTTP/3 is not tried again for a while. The test owns the
+/// "dead" UDP port, so it sees QUIC's packets arrive there: that is the
+/// witness for "QUIC was tried" and "QUIC was not tried", not wall-clock
+/// time.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn h3_falls_back_to_tcp() {
     let lab = Lab::new(T::H2).await;
     let dead = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    dead.set_nonblocking(true).unwrap();
     let port = dead.local_addr().unwrap().port();
+    // Datagrams waiting on the dead port (QUIC Initials, or the close of
+    // an abandoned attempt).
+    fn drain(s: &std::net::UdpSocket) -> usize {
+        let mut buf = [0u8; 2048];
+        std::iter::from_fn(|| s.recv(&mut buf).ok()).count()
+    }
+    let dead = &dead;
+    // An IP origin (in the lab certificate), so the dead socket is the only
+    // address QUIC can try (`localhost` would try `::1` first).
+    let origin = format!("https://127.0.0.1:{}", lab.lab.https_addr().unwrap().port());
     let f = lab.factory_with(|c| c.h3_fallback_delay = Duration::from_millis(200));
-    f.remember_http3(&lab.origin_url("/"), port, Duration::from_secs(60));
-    let src = f.source(&lab.url("clean", "1m.bin"), None).unwrap();
+    f.remember_http3(&origin, port, Duration::from_secs(60));
+    let src = f.source(&format!("{origin}/s/clean/1m.bin"), None).unwrap();
     let t0 = Instant::now();
     let m = src.probe().await.unwrap();
     assert_eq!(m.protocol, Some(Protocol::Http2));
+    // TCP only joined after the delay (a lower bound: load only adds)...
     assert!(
         t0.elapsed() >= Duration::from_millis(190),
         "{:?}",
         t0.elapsed()
     );
-    // Marked broken: the next new connection goes straight to TCP.
-    let src2 = f.source(&lab.url("clean", "10m.bin"), None).unwrap();
-    let t0 = Instant::now();
+    // ...and QUIC was tried first.
+    assert!(
+        drain(dead) > 0,
+        "no QUIC packet reached the advertised port"
+    );
+    // Let the abandoned attempt fall silent.
+    let quiet = eventually(Duration::from_secs(10), || async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drain(dead) == 0
+    })
+    .await;
+    assert!(quiet, "the abandoned QUIC attempt kept sending");
+    // Marked broken: a new connection goes straight to TCP, with no QUIC
+    // packet at all (QUIC would have sent its Initial before TCP started).
     let held = src
         .open(open_req(Some(r(0, MIB)), m.validators()))
         .await
         .unwrap();
+    let src2 = f
+        .source(&format!("{origin}/s/clean/10m.bin"), None)
+        .unwrap();
     let m2 = src2.probe().await.unwrap();
     assert_eq!(m2.protocol, Some(Protocol::Http2));
-    assert!(
-        t0.elapsed() < Duration::from_millis(190),
-        "{:?}",
-        t0.elapsed()
-    );
+    assert_eq!(f.pool_stats().http2, 2, "{:?}", f.pool_stats());
+    assert_eq!(drain(dead), 0, "HTTP/3 was tried again while marked broken");
     drop(held);
 }
 
 /// More streams per connection when configured: requests opened one after
-/// another fill a connection before the next one is opened.
+/// another fill a connection before the next one is opened. The client's
+/// pool counts are exact while the streams are held; labserver's peak
+/// connection count (monotonic) confirms the server saw no third one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn h2_streams_per_connection() {
     let sc = "per-conn-throttle";
@@ -678,26 +711,30 @@ async fn h2_streams_per_connection() {
                     .unwrap(),
             );
         }
+        assert_eq!(
+            client_conns(&lab.factory, t),
+            (2, 8),
+            "{t:?}: {:?}",
+            lab.factory.pool_stats()
+        );
         let st = lab.lab.stats(sc).unwrap();
-        assert_eq!(st.active_requests, 8, "{t:?}: {st:?}");
-        assert_eq!(st.open_connections, 2, "{t:?}: {st:?}");
+        assert_eq!(st.peak_open_connections, 2, "{t:?}: {st:?}");
         for (i, s) in held.into_iter().enumerate() {
             let (b, e) = read_all(s).await;
             assert!(e.is_none());
             lab.verify(sc, "10m.bin", i as u64 * len, &b);
         }
+        assert_eq!(client_conns(&lab.factory, t), (2, 0), "{t:?}");
     }
 }
 
 /// A slow response head is a `Transient` error after `idle_timeout`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn head_timeout() {
-    let lab = Lab::with(T::H1, None, |c| c.idle_timeout = Duration::from_millis(200)).await;
-    let e = lab
-        .source("high-latency", "1m.bin")
-        .probe()
-        .await
-        .unwrap_err();
+    // 30 s of server think-time against a 200 ms limit: no race with load.
+    let slow = custom("slow-head", "[latency]\nttfb_ms = 30000");
+    let lab = Lab::with(T::H1, slow, |c| c.idle_timeout = Duration::from_millis(200)).await;
+    let e = lab.source("slow-head", "1m.bin").probe().await.unwrap_err();
     assert!(
         matches!(&e, SourceError::Transient(m) if m.contains("no response")),
         "{e:?}"

@@ -392,12 +392,13 @@ async fn unsatisfiable_range_is_remote_changed() {
 
 #[tokio::test]
 async fn statuses_are_classified() {
-    let later = httpdate::fmt_http_date(std::time::SystemTime::now() + Duration::from_secs(30));
     let fx = Fixture::start(move |s: &Seen| {
         let code: u16 = s.target.trim_start_matches('/').parse().unwrap();
         let mut r = Reply::new(code).body("nope");
         if code == 503 {
-            r = r.header("Retry-After", &later);
+            // Dated when sent, so a slow run cannot eat into it.
+            let later = std::time::SystemTime::now() + Duration::from_secs(30);
+            r = r.header("Retry-After", &httpdate::fmt_http_date(later));
         }
         if code == 429 {
             r = r.header("Retry-After", "7");
@@ -436,7 +437,7 @@ async fn statuses_are_classified() {
             retry_after: Some(d),
             ..
         } => assert!(
-            d > Duration::from_secs(25) && d <= Duration::from_secs(30),
+            d >= Duration::from_secs(25) && d <= Duration::from_secs(30),
             "{d:?}"
         ),
         e => panic!("{e:?}"),
@@ -514,9 +515,11 @@ async fn bad_urls_are_fatal_and_source_does_no_io() {
         f.source("http://example.com/", Some(&bad_body)),
         Err(SourceError::Fatal(_))
     ));
+    // `source` is synchronous; a connection attempt to this unroutable
+    // address would block for seconds.
     let t0 = Instant::now();
     let _ = f.source("http://10.255.255.1/unroutable", None).unwrap();
-    assert!(t0.elapsed() < Duration::from_millis(50));
+    assert!(t0.elapsed() < Duration::from_secs(1), "{:?}", t0.elapsed());
     // Preconnect never fails, even for nonsense.
     f.preconnect("not a url").await;
     f.preconnect("ftp://example.com/").await;
@@ -779,10 +782,19 @@ async fn idle_connections_expire() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn server_closed_idle_connection_is_replaced() {
     let fx = Fixture::start(|s: &Seen| honest(s).silent_close()).await;
-    let src = plain_factory(|_| {}).source(&fx.url("/f"), None).unwrap();
+    let f = plain_factory(|_| {});
+    let src = f.source(&fx.url("/f"), None).unwrap();
     let m = src.probe().await.unwrap();
+    let pool = &f;
     for i in 0..3 {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // The case under test: the client has seen the server's close of
+        // its idle connection (however long that takes under load) and
+        // must not send on it.
+        let seen = eventually(Duration::from_secs(10), || async move {
+            pool.pool_stats().http1_idle == 0
+        })
+        .await;
+        assert!(seen, "{:?}", pool.pool_stats());
         fetch(&*src, Some(r(i, i + 4)), m.validators()).await;
     }
     assert_eq!(fx.requests().len(), 4, "each request sent exactly once");

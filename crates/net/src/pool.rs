@@ -32,22 +32,44 @@ pub(crate) struct H1Conn {
     task: AbortHandle,
     /// Came from the idle pool (so it may have gone stale meanwhile).
     pub reused: bool,
+    /// The pool's count of HTTP/1.1 connections alive (for `PoolStats`).
+    live: Arc<AtomicUsize>,
 }
 
 impl H1Conn {
-    pub fn new(sender: H1Sender, task: AbortHandle) -> Self {
+    pub fn new(sender: H1Sender, task: AbortHandle, pool: &Pool) -> Self {
+        pool.h1_live.fetch_add(1, Ordering::AcqRel);
         Self {
             sender,
             task,
             reused: false,
+            live: pool.h1_live.clone(),
         }
     }
 }
 
 impl Drop for H1Conn {
     fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::AcqRel);
         self.task.abort();
     }
+}
+
+/// What a factory's connection pool holds right now, over all origins
+/// ([`HttpSourceFactory::pool_stats`](crate::HttpSourceFactory::pool_stats)).
+/// For diagnostics and tests.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PoolStats {
+    /// HTTP/1.1 connections carrying a request.
+    pub http1_busy: usize,
+    /// HTTP/1.1 connections idle in the pool and still open.
+    pub http1_idle: usize,
+    /// Open HTTP/2 connections.
+    pub http2: usize,
+    /// Open HTTP/3 (QUIC) connections.
+    pub http3: usize,
+    /// Requests in flight on HTTP/2 and HTTP/3 connections.
+    pub streams: usize,
 }
 
 struct IdleH1 {
@@ -95,6 +117,15 @@ impl<S> Mux<S> {
     /// Why the server's connection was cut off, if it broke a limit.
     pub fn violation(&self) -> Option<&str> {
         self.violation.as_ref()?.get().map(String::as_str)
+    }
+
+    /// The transport is gone (a retired connection is still open).
+    fn transport_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+            || self
+                .quic
+                .as_ref()
+                .is_some_and(|c| c.close_reason().is_some())
     }
 
     fn is_closed(&self) -> bool {
@@ -158,6 +189,7 @@ impl Conns {
 }
 
 pub(crate) struct Pool {
+    h1_live: Arc<AtomicUsize>,
     origins: Mutex<HashMap<Origin, Conns>>,
     max_streams: usize,
     idle_timeout: Duration,
@@ -186,6 +218,7 @@ impl Pool {
     pub fn new(max_streams: usize, idle_timeout: Duration) -> Arc<Self> {
         Arc::new(Self {
             origins: Mutex::new(HashMap::new()),
+            h1_live: Arc::new(AtomicUsize::new(0)),
             max_streams: max_streams.max(1),
             idle_timeout,
             reaper: AtomicBool::new(false),
@@ -257,6 +290,29 @@ impl Pool {
         lock(&self.origins).entry(o).or_default().h3.push(m);
         self.ensure_reaper();
         l
+    }
+
+    pub fn stats(&self) -> PoolStats {
+        let map = lock(&self.origins);
+        let mut st = PoolStats::default();
+        let mut idle_entries = 0;
+        for c in map.values() {
+            idle_entries += c.h1.len();
+            st.http1_idle += c.h1.iter().filter(|i| !i.conn.sender.is_closed()).count();
+            for m in c.h2.iter().filter(|m| !m.transport_closed()) {
+                st.http2 += 1;
+                st.streams += m.in_flight.load(Ordering::Acquire);
+            }
+            for m in c.h3.iter().filter(|m| !m.transport_closed()) {
+                st.http3 += 1;
+                st.streams += m.in_flight.load(Ordering::Acquire);
+            }
+        }
+        st.http1_busy = self
+            .h1_live
+            .load(Ordering::Acquire)
+            .saturating_sub(idle_entries);
+        st
     }
 
     /// Connections to `o` that could take a request right now.

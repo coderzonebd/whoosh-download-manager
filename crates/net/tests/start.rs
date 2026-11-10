@@ -136,14 +136,14 @@ async fn start_expiring_url(t: T) {
     let lab = Lab::new(t).await;
     let path = lab
         .lab
-        .mint_path("expiring-url", "1m.bin", Some(Duration::from_secs(1)))
+        .mint_path("expiring-url", "1m.bin", Some(Duration::from_secs(3)))
         .unwrap();
     let url = lab.origin_url(&path);
     start_like_probe(&lab, "expiring-url", "1m.bin", || {
         lab.factory.source(&url, None).unwrap()
     })
     .await;
-    tokio::time::sleep(Duration::from_millis(2100)).await;
+    sleep_past_expiry(&path).await;
     let e = lab
         .factory
         .source(&url, None)
@@ -222,12 +222,15 @@ async fn start_cancel(t: T) {
     lab.verify("clean", "1g.bin", 5 * MIB, &b);
 }
 
-/// 500 ms before every response head: `start` reaches the first byte one
-/// head sooner than `probe` + `open`.
+/// 500 ms before every response head: `start` needs one response where
+/// `probe` + `open` need two. The request count is the deterministic
+/// witness; the times are printed for the record and checked only as lower
+/// bounds (load can only add to them).
 async fn start_saves_a_round_trip(t: T) {
     let lab = Lab::new(t).await;
     // Warm the connection pool so both sides pay the same connection costs.
     lab.source("clean", "1m.bin").probe().await.unwrap();
+    let requests = || lab.lab.stats("high-latency").unwrap().requests;
     let t0 = Instant::now();
     let src = lab.source("high-latency", "1m.bin");
     let m = src.probe().await.unwrap();
@@ -235,11 +238,13 @@ async fn start_saves_a_round_trip(t: T) {
     s.next().await.unwrap().unwrap();
     let two = t0.elapsed();
     drop(s);
+    assert_eq!(requests(), 2);
     let t0 = Instant::now();
     let (_, mut s) = lab.source("high-latency", "1m.bin").start().await.unwrap();
     s.next().await.unwrap().unwrap();
     let one = t0.elapsed();
+    assert_eq!(requests(), 3, "start is one request");
     eprintln!("{t:?}: first byte after probe+open {two:?}, after start {one:?}");
     assert!(two >= Duration::from_millis(990), "{two:?}");
-    assert!(one + Duration::from_millis(400) < two, "{one:?} vs {two:?}");
+    assert!(one >= Duration::from_millis(490), "{one:?}");
 }

@@ -26,7 +26,8 @@ while let Some(chunk) = s.next().await {   // `Bytes`, zero-copy
 ```
 
 Public surface: `HttpSourceFactory` (`new`, `http_source`, `remember_http3`,
-`config`), `HttpSource`, `NetConfig`, `DEFAULT_USER_AGENT`, and the
+`pool_stats`, `config`), `HttpSource`, `NetConfig`, `PoolStats`,
+`DEFAULT_USER_AGENT`, and the
 `filename` module (`filename_from_content_disposition`, `sanitize_filename`,
 also useful for the engine's URL-path fallback name).
 
@@ -226,8 +227,12 @@ About 210 tests, ~20–60 s on the development laptop (debug build, load
   after valid data, and flooding its control stream: each fails with
   `Fatal` within moments.
 
-Timing-based assertions are loose (they pass at load average 8+), but a
-machine starved for minutes can still trip them.
+The tests do not race the clock: they assert on what decides the
+behaviour (the client's own pool via `pool_stats`, labserver's monotonic
+peaks and request counts, QUIC packets arriving at a port the test owns,
+signed-URL expiry by the server's own rule), and wall-clock checks are lower
+bounds, or upper bounds tens of seconds from the expected value. Three
+concurrent copies of the whole suite pass at load average 54–65.
 
 ## Benchmarking
 
