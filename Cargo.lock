@@ -4532,6 +4532,7 @@ dependencies = [
  "futures",
  "serde",
  "thiserror 2.0.21",
+ "vayu-proto",
 ]
 
 [[package]]
@@ -4595,8 +4596,10 @@ dependencies = [
 name = "vayu-proto"
 version = "0.0.1"
 dependencies = [
+ "futures",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

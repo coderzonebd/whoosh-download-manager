@@ -1,26 +1,37 @@
-//! `vayu-core`: the types and traits every part of the engine agrees on.
+//! `vayu-core`: the contract every part of the engine agrees on.
 //!
-//! The engine is split along three seams so that each can be built, tested
-//! and benchmarked on its own:
+//! Phase 1 builds the engine as independent crates, at the same time, behind
+//! these seams:
 //!
-//! * [`source::RangeSource`] — anything that can deliver bytes of a remote
-//!   file for a given range (HTTP/1.1/2/3, FTP, a mirror, a LAN peer, a
-//!   BitTorrent web seed).
-//! * [`storage::Storage`] — where those bytes land (a preallocated file,
-//!   written by offset).
-//! * [`journal::Journal`] — the crash-safe record of which ranges are done,
-//!   so a power cut never costs more than the last flush interval.
+//! | Seam | Trait(s) | Implemented by |
+//! |---|---|---|
+//! | Bytes in | [`RangeSource`], [`SourceFactory`] | `vayu-net` (HTTP/1.1, HTTP/2, HTTP/3) |
+//! | Bytes out | [`Storage`], [`StorageProvider`] | `vayu-store` (preallocated files, positional writes) |
+//! | Crash safety | [`Journal`] | `vayu-store` (checksummed, atomic checkpoints) |
+//! | Everything else durable | [`StateStore`] | `vayu-store` (SQLite) |
+//! | The API | [`vayu_proto::service::Service`] | `vayu-engine` (scheduler, queues, rules) |
 //!
-//! The scheduler (work-stealing segments, hedged requests, learned
-//! connection counts) sits on top of these traits and lives in its own crate
-//! from Phase 1.
+//! `vayu-daemon` serves a `Service` over the local API; `vayu` (the CLI) is
+//! one of its clients. The [`testing`] module (feature `testing`) has an
+//! in-memory implementation of every trait so each crate can be built and
+//! tested before the others exist.
 //!
-//! **Status:** draft contract. It is finalised at the Phase 1 kickoff; until
-//! then, changes here are expected and cheap.
+//! **Status:** finalised at the Phase 1 kickoff (2026-11-10). Changes go
+//! through the `phase1/engine` integration branch only (ADR 0004).
 
 pub mod journal;
 pub mod range;
 pub mod source;
+pub mod state;
 pub mod storage;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
-pub use range::ByteRange;
+pub use journal::{Checkpoint, Journal};
+pub use range::{ByteRange, RangeSet};
+pub use source::{
+    ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, SourceFactory,
+    Validators,
+};
+pub use state::{DownloadRecord, HostProfile, StateStore};
+pub use storage::{Storage, StorageProvider};

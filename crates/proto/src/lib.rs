@@ -12,6 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod service;
+
 /// Bumped on any breaking change to methods, params, results or events.
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -394,6 +396,12 @@ pub struct StateEvent {
     pub state: DownloadState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+}
+
+/// `event.download.removed`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemovedEvent {
+    pub ids: Vec<DownloadId>,
 }
 
 /// Result of `nm.status` and payload of `event.nm.status` (native host only).
