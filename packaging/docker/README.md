@@ -7,9 +7,13 @@ the build path exercised.
 
 ```bash
 docker build -f packaging/docker/Dockerfile -t vayu-labserver .
-docker run --rm -p 18080:18080 -p 18443:18443 vayu-labserver
+docker run --rm -p 127.0.0.1:18080:18080 -p 127.0.0.1:18443:18443 vayu-labserver
 curl http://127.0.0.1:18080/s/clean/1m.bin -o /dev/null
 ```
+
+Publish on `127.0.0.1` as above. A bare `-p 18080:18080` exposes the server on
+every host interface, and labserver serves gigabytes per second of generated
+data with no authentication: keep it off the LAN.
 
 - Build stage: `rust:1.99.1-slim-trixie`; runtime: `debian:trixie-slim` with
   `ca-certificates`, user `vayu` (uid/gid 10001), no shell login.
