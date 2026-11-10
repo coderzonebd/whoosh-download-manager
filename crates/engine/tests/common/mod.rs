@@ -430,14 +430,39 @@ impl RangeSource for FaultSource {
 /// go to the volatile copy, `flush` copies it to the durable one, and
 /// [`CrashFs::crash`] throws away everything not flushed. Every operation
 /// yields once, so a kill can land between any two of them.
-#[derive(Default)]
 pub struct CrashFs {
     files: Arc<Mutex<HashMap<PathBuf, Arc<CrashFile>>>>,
     finished: Arc<Mutex<HashMap<PathBuf, Bytes>>>,
+    /// `preallocate` leaves exactly `len` bytes (the contract). Off models
+    /// a store that only grows files, to check the engine does not rely on
+    /// truncation.
+    pub truncate: bool,
+}
+
+impl CrashFs {
+    /// A store whose `preallocate` only grows files.
+    pub fn growing() -> Self {
+        Self {
+            truncate: false,
+            ..Self::default()
+        }
+    }
+}
+
+impl Default for CrashFs {
+    fn default() -> Self {
+        Self {
+            files: Arc::default(),
+            finished: Arc::default(),
+            truncate: true,
+        }
+    }
 }
 
 pub struct CrashFile {
     path: PathBuf,
+    truncate: bool,
+    done: std::sync::atomic::AtomicBool,
     volatile: Mutex<Vec<u8>>,
     durable: Mutex<Vec<u8>>,
     files: Arc<Mutex<HashMap<PathBuf, Arc<CrashFile>>>>,
@@ -463,7 +488,7 @@ impl Storage for CrashFile {
         Box::pin(async move {
             tokio::task::yield_now().await;
             let mut v = lock(&self.volatile);
-            if (v.len() as u64) < len {
+            if self.truncate || (v.len() as u64) < len {
                 v.resize(len as usize, 0);
             }
             Ok(())
@@ -473,6 +498,9 @@ impl Storage for CrashFile {
     fn write_at(&self, offset: u64, data: Bytes) -> BoxFuture<'_, io::Result<()>> {
         Box::pin(async move {
             tokio::task::yield_now().await;
+            if self.done.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(io::Error::other("storage already finished"));
+            }
             let mut v = lock(&self.volatile);
             let end = offset as usize + data.len();
             if v.len() < end {
@@ -514,6 +542,7 @@ impl Storage for CrashFile {
             *lock(&self.durable) = v.clone();
             done.insert(final_path.to_path_buf(), Bytes::from(v));
             lock(&self.files).remove(&self.path);
+            self.done.store(true, std::sync::atomic::Ordering::Relaxed);
             Ok(())
         })
     }
@@ -523,19 +552,34 @@ impl StorageProvider for CrashFs {
     fn open<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<Arc<dyn Storage>>> {
         Box::pin(async move {
             tokio::task::yield_now().await;
+            // Like a real file system: opening an existing (even finished)
+            // file keeps its contents.
+            let existing = lock(&self.finished).get(path).map(|b| b.to_vec());
             let f = lock(&self.files)
                 .entry(path.to_path_buf())
                 .or_insert_with(|| {
+                    let init = existing.unwrap_or_default();
                     Arc::new(CrashFile {
                         path: path.to_path_buf(),
-                        volatile: Mutex::new(Vec::new()),
-                        durable: Mutex::new(Vec::new()),
+                        truncate: self.truncate,
+                        done: std::sync::atomic::AtomicBool::new(false),
+                        volatile: Mutex::new(init.clone()),
+                        durable: Mutex::new(init),
                         files: self.files.clone(),
                         finished: self.finished.clone(),
                     })
                 })
                 .clone();
             Ok(f as Arc<dyn Storage>)
+        })
+    }
+
+    fn file_len<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<Option<u64>>> {
+        Box::pin(async move {
+            if let Some(f) = lock(&self.files).get(path) {
+                return Ok(Some(lock(&f.volatile).len() as u64));
+            }
+            Ok(lock(&self.finished).get(path).map(|b| b.len() as u64))
         })
     }
 
@@ -626,6 +670,8 @@ pub fn add_params(url: &str) -> AddParams {
         start: true,
         mirrors: vec![],
         checksum: None,
+        connections: None,
+        queue: None,
     }
 }
 

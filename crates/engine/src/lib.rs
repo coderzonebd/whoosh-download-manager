@@ -44,7 +44,7 @@ mod worker;
 
 pub use category::category_for;
 pub use config::{EngineConfig, Tuning};
-pub use engine::{Engine, EngineDeps, SETTINGS_KEY};
+pub use engine::{CONNECTIONS_KEY, Engine, EngineDeps, SETTINGS_KEY};
 
 /// Suffix of in-progress files: `<final name>.vayu-part`.
 pub const PART_SUFFIX: &str = names::PART_SUFFIX;

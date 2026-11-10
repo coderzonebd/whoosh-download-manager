@@ -33,6 +33,13 @@ use crate::util::{new_id, unix_millis};
 /// The `StateStore` key under which settings are persisted.
 pub const SETTINGS_KEY: &str = "settings";
 
+/// The `StateStore` key holding per-download connection counts
+/// (`AddParams::connections`) as a JSON object `{ id: count }`.
+pub const CONNECTIONS_KEY: &str = "download_connections";
+
+/// Bounds of `AddParams::connections` (PROTOCOL.md).
+const CONNECTIONS_RANGE: std::ops::RangeInclusive<u32> = 1..=64;
+
 /// What the engine is built on. Every part is a `vayu-core` trait object,
 /// so the engine runs against `vayu-net`/`vayu-store` in the daemon and
 /// against `vayu_core::testing` doubles in tests.
@@ -93,9 +100,8 @@ struct Entry {
     record: DownloadRecord,
     /// Insertion order, for stable FIFO and newest-first ordering.
     seq: u64,
-    /// The name was derived (URL / default), not given by the user, so a
-    /// probe may still improve it.
-    auto_name: bool,
+    /// `AddParams::connections`, persisted under [`CONNECTIONS_KEY`].
+    connections: Option<u16>,
     generation: u64,
     run: Option<RunHandle>,
     live: Option<Arc<Live>>,
@@ -174,6 +180,13 @@ impl Engine {
             },
             None => config.default_settings.clone(),
         };
+        let pinned: HashMap<DownloadId, u16> = match deps.state.get_value(CONNECTIONS_KEY).await? {
+            Some(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
+                tracing::warn!("stored connection counts unreadable: {e}");
+                HashMap::new()
+            }),
+            None => HashMap::new(),
+        };
         let mut records = deps.state.load_downloads().await?;
         records.sort_by(|a, b| a.added_at.cmp(&b.added_at).then(a.id.cmp(&b.id)));
         let mut requeued = Vec::new();
@@ -183,14 +196,13 @@ impl Engine {
                 rec.state = DownloadState::Queued;
                 requeued.push(rec.id.clone());
             }
-            let auto_name = rec.filename == names::resolve(None, None, &rec.url, None)
-                || rec.filename.starts_with(names::FALLBACK);
+            let connections = pinned.get(&rec.id).copied();
             downloads.insert(
                 rec.id.clone(),
                 Entry {
                     record: rec,
                     seq: seq as u64,
-                    auto_name,
+                    connections,
                     generation: 0,
                     run: None,
                     live: None,
@@ -285,6 +297,20 @@ impl Inner {
         }
         e.record.filename = name.clone();
         Some(name)
+    }
+
+    /// Persist the per-download connection counts (small; rewritten whole).
+    async fn save_connections(&self) {
+        let _g = self.save_lock.lock().await;
+        let map: HashMap<DownloadId, u16> = lock(&self.st)
+            .downloads
+            .iter()
+            .filter_map(|(id, e)| e.connections.map(|n| (id.clone(), n)))
+            .collect();
+        let json = serde_json::to_string(&map).unwrap_or_else(|_| "{}".into());
+        if let Err(e) = self.deps.state.set_value(CONNECTIONS_KEY, &json).await {
+            tracing::warn!("saving connection counts failed: {e}");
+        }
     }
 
     /// Persist the current record of `id` (no-op if it was removed).
@@ -485,7 +511,8 @@ impl Inner {
                 record: e.record.clone(),
                 generation: e.generation,
                 live,
-                auto_name: e.auto_name,
+                name_locked: e.record.filename_locked,
+                connections: e.connections,
             };
             tokio::spawn(run::supervise(self.clone(), spec, stop_rx, done_tx));
         }
@@ -684,7 +711,17 @@ impl Inner {
         if !Path::new(&directory).is_absolute() {
             return Err(ServiceError::invalid_params("directory must be absolute"));
         }
-        let auto_name = user_name.is_none();
+        let connections = match p.connections {
+            Some(n) if CONNECTIONS_RANGE.contains(&n) => Some(n as u16),
+            Some(n) => {
+                return Err(ServiceError::invalid_params(format!(
+                    "connections must be between 1 and 64, not {n}"
+                )));
+            }
+            None => None,
+        };
+        let queue = p.queue.clone().filter(|q| !q.trim().is_empty());
+        let name_locked = user_name.is_some();
         let name = names::resolve(user_name.as_deref(), None, &p.url, None);
         let id = new_id();
         if names::part_path(Path::new(&directory), &name).is_none() {
@@ -697,9 +734,10 @@ impl Inner {
             request: p.request,
             mirrors: p.mirrors,
             filename: name,
+            filename_locked: name_locked,
             directory,
             category: None,
-            queue: None,
+            queue,
             state: if p.start {
                 DownloadState::Queued
             } else {
@@ -724,7 +762,7 @@ impl Inner {
             let entry = Entry {
                 record,
                 seq,
-                auto_name,
+                connections,
                 generation: 0,
                 run: None,
                 live: None,
@@ -738,6 +776,9 @@ impl Inner {
             summary
         };
         self.save(&id).await;
+        if connections.is_some() {
+            self.save_connections().await;
+        }
         self.bus.emit(Notification::DownloadAdded(summary));
         self.pump();
         Ok(AddResult { id })
@@ -936,6 +977,7 @@ impl Inner {
             }
         }
         if !removed.is_empty() {
+            self.save_connections().await;
             self.bus.emit(Notification::DownloadRemoved(RemovedEvent {
                 ids: removed.into_iter().map(|r| r.id).collect(),
             }));

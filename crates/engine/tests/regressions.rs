@@ -23,21 +23,75 @@ async fn plant(lab: &Lab, name: &str, data: Bytes) {
     s.write_at(0, data).await.unwrap();
 }
 
+/// An engine over `CrashFs` whose `preallocate` only grows files, so the
+/// engine itself must get rid of stale bytes (the contract now has the
+/// store truncate, but the engine does not rely on it).
+async fn growing_store() -> (
+    Arc<vayu_engine::Engine>,
+    Arc<vayu_core::testing::MemSourceFactory>,
+    Arc<CrashFs>,
+) {
+    let sources = Arc::new(vayu_core::testing::MemSourceFactory::default());
+    let fs = Arc::new(CrashFs::growing());
+    let engine = vayu_engine::Engine::start(
+        vayu_engine::EngineDeps {
+            sources: sources.clone(),
+            storage: fs.clone(),
+            journal: Arc::new(vayu_core::testing::MemJournal::default()),
+            state: Arc::new(vayu_core::testing::MemStateStore::default()),
+        },
+        config(),
+    )
+    .await
+    .unwrap();
+    (engine, sources, fs)
+}
+
 /// #1: a stale `<name>.vayu-part` must never end up inside a new file.
 #[tokio::test(start_paused = true)]
 async fn a_stale_part_file_is_not_reused() {
-    let lab = Lab::new(config()).await;
+    let (engine, sources, fs) = growing_store().await;
     // Leftover of another, bigger file with the same name.
-    plant(&lab, "data.bin", content(10 * MIB, 99)).await;
+    let stale = fs
+        .open(&Path::new(DIR).join("data.bin.vayu-part"))
+        .await
+        .unwrap();
+    stale.write_at(0, content(10 * MIB, 99)).await.unwrap();
     let data = content(2 * MIB, 1);
-    lab.serve(URL, Arc::new(FaultSource::new(data.clone())));
-    let id = lab.add(URL).await;
-    finish(&lab.engine, &id, LONG).await;
-    assert_same(&lab.file("data.bin").unwrap(), &data);
+    sources.insert(URL, Arc::new(FaultSource::new(data.clone())));
+    let id = engine.add(add_params(URL)).await.unwrap().id;
+    finish(&engine, &id, LONG).await;
+    assert_same(&fs.finished()[&Path::new(DIR).join("data.bin")], &data);
 }
 
 #[tokio::test(start_paused = true)]
 async fn removing_but_keeping_files_does_not_poison_the_next_download() {
+    let (engine, sources, fs) = growing_store().await;
+    let old_url = "https://lab.test/old/setup.exe";
+    let new_url = "https://lab.test/new/setup.exe";
+    sources.insert(
+        old_url,
+        Arc::new(FaultSource::new(content(16 * MIB, 2)).cfg(|c| c.per_conn_bps = Some(MIB))),
+    );
+    let old = engine.add(add_params(old_url)).await.unwrap().id;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    engine
+        .remove(RemoveParams {
+            ids: vec![old],
+            delete_files: false,
+        })
+        .await
+        .unwrap();
+    let data = content(MIB, 3);
+    sources.insert(new_url, Arc::new(FaultSource::new(data.clone())));
+    let id = engine.add(add_params(new_url)).await.unwrap().id;
+    let (d, _) = finish(&engine, &id, LONG).await;
+    assert_eq!(d.summary.filename, "setup.exe");
+    assert_same(&fs.finished()[&Path::new(DIR).join("setup.exe")], &data);
+}
+
+#[tokio::test(start_paused = true)]
+async fn removing_but_keeping_files_does_not_poison_the_next_download_mem() {
     let lab = Lab::new(config()).await;
     let old_url = "https://lab.test/old/setup.exe";
     let new_url = "https://lab.test/new/setup.exe";

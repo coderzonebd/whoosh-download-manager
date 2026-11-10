@@ -62,6 +62,9 @@ pub(crate) struct Sample {
 #[derive(Debug)]
 pub(crate) struct Tuner {
     fixed: bool,
+    /// `AddParams::connections`: this count, not capped by the settings
+    /// (only lowered by throttling).
+    pinned: bool,
     target: u16,
     max: u16,
     ceiling: u16,
@@ -76,13 +79,18 @@ pub(crate) struct Tuner {
 }
 
 impl Tuner {
-    pub(crate) fn new(t: &Tuning, max: u16, profile: Option<&HostProfile>) -> Self {
-        let max = max.max(1);
+    pub(crate) fn new(
+        t: &Tuning,
+        max: u16,
+        profile: Option<&HostProfile>,
+        pinned: Option<u16>,
+    ) -> Self {
+        let max = pinned.unwrap_or(max).max(1);
         let ceiling = profile
             .and_then(|p| p.max_ok_connections)
             .unwrap_or(u16::MAX)
             .max(1);
-        let (fixed, start) = match t.fixed_connections {
+        let (fixed, start) = match pinned.or(t.fixed_connections) {
             Some(n) => (true, n),
             None => (
                 false,
@@ -93,6 +101,7 @@ impl Tuner {
         };
         let mut tuner = Self {
             fixed,
+            pinned: pinned.is_some(),
             target: start.clamp(1, max),
             max,
             ceiling,
@@ -140,6 +149,9 @@ impl Tuner {
 
     /// `Settings::max_connections_per_download` changed.
     pub(crate) fn set_max(&mut self, max: u16) {
+        if self.pinned {
+            return;
+        }
         self.max = max.max(1);
         self.target = self.target.min(self.max);
     }
@@ -315,7 +327,7 @@ mod tests {
     }
 
     fn tuner(max: u16) -> Tuner {
-        Tuner::new(&Tuning::default(), max, None)
+        Tuner::new(&Tuning::default(), max, None, None)
     }
 
     #[test]
@@ -374,16 +386,28 @@ mod tests {
             max_ok_connections: Some(6),
             ..HostProfile::default()
         };
-        assert_eq!(Tuner::new(&Tuning::default(), 16, Some(&p)).target(), 6);
+        assert_eq!(
+            Tuner::new(&Tuning::default(), 16, Some(&p), None).target(),
+            6
+        );
         let fixed = Tuning {
             fixed_connections: Some(16),
             ..Tuning::default()
         };
-        let mut t = Tuner::new(&fixed, 8, None);
+        let mut t = Tuner::new(&fixed, 8, None, None);
         assert_eq!(t.target(), 8);
         assert_eq!(run(&mut t, |_| 1e6), vec![8]);
         t.set_max(3);
         assert_eq!(t.target(), 3);
+        // A per-download count wins over the engine-wide one and the
+        // settings cap, and is still lowered by throttling.
+        let mut t = Tuner::new(&fixed, 8, Some(&p), Some(32));
+        assert_eq!(t.target(), 32);
+        assert_eq!(run(&mut t, |_| 1e6), vec![32]);
+        t.set_max(3);
+        assert_eq!(t.target(), 32);
+        t.on_throttle(5, false);
+        assert_eq!(t.target(), 5);
     }
 
     #[test]

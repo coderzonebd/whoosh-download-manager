@@ -90,7 +90,12 @@ global speed limit is set and when too little is left to measure. When the
 target drops, the slowest connections are cancelled; their ranges are picked
 up by the rest. The result (best count, max ok count, range support,
 protocol, per-connection speed) is saved with `save_host_profile` when the
-run ends.
+run ends. `AddParams::connections` (1–64,
+else `-32602`) pins one download's count instead: no learning, not capped
+by `max_connections_per_download`, still lowered by throttling, nothing saved
+to the host profile; it is kept under the `StateStore` key
+`"download_connections"` (`CONNECTIONS_KEY`) so it survives restarts.
+`Tuning::fixed_connections` is the engine-wide equivalent.
 
 **Retries (#4).** Sources classify, the engine decides. `Transient` and
 `Throttled` free the range for another connection and push new connections
@@ -151,7 +156,13 @@ Last-Modified (labserver `no-validators`) a mismatch cannot tell local damage
 from a new remote version, so the download restarts from zero. Storage
 holding less than the journal claims (part file deleted or truncated) is
 local damage whatever the validators say: that range is dropped, without
-touching the network error budget. The trimmed set is committed before any
+touching the network error budget. A crash between `Storage::finish` and the
+journal/record update (the journal claims the whole file, the part file is
+gone) is recognised with `StorageProvider::file_len` before any request: the
+finished file is adopted if it is the last of `name`, `name (1)`, … (the one
+`finish` would have taken), has exactly the journalled size, and passes the
+checksum when one was requested; otherwise the download runs normally. The
+trimmed set is committed before any
 connection overwrites the dropped bytes. A ranged start with nothing
 journalled (a new download, a crash before the first commit, a journal of
 another size) always starts from an empty in-progress file: whatever an
@@ -175,13 +186,16 @@ downloads never share one), then `Storage::finish`; a name ending in
 `.vayu-part` loses that suffix (it could be another download's part file);
 on `AlreadyExists`:
 `name (1).ext`, `name (2).ext`, … (`a (1).tar.gz` keeps double extensions).
-The name can still change after the first probe only while no journal exists
-for the download.
+A name the user chose (`AddParams::filename`, stored as
+`DownloadRecord::filename_locked`) is never replaced by the server's; any
+other name can still improve after the first probe, but only while no journal
+exists for the download.
 
 **Categories, queues, limits (#12).** The built-in category comes from the
 extension (`category_for`); the user's `category` overrides it. The main
 queue runs up to `max_active_downloads`, oldest first; each named queue runs
-one download at a time, oldest first (`Engine::set_queue`; see proposals).
+one download at a time, oldest first (`AddParams::queue`; an empty name is
+the main queue; `Engine::set_queue` moves an existing download).
 Lowering `max_active_downloads` does not stop running downloads. One global
 token bucket (`speed_limit_bps`; 50 ms burst) is shared by every connection;
 unlimited costs one atomic load per chunk.
@@ -235,7 +249,7 @@ and ends every subscription.
 | Knob | Default | Trade-off |
 |---|---|---|
 | `initial_connections` | 4 | start count without a host profile |
-| `fixed_connections` | none | pin the count, no learning (bench) |
+| `fixed_connections` | none | pin every download's count, no learning (`AddParams::connections` pins one) |
 | `min_split` | 1 MiB | smaller = better tail balance, more requests |
 | `split_align` | 64 KiB | split points round down to this |
 | `tick` | 50 ms | sampling/hedge/tuner cadence (refills are immediate) |
@@ -274,13 +288,15 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | unit (`src/`) | segment claims/splits/hedge takeover, tuner paths, names, categories, checksums, limiter, event bus, backoff |
 | `tests/scenarios.rs` (27) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers |
 | `tests/service.rs` (19) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
-| `tests/regressions.rs` (11) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. Nine of them fail on the pre-fix code; the name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
+| `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
+| `tests/contract.rs` (9) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic), and adopting a file finished before a crash (plain, under a numbered name, not with the wrong length, decided by the checksum) |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
-| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
+| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
-model over seeds 0–3299, 5000–6999 and 10000–11999 (7,300 cases, 1–5 kills
-each, ≈ 22,000 kills; 0 corrupt files) and the property test over 2,700
+model over seeds 0–3299, 5000–6999, 10000–11999 and 20000–21999 (9,300
+cases, 1–5 kills each, ≈ 28,000 kills; 0 corrupt files; the last 2,000 also
+with exactly one finished file each) and the property test over 3,300
 schedules, all passing. Run
 them with the built test binaries, e.g.
 `VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
@@ -328,29 +344,14 @@ returns.
 
 ## Contract proposals
 
-None of these block the engine; each has a workaround in place.
-
-1. **`AddParams::connections: Option<u32>`** — a per-download connection
-   count (pin, no learning). The bench's 1/4/16-connection runs need it;
-   today only the engine-wide `Tuning::fixed_connections` exists.
-2. **`AddParams::queue: Option<String>`** (and `DownloadSummary` already has
-   `queue`) — named queues are implemented but reachable only through
-   `Engine::set_queue`.
-3. **`StorageProvider::exists(&Path) -> BoxFuture<io::Result<bool>>`** (or
-   `Storage::len`) — if the process dies between `Storage::finish` and the
-   journal/record update (a few ms), the next start finds the part file
-   gone; tail verification then re-downloads everything into
-   `name (1).ext`. Correct bytes, but a duplicate file. With `exists` the
-   engine would see the finished file and just mark the download complete.
-4. **`DownloadRecord::filename_locked: bool`** — whether the user chose the
-   name. Today a heuristic (name equals the URL-derived one) decides whether
-   a probe may still improve the name of a download that has not started.
-
-Assumptions about `vayu-store` (no contract change, but please confirm):
-dropping a `write_at` future must be safe (the engine aborts connections
-when pausing; such a write may land or not, but the journal never claims
-it), and after `StorageProvider::remove(path)` no write accepted on an old
-handle may reach a file newly opened at the same path.
+All four from the first round were applied on `phase1/engine` (ADR 0005,
+amendment 1) and are implemented here: `AddParams::connections`,
+`AddParams::queue`, `DownloadRecord::filename_locked` (replacing a name
+heuristic) and `StorageProvider::file_len` (adopting a file finished just
+before a crash instead of downloading it again into `name (1).ext`). The
+storage contract now also states what the engine relied on: a dropped
+`write_at` is safe and never loses an error, errors are sticky, and after a
+`remove` or `finish` a new `open` of the path is a new file.
 
 ## Known limitations
 

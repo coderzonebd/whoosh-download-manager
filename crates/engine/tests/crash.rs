@@ -154,7 +154,9 @@ fn run_case(seed: u64) {
             d.summary.error
         );
         let files = case.fs.finished();
-        assert!(!files.is_empty(), "seed {seed}: no finished file");
+        // Exactly one: a crash between `finish` and the journal update is
+        // recognised (`file_len`), not downloaded again into `name (1)`.
+        assert_eq!(files.len(), 1, "seed {seed}: {:?}", files.keys());
         for (path, got) in files {
             if !case.versions.contains(&got) {
                 for (i, v) in case.versions.iter().enumerate() {

@@ -126,7 +126,10 @@ pub(crate) struct RunSpec {
     pub record: DownloadRecord,
     pub generation: u64,
     pub live: Arc<Live>,
-    pub auto_name: bool,
+    /// The user named the file (`filename_locked`): probes never rename it.
+    pub name_locked: bool,
+    /// `AddParams::connections`.
+    pub connections: Option<u16>,
 }
 
 /// Runs a download and makes sure it always ends: a panic anywhere in the
@@ -219,6 +222,10 @@ struct Driver {
     directory: PathBuf,
     filename: String,
     name_fixed: bool,
+    connections: Option<u16>,
+    /// Recognised as already finished (a crash after `Storage::finish`):
+    /// the final name and size.
+    adopted: Option<(String, u64)>,
     category_auto: bool,
     checksum: Option<Checksum>,
     source: Option<Arc<dyn RangeSource>>,
@@ -263,7 +270,8 @@ impl Driver {
             record,
             generation,
             live,
-            auto_name,
+            name_locked,
+            connections,
         } = spec;
         let t = inner.config.tuning.clone();
         let rng = match inner.config.rng_seed {
@@ -282,7 +290,9 @@ impl Driver {
             request: record.request.clone(),
             directory: PathBuf::from(&record.directory),
             filename: record.filename.clone(),
-            name_fixed: !auto_name,
+            name_fixed: name_locked,
+            connections,
+            adopted: None,
             category_auto,
             checksum: record.checksum.clone(),
             source: None,
@@ -335,6 +345,9 @@ impl Driver {
     }
 
     async fn download(&mut self) -> Result<(), Outcome> {
+        if self.adopt_finished().await? {
+            return Ok(());
+        }
         self.state(DownloadState::Probing).await;
         let source = self
             .inner
@@ -400,6 +413,81 @@ impl Driver {
         }
     }
 
+    /// A crash between `Storage::finish` and the journal/record update
+    /// leaves the journal claiming the whole file, no part file, and the
+    /// finished file in place. Recognise that (no network needed) instead of
+    /// downloading again into `name (1).ext`. Conservative: the finished
+    /// file must be the last of `name`, `name (1)`, … (`finish` takes the
+    /// first free one), have exactly the journalled size, and pass the
+    /// checksum when one was requested; anything else downloads normally.
+    async fn adopt_finished(&mut self) -> Result<bool, Outcome> {
+        let Some(cp) = self
+            .inner
+            .deps
+            .journal
+            .load(&self.id)
+            .await
+            .map_err(io_failed)?
+        else {
+            return Ok(false);
+        };
+        let Some(size) = cp.meta.size else {
+            return Ok(false);
+        };
+        if cp.done.len() != size
+            || !cp.done.contains(ByteRange {
+                start: 0,
+                end: size,
+            })
+        {
+            return Ok(false);
+        }
+        let provider = self.inner.deps.storage.clone();
+        let Some(part) = names::part_path(&self.directory, &self.filename) else {
+            return Ok(false);
+        };
+        if provider.file_len(&part).await.map_err(io_failed)?.is_some() {
+            return Ok(false);
+        }
+        let mut last = None;
+        for n in 0..10_000u32 {
+            let candidate = if n == 0 {
+                self.filename.clone()
+            } else {
+                names::numbered(&self.filename, n)
+            };
+            let Some(path) = names::inside(&self.directory, &candidate) else {
+                break;
+            };
+            match provider.file_len(&path).await.map_err(io_failed)? {
+                Some(len) => last = Some((candidate, path, len)),
+                None => break,
+            }
+        }
+        let Some((name, path, len)) = last else {
+            return Ok(false);
+        };
+        if len != size {
+            return Ok(false);
+        }
+        if let Some(ck) = self.checksum.clone() {
+            let Ok((algo, want)) = checksum::parse(&ck) else {
+                return Ok(false);
+            };
+            let Ok(file) = provider.open(&path).await else {
+                return Ok(false);
+            };
+            let got = checksum::digest(&*file, size, algo, self.t.verify_chunk).await;
+            if !matches!(got, Ok(got) if got == want) {
+                return Ok(false);
+            }
+        }
+        tracing::info!(id = %self.id, name, "already finished before a restart; adopting it");
+        self.size = Some(size);
+        self.adopted = Some((name, size));
+        Ok(true)
+    }
+
     /// Take in what a probe learned: file name (only before a part file
     /// exists), size, host profile.
     async fn adopt(&mut self, meta: &RemoteMeta) -> Result<(), Outcome> {
@@ -463,6 +551,7 @@ impl Driver {
                 &self.t,
                 self.inner.max_connections(),
                 self.profile.as_ref(),
+                self.connections,
             ));
         }
         Ok(())
@@ -734,6 +823,12 @@ impl Driver {
     /// Move the part file to its final name, numbering on collisions. Not
     /// cancellable.
     async fn finish(&mut self) -> Outcome {
+        if let Some((filename, total)) = self.adopted.take() {
+            if let Err(e) = self.inner.deps.journal.remove(&self.id).await {
+                tracing::warn!(id = %self.id, "journal remove failed: {e}");
+            }
+            return Outcome::Completed { filename, total };
+        }
         let storage = match self.open_storage().await {
             Ok(s) => s,
             Err(o) => return o,
@@ -805,8 +900,9 @@ impl Driver {
             return;
         }
         let prev = self.profile.clone().unwrap_or_default();
-        let learned =
-            self.t.fixed_connections.is_none() && (tuner.settled() || tuner.max_ok().is_some());
+        let learned = self.t.fixed_connections.is_none()
+            && self.connections.is_none()
+            && (tuner.settled() || tuner.max_ok().is_some());
         let profile = HostProfile {
             host: host.clone(),
             best_connections: if learned {

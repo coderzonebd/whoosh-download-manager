@@ -107,6 +107,9 @@ impl StorageProvider for NullProvider {
         *self.last.lock().unwrap() = Some(s.clone());
         Box::pin(async move { Ok(s as Arc<dyn Storage>) })
     }
+    fn file_len<'a>(&'a self, _p: &'a Path) -> BoxFuture<'a, io::Result<Option<u64>>> {
+        Box::pin(async { Ok(None) })
+    }
     fn remove<'a>(&'a self, _p: &'a Path) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async { Ok(()) })
     }
@@ -140,11 +143,7 @@ async fn one(size: u64, chunk: usize, conns: u16) -> (f64, f64) {
     );
     let storage = Arc::new(NullProvider::default());
     let mut cfg = EngineConfig::new("/bench");
-    cfg.default_settings.max_connections_per_download = u32::from(conns);
-    cfg.tuning = Tuning {
-        fixed_connections: Some(conns),
-        ..Tuning::default()
-    };
+    cfg.tuning = Tuning::default();
     let engine = Engine::start(
         EngineDeps {
             sources,
@@ -168,6 +167,8 @@ async fn one(size: u64, chunk: usize, conns: u16) -> (f64, f64) {
             start: true,
             mirrors: vec![],
             checksum: None,
+            connections: Some(u32::from(conns)),
+            queue: None,
         })
         .await
         .unwrap()
