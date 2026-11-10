@@ -147,7 +147,12 @@ fn check(mode: Mode, kill: Kill) {
     assert_eq!(files.len(), 1, "{mode:?} {kill:?}: {:?}", files.keys());
     assert_eq!(name, "data.bin", "{mode:?} {kill:?}");
     assert_same(&files[&final_path("data.bin")], &w.data);
-    assert_eq!(reopened, 0, "{mode:?} {kill:?}: downloaded again");
+    // After the rename nothing is downloaded again. Before it, the intent
+    // (committed while the data was flushed) claims only what the journal
+    // already did, so the rest may be fetched again — never kept unsynced.
+    if kill == Kill::AfterRename {
+        assert_eq!(reopened, 0, "{mode:?} {kill:?}: downloaded again");
+    }
 }
 
 #[test]
@@ -187,7 +192,9 @@ fn the_numbered_name_finish_chose_is_recognised() {
         let id = kill_at(&w, kill, add_params(URL));
         let (name, reopened) = restart(&w, &id);
         assert_eq!(name, "data (1).bin", "{kill:?}");
-        assert_eq!(reopened, 0);
+        if kill == Kill::AfterRename {
+            assert_eq!(reopened, 0);
+        }
         let files = w.fs.finished();
         assert_eq!(files.len(), 2, "{kill:?}: {:?}", files.keys());
         assert_same(&files[&final_path("data.bin")], &other);
@@ -238,11 +245,14 @@ fn the_checksum_decides_whether_a_renamed_file_is_adopted() {
     assert!(reopened > 0);
     assert_same(&w.fs.finished()[&final_path("data (1).bin")], &w.data);
 
-    // Killed before the rename with a checksum: verified, then finished.
+    // Killed before the rename with a checksum: a single stream journals
+    // nothing before its finish intent (committed alongside the flush, so
+    // claiming nothing), so it is fetched once more, verified, finished.
     let w = world(Mode::NoRanges);
     let id = kill_at(&w, Kill::BeforeRename, with_checksum());
     let (name, reopened) = restart(&w, &id);
-    assert_eq!((name.as_str(), reopened), ("data.bin", 0));
+    assert_eq!((name.as_str(), reopened), ("data.bin", 1));
+    assert_same(&w.fs.finished()[&final_path("data.bin")], &w.data);
 }
 
 #[test]

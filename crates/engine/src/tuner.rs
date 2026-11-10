@@ -186,6 +186,9 @@ pub(crate) struct Tuner {
     /// The first climb, while every doubling scales (almost) linearly:
     /// short windows, one trial window per doubling.
     fast: bool,
+    /// A jump from the first connection's solo rate is being measured
+    /// (from this count).
+    jump_from: Option<u16>,
     throttled: bool,
     /// Has settled at least once: later climbs are re-probes.
     settled_once: bool,
@@ -327,6 +330,7 @@ impl Tuner {
             best: None,
             climbed: false,
             fast: !fixed && t.tune_fast_scaling.is_finite(),
+            jump_from: None,
             throttled: false,
             settled_once: false,
             reprobe_every: t.tune_reprobe,
@@ -336,6 +340,36 @@ impl Tuner {
             tuner.target = tuner.target.min(ceiling);
         }
         tuner
+    }
+
+    /// A fresh download's first connection, alone, delivered far less than
+    /// a round trip's worth per round trip (`rate`, bytes/s): the server
+    /// limits it, probably every connection alike. Jump to `n` (up to the
+    /// cap) at once, as a trial against that solo rate: kept when `n`
+    /// deliver at least `max(2, n / 4)` times as much (a per-connection
+    /// limit gives about n×, a shared one about 1×); otherwise judged
+    /// carefully from there, fewer first.
+    pub(crate) fn limited_per_connection(&mut self, n: u16, rate: f64) {
+        if self.fixed || !matches!(self.state, State::Running { .. }) || !rate.is_finite() {
+            return;
+        }
+        let n = n.min(self.cap()).max(1);
+        if n <= self.target || rate <= 0.0 {
+            return;
+        }
+        self.jump_from = Some(self.target);
+        self.target = n;
+        self.state = State::Running {
+            goal: Goal::Trial {
+                dir: Dir::Up,
+                base: Stat {
+                    n: 1,
+                    mean: rate,
+                    rse: 1.0,
+                },
+            },
+            phase: Phase::warm(),
+        };
     }
 
     /// The number of owning connections to run now.
@@ -493,6 +527,28 @@ impl Tuner {
                 }
             }
             Goal::Trial { dir, base } => {
+                if self.jump_from.take().is_some() {
+                    // The jump from the first connection's solo rate.
+                    let linear = f64::from(stat.n) / f64::from(base.n.max(1));
+                    if stat.mean >= base.mean * (linear / 4.0).max(2.0) {
+                        self.accept(dir, stat);
+                    } else {
+                        // A shared limit: fewer connections would not be
+                        // slower, but cutting them now (their ranges handed
+                        // on mid-flight) costs more than it saves on a
+                        // short download. Judge carefully from here, fewer
+                        // first; a long download comes down.
+                        self.fast = false;
+                        self.best = Some(stat);
+                        self.state = State::Running {
+                            goal: Goal::Base {
+                                reprobe: Some(Dir::Down),
+                            },
+                            phase: Phase::warm(),
+                        };
+                    }
+                    return;
+                }
                 if self.fast && dir == Dir::Up && self.scales(base, stat) {
                     self.accept(dir, stat);
                     return;
@@ -704,6 +760,7 @@ impl Tuner {
         self.state = State::Settled { since: None };
         self.settled_once = true;
         self.fast = false;
+        self.jump_from = None;
     }
 
     /// The server limited us while `working` connections were accepted.

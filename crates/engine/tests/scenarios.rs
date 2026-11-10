@@ -98,7 +98,9 @@ async fn connection_cap_with_retry_after_is_respected() {
     assert_same(&lab.file("data.bin").unwrap(), &data);
     // Two connections at 4 MiB/s: 2 s is the floor.
     assert!(took < Duration::from_millis(2600), "took {took:?}");
-    assert!(src.opens() < 16, "opens {}", src.opens());
+    // The start, one wave of 8 (6 refused), then the 8 pieces fetched two
+    // at a time.
+    assert!(src.opens() <= 16, "opens {}", src.opens());
     let p = lab.state.host_profile(host()).await.unwrap().unwrap();
     assert_eq!(p.max_ok_connections, Some(2), "{p:?}");
 }

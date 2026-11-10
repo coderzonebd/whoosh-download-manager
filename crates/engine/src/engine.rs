@@ -329,9 +329,22 @@ impl Inner {
         }
     }
 
+    /// Save `id` without waiting for it: a running download's record (its
+    /// state, name, size, progress) is advisory until the run ends — a
+    /// restart re-queues it either way, and the journal, not the record,
+    /// holds the progress — so the run does not wait on the store. Every
+    /// save writes the newest record, so the order they land in does not
+    /// matter; the run's final record is saved and awaited in `run_ended`.
+    fn save_soon(self: &Arc<Self>, id: &str) {
+        let (inner, id) = (self.clone(), id.to_string());
+        tokio::spawn(async move {
+            inner.save(&id).await;
+        });
+    }
+
     /// A running download changed state (only its current run may do so).
     pub(crate) async fn set_state(
-        &self,
+        self: &Arc<Self>,
         id: &str,
         generation: u64,
         state: DownloadState,
@@ -356,13 +369,13 @@ impl Inner {
             state,
             error,
         }));
-        self.save(id).await;
+        self.save_soon(id);
         true
     }
 
     /// Change and persist a running download's record.
     pub(crate) async fn update(
-        &self,
+        self: &Arc<Self>,
         id: &str,
         generation: u64,
         f: impl FnOnce(&mut DownloadRecord),
@@ -377,7 +390,7 @@ impl Inner {
             }
             f(&mut e.record);
         }
-        self.save(id).await;
+        self.save_soon(id);
     }
 
     /// Send the current summary of `id` as `event.download.updated`: its
@@ -812,12 +825,14 @@ impl Inner {
             st.downloads.insert(id.clone(), entry);
             summary
         };
+        // The run starts while the record is saved; `add` still answers
+        // only once it is.
+        self.bus.emit(Notification::DownloadAdded(summary));
+        self.pump();
         self.save(&id).await;
         if connections.is_some() {
             self.save_connections().await;
         }
-        self.bus.emit(Notification::DownloadAdded(summary));
-        self.pump();
         Ok(AddResult { id })
     }
 
