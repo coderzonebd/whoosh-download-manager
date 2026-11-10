@@ -1,0 +1,45 @@
+[package]
+name = "vayu-daemon"
+description = "The vayu daemon: serves the local JSON-RPC API (PROTOCOL.md) over WebSocket for any Service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "vayu_daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vayu-daemon"
+path = "src/main.rs"
+
+[dependencies]
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { workspace = true, features = ["env"] }
+vayu-proto.workspace = true
+
+bytes = "1"
+getrandom = "0.3"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+subtle = "2"
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
+tracing-appender = "0.2"
+
+[dev-dependencies]
+# The native messaging host's own data-dir rule, to prove both agree.
+vayu-nmhost = { path = "../nmhost" }
+
+[lints]
+workspace = true
