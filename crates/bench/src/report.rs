@@ -480,6 +480,24 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
         );
     }
     o.push('\n');
+    // Known clients that are not in this run set, and why.
+    let absent: Vec<String> = crate::adapter::all()
+        .iter()
+        .filter(|a| !meta.clients.iter().any(|c| c.id == a.id()))
+        .map(|a| {
+            let why = match a.mode() {
+                crate::adapter::Mode::Manual => {
+                    "GUI only: needs a person at the keyboard (`vayu-bench manual`)"
+                }
+                _ if a.tool() == "idm" => "Windows only; see docs/bench/README.md",
+                _ => "not installed on this machine",
+            };
+            format!("{} ({why})", a.id())
+        })
+        .collect();
+    if !absent.is_empty() {
+        let _ = writeln!(o, "Not in this run set: {}.\n", absent.join("; "));
+    }
 
     // ---- overview
     let _ = writeln!(o, "## Overview\n");
@@ -796,9 +814,11 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
                 status.join(" "),
                 opt(first.peak_connections, |p| format!(", peak {p} conns"))
             );
+            // A lingering client the harness stopped is not a failure reason.
             let detail = first
                 .note
                 .clone()
+                .filter(|n| !n.starts_with("stopped by the harness"))
                 .or_else(|| {
                     first.stderr_tail.as_ref().map(|s| {
                         let s = s.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
@@ -986,6 +1006,8 @@ mod tests {
         let md = render(&meta(), &runs);
         assert!(md.starts_with("# vayu-bench report: `2026-11-10-test`"));
         assert!(md.contains("Test CPU (8 logical CPUs)"));
+        assert!(md.contains("idm (Windows only;"), "{md}");
+        assert!(md.contains("abdm (GUI only:"));
         assert!(md.contains("not universal truth"));
         assert!(
             md.contains("| clean | 10m.bin | **aria2c** | 0.530 | 18.9 | 1 | – | – | – |"),

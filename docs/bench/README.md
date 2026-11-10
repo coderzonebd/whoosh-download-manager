@@ -29,7 +29,7 @@ B=target/release/vayu-bench
 $B fetch
 $B list                 # every client should show a path and a version
 
-# 2. The run. Close what you can; note the load average. ~1 h here.
+# 2. The run. Close what you can; note the load average. 38 min here.
 $B run --seed 20261110 --cache-mb 128 --label "$(date -u +%F)-$(hostname)"
 
 # 3. The report.
@@ -55,8 +55,8 @@ test).
 
 Every built-in labserver scenario, with one file size each, chosen so that a
 single-connection client finishes in a few seconds on a loaded 4-core
-laptop and the full matrix with nine clients and 7 runs fits in about an
-hour:
+laptop and the full matrix with nine clients and 7 runs (1,359 runs) took
+38 minutes:
 
 | Scenario | File | Why that size |
 |---|---|---|
@@ -76,6 +76,16 @@ twice in a block is skipped for the rest of it.
   rename a partial file when done but then linger (MDM, Surge), the moment
   the complete file appears, after which the harness stops them; Gopeed's
   REST API reporting done. **exit** (process exit) is shown next to it.
+- **Loopback has no per-connection bottleneck and no round-trip time.** In
+  the unthrottled scenarios (clean, no-range, lying-ranges, no-length,
+  no-validators, changing-file, redirect-chain, the gated ones) one
+  connection is already optimal, so single-connection clients (wget, curl)
+  win and extra connections only cost CPU on a 4-core machine. Segmenting
+  pays off where the server limits each connection or each response
+  (per-conn-throttle, slow-drip, conn-cap-*, rate-limited) and where
+  connections fail (flaky, stall). Real paths add RTT, loss and TCP slow
+  start, which labserver does not emulate (`tc netem` would); the
+  real-internet mode exists for that.
 - **peak conns** is politeness: how many connections a client opened at once.
   On `global-throttle` extra connections cannot help, so they only cost the
   server.

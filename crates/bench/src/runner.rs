@@ -789,9 +789,7 @@ pub fn run(opts: &RunOptions) -> Result<PathBuf> {
                 rec.seq = seq;
                 seq += 1;
                 n_done += 1;
-                serde_json::to_writer(&mut jsonl, &rec)?;
-                jsonl.write_all(b"\n")?;
-                jsonl.flush()?;
+                append_record(&mut jsonl, &rec)?;
                 if !opts.quiet {
                     eprintln!(
                         "[{n_done}/{total}] {:<17} {:<18} {:<20} #{rep} {:<10} {} (exit {})",
@@ -829,10 +827,30 @@ fn sanitize(s: &str) -> String {
         .collect()
 }
 
+/// Run sets are published: write the home directory as `~` so paths do
+/// not carry the local user name.
+fn redact_home(json: String) -> String {
+    match std::env::var("HOME") {
+        Ok(h) if h.len() > 1 && !h.contains('"') && !h.contains('\\') => {
+            json.replace(h.trim_end_matches('/'), "~")
+        }
+        _ => json,
+    }
+}
+
 pub fn write_meta(dir: &Path, meta: &Meta) -> Result<()> {
     let tmp = dir.join("meta.json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(meta)?)?;
+    std::fs::write(&tmp, redact_home(serde_json::to_string_pretty(meta)?))?;
     std::fs::rename(&tmp, dir.join("meta.json"))?;
+    Ok(())
+}
+
+/// Appends one record to `runs.jsonl`.
+fn append_record(jsonl: &mut std::fs::File, rec: &RunRecord) -> Result<()> {
+    let mut line = redact_home(serde_json::to_string(rec)?);
+    line.push('\n');
+    jsonl.write_all(line.as_bytes())?;
+    jsonl.flush()?;
     Ok(())
 }
 
@@ -1166,12 +1184,8 @@ fn wait_final_file(
         if final_file_ready(a, out, size) {
             let done = unix_us();
             let m = running.stop(Duration::from_secs(5));
-            return (
-                m,
-                Some(done),
-                false,
-                Some("stopped by the harness once its file was complete".into()),
-            );
+            // `completion: final-file` in the record says it was stopped.
+            return (m, Some(done), false, None);
         }
         if Instant::now() > deadline {
             return (running.stop(Duration::from_secs(3)), None, true, None);
@@ -1496,9 +1510,7 @@ pub fn manual(opts: &ManualOptions) -> Result<PathBuf> {
             rec.wall_s.map_or("?".into(), |w| format!("{w:.3} s")),
             rec.peak_connections.unwrap_or(0)
         );
-        serde_json::to_writer(&mut jsonl, &rec)?;
-        jsonl.write_all(b"\n")?;
-        jsonl.flush()?;
+        append_record(&mut jsonl, &rec)?;
     }
     let mut meta = meta;
     meta.finished_utc = Some(sys::datetime_utc(unix_us()));
