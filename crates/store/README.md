@@ -104,6 +104,24 @@ C toolchain (see [Testing](#testing)).
     flight. `finish` and closing wait until it holds nothing: in-flight
     errors count, and Windows can't rename a file with a second handle
     open.
+    - "In flight" is counted by drop: a flush stops counting when it is
+      answered, or dropped by a panic or a closed channel. No path can
+      leave `finish`, `remove` or `open` waiting forever.
+  - A panic on the syncer thread makes the storage fail ("the store's
+    syncer thread panicked"); it never hangs it.
+    - A panic inside the sync step is caught. The error is recorded as
+      sticky and the waiting flushes are answered with it.
+    - A panic anywhere else in the syncer is recorded by a drop guard as the
+      thread ends.
+    - A flush handed to a dead syncer fails stickily too.
+    - The provider then hands out a fresh storage for the path.
+  - **Windows:** synchronous I/O is serialised per handle, so a
+    `FlushFileBuffers` on the writer's handle would hold up its
+    `WriteFile`s. So the syncer opens its own handle for each flush.
+    `FlushFileBuffers` writes out the file's data whichever handle wrote
+    it. If that handle can't be opened, the shared one is used: slower,
+    never less durable. This path compiles and passes clippy, but has not
+    been run on Windows.
   - Opt in to `StorageOptions::drop_cache_after_flush` (Linux) to drop the
     file's clean pages after each flush, so a big download doesn't push
     everything else out of the page cache. It is off by default: it
@@ -346,6 +364,10 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
     paused and the syncer free, it doesn't resolve.
   - Waiting flushes share a sync and all resolve.
   - `finish`, and `remove` (that is, closing), wait for an in-flight sync.
+  - A panic injected inside the syncer's sync step, or after it, fails the
+    storage stickily. No call hangs: `flush`, `write_at` and `finish` all
+    fail, `finish` moves nothing, and `open` and `remove` of the path go
+    through with a fresh storage.
   - Dropping the cache after flushes keeps the data byte for byte.
 
 **Journal** (`src/journal.rs`, `tests/journal_kill.rs`):
