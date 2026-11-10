@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use clap::builder::BoolishValueParser;
 use clap::{ArgAction, Parser};
@@ -57,7 +58,27 @@ struct Args {
     detached: bool,
 }
 
+/// Milliseconds since `since`, for the startup timings in the log.
+fn ms(since: Instant) -> f64 {
+    (since.elapsed().as_secs_f64() * 1e4).round() / 10.0
+}
+
+/// How long each startup phase took (logged once, with "vayu-daemon ready").
+#[derive(Debug, Default)]
+struct Startup {
+    logging: f64,
+    runtime: f64,
+    claim: f64,
+    /// Journal and state database (opened together).
+    store: f64,
+    /// The rest of starting the service.
+    service: f64,
+    serve: f64,
+}
+
 fn main() -> ExitCode {
+    let started = Instant::now();
+    let mut startup = Startup::default();
     let args = Args::parse();
     let data_dir = match args.data_dir.clone() {
         Some(dir) => dir,
@@ -69,6 +90,7 @@ fn main() -> ExitCode {
             }
         },
     };
+    let t = Instant::now();
     let _log = match logging::init(Some(&data_dir), !args.detached) {
         Ok(guard) => Some(guard),
         Err(e) => {
@@ -79,6 +101,8 @@ fn main() -> ExitCode {
             logging::init(None, !args.detached).ok()
         }
     };
+    startup.logging = ms(t);
+    let t = Instant::now();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(usize::from(args.worker_threads))
         .enable_all()
@@ -90,9 +114,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let code = runtime.block_on(run(args, data_dir));
+    startup.runtime = ms(t);
+    let code = runtime.block_on(run(args, data_dir, started, startup));
     // Do not wait for stragglers (a stuck client write, the mock's timer).
-    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    runtime.shutdown_timeout(Duration::from_secs(1));
     code
 }
 
@@ -105,23 +130,26 @@ fn serve_error(e: &ServeError) -> ExitCode {
     }
 }
 
-async fn run(args: Args, data_dir: PathBuf) -> ExitCode {
+async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Startup) -> ExitCode {
     let mut config = DaemonConfig::new(data_dir.clone());
     config.port = args.port;
     // Claim the data directory first: the engine loads and resumes the
     // downloads stored there, which must never happen in two daemons.
+    let t = Instant::now();
     let claim = match vayu_daemon::claim(config).await {
         Ok(claim) => claim,
         Err(e) => return serve_error(&e),
     };
+    startup.claim = ms(t);
 
+    let t = Instant::now();
     let service: Arc<dyn Service> = if args.mock {
         MockService::new(MockOptions {
             scenario: args.mock_scenario,
             ..MockOptions::default()
         })
     } else {
-        match start_engine(&data_dir).await {
+        match start_engine(&data_dir, &mut startup.store).await {
             Ok(engine) => engine,
             Err(e) => {
                 tracing::error!(error = %e, "cannot start the download engine");
@@ -131,14 +159,24 @@ async fn run(args: Args, data_dir: PathBuf) -> ExitCode {
         }
     };
 
+    startup.service = ms(t) - startup.store;
+    let t = Instant::now();
     let daemon = match claim.serve(service).await {
         Ok(daemon) => daemon,
         Err(e) => return serve_error(&e),
     };
+    startup.serve = ms(t);
     tracing::info!(
         version = VERSION,
         port = daemon.port(),
         mock = args.mock,
+        startup_ms = ms(started),
+        logging_ms = startup.logging,
+        runtime_ms = startup.runtime,
+        claim_ms = startup.claim,
+        store_ms = startup.store,
+        service_ms = (startup.service * 10.0).round() / 10.0,
+        serve_ms = startup.serve,
         "vayu-daemon ready"
     );
 
@@ -166,7 +204,7 @@ async fn run(args: Args, data_dir: PathBuf) -> ExitCode {
 
 /// The real service: vayu-engine over vayu-net and vayu-store, with its state
 /// in the data directory (`state.db`, `journal/`).
-async fn start_engine(data_dir: &Path) -> std::io::Result<Arc<dyn Service>> {
+async fn start_engine(data_dir: &Path, store_ms: &mut f64) -> std::io::Result<Arc<dyn Service>> {
     let net = vayu_net::NetConfig::default();
     let mut capabilities: Vec<String> = vec!["http".into(), "https".into(), "preconnect".into()];
     if net.http2 {
@@ -179,8 +217,16 @@ async fn start_engine(data_dir: &Path) -> std::io::Result<Arc<dyn Service>> {
     let storage = Arc::new(vayu_store::FileStorageProvider::new(
         vayu_store::StorageOptions::default(),
     ));
-    let journal = Arc::new(vayu_store::FileJournal::open(data_dir.join("journal"))?);
-    let state = Arc::new(vayu_store::SqliteStateStore::open(data_dir.join("state.db")).await?);
+    // Both may fsync (creating the journal directory, a new database); do
+    // them at the same time. The journal's open blocks, so not on a worker.
+    let t = Instant::now();
+    let journal_dir = data_dir.join("journal");
+    let journal = tokio::task::spawn_blocking(move || vayu_store::FileJournal::open(journal_dir));
+    let state = vayu_store::SqliteStateStore::open(data_dir.join("state.db"));
+    let (journal, state) = tokio::join!(journal, state);
+    let journal = Arc::new(journal.map_err(std::io::Error::other)??);
+    let state = Arc::new(state?);
+    *store_ms = ms(t);
 
     let mut config = vayu_engine::EngineConfig::new(default_download_dir(data_dir));
     config.capabilities = capabilities;
