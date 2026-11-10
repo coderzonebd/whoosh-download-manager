@@ -92,6 +92,8 @@ fn setup(seed: u64) -> Case {
             c.accepts_ranges = ranges;
             c.honours_ranges = ranges;
             c.size_known = size_known;
+            // Half the cases start in one request, as a network source does.
+            c.native_start = fastrand::Rng::with_seed(seed ^ 0x57a7).bool();
         })
         .script(faults(seed));
     let sources = Arc::new(MemSourceFactory::default());

@@ -109,6 +109,9 @@ pub struct Cfg {
     pub ramp: Duration,
     /// Multiplicative jitter of every chunk's pacing (uniform ±`noise`).
     pub noise: f64,
+    /// `start` is one request (`GET` with `Range: bytes=0-`), as a network
+    /// source does it; otherwise the trait's default (probe, then open).
+    pub native_start: bool,
 }
 
 impl Default for Cfg {
@@ -130,6 +133,7 @@ impl Default for Cfg {
             probe_size: None,
             ramp: Duration::ZERO,
             noise: 0.0,
+            native_start: false,
         }
     }
 }
@@ -145,6 +149,9 @@ pub struct SrcState {
     pub expired: bool,
     pub ranges: Vec<Option<(u64, u64)>>,
     pub probe_failures: VecDeque<SourceError>,
+    /// One-request `start`s (each also counts as an open).
+    pub starts: u64,
+    pub probes: u64,
 }
 
 pub struct Bucket {
@@ -224,6 +231,16 @@ impl FaultSource {
 
     pub fn opens(&self) -> u64 {
         lock(&self.st).opens
+    }
+
+    /// Requests of any kind: probes and opens (a native start is one open).
+    pub fn requests(&self) -> u64 {
+        let s = lock(&self.st);
+        s.opens + s.probes
+    }
+
+    pub fn starts(&self) -> u64 {
+        lock(&self.st).starts
     }
 
     pub fn peak(&self) -> usize {
@@ -344,6 +361,7 @@ impl RangeSource for FaultSource {
 
     fn probe(&self) -> BoxFuture<'_, Result<RemoteMeta, SourceError>> {
         Box::pin(async move {
+            lock(&self.st).probes += 1;
             if !self.cfg.ttfb.is_zero() {
                 tokio::time::sleep(self.cfg.ttfb).await;
             }
@@ -354,22 +372,60 @@ impl RangeSource for FaultSource {
             if s.expired {
                 return Err(SourceError::LinkExpired("403".into()));
             }
-            let v = self.validators_of(s.version);
-            Ok(RemoteMeta {
-                size: self.cfg.probe_size.or(v.size),
-                accepts_ranges: self.cfg.accepts_ranges,
-                etag: v.etag,
-                last_modified: None,
-                filename: self.cfg.filename.clone(),
-                content_type: self.cfg.content_type.clone(),
-                final_url: None,
-                protocol: Some(Protocol::Http1),
-            })
+            Ok(self.meta_of(s.version, self.cfg.accepts_ranges))
         })
     }
 
     fn open(&self, req: OpenRequest) -> BoxFuture<'_, Result<ByteStream, SourceError>> {
+        Box::pin(async move { self.respond(req, false).await.map(|(_, b)| b) })
+    }
+
+    fn start(&self) -> BoxFuture<'_, Result<(RemoteMeta, ByteStream), SourceError>> {
+        if !self.cfg.native_start {
+            // The trait's default: probe, then open the whole file.
+            return Box::pin(async move {
+                let meta = self.probe().await?;
+                let stream = self
+                    .open(OpenRequest {
+                        range: None,
+                        expect: meta.validators(),
+                    })
+                    .await?;
+                Ok((meta, stream))
+            });
+        }
         Box::pin(async move {
+            lock(&self.st).starts += 1;
+            let req = OpenRequest::default();
+            self.respond(req, true).await
+        })
+    }
+}
+
+impl FaultSource {
+    fn meta_of(&self, version: usize, accepts_ranges: bool) -> RemoteMeta {
+        let v = self.validators_of(version);
+        RemoteMeta {
+            size: self.cfg.probe_size.or(v.size),
+            accepts_ranges,
+            etag: v.etag,
+            last_modified: None,
+            filename: self.cfg.filename.clone(),
+            content_type: self.cfg.content_type.clone(),
+            final_url: None,
+            protocol: Some(Protocol::Http1),
+        }
+    }
+
+    /// One request. `start`: the whole file from offset 0, described by
+    /// the same response (`Range: bytes=0-`; a `206` proves ranges work, a
+    /// server that ignores them answers `200`).
+    async fn respond(
+        &self,
+        req: OpenRequest,
+        start: bool,
+    ) -> Result<(RemoteMeta, ByteStream), SourceError> {
+        {
             let n = {
                 let mut s = lock(&self.st);
                 s.opens += 1;
@@ -384,10 +440,20 @@ impl RangeSource for FaultSource {
             if let Some(e) = plan.fail.clone() {
                 return Err(e);
             }
+            let mut meta = RemoteMeta::default();
             let body = {
                 let mut s = lock(&self.st);
+                if start && let Some(e) = s.probe_failures.pop_front() {
+                    return Err(e);
+                }
                 if s.expired {
                     return Err(SourceError::LinkExpired("403".into()));
+                }
+                if start {
+                    meta = self.meta_of(
+                        s.version,
+                        self.cfg.accepts_ranges && self.cfg.honours_ranges,
+                    );
                 }
                 if let Some((max, cap)) = self.cfg.cap
                     && s.active >= max
@@ -440,8 +506,8 @@ impl RangeSource for FaultSource {
                 done: false,
                 _guard: ActiveGuard(self.st.clone()),
             };
-            Ok(futures::stream::unfold(b, next_chunk).boxed())
-        })
+            Ok((meta, futures::stream::unfold(b, next_chunk).boxed()))
+        }
     }
 }
 

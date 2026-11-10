@@ -192,13 +192,17 @@ fn apply(s: &mut DownloadSummary, ev: Event) -> Applied {
             }
             _ => Applied::Ignored,
         },
-        event::DOWNLOAD_ADDED => match serde_json::from_value::<DownloadSummary>(ev.params) {
-            Ok(added) if added.id == s.id => {
-                *s = added;
-                Applied::Updated
+        // `updated` carries the whole summary again (e.g. the server's file
+        // name once the first response arrived).
+        event::DOWNLOAD_ADDED | event::DOWNLOAD_UPDATED => {
+            match serde_json::from_value::<DownloadSummary>(ev.params) {
+                Ok(added) if added.id == s.id => {
+                    *s = added;
+                    Applied::Updated
+                }
+                _ => Applied::Ignored,
             }
-            _ => Applied::Ignored,
-        },
+        }
         event::DOWNLOAD_REMOVED => {
             let gone = ev
                 .params

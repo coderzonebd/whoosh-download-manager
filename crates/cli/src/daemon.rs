@@ -200,7 +200,8 @@ fn create_private_dirs(dir: &Path) -> Result<()> {
 /// started; if it exits because another daemon won the race, that one is
 /// just as good.
 pub async fn wait_until_up(data_dir: &Path, mut child: Child) -> Result<Connected> {
-    let deadline = Instant::now() + START_TIMEOUT;
+    let started = Instant::now();
+    let deadline = started + START_TIMEOUT;
     let mut child_done = false;
     loop {
         if let Found::Running(connected) = connect_running(data_dir).await? {
@@ -225,7 +226,17 @@ pub async fn wait_until_up(data_dir: &Path, mut child: Child) -> Result<Connecte
                 data_dir.join("logs").display()
             )));
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(poll_delay(started.elapsed())).await;
+    }
+}
+
+/// A daemon is usually up within ~10 ms: poll tightly at first, then back
+/// off so a slow start does not cost CPU.
+fn poll_delay(waited: Duration) -> Duration {
+    if waited < Duration::from_millis(200) {
+        Duration::from_millis(2)
+    } else {
+        Duration::from_millis(25)
     }
 }
 
@@ -252,6 +263,6 @@ pub async fn stop(connected: Connected, data_dir: &Path) -> Result<()> {
                 info.pid
             )));
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }

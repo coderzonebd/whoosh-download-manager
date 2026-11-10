@@ -2,8 +2,9 @@
 //!
 //! * Written atomically: a new temporary file in the same directory, created
 //!   owner-only (0600 on Unix) *before* anything is written to it, filled,
-//!   synced, then renamed over `runtime.json`. A reader sees the old file or
-//!   the new one, never a partial one, and never a file others can read.
+//!   then renamed over `runtime.json` (not fsynced: see [`write_atomic`]).
+//!   A reader sees the old file or the new one, never a partial one, and
+//!   never a file others can read.
 //! * Removed on clean exit, but only if it is still ours (same pid and
 //!   token), so a daemon that lost the race never deletes a live daemon's file.
 //! * `daemon.lock` in the same directory is held (an OS file lock) for the
@@ -88,14 +89,16 @@ pub fn write_atomic(dir: &Path, info: &RuntimeInfo) -> io::Result<()> {
         std::process::id(),
         unique_suffix()
     ));
+    // No fsync: the rename alone makes the switch atomic, and durability
+    // buys nothing here. After a crash or power loss the daemon is gone, so
+    // the file is stale whatever it holds, and every reader treats a missing,
+    // empty or invalid one as "no daemon". The two fsyncs (file, directory)
+    // were the slowest part of writing it: 1–4 ms of startup.
     let result = (|| {
         let mut file = create_private_file(&tmp)?;
         file.write_all(&json)?;
-        file.sync_all()?;
         drop(file);
-        std::fs::rename(&tmp, &target)?;
-        sync_dir(dir);
-        Ok(())
+        std::fs::rename(&tmp, &target)
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
@@ -108,17 +111,6 @@ fn unique_suffix() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
-
-#[cfg(unix)]
-fn sync_dir(dir: &Path) {
-    // Makes the rename durable; best effort.
-    if let Ok(d) = File::open(dir) {
-        let _ = d.sync_all();
-    }
-}
-
-#[cfg(not(unix))]
-fn sync_dir(_dir: &Path) {}
 
 /// Reads `<dir>/runtime.json` with [`vayu_proto::runtime::read_runtime`]'s
 /// checks. `Ok(None)` when there is none.

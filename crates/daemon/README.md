@@ -20,8 +20,9 @@ target/debug/vayu-daemon --mock --mock-scenario empty --port 0
 | `--data-dir DIR` | `VAYU_DATA_DIR` | platform rule below | holds `runtime.json`, `daemon.lock`, `logs/` |
 | `--detached` (hidden) | | off | used by `vayu` when it starts the daemon: no stderr logging, SIGHUP ignored |
 | | `VAYU_LOG` | `info` | log filter (`tracing-subscriber` `EnvFilter` syntax) |
+| `--worker-threads N` | `VAYU_WORKER_THREADS` | `1` | async runtime worker threads (1–64) |
 
-Without `--mock` the binary currently exits with status 1 and says so: the engine is wired in at integration.
+Without `--mock` it serves `vayu-engine` over `vayu-net` and `vayu-store`, with its state in the data directory (`state.db`, `journal/`).
 
 **Exit codes:** `0` clean shutdown · `1` error · `2` usage · `3` another daemon already runs for this data directory · `130` forced (second signal).
 
@@ -46,7 +47,7 @@ daemon.shutdown().await;    // stop accepting, Service::shutdown, close sessions
 
 ### Transport and files
 - **Address:** `ws://127.0.0.1:<port>/rpc`, loopback only. Default port 47210, falling back to a free port.
-- **`runtime.json`** = `{ "port", "token", "pid", "version" }`. Created as a new temporary file with mode 0600 *in the `open` call* (so it is never readable by others, not even empty), written, fsynced and renamed over `runtime.json`: readers never see a partial file. Removed on clean shutdown, but only if it still holds our pid and token. On Windows the file inherits the data directory's ACL (`%LOCALAPPDATA%` is the user's own); no explicit ACL is set.
+- **`runtime.json`** = `{ "port", "token", "pid", "version" }`. Created as a new temporary file with mode 0600 *in the `open` call* (so it is never readable by others, not even empty), written and renamed over `runtime.json`: readers never see a partial file. It is not fsynced: the rename alone makes it atomic, and after a crash or power loss the file is stale whatever it holds (readers treat a missing, empty or invalid one as "no daemon"); the two fsyncs cost 1–4 ms of startup. Removed on clean shutdown, but only if it still holds our pid and token. On Windows the file inherits the data directory's ACL (`%LOCALAPPDATA%` is the user's own); no explicit ACL is set.
 - **Token:** 32 bytes from the OS RNG (`getrandom`), base64url without padding (43 characters), compared in constant time (`subtle`). New on every start. Never logged; `Debug` is redacted.
 - **Data dir:** `$VAYU_DATA_DIR`; else Linux `$XDG_DATA_HOME/vayu` (relative values ignored, default `~/.local/share/vayu`), macOS `~/Library/Application Support/vayu`, Windows `%LOCALAPPDATA%\vayu` — `vayu_proto::runtime`, the one copy the CLI and `vayu-nmhost` use too. On Unix the daemon makes the directory (and `logs/`) 0700 if it owns it, and refuses to start in a symlink or a directory owned by someone else. Clients read `runtime.json` through `vayu_proto::runtime::read_runtime`, which refuses a symlink, a foreign owner, a mode other than owner-only, or a directory others can write.
 
@@ -105,8 +106,11 @@ One `Service::subscribe()` per connection, started before the hello result is se
 | 4426 | unsupported protocol version |
 | 4429 | client too slow (lossless backlog) |
 
+### Startup time
+The "vayu-daemon ready" log line carries the startup phases (`startup_ms`, `logging_ms`, `runtime_ms`, `claim_ms`, `store_ms`, `service_ms`, `serve_ms`). Measured on the development machine (release build, under the load of parallel builds): with an existing data directory the whole startup takes about **1.2 ms** (store 0.6 ms, everything else 0.6 ms); exec to `runtime.json` about 1.7 ms. A fresh data directory adds the store creating its journal directory and SQLite database (about ten fsyncs, 8–140 ms depending on disk load), which is now almost all of a cold start. The journal and the database are opened concurrently.
+
 ### Logging
-`tracing` to `<data dir>/logs/vayu-daemon.<YYYY-MM-DD>.log` (UTC days, 7 files kept), plus stderr unless `--detached`. The files are written by the daemon's own writer, created 0600 whatever the umask (an older, wider file is tightened), in a 0700 directory. Request **params are never logged** (they carry cookies and headers), only method names; the token never is. The `log` crate is deliberately not bridged into `tracing` (the WebSocket library logs whole frames, hello included, at trace level through it), and `tungstenite` targets are filtered off as well. A test captures trace-level output across hello, cookies, headers and a bad token and checks no secret appears.
+`tracing` to `<data dir>/logs/vayu-daemon.<YYYY-MM-DD>.log` (UTC days, 7 files kept), plus stderr unless `--detached`. A writer thread does the file I/O, with a queue of 4096 lines (more are dropped, never blocking a request; the library's default of 128 000 preallocates ~4 MB, 1 ms of startup). The files are written by the daemon's own writer, created 0600 whatever the umask (an older, wider file is tightened), in a 0700 directory. Request **params are never logged** (they carry cookies and headers), only method names; the token never is. The `log` crate is deliberately not bridged into `tracing` (the WebSocket library logs whole frames, hello included, at trace level through it), and `tungstenite` targets are filtered off as well. A test captures trace-level output across hello, cookies, headers and a bad token and checks no secret appears.
 
 ### Shutdown and single instance
 - Unix: SIGINT or SIGTERM. Windows: Ctrl-C, Ctrl-Break, console close, log-off, system shutdown. A second signal exits immediately (130).

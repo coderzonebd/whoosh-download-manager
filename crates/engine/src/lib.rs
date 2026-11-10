@@ -6,6 +6,9 @@
 //! [`vayu_core::Journal`], and everything else lives in a
 //! [`vayu_core::StateStore`]. The engine owns all policy (ADR 0005):
 //!
+//! - **Start in one request** (ADR 0005 amendment 3): a fresh download's
+//!   first connection is the response of `RangeSource::start`; it runs
+//!   alone while it would finish before a new connection could help.
 //! - **Work stealing** (Speed Doctrine #1): when a connection finishes, it
 //!   takes over the largest remaining range of the connection that would
 //!   finish last, split in proportion to their speeds, never below
@@ -14,8 +17,9 @@
 //!   on its remaining range (whichever delivers first wins); in the
 //!   endgame, a slow connection is hedged when a fresh one would finish
 //!   much sooner.
-//! - **Learned connection count** (#3): start from the host profile (or 4),
-//!   hill-climb by doubling while throughput rises, then halve while it
+//! - **Learned connection count** (#3): start from the host profile (or 8),
+//!   hill-climb by doubling while throughput rises (from one short window
+//!   while each doubling scales almost linearly), then halve while it
 //!   holds; back off on throttling; persist the result per host.
 //! - **Retries** with exponential backoff and jitter, `Retry-After`, and a
 //!   per-download error budget.

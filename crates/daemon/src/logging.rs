@@ -20,6 +20,8 @@ use tracing_subscriber::layer::SubscriberExt;
 pub const LOG_ENV: &str = "VAYU_LOG";
 pub const LOG_FILE_PREFIX: &str = "vayu-daemon";
 pub const MAX_LOG_FILES: usize = 7;
+/// Log lines queued for the writer thread; more are dropped (never blocks).
+const BUFFERED_LINES: usize = 4096;
 
 /// Keeps the background log writer alive; drop it last (it flushes).
 #[derive(Debug)]
@@ -52,7 +54,11 @@ pub fn init(data_dir: Option<&Path>, foreground: bool) -> Result<LogGuard, LogEr
             crate::runtime::create_data_dir(&logs).map_err(|e| fail(e.to_string()))?;
             crate::runtime::secure_dir(dir).map_err(fail)?;
             crate::runtime::secure_dir(&logs).map_err(fail)?;
-            let (writer, guard) = tracing_appender::non_blocking(DailyFile::new(logs.clone()));
+            // The default buffer (128 000 lines) is a channel allocated and
+            // initialised up front: ~4 MB of page faults, 1 ms of startup.
+            let (writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
+                .buffered_lines_limit(BUFFERED_LINES)
+                .finish(DailyFile::new(logs.clone()));
             let layer = tracing_subscriber::fmt::layer()
                 .with_ansi(false)
                 .with_writer(writer);

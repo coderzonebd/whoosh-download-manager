@@ -71,7 +71,8 @@ impl Client {
 
     async fn connect_inner(port: u16, token: &str) -> Result<Self, ConnectError> {
         let url = format!("ws://127.0.0.1:{port}{RPC_PATH}");
-        let (mut ws, _) = tokio_tungstenite::connect_async(url)
+        // No Nagle: every message is small and someone waits for it.
+        let (mut ws, _) = tokio_tungstenite::connect_async_with_config(url, None, true)
             .await
             .map_err(|_| ConnectError::Unreachable)?;
         let nonce = auth::new_nonce().map_err(|e| ConnectError::Local(e.to_string()))?;
