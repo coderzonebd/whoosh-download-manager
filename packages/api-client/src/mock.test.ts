@@ -21,10 +21,10 @@ function record<E extends keyof EventMap>(c: MockVayuClient, event: E): EventMap
 describe("mock client", () => {
   it("answers session.hello like a daemon", async () => {
     const c = mock();
-    const hello = await c.call("session.hello", { token: "x", protocol: 1, client: { name: "test", version: "0" } });
+    const hello = await c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 1, client: { name: "test", version: "0" } });
     expect(hello.protocol).toBe(1);
     expect(hello.capabilities).toContain("http");
-    await expect(c.call("session.hello", { token: "x", protocol: 99, client: { name: "t", version: "0" } })).rejects.toBeInstanceOf(VayuRpcError);
+    await expect(c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 99, client: { name: "t", version: "0" } })).rejects.toBeInstanceOf(VayuRpcError);
   });
 
   it("starts with a realistic mix of states", async () => {

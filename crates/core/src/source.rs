@@ -80,7 +80,11 @@ pub struct RemoteMeta {
     /// the URL path.
     pub filename: Option<String>,
     pub content_type: Option<String>,
-    /// URL after redirects.
+    /// URL after redirects. For display, file names and host profiles only:
+    /// never build a source from it. When the redirect chain crossed origins
+    /// the source dropped cookies and `Authorization` for the new origin,
+    /// and a source built from `final_url` with the original
+    /// `RequestContext` would send them there. Resume from the original URL.
     pub final_url: Option<String>,
     pub protocol: Option<Protocol>,
 }

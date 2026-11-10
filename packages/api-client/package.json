@@ -9,6 +9,7 @@
     "./mock": "./src/mock.ts",
     "./ws": "./src/ws.ts",
     "./errors": "./src/errors.ts",
+    "./auth": "./src/auth.ts",
     "./categories": "./src/categories.ts"
   },
   "scripts": {

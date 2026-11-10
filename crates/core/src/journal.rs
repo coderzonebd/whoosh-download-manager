@@ -36,7 +36,10 @@ pub trait Journal: Send + Sync {
         cp: &'a Checkpoint,
     ) -> BoxFuture<'a, io::Result<()>>;
 
-    /// The last committed checkpoint, or `None` for a fresh download.
+    /// The last committed checkpoint, or `None` for a fresh download. A
+    /// journal with no valid checkpoint (a crash during the first commit,
+    /// damage, an oversized file) also returns `Ok(None)`, with a warning
+    /// logged: the download starts over rather than failing.
     fn load<'a>(&'a self, id: &'a DownloadId) -> BoxFuture<'a, io::Result<Option<Checkpoint>>>;
 
     /// Forget a download (completed or removed). Missing is not an error.
