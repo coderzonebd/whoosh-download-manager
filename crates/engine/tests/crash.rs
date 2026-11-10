@@ -56,8 +56,17 @@ struct Case {
 
 fn setup(seed: u64) -> Case {
     let mut r = fastrand::Rng::with_seed(seed);
-    let size = r.u64(64 * KIB..6 * MIB);
-    let changing = r.u8(0..8) == 0;
+    // Every mode the engine has: ranged (most), no ranges or unknown size
+    // (one stream from zero, nothing resumable), and empty files.
+    let mode = fastrand::Rng::with_seed(seed ^ 0x5eed_f11e).u8(0..20);
+    let (ranges, size_known, empty) = match mode {
+        0..=13 => (true, true, false),
+        14..=16 => (false, true, false),
+        17..=18 => (true, false, false),
+        _ => (true, true, true),
+    };
+    let size = if empty { 0 } else { r.u64(64 * KIB..6 * MIB) };
+    let changing = r.u8(0..8) == 0 && !empty;
     let mut versions = vec![content(size, seed * 3 + 1)];
     if changing {
         versions.push(content(size, seed * 3 + 2));
@@ -67,7 +76,9 @@ fn setup(seed: u64) -> Case {
     // validators, unchanging ones may lack them.
     let validators = changing || r.u8(0..5) != 0;
     if std::env::var("VAYU_CRASH_TRACE").is_ok() {
-        eprintln!("seed {seed}: size {size} changing {changing} validators {validators}");
+        eprintln!(
+            "seed {seed}: size {size} ranges {ranges} size_known {size_known} changing {changing} validators {validators}"
+        );
     }
     let chunk = [16 * KIB, 64 * KIB, 256 * KIB][r.usize(0..3)] as usize;
     let rate = r.u64(MIB..8 * MIB);
@@ -78,6 +89,9 @@ fn setup(seed: u64) -> Case {
             c.per_conn_bps = Some(rate);
             c.validators = validators;
             c.change_after = change_after;
+            c.accepts_ranges = ranges;
+            c.honours_ranges = ranges;
+            c.size_known = size_known;
         })
         .script(faults(seed));
     let sources = Arc::new(MemSourceFactory::default());

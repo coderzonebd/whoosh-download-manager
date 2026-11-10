@@ -448,11 +448,20 @@ impl Inner {
             )
         };
         let (progress, state) = event;
+        let completed = state.state == DownloadState::Completed;
         self.bus.emit(Notification::DownloadProgress(ProgressEvent {
             items: vec![progress],
         }));
         self.bus.emit(Notification::DownloadState(state));
         self.save(id).await;
+        if completed {
+            // Only now: until the record says completed, the journal's
+            // finish intent is what lets a restart recognise the file.
+            let id = id.to_string();
+            if let Err(e) = self.deps.journal.remove(&id).await {
+                tracing::warn!(id, "journal remove failed: {e}");
+            }
+        }
         self.pump();
     }
 
