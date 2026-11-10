@@ -51,22 +51,36 @@ use crate::{blocking, sys};
 pub struct FileJournal {
     dir: PathBuf,
     sync: bool,
-    /// Serialises commits of one id (commits of different ids run in
-    /// parallel).
-    locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Per id: serialises its commits (commits of different ids run in
+    /// parallel) and remembers whether this process has synced its entry.
+    ids: Mutex<HashMap<String, Arc<Mutex<IdState>>>>,
+    #[cfg(test)]
+    dir_syncs: std::sync::atomic::AtomicUsize,
+}
+
+#[derive(Debug, Default)]
+struct IdState {
+    /// The directory has been fsynced since this process first committed
+    /// the id. Not derived from the file's contents: a slot can be complete
+    /// in the page cache while its directory entry never reached the disk.
+    dir_synced: bool,
 }
 
 impl FileJournal {
-    /// Keep journals in `dir`, creating it (owner-only on Unix) if missing.
-    /// Journal files are created owner-only too: checkpoints hold the final
-    /// URL, which may carry tokens.
+    /// Keep journals in `dir`, creating it (owner-only on Unix) if missing
+    /// and fsyncing the directories whose entries that changed. Journal
+    /// files are created owner-only too: checkpoints hold the final URL,
+    /// which may carry tokens.
     pub fn open(dir: impl Into<PathBuf>) -> io::Result<Self> {
         let dir = dir.into();
-        sys::create_private_dir_all(&dir)?;
+        let changed = sys::create_dirs(&dir, sys::DirMode::Private)?;
+        sys::sync_dirs(&changed)?;
         Ok(Self {
             dir,
             sync: true,
-            locks: Mutex::default(),
+            ids: Mutex::default(),
+            #[cfg(test)]
+            dir_syncs: Default::default(),
         })
     }
 
@@ -87,8 +101,8 @@ impl FileJournal {
         self
     }
 
-    fn lock_for(&self, id: &str) -> Arc<Mutex<()>> {
-        lock(&self.locks).entry(id.to_owned()).or_default().clone()
+    fn state_for(&self, id: &str) -> Arc<Mutex<IdState>> {
+        lock(&self.ids).entry(id.to_owned()).or_default().clone()
     }
 }
 
@@ -111,25 +125,37 @@ impl Journal for FileJournal {
                     "checkpoint too large for the journal",
                 ));
             }
-            let (dir, sync, guard) = (self.dir.clone(), self.sync, self.lock_for(id));
-            blocking::run(move || {
-                let _held = lock(&guard);
-                commit_blocking(&path, &dir, sync, &payload)
+            let (dir, sync, state) = (self.dir.clone(), self.sync, self.state_for(id));
+            let synced_dir = blocking::run(move || {
+                let mut state = lock(&state);
+                commit_blocking(&path, &dir, sync, &payload, &mut state)
             })
-            .await
+            .await?;
+            #[cfg(test)]
+            if synced_dir {
+                self.dir_syncs
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            let _ = synced_dir;
+            Ok(())
         })
     }
 
     fn load<'a>(&'a self, id: &'a DownloadId) -> BoxFuture<'a, io::Result<Option<Checkpoint>>> {
         Box::pin(async move {
             let path = self.path_for(id)?;
-            let guard = self.lock_for(id);
+            let state = self.state_for(id);
             blocking::run(move || {
-                let _held = lock(&guard);
-                let bytes = match std::fs::read(&path) {
-                    Ok(b) => b,
+                let _held = lock(&state);
+                let mut opts = std::fs::File::options();
+                opts.read(true);
+                let file = match sys::open_nofollow(&mut opts, &path) {
+                    Ok(f) => f,
                     Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
                     Err(e) => return Err(e),
+                };
+                let Some(bytes) = read_bounded(file, &path)? else {
+                    return Ok(None);
                 };
                 let found = format::latest(&bytes).map(|(_, cp)| cp);
                 if found.is_none() && !bytes.is_empty() {
@@ -144,50 +170,77 @@ impl Journal for FileJournal {
     fn remove<'a>(&'a self, id: &'a DownloadId) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let path = self.path_for(id)?;
-            let guard = self.lock_for(id);
+            let state = self.state_for(id);
             blocking::run(move || {
-                let _held = lock(&guard);
+                let _held = lock(&state);
                 match std::fs::remove_file(&path) {
                     Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
                     r => r,
                 }
             })
             .await?;
-            lock(&self.locks).remove(id.as_str());
+            lock(&self.ids).remove(id.as_str());
             Ok(())
         })
     }
 }
 
-fn commit_blocking(path: &Path, dir: &Path, sync: bool, payload: &[u8]) -> io::Result<()> {
-    let opts = || {
+/// The whole journal file, or `None` (with a warning) when it is larger
+/// than any journal this format writes: such a file is corrupt, and reading
+/// it could exhaust memory.
+fn read_bounded(mut file: std::fs::File, path: &Path) -> io::Result<Option<Vec<u8>>> {
+    let len = file.metadata()?.len();
+    if len > format::MAX_FILE {
+        tracing::warn!(path = %path.display(), len, "journal file is impossibly large; treating it as corrupt and starting over");
+        return Ok(None);
+    }
+    let mut bytes = Vec::with_capacity(len as usize);
+    file.by_ref()
+        .take(format::MAX_FILE)
+        .read_to_end(&mut bytes)?;
+    Ok(Some(bytes))
+}
+
+/// Returns whether it fsynced the directory.
+fn commit_blocking(
+    path: &Path,
+    dir: &Path,
+    sync: bool,
+    payload: &[u8],
+    state: &mut IdState,
+) -> io::Result<bool> {
+    let open = |create: bool| {
         let mut o = sys::private_file_options();
-        o.read(true).write(true);
-        o
+        o.read(true).write(true).create_new(create);
+        sys::open_nofollow(&mut o, path)
     };
-    let (mut file, created) = match opts().open(path) {
-        Ok(f) => (f, false),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            (opts().create_new(true).open(path)?, true)
-        }
+    let file = match open(false) {
+        Ok(f) => f,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => open(true)?,
         Err(e) => return Err(e),
     };
-    let mut current = Vec::new();
-    if !created {
-        file.read_to_end(&mut current)?;
-    }
-    let (offset, slot, first) = format::plan(&current, payload);
-    sys::write_all_at(&file, &slot, offset).map_err(sys::map_err)?;
-    if sync {
-        file.sync_data().map_err(sys::map_err)?;
-        // The first checkpoint is durable only once the directory entry is;
-        // a file left empty or torn by an earlier crash may never have had
-        // its entry synced either.
-        if created || first {
-            sys::sync_dir(dir)?;
+    let current = match read_bounded(file.try_clone()?, path)? {
+        Some(bytes) => bytes,
+        None => {
+            // Nothing in it can be loaded anyway; start the file over.
+            file.set_len(0)?;
+            Vec::new()
         }
+    };
+    let (offset, slot) = format::plan(&current, payload);
+    sys::write_all_at(&file, &slot, offset).map_err(sys::map_err)?;
+    if !sync {
+        return Ok(false);
     }
-    Ok(())
+    file.sync_data().map_err(sys::map_err)?;
+    // A commit is durable only once the file's directory entry is. Sync it
+    // on this process's first commit of the id, whatever the file holds.
+    if !state.dir_synced {
+        sys::sync_dir(dir)?;
+        state.dir_synced = true;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 /// The journal file name for `id`; see the [module docs](self).
@@ -235,7 +288,12 @@ pub(crate) mod format {
     pub(crate) const HEADER: usize = 40;
     /// The second slot position; later ones are its powers of two.
     pub(crate) const MIN_STRIDE: u64 = 4096;
-    pub(crate) const MAX_PAYLOAD: usize = 64 << 20;
+    /// About 120,000 done ranges; a commit above this is refused.
+    pub(crate) const MAX_PAYLOAD: usize = 4 << 20;
+    /// No file this format writes is larger: with payloads up to
+    /// `MAX_PAYLOAD`, slots never start past 16 MiB (see `place`), so files
+    /// stay under 20.1 MiB. Anything larger is corrupt and is not read.
+    pub(crate) const MAX_FILE: u64 = 32 << 20;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct Slot {
@@ -327,12 +385,12 @@ pub(crate) mod format {
     }
 
     /// The next commit against the file's current bytes: `(offset, slot
-    /// bytes, whether it is the first valid checkpoint)`.
-    pub(crate) fn plan(current: &[u8], payload: &[u8]) -> (u64, Vec<u8>, bool) {
+    /// bytes)`.
+    pub(crate) fn plan(current: &[u8], payload: &[u8]) -> (u64, Vec<u8>) {
         let latest = latest(current).map(|(s, _)| s);
         let offset = place(latest.as_ref(), (HEADER + payload.len()) as u64);
         let seq = latest.map_or(1, |s| s.seq + 1);
-        (offset, encode(offset, seq, payload), latest.is_none())
+        (offset, encode(offset, seq, payload))
     }
 }
 
@@ -380,7 +438,7 @@ mod tests {
         let mut file = Vec::new();
         for cp in cps {
             let payload = serde_json::to_vec(cp).unwrap();
-            let (offset, slot, _) = plan(&file, &payload);
+            let (offset, slot) = plan(&file, &payload);
             let prev = load(&file);
             for k in 0..=slot.len() {
                 let mut torn = file.clone();
@@ -424,7 +482,7 @@ mod tests {
         for (i, r) in [1u64, 300, 300, 2, 900, 900, 5, 5].into_iter().enumerate() {
             let payload = serde_json::to_vec(&cp(i as u64, r)).unwrap();
             let before = latest(&file).map(|(s, _)| s);
-            let (offset, slot, _) = plan(&file, &payload);
+            let (offset, slot) = plan(&file, &payload);
             if let Some(b) = before {
                 let new_end = offset + slot.len() as u64;
                 assert!(new_end <= b.offset || offset >= b.offset + b.len);
@@ -598,6 +656,97 @@ mod tests {
         }
     }
 
+    /// A checkpoint whose JSON payload is about `bytes` long.
+    fn sized(n: u64, bytes: usize) -> Checkpoint {
+        Checkpoint {
+            meta: RemoteMeta {
+                size: Some(n),
+                etag: Some("x".repeat(bytes.saturating_sub(100))),
+                ..RemoteMeta::default()
+            },
+            done: RangeSet::new(),
+        }
+    }
+
+    /// The bound `read_bounded` relies on: with payloads up to the maximum,
+    /// in the worst order, no journal grows past MAX_FILE.
+    #[test]
+    fn journal_files_never_outgrow_the_read_bound() {
+        let max = format::MAX_PAYLOAD - 400;
+        let mut file = Vec::new();
+        let sizes = [10, max, max, 10, max, max / 2, max, 4000, max, 10, max];
+        for (i, &b) in sizes.iter().enumerate() {
+            let payload = serde_json::to_vec(&sized(i as u64, b)).unwrap();
+            assert!(payload.len() <= format::MAX_PAYLOAD);
+            let (offset, slot) = plan(&file, &payload);
+            apply(&mut file, offset, &slot);
+            assert!(
+                file.len() as u64 <= format::MAX_FILE,
+                "{} bytes",
+                file.len()
+            );
+            assert_eq!(load(&file), Some(sized(i as u64, b)));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_oversized_journal_is_corrupt_not_read() {
+        let d = tempfile::tempdir().unwrap();
+        let j = FileJournal::open(d.path()).unwrap();
+        let id = "big".to_string();
+        let path = j.path_for(&id).unwrap();
+        // Sparse, so the test needs no disk: a corrupt file claiming 64 GiB.
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(64 << 30).unwrap();
+        drop(f);
+        assert_eq!(j.load(&id).await.unwrap(), None);
+        j.commit(&id, &cp(1, 1)).await.unwrap();
+        assert_eq!(j.load(&id).await.unwrap(), Some(cp(1, 1)));
+        assert!(std::fs::metadata(&path).unwrap().len() < 4096);
+        let e = j
+            .commit(&id, &sized(2, format::MAX_PAYLOAD + 1000))
+            .await
+            .unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// The directory is fsynced on each process's first commit of an id,
+    /// whatever the file already holds: an earlier process may have written
+    /// a complete slot and died before syncing the entry.
+    #[tokio::test]
+    async fn every_process_syncs_the_directory_on_its_first_commit() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let d = tempfile::tempdir().unwrap();
+        let id = "dl".to_string();
+        let first = FileJournal::open(d.path()).unwrap();
+        first.commit(&id, &cp(1, 1)).await.unwrap();
+        first.commit(&id, &cp(2, 1)).await.unwrap();
+        assert_eq!(first.dir_syncs.load(Relaxed), 1);
+        let restarted = FileJournal::open(d.path()).unwrap();
+        restarted.commit(&id, &cp(3, 1)).await.unwrap();
+        restarted.commit(&id, &cp(4, 1)).await.unwrap();
+        assert_eq!(restarted.dir_syncs.load(Relaxed), 1);
+        // After remove, the next commit creates a new entry: sync again.
+        restarted.remove(&id).await.unwrap();
+        restarted.commit(&id, &cp(5, 1)).await.unwrap();
+        assert_eq!(restarted.dir_syncs.load(Relaxed), 2);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlinked_journal_is_refused() {
+        let d = tempfile::tempdir().unwrap();
+        let target = d.path().join("precious");
+        std::fs::write(&target, b"do not touch").unwrap();
+        let j = FileJournal::open(d.path().join("j")).unwrap();
+        let id = "dl".to_string();
+        std::os::unix::fs::symlink(&target, j.path_for(&id).unwrap()).unwrap();
+        let e = j.commit(&id, &cp(1, 1)).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
+        assert!(j.load(&id).await.is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
+    }
+
     #[test]
     fn a_file_with_no_valid_slot_loads_as_fresh() {
         assert_eq!(load(&[]), None);
@@ -625,13 +774,13 @@ mod tests {
             let mut file = Vec::new();
             for (i, &r) in sizes.iter().enumerate() {
                 let payload = serde_json::to_vec(&cp(i as u64, r)).unwrap();
-                let (o, s, _) = plan(&file, &payload);
+                let (o, s) = plan(&file, &payload);
                 apply(&mut file, o, &s);
             }
             let prev = load(&file);
             let new = cp(999, next);
             let payload = serde_json::to_vec(&new).unwrap();
-            let (offset, slot, _) = plan(&file, &payload);
+            let (offset, slot) = plan(&file, &payload);
             let mut torn = file.clone();
             let mut at = 0usize;
             while at < slot.len() {
@@ -661,7 +810,7 @@ mod tests {
             for (i, &r) in sizes.iter().enumerate() {
                 let c = cp(i as u64, r);
                 let payload = serde_json::to_vec(&c).unwrap();
-                let (o, s, _) = plan(&file, &payload);
+                let (o, s) = plan(&file, &payload);
                 apply(&mut file, o, &s);
                 committed.push(c);
             }
@@ -711,7 +860,7 @@ mod tests {
                 let path = j.path_for(&id).unwrap();
                 let file = std::fs::read(&path).unwrap();
                 let new = cp(1000, next);
-                let (offset, slot, _) = plan(&file, &serde_json::to_vec(&new).unwrap());
+                let (offset, slot) = plan(&file, &serde_json::to_vec(&new).unwrap());
                 let k = cut.index(slot.len() + 1);
                 let mut torn = file.clone();
                 apply(&mut torn, offset, &slot[..k]);

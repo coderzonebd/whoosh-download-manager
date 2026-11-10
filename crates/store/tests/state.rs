@@ -307,3 +307,23 @@ async fn an_unreadable_row_is_skipped_not_fatal() {
     let s = SqliteStateStore::open(&path).await.unwrap();
     assert_eq!(s.load_downloads().await.unwrap(), vec![record(1)]);
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_symlinked_database_is_refused() {
+    let d = tempfile::tempdir().unwrap();
+    let target = d.path().join("precious");
+    std::fs::write(&target, b"do not touch").unwrap();
+    let path = d.path().join("state.db");
+    std::os::unix::fs::symlink(&target, &path).unwrap();
+    let e = SqliteStateStore::open(&path).await.unwrap_err();
+    assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
+    assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
+
+    // A planted -wal link is refused too.
+    std::fs::remove_file(&path).unwrap();
+    std::os::unix::fs::symlink(&target, format!("{}-wal", path.display())).unwrap();
+    let e = SqliteStateStore::open(&path).await.unwrap_err();
+    assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
+    assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
+}

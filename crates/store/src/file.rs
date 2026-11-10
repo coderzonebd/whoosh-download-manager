@@ -41,10 +41,19 @@ impl Default for StorageOptions {
     }
 }
 
-/// Opens [`FileStorage`]s. Opening a path that is already open returns the
-/// same storage; opening a path whose previous storage was dropped but is
-/// still writing out its buffer waits for that to finish first, so two
-/// writers never share a file.
+/// Opens [`FileStorage`]s, one per path.
+///
+/// - Opening a path whose storage is open and usable returns that storage.
+/// - Opening a path whose storage was dropped but is still writing out its
+///   buffer waits for that writer first, so two writers never share a file.
+/// - Opening a path whose storage is finished, removed or failed (see
+///   [`FileStorage`]) starts a new storage on the path: the old one never
+///   writes again.
+/// - [`StorageProvider::remove`] stops any storage of that path (its later
+///   calls fail, queued writes are dropped), waits for its writer to close
+///   the file, and only then deletes it. So once `remove` has resolved, no
+///   write through an old handle can reach a file opened at that path later.
+///   `open` and `remove` of the same path must not run concurrently.
 #[derive(Debug, Default)]
 pub struct FileStorageProvider {
     opts: StorageOptions,
@@ -57,6 +66,31 @@ struct Entry {
     shared: Weak<Shared>,
 }
 
+/// What the registry holds for a path.
+enum Lookup {
+    /// An open, usable storage: share it.
+    Live(Arc<FileStorage>),
+    /// A dropped storage whose writer is still writing out its buffer.
+    Draining(Arc<Shared>),
+    /// Nothing that writes to the path any more.
+    Free,
+}
+
+impl Entry {
+    fn lookup(&self) -> Lookup {
+        match self.storage.upgrade() {
+            Some(s) if s.shared.usable() => Lookup::Live(s),
+            // Finished, removed or failed: its writer never writes again.
+            Some(_) => Lookup::Free,
+            // Draining only while its writer has not closed the file.
+            None => match self.shared.upgrade() {
+                Some(sh) if !sh.is_closed() => Lookup::Draining(sh),
+                _ => Lookup::Free,
+            },
+        }
+    }
+}
+
 impl FileStorageProvider {
     pub fn new(opts: StorageOptions) -> Self {
         Self {
@@ -65,52 +99,93 @@ impl FileStorageProvider {
         }
     }
 
+    fn lookup(map: &HashMap<PathBuf, Entry>, key: &Path) -> Lookup {
+        map.get(key).map_or(Lookup::Free, Entry::lookup)
+    }
+
     async fn open_storage(&self, path: &Path) -> io::Result<Arc<FileStorage>> {
         let key = std::path::absolute(path)?;
+        // Directory entries created by an attempt that lost a race; the
+        // storage finally returned must still sync them.
+        let mut carried = Vec::new();
         loop {
-            let draining = {
+            let found = {
                 let mut map = lock(&self.open);
                 map.retain(|_, e| e.shared.strong_count() > 0);
-                match map.get(&key) {
-                    Some(e) => match e.storage.upgrade() {
-                        Some(s) if !s.is_finished() => return Ok(s),
-                        // Finished: its file has moved away and its writer
-                        // never touches the path again; start a new file.
-                        Some(_) => None,
-                        None => e.shared.upgrade(),
-                    },
-                    None => None,
-                }
+                Self::lookup(&map, &key)
             };
-            match draining {
-                Some(shared) => shared.wait_closed().await,
-                None => break,
+            match found {
+                Lookup::Live(s) => {
+                    s.shared.add_pending_dirs(std::mem::take(&mut carried));
+                    return Ok(s);
+                }
+                Lookup::Draining(shared) => {
+                    shared.wait_closed().await;
+                    continue;
+                }
+                Lookup::Free => {}
+            }
+            let (file, dirs) = blocking::run({
+                let p = key.clone();
+                move || open_file(&p)
+            })
+            .await?;
+            let storage = FileStorage::start(key.clone(), file, dirs, &self.opts)?;
+            storage
+                .shared
+                .add_pending_dirs(std::mem::take(&mut carried));
+            let mut map = lock(&self.open);
+            // Another `open` of the same path may have run while the file
+            // was being opened. Ours has queued nothing; dropping it stops
+            // its writer.
+            match Self::lookup(&map, &key) {
+                Lookup::Live(s) => {
+                    // If ours created the file or its directories, the
+                    // entries still need syncing.
+                    s.shared
+                        .add_pending_dirs(storage.shared.take_pending_dirs());
+                    return Ok(s);
+                }
+                Lookup::Draining(_) => {
+                    carried = storage.shared.take_pending_dirs();
+                    continue;
+                }
+                Lookup::Free => {
+                    map.insert(
+                        key,
+                        Entry {
+                            storage: Arc::downgrade(&storage),
+                            shared: Arc::downgrade(&storage.shared),
+                        },
+                    );
+                    return Ok(storage);
+                }
             }
         }
-        let file = blocking::run({
-            let p = key.clone();
-            move || open_file(&p)
-        })
-        .await?;
-        let storage = FileStorage::start(key.clone(), file, &self.opts)?;
-        let mut map = lock(&self.open);
-        // Another `open` of the same path may have won the race while the
-        // file was being opened; ours has queued nothing and just stops.
-        if let Some(existing) = map
-            .get(&key)
-            .and_then(|e| e.storage.upgrade())
-            .filter(|s| !s.is_finished())
-        {
-            return Ok(existing);
+    }
+
+    async fn remove_path(&self, path: &Path) -> io::Result<()> {
+        let key = std::path::absolute(path)?;
+        let entry = lock(&self.open).remove(&key);
+        if let Some(e) = entry {
+            let live = e.storage.upgrade();
+            if let Some(s) = &live {
+                s.shared
+                    .set_error(&io::Error::other("the file was removed"));
+                let _ = s.tx.send(Cmd::Abandon);
+            }
+            let shared = live
+                .map(|s| s.shared.clone())
+                .or_else(|| e.shared.upgrade());
+            if let Some(shared) = shared {
+                shared.wait_closed().await;
+            }
         }
-        map.insert(
-            key,
-            Entry {
-                storage: Arc::downgrade(&storage),
-                shared: Arc::downgrade(&storage.shared),
-            },
-        );
-        Ok(storage)
+        blocking::run(move || match std::fs::remove_file(&key) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            r => r,
+        })
+        .await
     }
 }
 
@@ -120,33 +195,45 @@ impl StorageProvider for FileStorageProvider {
     }
 
     fn remove<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
-        let path = path.to_path_buf();
-        Box::pin(blocking::run(move || match std::fs::remove_file(&path) {
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-            r => r,
-        }))
+        Box::pin(self.remove_path(path))
     }
 }
 
-fn open_file(path: &Path) -> io::Result<File> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)?;
-    }
-    File::options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(path)
+/// Open or create the in-progress file, never through a symbolic link.
+/// Returns the directories whose entries this created (the file's own
+/// directory if the file is new, and the parent of every directory made),
+/// which the first `flush` fsyncs.
+fn open_file(path: &Path) -> io::Result<(File, Vec<PathBuf>)> {
+    let dir = sys::parent_or_cwd(path);
+    let mut dirs = sys::create_dirs(&dir, sys::DirMode::Default)?;
+    let mut opts = File::options();
+    opts.read(true).write(true).create_new(true);
+    let file = match sys::open_nofollow(&mut opts, path) {
+        Ok(f) => {
+            dirs.push(dir);
+            f
+        }
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            let mut opts = File::options();
+            opts.read(true).write(true);
+            sys::open_nofollow(&mut opts, path)?
+        }
+        Err(e) => return Err(e),
+    };
+    Ok((file, dirs))
 }
 
 /// One in-progress file. See the [module docs](self) for how writes flow.
 ///
-/// Errors from buffered writes surface on the next `write_at`, `read_at`,
-/// `flush` or `finish`. `flush` (and `finish`) report such an error once and
-/// then clear it: everything accepted since the last successful `flush` must
-/// be treated as lost, which is what the engine does anyway when a flush
-/// fails (it never commits those ranges to the journal).
+/// **Errors are sticky.** A failed buffered write or a failed fsync (on
+/// Linux an fsync error is reported only once, so a retry could wrongly
+/// succeed) makes every later `write_at`, `read_at`, `flush`, `preallocate`
+/// and `finish` on this storage fail with that error, and queued writes are
+/// dropped. Nothing accepted since the last successful `flush` can be
+/// trusted. Opening the path again gives a fresh storage on the same file;
+/// the failed one never writes again. Errors that lose no data stay
+/// per-call: a taken final name (`AlreadyExists`), a failed preallocation,
+/// a failed read.
 #[derive(Debug)]
 pub struct FileStorage {
     path: PathBuf,
@@ -171,6 +258,8 @@ enum Cmd {
         to: PathBuf,
         reply: oneshot::Sender<io::Result<()>>,
     },
+    /// The provider removed the file: close it and stop.
+    Abandon,
 }
 
 #[derive(Debug)]
@@ -191,12 +280,17 @@ impl PendingWrite {
 struct Shared {
     buffer: Semaphore,
     cap: u32,
-    /// The first write error since the last flush, as (kind, message).
+    /// The first write or fsync error, as (kind, message); never cleared.
     error: Mutex<Option<(io::ErrorKind, String)>>,
     finished: AtomicBool,
     closed: watch::Sender<bool>,
+    /// Directories whose entries changed when the file (or its directory)
+    /// was created; fsynced by the next successful flush.
+    pending_dirs: Mutex<Vec<PathBuf>>,
     #[cfg(test)]
     paused: (Mutex<bool>, std::sync::Condvar),
+    #[cfg(test)]
+    synced_dirs: Mutex<Vec<PathBuf>>,
 }
 
 impl Shared {
@@ -204,12 +298,13 @@ impl Shared {
         if self.finished.load(Ordering::Acquire) {
             return Err(finished_error());
         }
-        match &*lock(&self.error) {
-            Some((kind, msg)) => Err(io::Error::new(*kind, msg.clone())),
+        match self.error() {
+            Some(e) => Err(e),
             None => Ok(()),
         }
     }
 
+    /// Records the first error; it stays for the life of the storage.
     fn set_error(&self, e: &io::Error) {
         let mut slot = lock(&self.error);
         if slot.is_none() {
@@ -217,14 +312,41 @@ impl Shared {
         }
     }
 
+    /// Records `e` as sticky and returns it.
+    fn fail(&self, e: io::Error) -> io::Error {
+        self.set_error(&e);
+        e
+    }
+
+    fn error(&self) -> Option<io::Error> {
+        lock(&self.error)
+            .as_ref()
+            .map(|(kind, msg)| io::Error::new(*kind, msg.clone()))
+    }
+
     fn has_error(&self) -> bool {
         lock(&self.error).is_some()
     }
 
-    fn take_error(&self) -> Option<io::Error> {
-        lock(&self.error)
-            .take()
-            .map(|(kind, msg)| io::Error::new(kind, msg))
+    fn usable(&self) -> bool {
+        !self.finished.load(Ordering::Acquire) && !self.has_error()
+    }
+
+    fn add_pending_dirs(&self, dirs: Vec<PathBuf>) {
+        let mut p = lock(&self.pending_dirs);
+        for d in dirs {
+            if !p.contains(&d) {
+                p.push(d);
+            }
+        }
+    }
+
+    fn take_pending_dirs(&self) -> Vec<PathBuf> {
+        std::mem::take(&mut *lock(&self.pending_dirs))
+    }
+
+    fn is_closed(&self) -> bool {
+        *self.closed.borrow()
     }
 
     async fn wait_closed(&self) {
@@ -251,7 +373,12 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl FileStorage {
-    fn start(path: PathBuf, file: File, opts: &StorageOptions) -> io::Result<Arc<Self>> {
+    fn start(
+        path: PathBuf,
+        file: File,
+        new_dirs: Vec<PathBuf>,
+        opts: &StorageOptions,
+    ) -> io::Result<Arc<Self>> {
         let cap = opts
             .buffer_bytes
             .clamp(4096, (u32::MAX as usize).min(Semaphore::MAX_PERMITS)) as u32;
@@ -261,8 +388,11 @@ impl FileStorage {
             error: Mutex::new(None),
             finished: AtomicBool::new(false),
             closed: watch::Sender::new(false),
+            pending_dirs: Mutex::new(new_dirs),
             #[cfg(test)]
             paused: Default::default(),
+            #[cfg(test)]
+            synced_dirs: Mutex::default(),
         });
         let (tx, rx) = mpsc::channel();
         let writer = Writer {
@@ -283,12 +413,10 @@ impl FileStorage {
         &self.path
     }
 
-    fn is_finished(&self) -> bool {
-        self.shared.finished.load(Ordering::Acquire)
-    }
-
     fn send(&self, cmd: Cmd) -> io::Result<()> {
-        self.tx.send(cmd).map_err(|_| finished_error())
+        self.tx
+            .send(cmd)
+            .map_err(|_| self.shared.error().unwrap_or_else(finished_error))
     }
 
     async fn call<T>(
@@ -297,7 +425,8 @@ impl FileStorage {
     ) -> io::Result<T> {
         let (tx, rx) = oneshot::channel();
         self.send(make(tx))?;
-        rx.await.map_err(|_| finished_error())?
+        rx.await
+            .map_err(|_| self.shared.error().unwrap_or_else(finished_error))?
     }
 
     #[cfg(test)]
@@ -343,7 +472,7 @@ impl Storage for FileStorage {
                 .buffer
                 .acquire_many(permits)
                 .await
-                .map_err(|_| finished_error())?
+                .map_err(|_| self.shared.error().unwrap_or_else(finished_error))?
                 .forget();
             let queued = self.shared.check().and_then(|()| {
                 self.send(Cmd::Write(PendingWrite {
@@ -367,14 +496,21 @@ impl Storage for FileStorage {
     }
 
     fn flush(&self) -> BoxFuture<'_, io::Result<()>> {
-        Box::pin(self.call(Cmd::Flush))
+        Box::pin(async move {
+            self.shared.check()?;
+            self.call(Cmd::Flush).await
+        })
     }
 
     fn finish<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
-        Box::pin(self.call(|reply| Cmd::Finish {
-            to: final_path.to_path_buf(),
-            reply,
-        }))
+        Box::pin(async move {
+            self.shared.check()?;
+            self.call(|reply| Cmd::Finish {
+                to: final_path.to_path_buf(),
+                reply,
+            })
+            .await
+        })
     }
 }
 
@@ -391,12 +527,15 @@ struct Writer {
     max_batch: usize,
 }
 
-/// Marks the storage closed when the writer thread ends, even by panic, so
-/// a provider waiting to reopen the path never hangs.
+/// When the writer thread ends (finished, removed, dropped, or by panic):
+/// close the buffer, so a `write_at` waiting for space fails instead of
+/// hanging, and mark the storage closed, so a provider waiting to reopen
+/// the path never hangs.
 struct ClosedOnDrop(Arc<Shared>);
 
 impl Drop for ClosedOnDrop {
     fn drop(&mut self) {
+        self.0.buffer.close();
         self.0.closed.send_replace(true);
     }
 }
@@ -430,43 +569,45 @@ impl Writer {
             self.write_batch();
         }
         self.write_batch();
+        // Close the file before announcing it.
+        self.file = None;
     }
 
     /// Handles a non-write command; returns true when the storage is done.
+    /// Every reply is computed before it is sent, and every error that
+    /// loses data is recorded first, so a caller that stopped waiting
+    /// cannot make an error disappear.
     fn handle(&mut self, cmd: Cmd) -> bool {
         match cmd {
             Cmd::Write(_) => unreachable!("writes are batched"),
             Cmd::Read { offset, len, reply } => {
-                let _ = reply.send(self.read(offset, len));
+                let r = self.checked().and_then(|()| self.read(offset, len));
+                let _ = reply.send(r);
             }
             Cmd::Preallocate { len, reply } => {
-                let r = self.file().and_then(|f| match sys::preallocate(f, len) {
-                    Ok(sys::Prealloc::Reserved) => Ok(()),
-                    Ok(sys::Prealloc::SizeOnly) => {
-                        tracing::debug!(path = %self.path.display(), len, "filesystem cannot reserve space; file extended sparsely");
-                        Ok(())
-                    }
-                    Err(e) => Err(sys::map_err(e)),
-                });
+                let r = self.checked().and_then(|()| self.preallocate(len));
                 let _ = reply.send(r);
             }
             Cmd::Flush(reply) => {
-                let r = match self.shared.take_error() {
-                    Some(e) => Err(e),
-                    None => self
-                        .file()
-                        .and_then(|f| f.sync_data().map_err(sys::map_err)),
-                };
+                let r = self.checked().and_then(|()| self.flush());
                 let _ = reply.send(r);
             }
             Cmd::Finish { to, reply } => {
-                let r = self.finish(&to);
+                let r = self.checked().and_then(|()| self.finish(&to));
                 let done = r.is_ok();
                 let _ = reply.send(r);
                 return done;
             }
+            Cmd::Abandon => return true,
         }
         false
+    }
+
+    fn checked(&self) -> io::Result<()> {
+        match self.shared.error() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     fn file(&self) -> io::Result<&File> {
@@ -484,41 +625,61 @@ impl Writer {
         Ok(buf.into())
     }
 
+    fn preallocate(&self, len: u64) -> io::Result<()> {
+        match sys::preallocate(self.file()?, len) {
+            Ok(sys::Prealloc::Reserved) => Ok(()),
+            Ok(sys::Prealloc::SizeOnly) => {
+                tracing::debug!(path = %self.path.display(), len, "filesystem cannot reserve space; file extended sparsely");
+                Ok(())
+            }
+            Err(e) => Err(sys::map_err(e)),
+        }
+    }
+
+    /// `fdatasync`, then (the first time) the directories whose entries
+    /// creating the file changed; any failure is sticky.
+    fn flush(&self) -> io::Result<()> {
+        let f = self.file()?;
+        f.sync_data()
+            .map_err(|e| self.shared.fail(sys::map_err(e)))?;
+        let dirs = self.shared.take_pending_dirs();
+        if let Err(e) = sys::sync_dirs(&dirs) {
+            return Err(self.shared.fail(e));
+        }
+        #[cfg(test)]
+        lock(&self.shared.synced_dirs).extend(dirs);
+        Ok(())
+    }
+
     fn finish(&mut self, to: &Path) -> io::Result<()> {
-        if let Some(e) = self.shared.take_error() {
-            return Err(e);
-        }
-        self.file()?.sync_data().map_err(sys::map_err)?;
-        if let Some(parent) = to.parent().filter(|p| !p.as_os_str().is_empty()) {
-            std::fs::create_dir_all(parent)?;
-        }
+        self.file()?
+            .sync_data()
+            .map_err(|e| self.shared.fail(sys::map_err(e)))?;
+        let to_dir = sys::parent_or_cwd(to);
+        let mut dirs = sys::create_dirs(&to_dir, sys::DirMode::Default)?;
         // Closed before the move: Windows cannot rename an open file.
         self.file = None;
         if let Err(e) = sys::rename_noreplace(&self.path, to) {
             // Still in progress: keep it usable so the engine can try
             // another name.
-            match File::options().read(true).write(true).open(&self.path) {
+            let mut opts = File::options();
+            opts.read(true).write(true);
+            match sys::open_nofollow(&mut opts, &self.path) {
                 Ok(f) => self.file = Some(f),
                 Err(re) => self.shared.set_error(&re),
             }
             return Err(e);
         }
         self.shared.finished.store(true, Ordering::Release);
-        let mut dirs = vec![to.parent()];
-        if self.path.parent() != to.parent() {
-            dirs.push(self.path.parent());
+        dirs.push(to_dir);
+        let from_dir = sys::parent_or_cwd(&self.path);
+        if !dirs.contains(&from_dir) {
+            dirs.push(from_dir);
         }
-        for dir in dirs.into_iter().flatten() {
-            let dir = if dir.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                dir
-            };
-            if let Err(e) = sys::sync_dir(dir) {
-                // The move happened; failing now would make the engine pick
-                // another name for a file that is already in place.
-                tracing::warn!(dir = %dir.display(), error = %e, "could not fsync the directory after the final move");
-            }
+        if let Err(e) = sys::sync_dirs(&dirs) {
+            // The move happened; failing now would make the engine pick
+            // another name for a file that is already in place.
+            tracing::warn!(error = %e, "could not fsync the directories after the final move");
         }
         Ok(())
     }
@@ -536,7 +697,7 @@ impl Writer {
         let mut released = 0;
         let file = match self.file.as_ref() {
             Some(f) if !self.shared.has_error() => Some(f),
-            // After an error everything up to the next flush is lost anyway.
+            // After an error nothing more is written: the storage is dead.
             _ => None,
         };
         if let Some(file) = file {
@@ -663,5 +824,188 @@ mod tests {
         let back = s.read_at(0, 100).await.unwrap();
         // B (10..20), then A (0..15) over it, then C (12..14) over A.
         assert_eq!(&back[..], b"AAAAAAAAAAAACCABBBBB");
+    }
+
+    /// A flush whose caller gave up (a timeout on a slow disk) must not
+    /// swallow the write error it would have reported.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_cancelled_flush_does_not_lose_the_error() {
+        let p = provider(1 << 20);
+        let s = p.open_storage(Path::new("/dev/full")).await.unwrap();
+        s.pause(true);
+        s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+        let gave_up = tokio::time::timeout(Duration::from_millis(20), s.flush()).await;
+        assert!(
+            gave_up.is_err(),
+            "flush finished while the writer was paused"
+        );
+        s.pause(false);
+        for _ in 0..3 {
+            let e = s.flush().await.unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
+        }
+        let e = s.finish(Path::new("/nonexistent/x")).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+        let e = s.write_at(4, Bytes::from_static(b"x")).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+    }
+
+    /// Linux reports an fsync error once; a retried flush must not succeed.
+    /// fdatasync on /dev/null fails (EINVAL) while its writes succeed.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_failed_fsync_is_sticky() {
+        let p = provider(1 << 20);
+        let s = p.open_storage(Path::new("/dev/null")).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+        let first = s.flush().await.unwrap_err();
+        let again = s.flush().await.unwrap_err();
+        assert_eq!(first.kind(), again.kind());
+        assert!(s.write_at(4, Bytes::from_static(b"x")).await.is_err());
+        assert!(s.read_at(0, 4).await.is_err());
+        assert!(s.preallocate(10).await.is_err());
+        // Opening the path again gives a fresh storage; the failed one never
+        // writes again.
+        let fresh = p.open_storage(Path::new("/dev/null")).await.unwrap();
+        assert!(!Arc::ptr_eq(&s, &fresh));
+        fresh.write_at(0, Bytes::from_static(b"ok")).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_first_flush_syncs_new_directory_entries() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().to_path_buf();
+        let p = provider(1 << 20);
+        let s = p.open_storage(&root.join("a/b/f.vayu-part")).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
+        s.flush().await.unwrap();
+        let mut synced = lock(&s.shared.synced_dirs).clone();
+        synced.sort();
+        assert_eq!(synced, vec![root.clone(), root.join("a"), root.join("a/b")]);
+        s.flush().await.unwrap();
+        assert_eq!(lock(&s.shared.synced_dirs).len(), 3, "synced only once");
+        drop(s);
+        // Reopening an existing file changes no directory entry.
+        let again = provider(1 << 20)
+            .open_storage(&root.join("a/b/f.vayu-part"))
+            .await
+            .unwrap();
+        again.flush().await.unwrap();
+        assert!(lock(&again.shared.synced_dirs).is_empty());
+    }
+
+    /// When the writer thread ends (here: `finish` succeeds) while a
+    /// `write_at` waits for buffer space, that write fails instead of
+    /// hanging.
+    #[tokio::test]
+    async fn a_write_waiting_for_space_wakes_when_the_writer_ends() {
+        let d = tempfile::tempdir().unwrap();
+        let p = provider(64 * 1024);
+        let s = p.open_storage(&d.path().join("f")).await.unwrap();
+        s.pause(true);
+        for i in 0..4u64 {
+            s.write_at(i * 16384, Bytes::from(vec![1u8; 16384]))
+                .await
+                .unwrap();
+        }
+        let fin = tokio::spawn({
+            let (s, to) = (s.clone(), d.path().join("done"));
+            async move { s.finish(&to).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        // Queued behind `finish`: takes 16 KiB once the batch is written,
+        // and is never written itself.
+        let w5 = tokio::spawn({
+            let s = s.clone();
+            async move { s.write_at(65536, Bytes::from(vec![2u8; 16384])).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        // Needs the whole buffer, which never comes back.
+        let w6 = tokio::spawn({
+            let s = s.clone();
+            async move { s.write_at(81920, Bytes::from(vec![3u8; 65536])).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        s.pause(false);
+        fin.await.unwrap().unwrap();
+        let _ = w5.await.unwrap();
+        let w6 = tokio::time::timeout(Duration::from_secs(5), w6)
+            .await
+            .expect("write_at hung after the writer ended");
+        assert!(w6.unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn open_waits_for_a_dropped_storage_to_drain() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f");
+        let p = provider(4 << 20);
+        let s = p.open_storage(&path).await.unwrap();
+        s.pause(true);
+        s.write_at(0, Bytes::from(vec![7u8; 1 << 20]))
+            .await
+            .unwrap();
+        let shared = s.shared.clone();
+        let (m, cv) = &shared.paused;
+        drop(s);
+        let reopen = p.open_storage(&path);
+        let mut reopen = std::pin::pin!(reopen);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut reopen)
+                .await
+                .is_err(),
+            "opened while the old writer still had a buffer to write"
+        );
+        *lock(m) = false;
+        cv.notify_all();
+        let r = reopen.await.unwrap();
+        assert_eq!(r.read_at(0, 1 << 20).await.unwrap(), vec![7u8; 1 << 20]);
+    }
+
+    /// `remove` drops queued writes, waits for the old writer to close the
+    /// file, and leaves the old handle failing; a file opened at the path
+    /// afterwards never receives the old handle's bytes.
+    #[tokio::test]
+    async fn remove_stops_the_old_writer_before_deleting() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f.vayu-part");
+        let p = provider(1 << 20);
+        let old = p.open_storage(&path).await.unwrap();
+        old.pause(true);
+        old.write_at(0, Bytes::from_static(b"queued"))
+            .await
+            .unwrap();
+        let removing = p.remove_path(&path);
+        let mut removing = std::pin::pin!(removing);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut removing)
+                .await
+                .is_err(),
+            "remove did not wait for the writer"
+        );
+        old.pause(false);
+        removing.await.unwrap();
+        assert!(!path.exists());
+        assert!(old.write_at(0, Bytes::from_static(b"late")).await.is_err());
+        assert!(old.flush().await.is_err());
+        let new = p.open_storage(&path).await.unwrap();
+        assert!(!Arc::ptr_eq(&old, &new));
+        assert!(old.write_at(0, Bytes::from_static(b"late")).await.is_err());
+        new.flush().await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlink_in_place_of_the_part_file_is_refused() {
+        let d = tempfile::tempdir().unwrap();
+        let target = d.path().join("precious");
+        std::fs::write(&target, b"do not touch").unwrap();
+        let part = d.path().join("f.vayu-part");
+        std::os::unix::fs::symlink(&target, &part).unwrap();
+        let e = provider(1 << 20).open_storage(&part).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
+        assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
     }
 }

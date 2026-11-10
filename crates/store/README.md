@@ -55,12 +55,19 @@ C toolchain (see [Testing](#testing)).
 - **Ordering.** `read_at`, `flush`, `preallocate` and `finish` go through
   the same queue as writes. So `read_at` sees every write that resolved
   before it was called, as the contract requires.
-- **Errors.** A failed buffered write is reported by the next call: the next
-  `write_at` and `read_at` fail fast with it, and `flush` or `finish`
-  report it *once*, then clear it.
-  - Everything accepted since the last successful `flush` must be treated as
-    lost. The engine does that anyway, because it commits to the journal
-    only after a successful flush.
+- **Errors that lose data are sticky.** After a failed buffered write or a
+  failed fsync, every later `write_at`, `read_at`, `flush`, `preallocate` and
+  `finish` on that storage fails with the same error. Queued writes are
+  dropped, and the storage never writes again.
+  - A flush whose caller gave up (a timeout on a slow disk) can't swallow
+    the error. Nor can a retried `fsync`, which on Linux reports a writeback
+    error only once.
+  - Nothing accepted since the last successful `flush` can be trusted. The
+    engine commits to the journal only after a successful flush.
+  - To continue, open the path again: that gives a fresh storage on the same
+    file.
+  - Errors that lose no data stay per call: a taken final name
+    (`AlreadyExists`), a failed preallocation, a failed read.
   - `ENOSPC`, `ERROR_DISK_FULL` and `ERROR_HANDLE_DISK_FULL` all arrive as
     `io::ErrorKind::StorageFull`. So do quota errors (`EDQUOT`,
     `ERROR_DISK_QUOTA_EXCEEDED`), which std reports as `QuotaExceeded`; we
@@ -77,13 +84,23 @@ C toolchain (see [Testing](#testing)).
 
 - **`flush`** writes out the buffer, then calls `fdatasync` (`sync_data`;
   `FlushFileBuffers` on Windows).
+  - The first successful flush after the file was created also `fsync`s the
+    directory entries that creation changed: the file's directory, and the
+    parent of every directory `open` had to create.
+  - Without that, POSIX allows a power cut to lose the part file's entry
+    after the journal has recorded its ranges as done.
+- **No symbolic links.** The part file is opened with `O_NOFOLLOW` (on
+  Windows, `FILE_FLAG_OPEN_REPARSE_POINT`, refusing a link). A link planted
+  where the part file belongs can't redirect writes, or a truncation, to
+  its target. Links in parent directories are followed as usual.
 - **`finish`** runs these steps:
   1. Flush.
   2. Close the file.
   3. Create the destination directory if it is missing.
   4. Move the file without replacing anything at the destination.
-  5. `fsync` both directories. A failure here is logged, not returned:
-     the file is already in place.
+  5. `fsync` both directories, and the parent of every directory step 3
+     created. A failure here is logged, not returned: the file is already
+     in place.
 
   The move uses:
 
@@ -99,12 +116,22 @@ C toolchain (see [Testing](#testing)).
     so the engine can call `finish` again with another name.
   - After a successful `finish`, every call fails.
 - **The provider** hands out one storage per path.
-  - Opening a path that is open returns the same storage, like the
-    in-memory double.
+  - Opening a path that is open and usable returns the same storage, like
+    the in-memory double.
   - Opening a path whose storage was dropped but is still writing out its
-    buffer waits for that writer. Two writers never share a file.
-  - Opening the path of a *finished* storage starts a new file.
+    buffer waits for that writer. Two writers never share a file, including
+    when two `open`s race.
+  - Opening the path of a finished, removed or failed storage starts a new
+    storage. The old one never writes again.
+  - `remove` stops any storage of the path: its later calls fail and its
+    queued writes are dropped. It waits for the writer to close the file,
+    and only then deletes it. So once `remove` has resolved, nothing written
+    through an old handle can reach a file opened at that path later.
+    - `open` and `remove` of the same path must not run concurrently.
   - `remove` treats a missing file as success.
+  - When the writer thread ends (finished, removed, dropped, or a panic),
+    the buffer is closed, so a `write_at` waiting for space fails instead of
+    hanging.
 
 ### `FileJournal`
 
@@ -125,9 +152,19 @@ C toolchain (see [Testing](#testing)).
   Normally commits alternate between 0 and 4096. A checkpoint too big for
   that moves to the next free power of two. A commit never touches the
   newest valid slot.
-- **`commit`** writes the new slot, then `fdatasync`. It also `fsync`s the
-  directory when it creates the file, or when the file has no valid slot
-  yet, for example one left torn by a crash.
+- **`commit`** writes the new slot, then `fdatasync`.
+  - It also `fsync`s the directory on each process's first commit of an id.
+    That doesn't depend on what the file holds: an earlier process may have
+    written a complete slot and died before syncing the entry.
+  - `FileJournal::open` fsyncs the entries of any directories it creates.
+- **Bounded.** A checkpoint is at most 4 MiB of JSON, about 120,000
+  ranges; a larger commit is `InvalidInput`.
+  - With that limit, slots never start past 16 MiB, so no journal exceeds
+    20.1 MiB.
+  - A file larger than 32 MiB is corrupt by definition. It is not read:
+    `load` returns `None` with a warning, and the next `commit` truncates it
+    and starts over. A corrupt or sparse huge file can't exhaust memory at
+    startup.
 - **`load`** returns the valid slot with the highest sequence number.
   - A torn or bit-flipped slot fails its CRC, and the previous slot wins.
   - A file with no valid slot loads as `None` (a fresh download), with a
@@ -144,12 +181,20 @@ C toolchain (see [Testing](#testing)).
     `InvalidInput`.
 - **Permissions.** The directory is created 0700 and the files 0600 on
   Unix: the final URL in a checkpoint can carry tokens.
+- **No symbolic links.** Journal files are opened with `O_NOFOLLOW`; a
+  planted `<id>.journal` link fails `commit` and `load` with `InvalidInput`.
 
 ### `SqliteStateStore`
 
 - **Engine.** rusqlite with `bundled` SQLite, WAL, `synchronous=NORMAL`, and
   `secure_delete=ON`, so deleted cookies don't linger in free pages.
   Migrations are driven by `PRAGMA user_version`.
+- **Cleared cookies leave the WAL too.** `secure_delete` covers only the
+  main database; old page images stay in `-wal` until a checkpoint. The
+  store runs `PRAGMA wal_checkpoint(TRUNCATE)`:
+  - before `delete_downloads` resolves;
+  - within 30 s of any other write, even while writes keep coming (at most
+    one such checkpoint per 30 s).
 - **Tables.** `downloads(id PK, added_at, json)`, `kv(key PK, json)` and
   `host_profiles(host PK, json)`.
 - **One thread, fed by a channel.** It runs whatever is queued (up to 256
@@ -164,6 +209,11 @@ C toolchain (see [Testing](#testing)).
     `-wal` and `-shm` files the same mode.
   - An existing database, `-wal` or `-shm` that others can read is
     narrowed to 0600, with a warning.
+  - Creating the database or its directory fsyncs the directory entries
+    that changed.
+- **No symbolic links.** A link in place of `state.db`, `-wal` or `-shm` is
+  refused (`InvalidInput`), and SQLite opens the database with
+  `SQLITE_OPEN_NOFOLLOW`.
 - **Corruption.** Suppose the database fails to open as a database
   (`SQLITE_NOTADB`/`SQLITE_CORRUPT`) or fails `PRAGMA quick_check`.
   - It is moved aside as `state.db.corrupt-YYYYMMDDTHHMMSSZ[-n]`, together
@@ -207,8 +257,22 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
   `finish`, and the path can be reused.
 - Resume after drop (the buffer drains first) and after a restart.
 - Preallocation reserves real blocks (`st_blocks`) and sets the exact size.
-- Disk full through `/dev/full` arrives as `StorageFull`, and the
-  errno-to-kind mapping is tested on its own.
+- Disk full through `/dev/full` arrives as `StorageFull` and stays: on
+  every retried flush, on `finish` and on writes. A fresh `open` starts
+  over. The errno-to-kind mapping is tested on its own.
+- Sticky errors: a flush abandoned by its caller (a timeout) still leaves
+  the error for the next flush. A failed fsync (`/dev/null`) fails every
+  later call.
+- The first flush fsyncs exactly the new directory entries (`a/b/` created
+  under the root: the root, `a`, `a/b`), once; reopening an existing file
+  syncs none.
+- A `write_at` waiting for buffer space when the writer thread ends fails
+  instead of hanging.
+- `open` waits for a dropped storage to finish writing out its buffer.
+- `remove` drops queued writes, waits for the writer to close, deletes, and
+  leaves the old handle failing. A file opened at the path afterwards never
+  receives old bytes.
+- A symlink in place of the part file is refused; its target is untouched.
 - No-replace semantics of both rename fallbacks.
 - 16 concurrent writers in 1 B–64 KiB chunks, with hedged rewrites and a
   256 KiB buffer, checked byte for byte against
@@ -229,6 +293,13 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
 - Hostile ids: `../`, absolute paths, `\`, `con`, NUL, emoji, case pairs.
   No file leaves the directory, and no two ids collide.
 - Parallel commits for 32 ids, and 0600/0700 permissions.
+- A sparse 64 GiB journal loads as `None` without being read, and the next
+  commit rewrites it.
+- Worst-case growth with 4 MiB checkpoints stays under the 32 MiB bound.
+  An oversized checkpoint is refused.
+- The directory is fsynced once per process per id, again after `remove`.
+- A planted `<id>.journal` symlink fails `commit` and `load`, and its
+  target is untouched.
 - **SIGKILL.** A child process resumes from the journal and commits in a
   loop. It is killed with SIGKILL at a random 0–30 ms after it starts, by
   default 100 times. After every kill:
@@ -246,6 +317,10 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
   0644 database narrowed on open.
 - Garbage and damaged b-tree pages are moved aside. A newer schema is
   refused but not moved. Unreadable rows are skipped.
+- A cookie is gone from both `state.db` and `-wal` as soon as
+  `delete_downloads` resolves, and, once cleared, within the checkpoint
+  interval while other writes continue (`src/state.rs`).
+- Symlinked `state.db` or `-wal`: refused, and the target is untouched.
 
 **Other targets.** The file and journal code (no SQLite) can be checked
 for Windows and macOS from Linux:

@@ -9,7 +9,7 @@
 
 use std::fs::File;
 use std::io::{self, IoSlice};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // ------------------------------------------------------------------ errors
 
@@ -392,14 +392,92 @@ pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
     }
 }
 
-/// Create `dir` and its missing parents; on Unix, the directories this call
-/// creates are owner-only (0700). Existing directories are left alone.
-pub(crate) fn create_private_dir_all(dir: &Path) -> io::Result<()> {
+/// Who may read the directories [`create_dirs`] makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DirMode {
+    /// The process's default (0777 minus umask on Unix).
+    Default,
+    /// Owner-only (0700 on Unix).
+    Private,
+}
+
+/// Create `dir` and its missing parents. Returns the directories whose
+/// entries changed (the parent of every directory created), which must be
+/// fsynced before anything inside the new directories can be called
+/// durable. Existing directories are left alone.
+pub(crate) fn create_dirs(dir: &Path, mode: DirMode) -> io::Result<Vec<PathBuf>> {
+    let missing: Vec<&Path> = dir
+        .ancestors()
+        .take_while(|a| !a.as_os_str().is_empty() && std::fs::symlink_metadata(a).is_err())
+        .collect();
+    if missing.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut b = std::fs::DirBuilder::new();
     b.recursive(true);
     #[cfg(unix)]
-    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
-    b.create(dir)
+    if mode == DirMode::Private {
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    }
+    let _ = mode;
+    b.create(dir)?;
+    let mut changed: Vec<PathBuf> = missing.iter().map(|d| parent_or_cwd(d)).collect();
+    changed.dedup();
+    Ok(changed)
+}
+
+/// The directory that holds `p`'s entry (`.` for a bare relative name).
+pub(crate) fn parent_or_cwd(p: &Path) -> PathBuf {
+    match p.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
+/// [`sync_dir`] each directory, stopping at the first failure.
+pub(crate) fn sync_dirs(dirs: &[PathBuf]) -> io::Result<()> {
+    dirs.iter().try_for_each(|d| sync_dir(d))
+}
+
+/// Open without following a symbolic link in the last path component, so a
+/// link planted where an in-progress file, journal or database belongs
+/// cannot redirect our writes (or a truncation) to its target. Links in
+/// parent directories are followed as usual.
+///
+/// Unix: `O_NOFOLLOW`. Windows: `FILE_FLAG_OPEN_REPARSE_POINT`, then refuse
+/// the handle if it is a link.
+pub(crate) fn open_nofollow(opts: &mut std::fs::OpenOptions, path: &Path) -> io::Result<File> {
+    let refuse = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{} is a symbolic link; refusing to follow it",
+                path.display()
+            ),
+        )
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+        match opts.open(path) {
+            Err(e) if rustix::io::Errno::from_io_error(&e) == Some(rustix::io::Errno::LOOP) => {
+                Err(refuse())
+            }
+            r => r,
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+        opts.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        let f = opts.open(path)?;
+        if f.metadata()?.file_type().is_symlink() {
+            return Err(refuse());
+        }
+        Ok(f)
+    }
 }
 
 /// Open options for a file only the user may read (0600 on Unix).

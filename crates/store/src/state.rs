@@ -12,6 +12,10 @@
 //! commits but never corrupts the file. Byte-exact progress lives in the
 //! journal, so that is the right trade.
 //!
+//! It stores cookies, so `secure_delete` is on, and a `TRUNCATE` checkpoint
+//! takes replaced or deleted rows out of the `-wal` file: before
+//! `delete_downloads` resolves, and within 30 s of any other write.
+//!
 //! # Schema (version 1, `PRAGMA user_version`)
 //!
 //! - `downloads(id TEXT PRIMARY KEY, added_at INTEGER, json TEXT)`
@@ -22,7 +26,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use futures::future::BoxFuture;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
@@ -246,8 +250,39 @@ impl StateStore for SqliteStateStore {
 
 // ------------------------------------------------------------- the thread
 
+/// How long data overwritten or deleted in a commit (a cleared cookie) may
+/// stay in the `-wal` file before a `TRUNCATE` checkpoint removes it.
+/// Deletions are checkpointed at once.
+const SECRET_CHECKPOINT: Duration = if cfg!(test) {
+    Duration::from_millis(200)
+} else {
+    Duration::from_secs(30)
+};
+
+type Reply = (oneshot::Sender<io::Result<Output>>, io::Result<Output>);
+
 fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
-    while let Ok(first) = rx.recv() {
+    // When the WAL started holding data written since the last TRUNCATE.
+    let mut dirty_since: Option<Instant> = None;
+    loop {
+        let first = match dirty_since {
+            None => match rx.recv() {
+                Ok(r) => r,
+                Err(_) => break,
+            },
+            Some(t) => {
+                let wait = (t + SECRET_CHECKPOINT).saturating_duration_since(Instant::now());
+                match rx.recv_timeout(wait) {
+                    Ok(r) => r,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        truncate_wal(&conn);
+                        dirty_since = None;
+                        continue;
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        };
         let mut batch = vec![first];
         while batch.len() < MAX_BATCH {
             match rx.try_recv() {
@@ -259,7 +294,22 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
             .iter()
             .position(|r| matches!(r.op, Op::Close))
             .map(|i| batch.split_off(i));
-        run_batch(&mut conn, batch);
+        let wrote = batch.iter().any(|r| r.op.writes());
+        let deleted = batch.iter().any(|r| matches!(r.op, Op::DeleteDownloads(_)));
+        let replies = run_batch(&mut conn, batch);
+        if wrote && dirty_since.is_none() {
+            dirty_since = Some(Instant::now());
+        }
+        // A removed download's cookies leave the WAL before `delete`
+        // resolves; anything else within SECRET_CHECKPOINT, even while
+        // writes keep coming.
+        if deleted || dirty_since.is_some_and(|t| t.elapsed() >= SECRET_CHECKPOINT) {
+            truncate_wal(&conn);
+            dirty_since = None;
+        }
+        for (reply, out) in replies {
+            let _ = reply.send(out);
+        }
         if let Some(mut rest) = close {
             let req = rest.remove(0);
             // Requests queued after `close` are dropped, so their callers
@@ -275,13 +325,30 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
     }
 }
 
-fn run_batch(conn: &mut Connection, batch: Vec<Request>) {
+/// Copy the WAL into the database and cut the WAL to zero bytes, so old
+/// page images (cookies since replaced or deleted) are no longer in any
+/// file; `secure_delete` zeroes them inside the database.
+fn truncate_wal(conn: &Connection) {
+    let r = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
+        r.get::<_, i64>(0)
+    });
+    match r {
+        Ok(0) => {}
+        Ok(_) => tracing::debug!("WAL checkpoint was blocked; will retry"),
+        Err(e) => tracing::warn!(error = %e, "WAL checkpoint failed"),
+    }
+}
+
+/// Runs the batch; returns the replies to send once the caller is done.
+fn run_batch(conn: &mut Connection, batch: Vec<Request>) -> Vec<Reply> {
     if !batch.iter().any(|r| r.op.writes()) {
-        for r in batch {
-            let out = exec(conn, &r.op).map_err(to_io);
-            let _ = r.reply.send(out);
-        }
-        return;
+        return batch
+            .into_iter()
+            .map(|r| {
+                let out = exec(conn, &r.op).map_err(to_io);
+                (r.reply, out)
+            })
+            .collect();
     }
     let all = (|| {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -293,28 +360,31 @@ fn run_batch(conn: &mut Connection, batch: Vec<Request>) {
         Ok::<_, rusqlite::Error>(outs)
     })();
     match all {
-        Ok(outs) => {
-            for (r, out) in batch.into_iter().zip(outs) {
-                let _ = r.reply.send(Ok(out));
-            }
-        }
+        Ok(outs) => batch
+            .into_iter()
+            .zip(outs)
+            .map(|(r, out)| (r.reply, Ok(out)))
+            .collect(),
         Err(e) => {
             if batch.len() > 1 {
                 tracing::debug!(error = %e, n = batch.len(), "state batch failed; retrying one by one");
             }
-            for r in batch {
-                let out = if r.op.writes() {
-                    conn.transaction_with_behavior(TransactionBehavior::Immediate)
-                        .and_then(|tx| {
-                            let out = exec(&tx, &r.op)?;
-                            tx.commit()?;
-                            Ok(out)
-                        })
-                } else {
-                    exec(conn, &r.op)
-                };
-                let _ = r.reply.send(out.map_err(to_io));
-            }
+            batch
+                .into_iter()
+                .map(|r| {
+                    let out = if r.op.writes() {
+                        conn.transaction_with_behavior(TransactionBehavior::Immediate)
+                            .and_then(|tx| {
+                                let out = exec(&tx, &r.op)?;
+                                tx.commit()?;
+                                Ok(out)
+                            })
+                    } else {
+                        exec(conn, &r.op)
+                    };
+                    (r.reply, out.map_err(to_io))
+                })
+                .collect()
         }
     }
 }
@@ -447,7 +517,8 @@ fn try_open(path: &Path) -> Result<Connection, OpenError> {
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;
     conn.busy_timeout(Duration::from_secs(5))?;
     let mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
@@ -509,36 +580,48 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
 }
 
 /// Create the parent directory and an owner-only database file before
-/// SQLite touches it; narrow the database, `-wal` and `-shm` files to 0600
-/// if something made them readable by others.
+/// SQLite touches it (fsyncing the directory entries that creates), refuse
+/// symbolic links for the database, `-wal` and `-shm`, and narrow any of
+/// them that others can read to 0600.
 fn prepare_files(path: &Path) -> io::Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        sys::create_private_dir_all(parent)?;
+    let dir = sys::parent_or_cwd(path);
+    let mut changed = sys::create_dirs(&dir, sys::DirMode::Private)?;
+    let mut opts = sys::private_file_options();
+    opts.read(true).write(true).create_new(true);
+    match sys::open_nofollow(&mut opts, path) {
+        Ok(_) => changed.push(dir),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            let mut opts = std::fs::File::options();
+            opts.read(true).write(true);
+            sys::open_nofollow(&mut opts, path)?;
+        }
+        Err(e) => return Err(e),
     }
-    drop(
-        sys::private_file_options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)?,
-    );
-    #[cfg(unix)]
+    sys::sync_dirs(&changed)?;
     for p in [
         path.to_path_buf(),
         with_suffix(path, "-wal"),
         with_suffix(path, "-shm"),
     ] {
-        use std::os::unix::fs::PermissionsExt;
-        let meta = match std::fs::metadata(&p) {
+        let meta = match std::fs::symlink_metadata(&p) {
             Ok(m) => m,
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
             Err(e) => return Err(e),
         };
-        let mode = meta.permissions().mode();
-        if mode & 0o077 != 0 {
-            tracing::warn!(path = %p.display(), mode = format!("{:o}", mode & 0o777), "state file was readable by others; restricting it to the owner");
-            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+        if meta.file_type().is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{} is a symbolic link; refusing to follow it", p.display()),
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = meta.permissions().mode();
+            if mode & 0o077 != 0 {
+                tracing::warn!(path = %p.display(), mode = format!("{:o}", mode & 0o777), "state file was readable by others; restricting it to the owner");
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+            }
         }
     }
     Ok(())
@@ -620,6 +703,67 @@ mod tests {
         assert_eq!(civil_from_days(-1), (1969, 12, 31));
         let t = UNIX_EPOCH + Duration::from_secs(1_762_779_845);
         assert_eq!(utc_stamp(t), "20251110T130405Z");
+    }
+
+    fn with_cookie(id: &str, cookie: Option<&str>) -> DownloadRecord {
+        DownloadRecord {
+            id: id.into(),
+            url: "https://example.test/f".into(),
+            request: cookie.map(|c| vayu_proto::RequestContext {
+                cookie: Some(c.into()),
+                ..Default::default()
+            }),
+            mirrors: vec![],
+            filename: "f".into(),
+            directory: "/d".into(),
+            category: None,
+            queue: None,
+            state: vayu_proto::DownloadState::Downloading,
+            total_bytes: None,
+            downloaded_bytes: 0,
+            resumable: true,
+            checksum: None,
+            added_at: 0,
+            completed_at: None,
+            error: None,
+        }
+    }
+
+    fn files_contain(path: &Path, needle: &[u8]) -> bool {
+        [path.to_path_buf(), with_suffix(path, "-wal")]
+            .iter()
+            .filter_map(|p| std::fs::read(p).ok())
+            .any(|b| b.windows(needle.len()).any(|w| w == needle))
+    }
+
+    /// `secure_delete` only covers the main database; a cleared or deleted
+    /// cookie must also leave the WAL: at once for deletions, within
+    /// SECRET_CHECKPOINT for anything else, even while writes continue.
+    #[tokio::test]
+    async fn cleared_cookies_leave_the_wal() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("state.db");
+        let s = SqliteStateStore::open(&path).await.unwrap();
+
+        s.save_download(&with_cookie("a", Some("SECRET-COOKIE-AAAA")))
+            .await
+            .unwrap();
+        assert!(files_contain(&path, b"SECRET-COOKIE-AAAA"));
+        s.delete_downloads(&["a".into()]).await.unwrap();
+        assert!(!files_contain(&path, b"SECRET-COOKIE-AAAA"));
+
+        s.save_download(&with_cookie("b", Some("SECRET-COOKIE-BBBB")))
+            .await
+            .unwrap();
+        s.save_download(&with_cookie("b", None)).await.unwrap();
+        // Keep writing something else; the deadline still holds.
+        let t = std::time::Instant::now();
+        while t.elapsed() < SECRET_CHECKPOINT * 3 {
+            s.set_value("tick", "1").await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(!files_contain(&path, b"SECRET-COOKIE-BBBB"));
+        assert_eq!(s.load_downloads().await.unwrap().len(), 1);
     }
 
     #[test]

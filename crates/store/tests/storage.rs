@@ -159,30 +159,55 @@ async fn remove_deletes_and_ignores_missing() {
 }
 
 /// `/dev/full` fails every write with ENOSPC: the error must reach the
-/// engine as `StorageFull`, from the next call after the write was
-/// buffered, and `flush` must report it.
+/// engine as `StorageFull` from the next call after the write was buffered,
+/// and stay: a retried flush or finish never succeeds after lost data.
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn disk_full_surfaces_as_storage_full() {
+async fn disk_full_surfaces_as_storage_full_and_stays() {
     let p = provider();
-    let s = p.open(Path::new("/dev/full")).await.unwrap();
+    let full = Path::new("/dev/full");
+    let s = p.open(full).await.unwrap();
     s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
-    let e = s.flush().await.unwrap_err();
-    assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
-    // Reported once; the next flush epoch starts clean (fdatasync on a
-    // character device may still fail, but not with the old error).
-    if let Err(e) = s.flush().await {
-        assert_ne!(e.kind(), io::ErrorKind::StorageFull);
+    for _ in 0..2 {
+        let e = s.flush().await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
     }
-    s.write_at(0, Bytes::from_static(b"more")).await.unwrap();
-    // Either the next write or the flush sees it, never success.
-    let next = s.write_at(4, Bytes::from_static(b"x")).await;
-    let flushed = s.flush().await;
-    let e = next
-        .err()
-        .or(flushed.err())
-        .expect("disk full was swallowed");
+    let e = s.write_at(4, Bytes::from_static(b"x")).await.unwrap_err();
     assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+    let e = s.finish(Path::new("/tmp/never")).await.unwrap_err();
+    assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+    // Opening the path again (after freeing space, say) starts afresh.
+    let again = p.open(full).await.unwrap();
+    assert!(!same(&s, &again));
+    again
+        .write_at(0, Bytes::from_static(b"more"))
+        .await
+        .unwrap();
+}
+
+/// The engine's assumption: once `remove(path)` has resolved, nothing
+/// written through an old handle reaches a file opened at that path later.
+#[tokio::test]
+async fn after_remove_old_handles_never_reach_the_new_file() {
+    let d = tempfile::tempdir().unwrap();
+    let p = provider();
+    let path = d.path().join("f.vayu-part");
+    let old = p.open(&path).await.unwrap();
+    old.write_at(0, Bytes::from(vec![b'o'; 1 << 20]))
+        .await
+        .unwrap();
+    p.remove(&path).await.unwrap();
+    assert!(!path.exists());
+    let new = p.open(&path).await.unwrap();
+    assert!(!same(&old, &new));
+    assert!(old.write_at(0, Bytes::from_static(b"OLD")).await.is_err());
+    assert!(old.flush().await.is_err());
+    assert!(old.finish(&d.path().join("f")).await.is_err());
+    new.write_at(0, Bytes::from_static(b"new")).await.unwrap();
+    new.flush().await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"new");
+    new.finish(&d.path().join("f")).await.unwrap();
+    assert_eq!(std::fs::read(d.path().join("f")).unwrap(), b"new");
 }
 
 /// Random concurrent writes, network-sized chunks, overlapping rewrites of
