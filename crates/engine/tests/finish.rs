@@ -265,6 +265,7 @@ fn a_record_that_says_completed_needs_no_journal() {
             ..vayu_core::RemoteMeta::default()
         },
         done: vayu_core::RangeSet::from_ranges(vayu_core::ByteRange::new(0, len)),
+        finishing: None,
     };
     let opens = w.src.opens();
     runtime().block_on(async {

@@ -81,5 +81,16 @@ pub trait StateStore: Send + Sync {
 
     fn host_profile<'a>(&'a self, host: &'a str) -> BoxFuture<'a, io::Result<Option<HostProfile>>>;
 
+    /// Make every save that has resolved durable against power loss (an
+    /// fsync, or a full WAL checkpoint for a store that batches commits).
+    /// The engine calls it after saving a completed download and before it
+    /// removes that download's journal entry, so a power cut can never leave
+    /// a record that rolled back to "downloading" with its journal gone.
+    /// The default does nothing, which is right only for stores whose saves
+    /// are durable when they resolve; a batching store must override it.
+    fn sync(&self) -> BoxFuture<'_, io::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn save_host_profile<'a>(&'a self, profile: &'a HostProfile) -> BoxFuture<'a, io::Result<()>>;
 }

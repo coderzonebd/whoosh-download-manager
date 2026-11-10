@@ -416,6 +416,7 @@ mod tests {
             done: RangeSet::from_ranges(
                 (0..ranges).map(|i| ByteRange::new(i * 1000 + n, i * 1000 + n + 500).unwrap()),
             ),
+            finishing: None,
         }
     }
 
@@ -665,6 +666,7 @@ mod tests {
                 ..RemoteMeta::default()
             },
             done: RangeSet::new(),
+            finishing: None,
         }
     }
 

@@ -33,6 +33,7 @@ fn checkpoint(n: u64, ranges: u64) -> Checkpoint {
             let start = i * (256 << 20);
             ByteRange::new(start, start + (n * 65_536) % (200 << 20) + 1).unwrap()
         })),
+        finishing: None,
     }
 }
 

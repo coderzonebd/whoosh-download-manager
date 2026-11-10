@@ -661,6 +661,7 @@ impl Driver {
                 let cp = Checkpoint {
                     meta: self.meta.clone(),
                     done: verified.clone(),
+                    finishing: None,
                 };
                 self.inner
                     .deps
@@ -692,6 +693,7 @@ impl Driver {
         let cp = Checkpoint {
             meta: self.meta.clone(),
             done: RangeSet::new(),
+            finishing: None,
         };
         self.inner
             .deps
@@ -896,6 +898,7 @@ impl Driver {
                     ..without_intent(self.meta.clone())
                 },
                 done: RangeSet::from_ranges(ByteRange::new(0, len)),
+                finishing: None,
             };
             if let Err(e) = self.inner.deps.journal.commit(&self.id, &intent).await {
                 return io_failed(e);
@@ -1788,6 +1791,7 @@ impl Driver {
         let cp = Checkpoint {
             meta: self.meta.clone(),
             done: self.snapshot_done(),
+            finishing: None,
         };
         self.committed = cp.done.len();
         self.last_commit = Instant::now();
@@ -1806,6 +1810,7 @@ impl Driver {
         let cp = Checkpoint {
             meta: self.meta.clone(),
             done: self.snapshot_done(),
+            finishing: None,
         };
         storage.flush().await?;
         self.inner.deps.journal.commit(&self.id, &cp).await?;
