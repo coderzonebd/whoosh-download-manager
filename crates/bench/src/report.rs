@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
+use crate::gate::{Gate, Verdict};
 use crate::runner::{Meta, Outcome, RunRecord};
 use crate::stats::{Summary, mann_whitney};
 
@@ -288,7 +289,83 @@ fn headlines(
 }
 
 /// Renders the whole report.
+fn median_of(v: &[f64]) -> Option<f64> {
+    Summary::of(v).map(|s| s.median)
+}
+
+/// Renders the whole report, with the Phase 1 gate for `vayu` when it is
+/// in the run set.
 pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
+    render_with_gate(meta, runs, Some("vayu"))
+}
+
+/// The gate section (see [`crate::gate`]).
+fn gate_section(o: &mut String, g: &Gate) {
+    let mark = |v: &Verdict| match v {
+        Verdict::Pass(_) => "✅",
+        Verdict::Fail(_) => "❌",
+        Verdict::NotApplicable(_) => "–",
+    };
+    let _ = writeln!(o, "## Phase 1 gate: `{}`\n", g.client);
+    let _ = writeln!(
+        o,
+        "MASTER-PLAN §8 (amended 2026-11-11), judged from this run set: **1** every run \
+         byte-exact, no wrong file name; **3** no competitor significantly faster \
+         (Mann-Whitney U, p < {}); **4** in the engine scenarios ({}), median *time* the \
+         best or within {:.0} % of it; **5** median CPU per GiB at or below every \
+         multi-connection competitor's. Statistics use successful runs, at least {} per \
+         side. Rules 2 (1,000 hard kills: `vayu-bench hardkill`) and 6 (real CDNs) are not \
+         judged here; other builds of the same tool are not competitors.\n",
+        crate::gate::P_LIMIT,
+        crate::gate::ENGINE_SCENARIOS.join(", "),
+        crate::gate::WITHIN * 100.0,
+        crate::gate::MIN_FOR_TEST
+    );
+    let overall = if !g.passed() {
+        "**FAIL**".to_owned()
+    } else if g.caveats.is_empty() {
+        "**PASS**".to_owned()
+    } else {
+        "**PASS, but not valid as a gate result** (see below)".to_owned()
+    };
+    let failed = g.rows.iter().filter(|r| !r.passed()).count();
+    let _ = writeln!(
+        o,
+        "Overall (rules 1, 3, 4, 5): {overall} — {} of {} rows pass.\n",
+        g.rows.len() - failed,
+        g.rows.len()
+    );
+    for c in &g.caveats {
+        let _ = writeln!(o, "- ⚠️ {}", cell(c));
+    }
+    if !g.caveats.is_empty() {
+        o.push('\n');
+    }
+    let _ = writeln!(
+        o,
+        "| Scenario | File | 1 correct | 3 never slower | 4 fastest | 5 lean | row |"
+    );
+    let _ = writeln!(o, "|---|---|---|---|---|---|---|");
+    for r in &g.rows {
+        let c = |v: &Verdict| format!("{} {}", mark(v), cell(v.detail()));
+        let _ = writeln!(
+            o,
+            "| {} | {} | {} | {} | {} | {} | {} |",
+            r.scenario,
+            r.file,
+            c(&r.correct),
+            c(&r.never_slower),
+            c(&r.fastest),
+            c(&r.lean),
+            if r.passed() { "PASS" } else { "**FAIL**" }
+        );
+    }
+    o.push('\n');
+}
+
+/// Renders the whole report; `gate` names the client whose Phase 1 gate is
+/// evaluated (no section if `None` or absent from the run set).
+pub fn render_with_gate(meta: &Meta, runs: &[RunRecord], gate: Option<&str>) -> String {
     let mut runs = runs.to_vec();
     if meta.internet {
         consensus_regrade(&mut runs);
@@ -339,6 +416,9 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
     );
 
     headlines(&mut o, &blocks, &block_order, &clients_present, &runs);
+    if let Some(g) = gate.and_then(|c| crate::gate::evaluate(meta, &runs, c)) {
+        gate_section(&mut o, &g);
+    }
 
     // ---- method
     let _ = writeln!(o, "## How this was measured\n");
@@ -401,8 +481,9 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
     let _ = writeln!(
         o,
         "- **Metrics:** *time* (the speed metric) = client process start to the download \
-         being complete: process exit for curl, wget, aria2c and aria2-next, which exit as \
-         soon as the file is done; for MDM and Surge, which download into a partial file, \
+         being complete: process exit for curl, wget, aria2c, aria2-next and vayu (`vayu \
+         get` returns when the download is done), which exit as soon as the file is done; \
+         for MDM and Surge, which download into a partial file, \
          rename it when done and then linger (MDM's CLI reports on a 0.5 s tick; Surge's \
          `--exit-when-done` first checks after 4 s), the moment the download directory holds \
          the full-size file and no partial/control file (polled every 5 ms; the harness then \
@@ -420,6 +501,71 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
          the file's SHA-256 matches labserver's digest (of either version, for the changing \
          file).",
     );
+    let resident: Vec<&RunRecord> = runs.iter().filter(|r| r.resident.is_some()).collect();
+    if !resident.is_empty() {
+        let mut ids: Vec<&str> = resident.iter().map(|r| r.client.as_str()).collect();
+        ids.sort_by_key(|c| rank(c));
+        ids.dedup();
+        let startup: Vec<f64> = resident
+            .iter()
+            .filter_map(|r| r.resident.as_ref().map(|u| u.startup_s))
+            .collect();
+        let window_only = resident
+            .iter()
+            .all(|r| r.resident.as_ref().is_some_and(|u| u.rss_window_only));
+        let _ = writeln!(
+            o,
+            "- **Resident daemon ({}):** before each run the harness starts the daemon with a \
+             fresh data directory and waits until it is ready (not timed; median start-up {}), \
+             then measures the CLI as the client. The daemon's CPU during the run (utime + \
+             stime from `/proc/<pid>/stat`, 1/CLK_TCK resolution, counted until it goes quiet \
+             after the CLI exits, at most 0.5 s) is added to *CPU*, and its peak resident set \
+             during the run ({}) to *RSS* (the sum of both peaks). The daemon is stopped after \
+             the run, outside the measured window.",
+            ids.join(", "),
+            opt(Summary::of(&startup), |s| format!(
+                "{:.0} ms",
+                s.median * 1000.0
+            )),
+            if window_only {
+                "`VmHWM` after resetting it through `/proc/<pid>/clear_refs`"
+            } else {
+                "`VmHWM`, not always resettable, so it may include start-up"
+            }
+        );
+    }
+    if let Some(g) = &meta.guard {
+        let busy = runs.iter().filter(|r| r.machine_busy).count();
+        let waited: f64 = runs.iter().filter_map(|r| r.idle_wait_s).sum();
+        let busy_cpus: Vec<f64> = runs.iter().filter_map(|r| r.busy_cpus).collect();
+        let _ = writeln!(
+            o,
+            "- **Idle-machine guard:** before each run the harness sampled how busy the rest \
+             of the machine was ({} ms) and read the load average; busy = 1-min load above {} \
+             or other processes on more than {} CPUs; it {}. Other processes used a median of \
+             {} CPUs before a run. {}",
+            g.sample_ms,
+            opt(g.max_load, |v| format!("{v:.2}")),
+            opt(g.max_busy_cpus, |v| format!("{v:.2}")),
+            if g.wait {
+                format!(
+                    "waited for idle (up to {} s per run; {:.0} s in total)",
+                    g.wait_timeout_s, waited
+                )
+            } else {
+                "warned only".to_owned()
+            },
+            opt(median_of(&busy_cpus), |v| format!("{v:.2}")),
+            if busy == 0 {
+                "Every run started on an idle machine.".to_owned()
+            } else {
+                format!(
+                    "**{busy} of {} runs started on a busy machine.**",
+                    runs.len()
+                )
+            }
+        );
+    }
     let _ = writeln!(
         o,
         "- **Statistics:** median, p90 (linear interpolation) and min of *time*; \
@@ -931,6 +1077,8 @@ mod tests {
                 },
             ],
             notes: vec![],
+            guard: None,
+            busy_runs: None,
         }
     }
 
@@ -1039,6 +1187,78 @@ mod tests {
         assert!(md.contains("✓ `বাংলা প্রতিবেদন ২০২৬.pdf` (expected)"));
         assert!(md.contains("✗ `bangla-report.pdf` (ASCII fallback)"));
         assert!(md.contains("- curl saved `bangla.bin` as `bangla-report.pdf` — ASCII fallback"));
+    }
+
+    #[test]
+    fn renders_the_gate_resident_and_guard_sections() {
+        let mut m = meta();
+        m.clients.insert(
+            0,
+            ClientMeta {
+                id: "vayu".into(),
+                tool: "vayu".into(),
+                ..m.clients[0].clone()
+            },
+        );
+        m.guard = Some(crate::runner::IdleGuard::default());
+        m.busy_runs = Some(1);
+        let mut runs = Vec::new();
+        for i in 0..7 {
+            let mut v = rec(
+                i,
+                "vayu",
+                "clean",
+                "10m.bin",
+                0.4 + f64::from(i) * 0.01,
+                Outcome::Ok,
+            );
+            v.resident = Some(crate::measure::ResidentUsage {
+                startup_s: 0.08,
+                cpu_user_s: Some(0.01),
+                cpu_sys_s: Some(0.01),
+                max_rss_mib: Some(20.0),
+                rss_window_only: true,
+                settle_s: 0.05,
+            });
+            v.busy_cpus = Some(0.2);
+            v.machine_busy = i == 3;
+            runs.push(v);
+            let mut w = rec(
+                20 + i,
+                "curl",
+                "clean",
+                "10m.bin",
+                0.1 + f64::from(i) * 0.01,
+                Outcome::Ok,
+            );
+            w.busy_cpus = Some(0.3);
+            runs.push(w);
+        }
+        let md = render(&m, &runs);
+        assert!(md.contains("## Phase 1 gate: `vayu`"), "{md}");
+        assert!(
+            md.contains("Overall (rules 1, 3, 4, 5): **FAIL** — 0 of 1 rows pass."),
+            "{md}"
+        );
+        assert!(
+            md.contains("1 of 14 runs started on a busy machine"),
+            "{md}"
+        );
+        assert!(
+            md.contains("| clean | 10m.bin | ✅ 7/7 byte-exact | ❌ significantly faster: curl"),
+            "{md}"
+        );
+        assert!(md.contains("**Resident daemon (vayu):**"), "{md}");
+        assert!(md.contains("median start-up 80 ms"), "{md}");
+        assert!(md.contains("**Idle-machine guard:**"), "{md}");
+        assert!(
+            md.contains("**1 of 14 runs started on a busy machine.**"),
+            "{md}"
+        );
+        let without = render_with_gate(&m, &runs, None);
+        assert!(!without.contains("## Phase 1 gate"));
+        // The gate section is only there when the client is.
+        assert!(!render(&meta(), &runs[..0]).contains("## Phase 1 gate"));
     }
 
     #[test]

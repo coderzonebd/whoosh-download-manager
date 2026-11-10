@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// The machine a run set ran on.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -56,6 +57,47 @@ pub fn loadavg() -> Option<[f64; 3]> {
     let s = std::fs::read_to_string("/proc/loadavg").ok()?;
     let mut it = s.split_whitespace().map(|v| v.parse::<f64>().ok());
     Some([it.next()??, it.next()??, it.next()??])
+}
+
+/// Aggregate CPU counters from the first (`cpu `) line of /proc/stat:
+/// (busy, total) in clock ticks. Busy excludes idle and iowait; guest time
+/// is already inside user/nice, so it is not added again.
+pub fn parse_proc_stat_cpu(stat: &str) -> Option<(u64, u64)> {
+    let line = stat.lines().find(|l| l.starts_with("cpu "))?;
+    let v: Vec<u64> = line
+        .split_whitespace()
+        .skip(1)
+        .take(8)
+        .map(|x| x.parse().ok())
+        .collect::<Option<_>>()?;
+    if v.len() < 5 {
+        return None;
+    }
+    let total: u64 = v.iter().sum();
+    let idle = v[3] + v[4];
+    Some((total - idle, total))
+}
+
+/// How many CPUs' worth of work the whole machine did over `sample`
+/// (0.0 = idle, `logical_cpus` = saturated). Linux only. Taken between
+/// runs, when the harness itself is quiet, this measures everything else
+/// on the machine — unlike the load average, which still carries the
+/// previous run for a minute.
+pub fn busy_cpus(sample: Duration) -> Option<f64> {
+    let read = || {
+        std::fs::read_to_string("/proc/stat")
+            .ok()
+            .and_then(|s| parse_proc_stat_cpu(&s))
+    };
+    let (b0, t0) = read()?;
+    std::thread::sleep(sample);
+    let (b1, t1) = read()?;
+    let dt = t1.saturating_sub(t0);
+    if dt == 0 {
+        return Some(0.0);
+    }
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get()) as f64;
+    Some(b1.saturating_sub(b0) as f64 / dt as f64 * cpus)
 }
 
 pub fn hostname() -> String {
@@ -163,6 +205,24 @@ mod tests {
             datetime_utc(20_767 * 86_400_000_000 + 3_723_000_000),
             "2026-11-10T01:02:03Z"
         );
+    }
+
+    #[test]
+    fn proc_stat_busy_fraction() {
+        let s = "cpu  100 5 50 800 20 3 2 0 0 0\ncpu0 50 2 25 400 10 1 1 0 0 0\nintr 1 2\n";
+        // busy = 100+5+50+3+2+0 = 160; idle+iowait = 820; total = 980.
+        assert_eq!(parse_proc_stat_cpu(s), Some((160, 980)));
+        assert_eq!(
+            parse_proc_stat_cpu("cpu0 1 2 3 4 5\n"),
+            None,
+            "aggregate line only"
+        );
+        assert_eq!(parse_proc_stat_cpu("cpu  1 2\n"), None);
+        if cfg!(target_os = "linux") {
+            let b = busy_cpus(Duration::from_millis(20)).unwrap();
+            let n = std::thread::available_parallelism().unwrap().get() as f64;
+            assert!((0.0..=n + 0.01).contains(&b), "{b}");
+        }
     }
 
     #[test]
