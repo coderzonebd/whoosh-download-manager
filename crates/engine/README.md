@@ -87,9 +87,9 @@ settling it re-probes one step up every `tune_reprobe` (30 s, doubling up to
 download. Built for real links, where a new connection needs several round
 trips of slow start and throughput swings ±30 % second to second:
 - *windows sized from the run*: at least `max(tune_window, tune_rtt_windows
-  × median TTFB)` (400 ms on loopback, ≈ 1–4 s on the internet), extended
+  × median TTFB)` (200 ms on loopback, ≈ 1–4 s on the internet), extended
   up to `tune_window_max` (4 s) until the relative standard error of its
-  200 ms throughput samples is ≤ 2 %;
+  100 ms throughput samples is ≤ 2 %;
 - *a warm-up* after every change: every connection streaming, then at least
   `max(tune_window / 2, 4 × TTFB)`, and longer while throughput still rises
   > 10 % per sample (slow start);
@@ -103,9 +103,9 @@ trips of slow start and throughput swings ±30 % second to second:
 In a link model with the reported conditions (3.8 MB/s per connection,
 ±30 % noise, ±25 % drift, 300 ms TTFB, slow start; 100 seeds, 180 s), the
 final count was: per-connection link 16 in 100 % (single 200 ms windows:
-21 % stuck at 4); a link that 8 connections saturate: 8 in 85 %, 16 in
-15 %, never below 8 (single windows: 21 % stuck at 4); a shared 20 MB/s
-bottleneck: 2 in 93 %, 1 in 4 %, 4 in 3 % (single windows: anywhere from 1
+21 % stuck at 4); a link that 8 connections saturate: 8 in 80 %, 16 in
+20 %, never below 8 (single windows: 21 % stuck at 4); a shared 20 MB/s
+bottleneck: 2 in 94 %, 1 in 4 %, 4 in 2 % (single windows: anywhere from 1
 to 16). `cargo test -p vayu-engine --lib outcome_statistics -- --ignored
 --nocapture` prints these. `Throttled` (429/503,
 refused under load), or two pre-first-byte failures within 2 s while others
@@ -292,9 +292,9 @@ and ends every subscription.
 | `min_split` | 1 MiB | smaller = better tail balance, more requests |
 | `split_align` | 64 KiB | split points round down to this |
 | `tick` | 50 ms | sampling/hedge/tuner cadence (refills are immediate) |
-| `tune_window`, `tune_window_max` | 400 ms, 4 s | shortest and longest measurement window |
+| `tune_window`, `tune_window_max` | 200 ms, 4 s | shortest and longest measurement window |
 | `tune_rtt_windows` | 16 | a window spans at least this many median TTFBs |
-| `tune_sample`, `tune_target_rse` | 200 ms, 0.02 | windows grow until their samples' RSE is this low |
+| `tune_sample`, `tune_target_rse` | 100 ms, 0.02 | windows grow until their samples' RSE is this low |
 | `tune_warm_rtts`, `tune_warm_rise` | 4, 0.10 | warm-up: at least 4 TTFBs, longer while rising > 10 % per sample |
 | `tune_z` | 2.0 | noise margin (in standard errors) for deciding without A-B-A |
 | `tune_reprobe` | 30 s | re-probe upward after settling (doubling up to 5 min) |

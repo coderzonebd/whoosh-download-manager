@@ -19,8 +19,8 @@
 //! second to the next:
 //!
 //! - **Windows sized from the run.** A window lasts at least
-//!   `max(tune_window, tune_rtt_windows × median TTFB)` (≈ 1–2 s on the
-//!   internet, 400 ms on loopback) and is extended, up to `tune_window_max`,
+//!   `max(tune_window, tune_rtt_windows × median TTFB)` (≈ 1–4 s on the
+//!   internet, 200 ms on loopback) and is extended, up to `tune_window_max`,
 //!   until the relative standard error (RSE) of its `tune_sample`-long
 //!   throughput samples is at most `tune_target_rse`.
 //! - **Warm-up.** Measuring starts only once every connection streams, at
