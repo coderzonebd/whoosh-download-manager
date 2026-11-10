@@ -101,6 +101,8 @@ enum Op {
         host: String,
         json: String,
     },
+    /// Make every committed write durable (see `StateStore::sync`).
+    Sync,
     Close,
 }
 
@@ -237,6 +239,13 @@ impl StateStore for SqliteStateStore {
         })
     }
 
+    /// Commits everything queued before it, then checkpoints the WAL into
+    /// the database with both files fsynced (`wal_checkpoint(TRUNCATE)`).
+    /// Syncs that arrive together share one checkpoint.
+    fn sync(&self) -> BoxFuture<'_, io::Result<()>> {
+        Box::pin(async move { self.call(Op::Sync).await.map(drop) })
+    }
+
     fn save_host_profile<'a>(&'a self, profile: &'a HostProfile) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let op = Op::SaveHostProfile {
@@ -275,8 +284,13 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
                 match rx.recv_timeout(wait) {
                     Ok(r) => r,
                     Err(mpsc::RecvTimeoutError::Timeout) => {
-                        truncate_wal(&conn);
-                        dirty_since = None;
+                        match truncate_wal(&conn) {
+                            Ok(()) => dirty_since = None,
+                            Err(e) => {
+                                tracing::warn!(error = %e, "WAL checkpoint failed; will retry");
+                                dirty_since = Some(Instant::now());
+                            }
+                        }
                         continue;
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -294,6 +308,10 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
             .iter()
             .position(|r| matches!(r.op, Op::Close))
             .map(|i| batch.split_off(i));
+        // `sync` runs after the whole batch is committed: every write queued
+        // before it (and any queued after it in the same batch) is covered.
+        let (syncs, batch): (Vec<Request>, Vec<Request>) =
+            batch.into_iter().partition(|r| matches!(r.op, Op::Sync));
         let wrote = batch.iter().any(|r| r.op.writes());
         let deleted = batch.iter().any(|r| matches!(r.op, Op::DeleteDownloads(_)));
         let replies = run_batch(&mut conn, batch);
@@ -302,13 +320,29 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
         }
         // A removed download's cookies leave the WAL before `delete`
         // resolves; anything else within SECRET_CHECKPOINT, even while
-        // writes keep coming.
-        if deleted || dirty_since.is_some_and(|t| t.elapsed() >= SECRET_CHECKPOINT) {
-            truncate_wal(&conn);
-            dirty_since = None;
+        // writes keep coming. `sync` needs the same checkpoint.
+        let mut synced = None;
+        if !syncs.is_empty()
+            || deleted
+            || dirty_since.is_some_and(|t| t.elapsed() >= SECRET_CHECKPOINT)
+        {
+            let r = truncate_wal(&conn);
+            match &r {
+                Ok(()) => dirty_since = None,
+                Err(e) => tracing::warn!(error = %e, "WAL checkpoint failed"),
+            }
+            synced = Some(r);
         }
         for (reply, out) in replies {
             let _ = reply.send(out);
+        }
+        for r in syncs {
+            let out = match &synced {
+                Some(Ok(())) => Ok(Output::Unit),
+                Some(Err(e)) => Err(io::Error::new(e.kind(), e.to_string())),
+                None => unreachable!("a sync always checkpoints"),
+            };
+            let _ = r.reply.send(out);
         }
         if let Some(mut rest) = close {
             let req = rest.remove(0);
@@ -325,17 +359,27 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
     }
 }
 
-/// Copy the WAL into the database and cut the WAL to zero bytes, so old
-/// page images (cookies since replaced or deleted) are no longer in any
-/// file; `secure_delete` zeroes them inside the database.
-fn truncate_wal(conn: &Connection) {
-    let r = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
-        r.get::<_, i64>(0)
-    });
-    match r {
-        Ok(0) => {}
-        Ok(_) => tracing::debug!("WAL checkpoint was blocked; will retry"),
-        Err(e) => tracing::warn!(error = %e, "WAL checkpoint failed"),
+/// Copy the WAL into the database and cut the WAL to zero bytes.
+///
+/// - Durability: with `synchronous=NORMAL`, SQLite fsyncs the WAL before a
+///   checkpoint and the database after it, so every committed transaction
+///   is then in `state.db` on disk. `sync` relies on this.
+/// - Secrets: old page images (cookies since replaced or deleted) are no
+///   longer in any file; `secure_delete` zeroes them inside the database.
+///
+/// Fails with `ResourceBusy` if another connection (a second process)
+/// blocked the checkpoint, so `sync` never reports durability it lacks.
+fn truncate_wal(conn: &Connection) -> io::Result<()> {
+    let busy: i64 = conn
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
+        .map_err(to_io)?;
+    if busy == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::ResourceBusy,
+            "the WAL checkpoint was blocked by another connection",
+        ))
     }
 }
 
@@ -448,7 +492,7 @@ fn exec(conn: &Connection, op: &Op) -> rusqlite::Result<Output> {
             .execute([host, json])?;
             Output::Unit
         }
-        Op::Close => unreachable!("close is handled by the serve loop"),
+        Op::Sync | Op::Close => unreachable!("handled by the serve loop"),
     })
 }
 

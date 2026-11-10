@@ -1,4 +1,5 @@
-//! State store speed: open, load 10,000 downloads, save throughput.
+//! State store speed: open, load 10,000 downloads, save throughput, and
+//! `sync` (what completing a download costs).
 //!
 //! ```text
 //! cargo run --release -p vayu-store --example state_bench -- [--dir DIR] [--downloads 10000]
@@ -93,6 +94,24 @@ fn main() {
             "save_download, {n} at once:   {:.1} µs each ({:.0}/s, batched)",
             burst.as_secs_f64() * 1e6 / n as f64,
             n as f64 / burst.as_secs_f64()
+        );
+        // What the engine pays per completed download: save the record,
+        // then `sync` before dropping the journal entry.
+        let mut syncs = Vec::new();
+        for r in records.iter().take(30) {
+            let mut done = r.clone();
+            done.state = DownloadState::Completed;
+            s.save_download(&done).await.unwrap();
+            let t = Instant::now();
+            s.sync().await.unwrap();
+            syncs.push(t.elapsed());
+        }
+        syncs.sort();
+        println!(
+            "sync after a save (30 rounds):  median {:.2} ms (min {:.2}, max {:.2})",
+            ms(syncs[15]),
+            ms(syncs[0]),
+            ms(syncs[29])
         );
         s.close().await.unwrap();
         println!(

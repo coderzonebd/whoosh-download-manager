@@ -199,6 +199,20 @@ C toolchain (see [Testing](#testing)).
 - **Engine.** rusqlite with `bundled` SQLite, WAL, `synchronous=NORMAL`, and
   `secure_delete=ON`, so deleted cookies don't linger in free pages.
   Migrations are driven by `PRAGMA user_version`.
+- **`sync` (ADR 0005, amendment 2).** Under `synchronous=NORMAL`, a
+  resolved save survives a crash of the process but not necessarily a power
+  cut. `sync` makes every resolved save durable against power loss.
+  - It goes through the same queue as saves, so everything queued before it
+    is committed first.
+  - Then it runs `PRAGMA wal_checkpoint(TRUNCATE)`. SQLite fsyncs the WAL,
+    copies it into `state.db`, fsyncs `state.db`, and empties the WAL.
+  - Syncs that arrive together share one checkpoint.
+  - If another connection (a second process) blocks the checkpoint, `sync`
+    fails with `ResourceBusy` rather than claiming durability.
+  - Cost: median 4.4 ms on the NVMe below (2.8–31 ms). A bare WAL fsync
+    would be about 2 ms, but the checkpoint also clears the completed
+    download's cookie out of the WAL. The engine calls it once per
+    completed download.
 - **Cleared cookies leave the WAL too.** `secure_delete` covers only the
   main database; old page images stay in `-wal` until a checkpoint. The
   store runs `PRAGMA wal_checkpoint(TRUNCATE)`:
@@ -323,6 +337,10 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
 - Worst-case growth with 4 MiB checkpoints stays under the 32 MiB bound.
   An oversized checkpoint is refused.
 - The directory is fsynced once per process per id, again after `remove`.
+- `Checkpoint::finishing` (amendment 2) round-trips. Every third test
+  checkpoint carries it, so the torn-write tests and the bit-flip and
+  real-file proptests cover it too. A slot written by the previous format, without
+  the key, loads as `finishing: None`, and the series continues from it.
 - A planted `<id>.journal` symlink fails `commit` and `load`, and its
   target is untouched.
 - **SIGKILL.** A child process resumes from the journal and commits in a
@@ -347,6 +365,12 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
   interval while other writes continue (`src/state.rs`).
 - Symlinked `state.db` or `-wal`: refused, and the target is untouched.
 - `filename_locked` round-trips; a row written without it reads as `false`.
+- `sync`: a save that has resolved, and one queued in the same burst, are
+  in `state.db` alone afterwards (checked by opening a copy without the
+  WAL), and the WAL is empty.
+  - Several concurrent syncs succeed.
+  - A reader in another connection that blocks the checkpoint makes `sync`
+    fail with `ResourceBusy`; after the reader ends, `sync` succeeds.
 
 **Other targets.** The file and journal code (no SQLite) can be checked
 for Windows and macOS from Linux:
@@ -469,6 +493,7 @@ database.
 | `open`, including `quick_check` | 21–23 ms | 19–33 ms |
 | `save_download`, 10,000 issued at once (batched) | 23 µs each, 43,000/s | — |
 | `save_download`, one at a time, each awaited | 1.5 ms | — |
+| `sync` after a save (measured later, load ~6.5) | 4.4 ms | 2.8–31 ms |
 
 - One-at-a-time saves cost 1.5 ms because of two cross-thread wakeups on
   the loaded machine, not syncing. strace counted 14 `fsync`s over about
