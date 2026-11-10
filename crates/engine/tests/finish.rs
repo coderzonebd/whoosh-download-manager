@@ -280,3 +280,129 @@ fn a_record_that_says_completed_needs_no_journal() {
     assert_eq!(w.src.opens(), opens);
     assert_eq!(w.fs.finished().len(), 1);
 }
+
+#[test]
+fn the_intent_is_the_checkpoint_field() {
+    let w = world(Mode::Ranged);
+    let id = kill_at(&w, Kill::AfterRename, add_params(URL));
+    let cp = runtime()
+        .block_on(w.deps.journal.load(&id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        cp.finishing,
+        Some(vayu_core::Finishing {
+            name: "data.bin".into(),
+            len: w.data.len() as u64,
+        })
+    );
+    assert!(
+        cp.meta
+            .final_url
+            .as_deref()
+            .is_none_or(|u| !u.starts_with("vayu-finishing:")),
+        "no interim marker written"
+    );
+}
+
+#[test]
+fn an_interim_marker_journal_is_still_recognised() {
+    // Written by 5a1c4dd (before `Checkpoint::finishing`): the name in
+    // `RemoteMeta::final_url` after a `vayu-finishing:` prefix.
+    let w = world(Mode::Ranged);
+    let len = w.data.len() as u64;
+    w.fs.put_finished(&final_path("data.bin"), w.data.clone());
+    let rt = runtime();
+    let id = rt.block_on(async {
+        let engine = Engine::start(w.deps.clone(), config()).await.unwrap();
+        let mut p = add_params(URL);
+        p.start = false;
+        let id = engine.add(p).await.unwrap().id;
+        let legacy = vayu_core::Checkpoint {
+            meta: vayu_core::RemoteMeta {
+                size: Some(len),
+                final_url: Some("vayu-finishing:data.bin".into()),
+                ..vayu_core::RemoteMeta::default()
+            },
+            done: vayu_core::RangeSet::from_ranges(vayu_core::ByteRange::new(0, len)),
+            finishing: None,
+        };
+        w.deps.journal.commit(&id, &legacy).await.unwrap();
+        engine
+            .resume(vayu_proto::IdsParams {
+                ids: vec![id.clone()],
+            })
+            .await
+            .unwrap();
+        let (d, _) = finish(&engine, &id, LONG).await;
+        assert_eq!(d.summary.filename, "data.bin");
+        id
+    });
+    drop(rt);
+    let _ = id;
+    assert_eq!(w.src.opens(), 0, "recognised, not downloaded");
+    assert_eq!(w.fs.finished().len(), 1);
+}
+
+/// A world whose state store is a `SlowState` (sync counted, may fail).
+fn world_with_state(mode: Mode) -> (World, Arc<SlowState>) {
+    let mut w = world(mode);
+    let state = Arc::new(SlowState::new());
+    w.deps.state = state.clone();
+    (w, state)
+}
+
+#[test]
+fn the_completed_record_is_synced_before_its_journal_entry_goes() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let (w, state) = world_with_state(Mode::NoRanges);
+    let id = runtime().block_on(async {
+        let engine = Engine::start(w.deps.clone(), config()).await.unwrap();
+        let id = engine.add(add_params(URL)).await.unwrap().id;
+        finish(&engine, &id, LONG).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        id
+    });
+    assert!(state.syncs.load(Relaxed) >= 1);
+    assert!(
+        state.syncs_after_completed.load(Relaxed) >= 1,
+        "synced after the completed record was saved"
+    );
+    assert!(
+        runtime()
+            .block_on(w.deps.journal.load(&id))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn a_failed_sync_keeps_the_journal_entry() {
+    let (w, state) = world_with_state(Mode::Ranged);
+    state.fail_sync.store(true, Ordering::Relaxed);
+    let id = runtime().block_on(async {
+        let engine = Engine::start(w.deps.clone(), config()).await.unwrap();
+        let id = engine.add(add_params(URL)).await.unwrap().id;
+        finish(&engine, &id, LONG).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        id
+    });
+    let cp = runtime()
+        .block_on(w.deps.journal.load(&id))
+        .unwrap()
+        .expect("journal entry kept");
+    assert_eq!(cp.finishing.map(|f| f.name).as_deref(), Some("data.bin"));
+    // A restart sees the completed record and does nothing.
+    state.fail_sync.store(false, Ordering::Relaxed);
+    let opens = w.src.opens();
+    runtime().block_on(async {
+        let engine = Engine::start(w.deps.clone(), config()).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert_eq!(
+            detail(&engine, &id).await.summary.state,
+            DownloadState::Completed
+        );
+    });
+    assert_eq!(w.src.opens(), opens);
+    assert_eq!(w.fs.finished().len(), 1);
+}

@@ -223,9 +223,11 @@ files) is never moved along into the finished file.
 attempt, `finish` flushes and commits an *intent* to the journal: a
 checkpoint that claims the whole file at its final length (in stream mode,
 the bytes written; 0 for an empty file) and names the file it is about to
-create (`name`, then `name (1)`, … on `AlreadyExists`). The journal entry is
-removed only after the record says completed. So whenever the process
-dies:
+create (`Checkpoint::finishing { name, len }`: `name`, then `name (1)`, …
+on `AlreadyExists`). The journal entry is removed only after the completed
+record is saved *and* `StateStore::sync` made it durable; a failed save or
+sync keeps the entry (harmless next to a completed record). So whenever the
+process dies, or the power goes:
 - before the rename → on start the journal claims the whole file and the
   part file is there at that length: verify the checksum if one was asked,
   then finish again (no network);
@@ -233,18 +235,14 @@ dies:
   intent's file exists at exactly that length (and passes the checksum if
   one was asked): completed, nothing downloaded again
   (`StorageProvider::file_len`);
-- after the record update, before the journal removal → the record says
-  completed; nothing runs;
+- after the record update, before the journal removal (or with the sync
+  failed) → the record says completed; nothing runs;
 - anything else (say, the finished file was replaced meanwhile) → the
   download runs normally.
 
-The intent is carried in the checkpoint's `RemoteMeta::final_url` with a
-`vayu-finishing:` prefix (the journalled meta is the engine's own, and
-`final_url` is display-only); a dedicated field is proposed below. Record
-saves go to the `StateStore` before the journal entry is removed: against
-a killed process that is enough; against a power cut it needs the record
-save to be durable (SQLite in WAL mode with `synchronous=NORMAL` may lose
-the last transactions), see the proposals.
+A journal written by the interim version of this (5a1c4dd: the name in
+`RemoteMeta::final_url` after a `vayu-finishing:` prefix) is still read,
+never written.
 
 **Checksums (#10).** `AddParams::checksum` (sha256/sha512/sha1/md5, hex,
 validated at `add`) is verified in `verifying` by reading the file back; a
@@ -374,17 +372,17 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | `tests/service.rs` (19) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/contract.rs` (5) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic) |
-| `tests/finish.rs` (6) | the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact, without downloading again; also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed. Four of them fail on the previous code (the no-range case reproduces the hardkill duplicate) |
+| `tests/finish.rs` (10) | the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact, without downloading again; also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
 | `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %). `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
 model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999,
-30000–31999, 40000–40999, 50000–50999 and 60000–62999 (16,300 cases, 1–5
-kills each, ≈ 49,000 kills; 0 corrupt files; since 20000 also exactly one
-finished file each; the last 3,000 across every mode — ranged, no ranges,
-unknown size, empty — with crash-consistent finishing) and the property
-test over 4,800 schedules, all passing. Run
+30000–31999, 40000–40999, 50000–50999, 60000–62999 and 70000–70999 (17,300
+cases, 1–5 kills each, ≈ 52,000 kills; 0 corrupt files; since 20000 also
+exactly one finished file each; since 60000 across every mode — ranged, no
+ranges, unknown size, empty — with crash-consistent finishing) and the
+property test over 5,100 schedules, all passing. Run
 them with the built test binaries, e.g.
 `VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
 The real gate (1,000 hard kills of the daemon process with `vayu-store` on
@@ -457,14 +455,9 @@ remove it (see proposals).
 
 ## Contract proposals
 
-Open: **`Checkpoint::finishing: Option<Finishing { name: String, len: u64 }>`**
-(serde default): the finish intent as a field of its own instead of a
-marker in `RemoteMeta::final_url` (works, but overloads a display field).
-And **a durable record save** (`StateStore::save_download_durable`, or a
-`sync()`), used once per completed download before its journal entry is
-removed: today a power cut right after completion can roll the record back
-while the journal entry is already gone, and the next start downloads again
-under `name (1)`. (A killed process cannot lose the record.)
+Applied in amendment 2 and used here: `Checkpoint::finishing` (the finish
+intent) and `StateStore::sync` (called after saving a completed record,
+before removing its journal entry).
 
 Open: **`Storage::write_vectored_at(offset, Vec<Bytes>)`** (or `write_at`
 taking several buffers): the engine could hand over the received chunks of

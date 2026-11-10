@@ -817,6 +817,11 @@ pub struct SlowState {
     pub inner: MemStateStore,
     pub save_delay: Mutex<Duration>,
     pub profile_delay: Mutex<Duration>,
+    /// `sync()` calls, whether they fail, and how many found a completed
+    /// record already saved.
+    pub syncs: std::sync::atomic::AtomicU64,
+    pub fail_sync: std::sync::atomic::AtomicBool,
+    pub syncs_after_completed: std::sync::atomic::AtomicU64,
 }
 
 impl SlowState {
@@ -825,6 +830,9 @@ impl SlowState {
             inner: MemStateStore::default(),
             save_delay: Mutex::new(Duration::ZERO),
             profile_delay: Mutex::new(Duration::ZERO),
+            syncs: Default::default(),
+            fail_sync: Default::default(),
+            syncs_after_completed: Default::default(),
         }
     }
 }
@@ -859,6 +867,25 @@ impl vayu_core::StateStore for SlowState {
         host: &'a str,
     ) -> BoxFuture<'a, io::Result<Option<vayu_core::HostProfile>>> {
         self.inner.host_profile(host)
+    }
+    fn sync(&self) -> BoxFuture<'_, io::Result<()>> {
+        use std::sync::atomic::Ordering::Relaxed;
+        Box::pin(async move {
+            self.syncs.fetch_add(1, Relaxed);
+            let completed = self
+                .inner
+                .load_downloads()
+                .await?
+                .iter()
+                .any(|r| r.state == vayu_proto::DownloadState::Completed);
+            if completed {
+                self.syncs_after_completed.fetch_add(1, Relaxed);
+            }
+            if self.fail_sync.load(Relaxed) {
+                return Err(io::Error::other("fsync failed"));
+            }
+            Ok(())
+        })
     }
     fn save_host_profile<'a>(
         &'a self,

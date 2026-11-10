@@ -21,8 +21,8 @@ use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use vayu_core::{
-    ByteRange, Checkpoint, DownloadRecord, HostProfile, OpenRequest, RangeSet, RangeSource,
-    RemoteMeta, SourceError, Storage, Validators,
+    ByteRange, Checkpoint, DownloadRecord, Finishing, HostProfile, OpenRequest, RangeSet,
+    RangeSource, RemoteMeta, SourceError, Storage, Validators,
 };
 use vayu_proto::{Checksum, DownloadId, DownloadState, ErrorInfo, RequestContext, SegmentInfo};
 
@@ -63,21 +63,33 @@ enum Recovery {
     Adopted,
 }
 
-/// Marks an intent checkpoint: `RemoteMeta::final_url` holds this prefix and
-/// the name `finish` is about to create. (`final_url` is display-only and
-/// the journalled meta is the engine's own; a dedicated `Checkpoint` field
-/// is proposed in the README.)
-const FINISHING: &str = "vayu-finishing:";
+/// The interim intent marker (before `Checkpoint::finishing` existed):
+/// `RemoteMeta::final_url` = this prefix + the name. Still read, never
+/// written.
+const LEGACY_FINISHING: &str = "vayu-finishing:";
 
-fn intent_name(meta: &RemoteMeta) -> Option<String> {
-    meta.final_url
-        .as_deref()?
-        .strip_prefix(FINISHING)
-        .map(str::to_string)
+/// The finish intent of a checkpoint: the field, or the interim marker.
+fn intent(cp: &Checkpoint) -> Option<Finishing> {
+    cp.finishing.clone().or_else(|| {
+        let name = cp
+            .meta
+            .final_url
+            .as_deref()?
+            .strip_prefix(LEGACY_FINISHING)?;
+        Some(Finishing {
+            name: name.to_string(),
+            len: cp.meta.size?,
+        })
+    })
 }
 
+/// `meta` without an interim intent marker.
 fn without_intent(mut meta: RemoteMeta) -> RemoteMeta {
-    if intent_name(&meta).is_some() {
+    if meta
+        .final_url
+        .as_deref()
+        .is_some_and(|u| u.starts_with(LEGACY_FINISHING))
+    {
         meta.final_url = None;
     }
     meta
@@ -500,9 +512,12 @@ impl Driver {
             Some(_) => return Ok(Recovery::None),
             None => {}
         }
-        let Some(name) = intent_name(&cp.meta) else {
+        let Some(Finishing { name, len }) = intent(&cp) else {
             return Ok(Recovery::None);
         };
+        if len != size {
+            return Ok(Recovery::None);
+        }
         let Some(path) = names::inside(&self.directory, &name) else {
             return Ok(Recovery::None);
         };
@@ -894,11 +909,13 @@ impl Driver {
             let intent = Checkpoint {
                 meta: RemoteMeta {
                     size: Some(len),
-                    final_url: Some(format!("{FINISHING}{candidate}")),
                     ..without_intent(self.meta.clone())
                 },
                 done: RangeSet::from_ranges(ByteRange::new(0, len)),
-                finishing: None,
+                finishing: Some(Finishing {
+                    name: candidate.clone(),
+                    len,
+                }),
             };
             if let Err(e) = self.inner.deps.journal.commit(&self.id, &intent).await {
                 return io_failed(e);
