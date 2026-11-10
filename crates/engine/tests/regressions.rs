@@ -71,7 +71,8 @@ async fn removing_but_keeping_files_does_not_poison_the_next_download() {
     let new_url = "https://lab.test/new/setup.exe";
     sources.insert(
         old_url,
-        Arc::new(FaultSource::new(content(16 * MIB, 2)).cfg(|c| c.per_conn_bps = Some(MIB))),
+        // Still running when removed (16 × 1 MiB/s would finish 16 MiB).
+        Arc::new(FaultSource::new(content(64 * MIB, 2)).cfg(|c| c.per_conn_bps = Some(MIB))),
     );
     let old = engine.add(add_params(old_url)).await.unwrap().id;
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -97,7 +98,8 @@ async fn removing_but_keeping_files_does_not_poison_the_next_download_mem() {
     let new_url = "https://lab.test/new/setup.exe";
     lab.serve(
         old_url,
-        Arc::new(FaultSource::new(content(16 * MIB, 2)).cfg(|c| c.per_conn_bps = Some(MIB))),
+        // Still running when removed (16 × 1 MiB/s would finish 16 MiB).
+        Arc::new(FaultSource::new(content(64 * MIB, 2)).cfg(|c| c.per_conn_bps = Some(MIB))),
     );
     let old = lab.add(old_url).await;
     tokio::time::sleep(Duration::from_secs(2)).await;

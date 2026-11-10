@@ -770,7 +770,8 @@ async fn a_resume_during_a_pause_wins() {
 
 async fn lose_part_file_then_resume(validators: bool) {
     let lab = Lab::new(config()).await;
-    let size = 8 * MIB;
+    // Still running at the pause.
+    let size = 32 * MIB;
     let data = content(size, 14);
     lab.serve(
         URL,

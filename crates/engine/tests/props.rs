@@ -131,6 +131,7 @@ fn run(s: Schedule) -> Result<(), TestCaseError> {
                 // from headers; only unchanging files may lack them.
                 c.validators = s.validators || s.changes > 0;
                 c.change_after = (s.changes > 0).then_some(s.change_after);
+                c.native_start = s.seed.is_multiple_of(2);
                 c.cap = s
                     .cap
                     .map(|n| (n, Cap::Throttle(Some(Duration::from_millis(300)))));

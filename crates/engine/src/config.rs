@@ -54,8 +54,28 @@ pub struct Tuning {
     /// (the bench's 1/4/16-connection runs). Still capped by
     /// `Settings::max_connections_per_download`.
     pub fixed_connections: Option<u16>,
-    /// Never split a range into pieces smaller than this.
+    /// A fresh download's first connection (the response
+    /// `RangeSource::start` began) runs alone until its time to finish —
+    /// the rest of the file at its rate so far — exceeds both
+    /// `solo_ttfb_factor` × what `start` took (a new connection's time to
+    /// first byte) and `solo_min_eta`; checked every `solo_check`, which
+    /// is also the least it is watched. A file it finishes sooner never
+    /// gets more connections: they could not deliver earlier, and on a
+    /// fast link they cost more than they save. Silence of
+    /// `max(solo_silence, 4 × start's time to first byte)` ends the solo
+    /// run at once (a stalled connection alone stalls the download).
+    pub solo_ttfb_factor: f64,
+    pub solo_min_eta: Duration,
+    pub solo_check: Duration,
+    pub solo_silence: Duration,
+    /// Never split a range into pieces smaller than this; on a slow link,
+    /// down to `min_split_floor`, as long as a piece still takes at least
+    /// `max(min_split_time, 4 × median TTFB)` at the median connection's
+    /// speed (2 MB/s per connection: 256 KiB pieces, so 10 MiB can use 16
+    /// connections).
     pub min_split: u64,
+    pub min_split_floor: u64,
+    pub min_split_time: Duration,
     /// Split points are rounded down to a multiple of this when possible.
     pub split_align: u64,
     /// How often the scheduler samples throughput, checks for stalls and
@@ -86,6 +106,17 @@ pub struct Tuning {
     /// an unclear step down is taken if its estimate holds `keep_ratio`.
     pub tune_z: f64,
     pub tune_rounds: u32,
+    /// Fast climb, a download's first climb only: windows of at least
+    /// `max(tune_fast_window, tune_warm_rtts × median TTFB)` (warm-up half
+    /// that, and not while rising), sampled every `tune_fast_sample`. A
+    /// doubling that delivers, beyond `tune_z` standard errors, at least
+    /// `tune_fast_scaling` of linear scaling (1.5× for 2× at 0.5) — every
+    /// connection limited on its own — is taken from one window and the
+    /// next doubling tried at once. Anything less ends the fast climb: the
+    /// comparison continues with alternating windows as above.
+    pub tune_fast_window: Duration,
+    pub tune_fast_sample: Duration,
+    pub tune_fast_scaling: f64,
     /// After settling, try one step again this often, alternately up and
     /// down (doubling, up to 5 min, while that changes nothing).
     pub tune_reprobe: Duration,
@@ -128,10 +159,19 @@ pub struct Tuning {
     /// each; gathering cuts both.
     pub write_coalesce: usize,
     pub write_coalesce_delay: Duration,
-    /// Durability cadence: `Storage::flush` then `Journal::commit` at least
-    /// this often, or after this many new bytes, whichever comes first.
+    /// Durability cadence: `Storage::flush` then `Journal::commit` every
+    /// `checkpoint_interval` (or after `checkpoint_bytes` new bytes; off by
+    /// default), but never sooner than the last checkpoint took divided by
+    /// `checkpoint_share`, up to `checkpoint_interval_max`. A flush is a
+    /// stall: the store's writer syncs while writes queue behind it, and on
+    /// a disk-bound machine one of 64 MiB took 60–250 ms. So a flush that
+    /// took 250 ms is next due 5 s later (5 % of the time), a 5 ms one after
+    /// 2 s. The journal still never claims an unflushed byte; a crash only
+    /// loses (re-downloads) more of the last seconds.
     pub checkpoint_interval: Duration,
     pub checkpoint_bytes: u64,
+    pub checkpoint_share: f64,
+    pub checkpoint_interval_max: Duration,
     /// The download record (progress) is saved this often while running.
     pub record_interval: Duration,
     /// Retry backoff: `min(retry_cap, retry_base × 2^(n−1))` with jitter in
@@ -162,7 +202,13 @@ impl Default for Tuning {
         Self {
             initial_connections: 8,
             fixed_connections: None,
+            solo_ttfb_factor: 2.0,
+            solo_min_eta: Duration::from_millis(100),
+            solo_check: Duration::from_millis(5),
+            solo_silence: Duration::from_millis(20),
             min_split: MIB,
+            min_split_floor: 256 * 1024,
+            min_split_time: Duration::from_millis(100),
             split_align: 64 * 1024,
             tick: Duration::from_millis(50),
             tune_window: Duration::from_millis(200),
@@ -174,6 +220,9 @@ impl Default for Tuning {
             tune_warm_rise: 0.10,
             tune_z: 2.0,
             tune_rounds: 4,
+            tune_fast_window: Duration::from_millis(100),
+            tune_fast_sample: Duration::from_millis(50),
+            tune_fast_scaling: 0.5,
             tune_reprobe: Duration::from_secs(30),
             climb_gain: 0.04,
             keep_ratio: 0.97,
@@ -190,7 +239,9 @@ impl Default for Tuning {
             write_coalesce: 256 * 1024,
             write_coalesce_delay: Duration::from_millis(200),
             checkpoint_interval: Duration::from_secs(2),
-            checkpoint_bytes: 64 * MIB,
+            checkpoint_bytes: u64::MAX,
+            checkpoint_share: 0.05,
+            checkpoint_interval_max: Duration::from_secs(30),
             record_interval: Duration::from_secs(3),
             retry_base: Duration::from_millis(50),
             retry_cap: Duration::from_secs(30),

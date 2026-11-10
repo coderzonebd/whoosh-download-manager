@@ -21,8 +21,8 @@ use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use vayu_core::{
-    ByteRange, Checkpoint, DownloadRecord, Finishing, HostProfile, OpenRequest, RangeSet,
-    RangeSource, RemoteMeta, SourceError, Storage, Validators,
+    ByteRange, ByteStream, Checkpoint, DownloadRecord, Finishing, HostProfile, OpenRequest,
+    RangeSet, RangeSource, RemoteMeta, SourceError, Storage, Validators,
 };
 use vayu_proto::{Checksum, DownloadId, DownloadState, ErrorInfo, RequestContext, SegmentInfo};
 
@@ -118,6 +118,22 @@ enum Plan {
 enum Work {
     Own(Arc<Segment>),
     Hedge(Arc<Segment>, HedgeKind),
+}
+
+/// The response `RangeSource::start` began, and how long `start` took (its
+/// time to first byte).
+type First = (ByteStream, Duration);
+
+/// A fresh download's first range, downloaded by one connection alone
+/// until splitting it pays (`Driver::solo_check`): the response `start`
+/// began, or, if that broke, the one connection that took over.
+#[derive(Debug, Clone)]
+struct Solo {
+    seg: Arc<Segment>,
+    /// How long a new connection takes to its first byte, seconds: what
+    /// `start` took.
+    ttfb: f64,
+    next: Instant,
 }
 
 pub(crate) fn error_info(code: &str, message: impl Into<String>) -> ErrorInfo {
@@ -267,6 +283,9 @@ struct Driver {
     /// Recognised as already finished (a crash after `Storage::finish`):
     /// the final name and size.
     adopted: Option<(String, u64)>,
+    /// The journal had an entry for this download when the run began.
+    journalled: bool,
+    solo: Option<Solo>,
     category_auto: bool,
     checksum: Option<Checksum>,
     source: Option<Arc<dyn RangeSource>>,
@@ -300,6 +319,11 @@ struct Driver {
     ckpt: Option<BoxFuture<'static, io::Result<()>>>,
     last_commit: Instant,
     committed: u64,
+    /// How long the last checkpoint (flush and commit) took.
+    ckpt_cost: Duration,
+    ckpt_started: Instant,
+    /// This run committed to the journal.
+    committed_any: bool,
     last_record: Instant,
     last_tick: Instant,
     last_segments: Instant,
@@ -334,6 +358,8 @@ impl Driver {
             name_fixed: name_locked,
             connections,
             adopted: None,
+            journalled: false,
+            solo: None,
             category_auto,
             checksum: record.checksum.clone(),
             source: None,
@@ -366,6 +392,9 @@ impl Driver {
             ckpt: None,
             last_commit: now,
             committed: 0,
+            ckpt_cost: Duration::ZERO,
+            ckpt_started: now,
+            committed_any: false,
             last_record: now,
             last_tick: now,
             last_segments: now,
@@ -401,16 +430,25 @@ impl Driver {
             .map_err(|e| Outcome::Failed(source_info(&e)))?;
         self.source = Some(source);
         let mut force_stream = false;
-        let mut meta = self.probe().await?;
+        // A fresh download probes and starts in one request; a resume
+        // probes first, to check the validators before taking any byte.
+        let (mut meta, mut first) = if self.journalled {
+            (self.probe().await?, None)
+        } else {
+            let (meta, first) = self.start().await?;
+            (meta, Some(first))
+        };
         loop {
             self.adopt(&meta).await?;
             let plan = match self.prepare(meta.clone(), force_stream).await {
                 Ok(p) => p,
                 Err(Abort::Remote) => {
+                    first = None;
                     meta = self.restart_after_change().await?;
                     continue;
                 }
                 Err(Abort::NoRanges) => {
+                    first = None;
                     force_stream = true;
                     continue;
                 }
@@ -418,8 +456,8 @@ impl Driver {
             };
             self.state(DownloadState::Downloading).await;
             let r = match plan {
-                Plan::Ranged(done) => self.transfer_ranged(done).await,
-                Plan::Stream => self.transfer_stream().await,
+                Plan::Ranged(done) => self.transfer_ranged(done, first.take()).await,
+                Plan::Stream => self.transfer_stream(first.take()).await,
             };
             match r {
                 Ok(()) => break,
@@ -439,22 +477,36 @@ impl Driver {
         loop {
             match self.source().probe().await {
                 Ok(m) => return Ok(m),
-                Err(e) => {
-                    match &e {
-                        SourceError::LinkExpired(_) => {
-                            return Err(Outcome::NeedsRefresh(source_info(&e)));
-                        }
-                        SourceError::Fatal(_) => return Err(Outcome::Failed(source_info(&e))),
-                        SourceError::Throttled { retry_after, .. } => {
-                            let ra = *retry_after;
-                            self.note_failure(&e, ra).map_err(abort_outcome)?;
-                        }
-                        _ => self.note_failure(&e, None).map_err(abort_outcome)?,
-                    }
-                    tokio::time::sleep_until(self.open_gate).await;
-                }
+                Err(e) => self.probe_failed(e).await?,
             }
         }
+    }
+
+    /// `RangeSource::start` with retries, like `probe`: the remote file's
+    /// description and its body from offset 0 in one request.
+    async fn start(&mut self) -> Result<(RemoteMeta, First), Outcome> {
+        loop {
+            let called = Instant::now();
+            match self.source().start().await {
+                Ok((meta, stream)) => return Ok((meta, (stream, called.elapsed()))),
+                Err(e) => self.probe_failed(e).await?,
+            }
+        }
+    }
+
+    /// A failed probe or start: end the run, or wait out the backoff.
+    async fn probe_failed(&mut self, e: SourceError) -> Result<(), Outcome> {
+        match &e {
+            SourceError::LinkExpired(_) => return Err(Outcome::NeedsRefresh(source_info(&e))),
+            SourceError::Fatal(_) => return Err(Outcome::Failed(source_info(&e))),
+            SourceError::Throttled { retry_after, .. } => {
+                let ra = *retry_after;
+                self.note_failure(&e, ra).map_err(abort_outcome)?;
+            }
+            _ => self.note_failure(&e, None).map_err(abort_outcome)?,
+        }
+        tokio::time::sleep_until(self.open_gate).await;
+        Ok(())
     }
 
     /// Finishing is crash-consistent through the journal: before every
@@ -484,6 +536,7 @@ impl Driver {
         else {
             return Ok(Recovery::None);
         };
+        self.journalled = true;
         let Some(size) = cp.meta.size else {
             return Ok(Recovery::None);
         };
@@ -680,6 +733,7 @@ impl Driver {
                     done: verified.clone(),
                     finishing: None,
                 };
+                self.committed_any = true;
                 self.inner
                     .deps
                     .journal
@@ -704,20 +758,25 @@ impl Driver {
     }
 
     /// Forget every byte: commit an empty checkpoint first (the journal
-    /// never claims more than the file holds), then recreate the file.
+    /// never claims more than the file holds), then recreate the file. A
+    /// download the journal has no entry for (fresh, nothing committed yet)
+    /// skips the commit: nothing claims anything.
     async fn discard(&mut self) -> Result<(), Outcome> {
         self.committable = false;
-        let cp = Checkpoint {
-            meta: self.meta.clone(),
-            done: RangeSet::new(),
-            finishing: None,
-        };
-        self.inner
-            .deps
-            .journal
-            .commit(&self.id, &cp)
-            .await
-            .map_err(io_failed)?;
+        if self.journalled || self.committed_any {
+            let cp = Checkpoint {
+                meta: self.meta.clone(),
+                done: RangeSet::new(),
+                finishing: None,
+            };
+            self.committed_any = true;
+            self.inner
+                .deps
+                .journal
+                .commit(&self.id, &cp)
+                .await
+                .map_err(io_failed)?;
+        }
         self.storage = None;
         self.inner
             .deps
@@ -1043,7 +1102,10 @@ impl Driver {
 
     // ------------------------------------------------------- transfers
 
-    async fn transfer_ranged(&mut self, done: RangeSet) -> Result<(), Abort> {
+    /// `first`: the response `start` began (a fresh download). Its
+    /// connection owns the whole file and runs alone until splitting pays
+    /// (`solo_check`); otherwise the first plan is one range per connection.
+    async fn transfer_ranged(&mut self, done: RangeSet, first: Option<First>) -> Result<(), Abort> {
         let size = self.size.unwrap_or(0);
         self.done = done;
         self.segs = self
@@ -1052,21 +1114,19 @@ impl Driver {
             .into_iter()
             .map(|g| Segment::new(g.start, g.end))
             .collect();
-        // First plan: one range per connection, never below the minimum.
-        let target = usize::from(self.target());
-        while self.segs.len() < target {
-            let Some(big) = self
-                .segs
-                .iter()
-                .max_by_key(|s| s.snapshot().remaining())
-                .cloned()
-            else {
-                break;
-            };
-            match big.split(self.t.min_split, 0.5, self.t.split_align) {
-                Some(tail) => self.segs.push(tail),
-                None => break,
+        let first = first.filter(|_| self.done.is_empty() && self.segs.len() == 1);
+        if let Some((stream, ttfb)) = first {
+            let seg = self.segs[0].clone();
+            if self.spawn_first(seg.clone(), stream, ttfb).is_some() && self.target() > 1 {
+                self.solo = Some(Solo {
+                    seg,
+                    ttfb: ttfb.as_secs_f64(),
+                    next: Instant::now() + self.t.solo_check,
+                });
             }
+        }
+        if self.solo.is_none() {
+            self.plan();
         }
         self.committable = true;
         let now = Instant::now();
@@ -1079,36 +1139,51 @@ impl Driver {
             if self.segs.is_empty() {
                 break;
             }
+            self.solo_check(Instant::now());
             self.fill();
             let ckpt = &mut self.ckpt;
+            let solo_next = self.solo.as_ref().map(|s| s.next);
             tokio::select! {
                 Some(j) = self.tasks.join_next(), if !self.tasks.is_empty() => self.on_exit(j)?,
                 _ = tick.tick() => self.on_tick().await?,
                 r = async { match ckpt.as_mut() { Some(f) => f.await, None => std::future::pending().await } } => {
                     self.ckpt = None;
+                    self.ckpt_cost = self.ckpt_started.elapsed();
                     r.map_err(io_failed)?;
                 }
+                _ = tokio::time::sleep_until(solo_next.unwrap_or_else(Instant::now)), if solo_next.is_some() => {}
             }
         }
+        self.solo = None;
         if let Some(c) = self.ckpt.take() {
             c.await.map_err(io_failed)?;
         }
         self.halt().await;
-        self.checkpoint_now().await.map_err(io_failed)?;
+        // Finishing flushes and commits a checkpoint claiming every byte
+        // right away; only a checksum to verify first (a long read) is
+        // worth a checkpoint of its own.
+        if self.checksum.is_some() {
+            self.checkpoint_now().await.map_err(io_failed)?;
+        }
         self.publish();
         Ok(())
     }
 
     /// Ranges unsupported or size unknown: one connection from the start.
     /// A failure discards everything and starts again (after backoff).
-    async fn transfer_stream(&mut self) -> Result<(), Abort> {
+    async fn transfer_stream(&mut self, mut first: Option<First>) -> Result<(), Abort> {
         self.committable = false;
         loop {
             // Always read to the end of the response: a body of another
             // length is another version, never cut or padded to fit.
             let seg = Segment::open_ended(0);
             self.segs = vec![seg.clone()];
-            self.spawn(Work::Own(seg.clone()));
+            match first.take() {
+                Some((stream, ttfb)) => {
+                    self.spawn_first(seg.clone(), stream, ttfb);
+                }
+                None => self.spawn(Work::Own(seg.clone())),
+            }
             let mut tick = tokio::time::interval_at(Instant::now() + self.t.tick, self.t.tick);
             tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
             let joined = loop {
@@ -1283,6 +1358,90 @@ impl Driver {
         }
     }
 
+    /// One range per connection (up to the target), never below the
+    /// minimum: halve the largest remaining range until there are enough.
+    fn plan(&mut self) {
+        let target = usize::from(self.target());
+        while self.segs.len() < target {
+            let Some(big) = self
+                .segs
+                .iter()
+                .max_by_key(|s| s.snapshot().remaining())
+                .cloned()
+            else {
+                break;
+            };
+            match big.split(self.min_split(), 0.5, self.t.split_align) {
+                Some(tail) => self.segs.push(tail),
+                None => break,
+            }
+        }
+    }
+
+    /// The smallest piece worth a connection: `min_split`, or on a slow
+    /// link (once speeds are known) what the median connection delivers in
+    /// `max(min_split_time, 4 × TTFB)`, but at least `min_split_floor`.
+    fn min_split(&self) -> u64 {
+        let hi = self.t.min_split;
+        let Some(speed) = self.median_speed() else {
+            return hi;
+        };
+        let secs =
+            (4.0 * self.median_ttfb().unwrap_or(0.0)).max(self.t.min_split_time.as_secs_f64());
+        ((speed * secs) as u64).clamp(self.t.min_split_floor.min(hi), hi)
+    }
+
+    /// While a fresh download's first range has one connection (`Solo`),
+    /// decide whether to add the others: once the rest would take it longer
+    /// than `solo_ttfb_factor` × a new connection's time to first byte
+    /// (what `start` took) and longer than `solo_min_eta`, or once it has
+    /// been silent for `max(solo_silence, 4 × that time)`. Then the range is
+    /// split for the target count, as the first plan of a resume would be.
+    /// A connection that breaks is replaced by one (the rest is small by
+    /// this rule); one that a stall hedge overtook is followed.
+    fn solo_check(&mut self, now: Instant) {
+        let Some(solo) = self.solo.clone() else {
+            return;
+        };
+        let release = match solo.seg.snapshot().owner.map(|o| self.workers.get(&o)) {
+            // Nobody owns it right now: its connection broke, and `fill`
+            // hands the rest to one new connection, again alone (what is
+            // left would take one connection less than a new one needs).
+            None => false,
+            Some(Some(w)) if !w.cancelling => {
+                let n = w.seg.snapshot();
+                let opened = w.counters.opened_us.load(Ordering::Relaxed);
+                let watched = now_us_since(self.epoch, now).saturating_sub(opened) as f64 / 1e6;
+                let bytes = w.counters.bytes.load(Ordering::Relaxed);
+                let last = w.counters.last_us.load(Ordering::Relaxed);
+                let silent = now_us_since(self.epoch, now).saturating_sub(last) as f64 / 1e6;
+                let quiet_limit = (4.0 * solo.ttfb).max(self.t.solo_silence.as_secs_f64());
+                if last != 0 && silent >= quiet_limit {
+                    // Gone quiet while alone: the others take the rest
+                    // (and the stall checks deal with this one).
+                    true
+                } else if opened == 0 || watched < self.t.solo_check.as_secs_f64() || bytes == 0 {
+                    false
+                } else {
+                    let eta = n.remaining() as f64 * watched / bytes as f64;
+                    let worth = (self.t.solo_ttfb_factor * solo.ttfb)
+                        .max(self.t.solo_min_eta.as_secs_f64());
+                    eta > worth
+                }
+            }
+            _ => true,
+        };
+        if release || self.target() <= 1 {
+            tracing::debug!(id = %self.id, "first range split for the others");
+            self.solo = None;
+            self.plan();
+        } else if now >= solo.next
+            && let Some(s) = self.solo.as_mut()
+        {
+            s.next = now + self.t.solo_check;
+        }
+    }
+
     /// Give every free connection slot work: ownerless ranges first, then
     /// the largest remaining range of the slowest connection (split), then
     /// endgame hedges.
@@ -1296,7 +1455,7 @@ impl Driver {
             if gated && self.replacements == 0 {
                 break;
             }
-            let Some(work) = self.pick(now) else {
+            let Some(work) = self.pick(now, self.solo.is_some()) else {
                 break;
             };
             if gated {
@@ -1307,7 +1466,8 @@ impl Driver {
         self.replacements = 0;
     }
 
-    fn pick(&mut self, now: Instant) -> Option<Work> {
+    /// `solo`: only ranges nobody owns (the first connection runs alone).
+    fn pick(&mut self, now: Instant, solo: bool) -> Option<Work> {
         // 1. Ownerless ranges (a connection failed or was cancelled).
         if let Some(seg) = self
             .segs
@@ -1319,9 +1479,12 @@ impl Driver {
         {
             return Some(Work::Own(seg));
         }
+        if solo {
+            return None;
+        }
         let median_speed = self.median_speed();
         // 2. Work stealing: the range that would finish last.
-        let min = self.t.min_split;
+        let min = self.min_split();
         let mut victim: Option<(Arc<Segment>, f64, f64)> = None;
         for s in &self.segs {
             let n = s.snapshot();
@@ -1420,6 +1583,21 @@ impl Driver {
     /// Start a connection. Stream mode (`self.ranged == false`) requests
     /// the whole file.
     fn spawn(&mut self, work: Work) {
+        self.spawn_job(work, None);
+    }
+
+    /// Hand the response `start` began to the first connection, as owner
+    /// of `seg` (which starts at offset 0). Returns its id.
+    fn spawn_first(
+        &mut self,
+        seg: Arc<Segment>,
+        stream: ByteStream,
+        ttfb: Duration,
+    ) -> Option<WorkerId> {
+        self.spawn_job(Work::Own(seg), Some((stream, ttfb)))
+    }
+
+    fn spawn_job(&mut self, work: Work, first: Option<First>) -> Option<WorkerId> {
         let wid = self.next_wid;
         self.next_wid += 1;
         let cancel = CancellationToken::new();
@@ -1433,9 +1611,10 @@ impl Driver {
                 (seg, r, Some(kind))
             }
         };
-        let Some((start, end)) = range else { return };
+        let (start, end) = range?;
         let (Some(storage), Some(source)) = (self.storage.clone(), self.source.clone()) else {
-            return;
+            seg.release(wid);
+            return None;
         };
         let req = OpenRequest {
             range: if self.ranged {
@@ -1445,14 +1624,26 @@ impl Driver {
             },
             expect: self.expect.clone(),
         };
-        tracing::debug!(id = %self.id, wid, start, end, hedge = work_kind.is_some(), "connection opened");
+        tracing::debug!(id = %self.id, wid, start, end, hedge = work_kind.is_some(), first = first.is_some(), "connection opened");
         let counters = Arc::new(Counters::default());
+        let mut started = Instant::now();
+        let first = first.map(|(stream, ttfb)| {
+            // Its headers were checked when `start` returned; what `start`
+            // took is its time to first byte.
+            let now = started;
+            started = now.checked_sub(ttfb).unwrap_or(now);
+            counters
+                .opened_us
+                .store(now_us_since(self.epoch, now).max(1), Ordering::Relaxed);
+            stream
+        });
         self.tasks.spawn(worker::work(Job {
             wid,
             seg: seg.clone(),
             source,
             storage,
             req,
+            first,
             counters: counters.clone(),
             cancel: cancel.clone(),
             limiter: self.inner.limiter.clone(),
@@ -1466,13 +1657,14 @@ impl Driver {
                 seg,
                 counters,
                 cancel,
-                started: Instant::now(),
+                started,
                 cancelling: false,
                 last_bytes: 0,
                 ewma: None,
                 ttfb_seen: false,
             },
         );
+        Some(wid)
     }
 
     fn on_exit(
@@ -1491,13 +1683,33 @@ impl Driver {
         self.recv_total += w.counters.bytes.load(Ordering::Relaxed) - w.last_bytes;
         self.note_ttfb(&w);
         w.seg.release(wid);
+        let alone = self
+            .solo
+            .as_ref()
+            .is_some_and(|s| Arc::ptr_eq(&s.seg, &w.seg));
         match exit {
             Exit::Finished => {
                 self.replacements += 1;
                 Ok(())
             }
             Exit::Lost | Exit::Cancelled => Ok(()),
-            Exit::Failed { err, streamed } => self.on_source_error(err, streamed),
+            Exit::Failed { err, streamed } => {
+                // A reset after real progress is not the server pushing
+                // back: the range is taken up again at once instead of
+                // after the backoff (the failure round still counts, and a
+                // server that resets right away still gets the backoff).
+                // Likewise for the connection running alone: nothing else
+                // is downloading.
+                let delivered = w.counters.bytes.load(Ordering::Relaxed);
+                let replace = streamed
+                    && matches!(err, SourceError::Transient(_))
+                    && (alone || delivered >= self.t.min_split_floor);
+                self.on_source_error(err, streamed)?;
+                if replace {
+                    self.replacements += 1;
+                }
+                Ok(())
+            }
             Exit::Storage(e) => Err(io_failed(e).into()),
         }
     }
@@ -1653,7 +1865,12 @@ impl Driver {
         if self.ranged {
             self.tune(now);
             self.hedge_stalls(now)?;
-            let due = now.duration_since(self.last_commit) >= self.t.checkpoint_interval
+            let spacing = self.t.checkpoint_interval.max(
+                self.ckpt_cost
+                    .div_f64(self.t.checkpoint_share.max(1e-3))
+                    .min(self.t.checkpoint_interval_max),
+            );
+            let due = now.duration_since(self.last_commit) >= spacing
                 || written.saturating_sub(self.committed) >= self.t.checkpoint_bytes;
             if due && self.ckpt.is_none() {
                 self.start_checkpoint();
@@ -1814,6 +2031,8 @@ impl Driver {
         };
         self.committed = cp.done.len();
         self.last_commit = Instant::now();
+        self.ckpt_started = self.last_commit;
+        self.committed_any = true;
         let journal = self.inner.deps.journal.clone();
         let id = self.id.clone();
         self.ckpt = Some(Box::pin(async move {
@@ -1832,6 +2051,7 @@ impl Driver {
             finishing: None,
         };
         storage.flush().await?;
+        self.committed_any = true;
         self.inner.deps.journal.commit(&self.id, &cp).await?;
         self.committed = cp.done.len();
         self.last_commit = Instant::now();
