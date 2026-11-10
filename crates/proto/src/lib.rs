@@ -50,6 +50,10 @@ pub mod method {
 /// Server-to-client notification method names.
 pub mod event {
     pub const DOWNLOAD_ADDED: &str = "event.download.added";
+    /// The full summary again after its name, size, category or other
+    /// descriptive fields changed (e.g. the server's file name, learned on
+    /// the first response). Clients replace their copy.
+    pub const DOWNLOAD_UPDATED: &str = "event.download.updated";
     pub const DOWNLOAD_PROGRESS: &str = "event.download.progress";
     pub const DOWNLOAD_STATE: &str = "event.download.state";
     pub const DOWNLOAD_REMOVED: &str = "event.download.removed";

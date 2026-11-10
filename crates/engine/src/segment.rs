@@ -56,8 +56,15 @@ struct SegState {
 /// What a connection may do with a chunk it received.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Claim {
-    /// Write `chunk[from..to]` at `offset`, then call [`Segment::complete`].
-    Write { offset: u64, from: usize, to: usize },
+    /// Write `chunk[from..to]` at `offset`, then call
+    /// [`Segment::complete_claims`]. `last`: the claim reached the end of
+    /// the range (write it out now; nothing more will come).
+    Write {
+        offset: u64,
+        from: usize,
+        to: usize,
+        last: bool,
+    },
     /// Bytes another connection already claimed: discard, keep reading.
     Skip,
     /// Another connection owns the range now: stop.
@@ -216,15 +223,23 @@ impl Segment {
             offset: from,
             from: (from - at) as usize,
             to: (to - at) as usize,
+            last: !s.open_ended && to >= s.end,
         }
     }
 
     /// The write of `[from, to)` resolved. Returns true once the whole
     /// segment is written.
+    #[cfg(test)]
     pub(crate) fn complete(&self, from: u64, to: u64) -> bool {
+        self.complete_claims(from, to, 1)
+    }
+
+    /// One write covering `claims` consecutive claims (`[from, to)`)
+    /// resolved. Returns true once the whole segment is written.
+    pub(crate) fn complete_claims(&self, from: u64, to: u64, claims: u32) -> bool {
         let mut g = self.lock();
         let s = &mut *g;
-        s.inflight = s.inflight.saturating_sub(1);
+        s.inflight = s.inflight.saturating_sub(claims);
         if from <= s.written {
             s.written = s.written.max(to);
             loop {
@@ -249,10 +264,10 @@ impl Segment {
         !s.open_ended && s.written >= s.end
     }
 
-    /// A write that was claimed failed.
-    pub(crate) fn abort_write(&self) {
+    /// A write covering `claims` claims failed.
+    pub(crate) fn abort_writes(&self, claims: u32) {
         let mut s = self.lock();
-        s.inflight = s.inflight.saturating_sub(1);
+        s.inflight = s.inflight.saturating_sub(claims);
     }
 
     /// The stream of `me` ended after delivering up to file offset `pos`.
@@ -340,7 +355,8 @@ mod tests {
             Claim::Write {
                 offset: 100,
                 from: 0,
-                to: 150
+                to: 150,
+                last: false
             }
         );
         assert!(!s.complete(100, 250));
@@ -350,7 +366,8 @@ mod tests {
             Claim::Write {
                 offset: 250,
                 from: 0,
-                to: 50
+                to: 50,
+                last: true
             }
         );
         assert!(s.complete(250, 300));
@@ -406,7 +423,8 @@ mod tests {
             Claim::Write {
                 offset: 200,
                 from: 100,
-                to: 150
+                to: 150,
+                last: false
             }
         );
         assert!(owner_tok.is_cancelled());

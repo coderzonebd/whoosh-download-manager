@@ -314,13 +314,18 @@ impl Inner {
     }
 
     /// Persist the current record of `id` (no-op if it was removed).
-    async fn save(&self, id: &str) {
+    /// Returns whether it was saved.
+    async fn save(&self, id: &str) -> bool {
         let _g = self.save_lock.lock().await;
-        let rec = self.record(id);
-        if let Some(r) = rec
-            && let Err(e) = self.deps.state.save_download(&r).await
-        {
-            tracing::warn!(id, "saving download record failed: {e}");
+        let Some(r) = self.record(id) else {
+            return false;
+        };
+        match self.deps.state.save_download(&r).await {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!(id, "saving download record failed: {e}");
+                false
+            }
         }
     }
 
@@ -373,6 +378,19 @@ impl Inner {
             f(&mut e.record);
         }
         self.save(id).await;
+    }
+
+    /// Send the current summary of `id` as `event.download.updated`: its
+    /// name, size or category changed after `event.download.added`.
+    pub(crate) fn announce(&self, id: &str) {
+        let summary = {
+            let st = lock(&self.st);
+            match st.downloads.get(id) {
+                Some(e) => self.summary(e),
+                None => return,
+            }
+        };
+        self.bus.emit(Notification::DownloadUpdated(summary));
     }
 
     /// A run ended: apply its outcome, persist, notify, start what's next.
@@ -448,11 +466,30 @@ impl Inner {
             )
         };
         let (progress, state) = event;
+        let completed = state.state == DownloadState::Completed;
+        if completed {
+            // The finished file may have taken a numbered name (`name (1)`).
+            self.announce(id);
+        }
         self.bus.emit(Notification::DownloadProgress(ProgressEvent {
             items: vec![progress],
         }));
         self.bus.emit(Notification::DownloadState(state));
-        self.save(id).await;
+        let saved = self.save(id).await;
+        if completed {
+            // Only once the completed record is durable (saved, then synced
+            // against power loss): until then the journal's finish intent is
+            // what lets a restart recognise the file. A failed save or sync
+            // keeps the entry; it is harmless next to a completed record.
+            let id = id.to_string();
+            if !saved {
+                tracing::warn!(id, "completed record not saved; keeping its journal entry");
+            } else if let Err(e) = self.deps.state.sync().await {
+                tracing::warn!(id, "state sync failed, keeping the journal entry: {e}");
+            } else if let Err(e) = self.deps.journal.remove(&id).await {
+                tracing::warn!(id, "journal remove failed: {e}");
+            }
+        }
         self.pump();
     }
 

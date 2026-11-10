@@ -104,6 +104,11 @@ pub struct Cfg {
     pub content_type: Option<String>,
     /// The size the probe claims, when it should lie.
     pub probe_size: Option<u64>,
+    /// Slow start: a response begins at 1/16 of its rate and approaches it
+    /// with this time constant.
+    pub ramp: Duration,
+    /// Multiplicative jitter of every chunk's pacing (uniform ±`noise`).
+    pub noise: f64,
 }
 
 impl Default for Cfg {
@@ -123,6 +128,8 @@ impl Default for Cfg {
             filename: None,
             content_type: None,
             probe_size: None,
+            ramp: Duration::ZERO,
+            noise: 0.0,
         }
     }
 }
@@ -263,6 +270,10 @@ impl Drop for ActiveGuard {
 struct Body {
     data: Bytes,
     pos: usize,
+    born: Instant,
+    ramp: Duration,
+    noise: f64,
+    rng: fastrand::Rng,
     chunk: usize,
     rate: Option<u64>,
     global: Option<Arc<Bucket>>,
@@ -295,7 +306,13 @@ async fn next_chunk(mut b: Body) -> Option<(Result<Bytes, SourceError>, Body)> {
     }
     let n = b.chunk.min(b.data.len() - b.pos);
     if let Some(r) = b.rate {
-        tokio::time::sleep(Duration::from_secs_f64(n as f64 / r as f64)).await;
+        let mut rate = r as f64;
+        if !b.ramp.is_zero() {
+            let t = b.born.elapsed().as_secs_f64() / b.ramp.as_secs_f64();
+            rate *= 1.0 - (15.0 / 16.0) * (-t).exp();
+        }
+        let jitter = 1.0 + b.noise * (2.0 * b.rng.f64() - 1.0);
+        tokio::time::sleep(Duration::from_secs_f64(n as f64 / rate * jitter)).await;
     }
     if let Some(g) = &b.global {
         g.take(n).await;
@@ -407,6 +424,10 @@ impl RangeSource for FaultSource {
             let b = Body {
                 data: body,
                 pos: 0,
+                born: Instant::now(),
+                ramp: self.cfg.ramp,
+                noise: self.cfg.noise,
+                rng: fastrand::Rng::with_seed(n),
                 chunk: self.cfg.chunk,
                 rate: plan.rate.or(self.cfg.per_conn_bps),
                 global: self.global.clone(),
@@ -437,6 +458,30 @@ pub struct CrashFs {
     /// a store that only grows files, to check the engine does not rely on
     /// truncation.
     pub truncate: bool,
+    /// Freeze `finish` at a chosen point, to kill the process exactly there.
+    pub hooks: Arc<FinishHooks>,
+}
+
+/// Where `finish` stops forever (the test then kills the engine).
+#[derive(Default)]
+pub struct FinishHooks {
+    pub before_rename: std::sync::atomic::AtomicBool,
+    pub after_rename: std::sync::atomic::AtomicBool,
+    /// Set once `finish` reached a hook.
+    pub hit: std::sync::atomic::AtomicBool,
+}
+
+impl FinishHooks {
+    pub fn clear(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.before_rename.store(false, Relaxed);
+        self.after_rename.store(false, Relaxed);
+        self.hit.store(false, Relaxed);
+    }
+
+    pub fn hit(&self) -> bool {
+        self.hit.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl CrashFs {
@@ -455,6 +500,7 @@ impl Default for CrashFs {
             files: Arc::default(),
             finished: Arc::default(),
             truncate: true,
+            hooks: Arc::default(),
         }
     }
 }
@@ -462,6 +508,7 @@ impl Default for CrashFs {
 pub struct CrashFile {
     path: PathBuf,
     truncate: bool,
+    hooks: Arc<FinishHooks>,
     done: std::sync::atomic::AtomicBool,
     volatile: Mutex<Vec<u8>>,
     durable: Mutex<Vec<u8>>,
@@ -480,6 +527,11 @@ impl CrashFs {
 
     pub fn finished(&self) -> HashMap<PathBuf, Bytes> {
         lock(&self.finished).clone()
+    }
+
+    /// Put a finished file in place (another program's, or a tampered one).
+    pub fn put_finished(&self, path: &Path, bytes: Bytes) {
+        lock(&self.finished).insert(path.to_path_buf(), bytes);
     }
 }
 
@@ -531,18 +583,29 @@ impl Storage for CrashFile {
     }
 
     fn finish<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
+        use std::sync::atomic::Ordering::Relaxed;
         Box::pin(async move {
             tokio::task::yield_now().await;
-            let mut done = lock(&self.finished);
-            if done.contains_key(final_path) {
-                return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+            if self.hooks.before_rename.load(Relaxed) {
+                self.hooks.hit.store(true, Relaxed);
+                std::future::pending::<()>().await;
             }
-            // Rename: the part file is gone, the final file is durable.
-            let v = lock(&self.volatile).clone();
-            *lock(&self.durable) = v.clone();
-            done.insert(final_path.to_path_buf(), Bytes::from(v));
-            lock(&self.files).remove(&self.path);
-            self.done.store(true, std::sync::atomic::Ordering::Relaxed);
+            {
+                let mut done = lock(&self.finished);
+                if done.contains_key(final_path) {
+                    return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+                }
+                // Rename: the part file is gone, the final file is durable.
+                let v = lock(&self.volatile).clone();
+                *lock(&self.durable) = v.clone();
+                done.insert(final_path.to_path_buf(), Bytes::from(v));
+                lock(&self.files).remove(&self.path);
+                self.done.store(true, Relaxed);
+            }
+            if self.hooks.after_rename.load(Relaxed) {
+                self.hooks.hit.store(true, Relaxed);
+                std::future::pending::<()>().await;
+            }
             Ok(())
         })
     }
@@ -562,6 +625,7 @@ impl StorageProvider for CrashFs {
                     Arc::new(CrashFile {
                         path: path.to_path_buf(),
                         truncate: self.truncate,
+                        hooks: self.hooks.clone(),
                         done: std::sync::atomic::AtomicBool::new(false),
                         volatile: Mutex::new(init.clone()),
                         durable: Mutex::new(init),
@@ -753,6 +817,11 @@ pub struct SlowState {
     pub inner: MemStateStore,
     pub save_delay: Mutex<Duration>,
     pub profile_delay: Mutex<Duration>,
+    /// `sync()` calls, whether they fail, and how many found a completed
+    /// record already saved.
+    pub syncs: std::sync::atomic::AtomicU64,
+    pub fail_sync: std::sync::atomic::AtomicBool,
+    pub syncs_after_completed: std::sync::atomic::AtomicU64,
 }
 
 impl SlowState {
@@ -761,6 +830,9 @@ impl SlowState {
             inner: MemStateStore::default(),
             save_delay: Mutex::new(Duration::ZERO),
             profile_delay: Mutex::new(Duration::ZERO),
+            syncs: Default::default(),
+            fail_sync: Default::default(),
+            syncs_after_completed: Default::default(),
         }
     }
 }
@@ -795,6 +867,25 @@ impl vayu_core::StateStore for SlowState {
         host: &'a str,
     ) -> BoxFuture<'a, io::Result<Option<vayu_core::HostProfile>>> {
         self.inner.host_profile(host)
+    }
+    fn sync(&self) -> BoxFuture<'_, io::Result<()>> {
+        use std::sync::atomic::Ordering::Relaxed;
+        Box::pin(async move {
+            self.syncs.fetch_add(1, Relaxed);
+            let completed = self
+                .inner
+                .load_downloads()
+                .await?
+                .iter()
+                .any(|r| r.state == vayu_proto::DownloadState::Completed);
+            if completed {
+                self.syncs_after_completed.fetch_add(1, Relaxed);
+            }
+            if self.fail_sync.load(Relaxed) {
+                return Err(io::Error::other("fsync failed"));
+            }
+            Ok(())
+        })
     }
     fn save_host_profile<'a>(
         &'a self,

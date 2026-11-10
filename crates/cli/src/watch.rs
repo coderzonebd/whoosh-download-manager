@@ -81,6 +81,16 @@ fn fold(rows: &mut Vec<DownloadSummary>, stats: &mut Stats, ev: Event) {
                 rows.insert(0, s);
             }
         }
+        event::DOWNLOAD_UPDATED => {
+            // The name, size or category changed after `added` (the server's
+            // file name arrives with the first response): replace the row.
+            if let Ok(s) = serde_json::from_value::<DownloadSummary>(ev.params) {
+                match rows.iter_mut().find(|r| r.id == s.id) {
+                    Some(r) => *r = s,
+                    None => rows.insert(0, s),
+                }
+            }
+        }
         event::DOWNLOAD_STATE => {
             if let Ok(st) = serde_json::from_value::<StateEvent>(ev.params)
                 && let Some(r) = rows.iter_mut().find(|r| r.id == st.id)
@@ -235,5 +245,26 @@ mod tests {
             ev(event::DOWNLOAD_REMOVED, json!({"ids": ["b"]})),
         );
         assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn an_updated_event_replaces_the_add_time_name() {
+        // Added under the URL's name; the server's name arrives later.
+        let mut rows = vec![row("a")];
+        let mut stats = Stats::default();
+        let mut renamed = row("a");
+        renamed.filename = "Episode 5.mp4".into();
+        renamed.total_bytes = Some(42);
+        fold(
+            &mut rows,
+            &mut stats,
+            Event {
+                method: event::DOWNLOAD_UPDATED.into(),
+                params: serde_json::to_value(&renamed).unwrap(),
+            },
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].filename, "Episode 5.mp4");
+        assert_eq!(rows[0].total_bytes, Some(42));
     }
 }

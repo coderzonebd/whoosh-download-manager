@@ -360,3 +360,59 @@ async fn filename_locked_round_trips_and_old_rows_read_false() {
     old8.filename_locked = false;
     assert_eq!(all, vec![record(1), record(4), old8]);
 }
+
+fn rows_in_main_file_alone(path: &Path) -> i64 {
+    // Copy only `state.db`, as if the WAL had been lost.
+    let d = tempfile::tempdir().unwrap();
+    let copy = d.path().join("alone.db");
+    std::fs::copy(path, &copy).unwrap();
+    let c = rusqlite::Connection::open(&copy).unwrap();
+    c.query_row("SELECT count(*) FROM downloads", [], |r| r.get(0))
+        .unwrap()
+}
+
+/// `sync` (contract amendment 2): every save that resolved, and any queued
+/// in the same burst, is in the main database file, fsynced, with nothing
+/// left only in the WAL.
+#[tokio::test]
+async fn sync_moves_every_resolved_save_into_the_database_file() {
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("state.db");
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    s.sync().await.unwrap(); // nothing to do is fine
+    s.save_download(&record(1)).await.unwrap();
+    assert_eq!(rows_in_main_file_alone(&path), 0, "still only in the WAL");
+    let r2 = record(2);
+    let (saved, synced) = futures::join!(s.save_download(&r2), s.sync());
+    saved.unwrap();
+    synced.unwrap();
+    assert_eq!(rows_in_main_file_alone(&path), 2);
+    let wal = PathBuf::from(format!("{}-wal", path.display()));
+    assert_eq!(std::fs::metadata(&wal).map_or(0, |m| m.len()), 0);
+    // Several syncs at once share a checkpoint and all succeed.
+    let rs = join_all((0..5).map(|_| s.sync())).await;
+    assert!(rs.iter().all(Result::is_ok));
+}
+
+/// A checkpoint blocked by another connection is an error, never a false
+/// "durable".
+#[tokio::test]
+async fn sync_fails_when_another_connection_blocks_the_checkpoint() {
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("state.db");
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    s.save_download(&record(1)).await.unwrap();
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader.execute_batch("BEGIN").unwrap();
+    let n: i64 = reader
+        .query_row("SELECT count(*) FROM downloads", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 1);
+    s.save_download(&record(2)).await.unwrap();
+    let e = s.sync().await.unwrap_err();
+    assert_eq!(e.kind(), io::ErrorKind::ResourceBusy, "{e}");
+    reader.execute_batch("COMMIT").unwrap();
+    drop(reader);
+    s.sync().await.unwrap();
+    assert_eq!(rows_in_main_file_alone(&path), 2);
+}
