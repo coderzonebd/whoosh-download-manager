@@ -42,6 +42,8 @@ vayu-labserver = { path = "../labserver" }
 vayu-core = { workspace = true, features = ["testing"] }
 hyper = { version = "1", features = ["client", "server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server"] }
+# A hostile HTTP/3 server in tests/h3_limits.rs; same features as labserver.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.31", default-features = false, features = ["resource"] }

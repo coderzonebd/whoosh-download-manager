@@ -4,7 +4,7 @@
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::Poll;
 use std::time::Duration;
 
@@ -21,6 +21,7 @@ use crate::altsvc::{AltSvcCache, H3Alt};
 use crate::body::{Lease, RespBody};
 use crate::classify::{Cause, Phase, cause_of, describe, transport_error};
 use crate::connect::{self, AttemptError, Resolver};
+use crate::h3guard::{GuardedConn, MAX_FIELD_SECTION, Violation};
 use crate::origin::Origin;
 use crate::pool::{H1Conn, H2Sender, H3Sender, Mux, MuxLease, Pool};
 use crate::tls::Tls;
@@ -90,7 +91,7 @@ pub(crate) struct Outgoing {
 impl Client {
     pub fn new(cfg: NetConfig) -> Self {
         Self {
-            dns: Resolver::default(),
+            dns: Resolver::new(cfg.connect_timeout),
             tls: Tls::new(&cfg),
             alt_svc: AltSvcCache::default(),
             pool: Pool::new(cfg.max_streams_per_connection, cfg.pool_idle_timeout),
@@ -293,6 +294,7 @@ impl Client {
             closed,
             task.abort_handle(),
             None,
+            None,
         )))
     }
 
@@ -469,9 +471,12 @@ impl Client {
         )
         .await?;
         self.dns.connected(host, addr.ip());
-        let h3conn = h3_quinn::Connection::new(conn.clone());
+        let violation: Violation = Arc::new(OnceLock::new());
+        let h3conn = GuardedConn::new(conn.clone(), violation.clone());
+        let mut builder = h3::client::builder();
+        builder.max_field_section_size(MAX_FIELD_SECTION);
         let (mut driver, sender) =
-            match tokio::time::timeout(self.cfg.connect_timeout, h3::client::new(h3conn)).await {
+            match tokio::time::timeout(self.cfg.connect_timeout, builder.build(h3conn)).await {
                 Ok(Ok(x)) => x,
                 Ok(Err(e)) => {
                     return Err(SourceError::Transient(format!(
@@ -491,7 +496,13 @@ impl Client {
             tracing::trace!(error = %e, "http/3 connection ended");
             flag.store(true, Ordering::Release);
         });
-        Ok(Mux::new(sender, closed, task.abort_handle(), Some(conn)))
+        Ok(Mux::new(
+            sender,
+            closed,
+            task.abort_handle(),
+            Some(conn),
+            Some(violation),
+        ))
     }
 
     /// HTTP/3 first; TCP joins the race after `h3_fallback_delay`, or at
@@ -586,6 +597,13 @@ impl Client {
                     headers: parts.headers,
                     body: RespBody::h3(stream, Lease::H3(lease)),
                 })
+            }
+            Ok(Err((_, _))) if lease.conn.violation().is_some() => {
+                lease.retire();
+                Err(Failure::Error(SourceError::Fatal(format!(
+                    "HTTP/3 server exceeded a limit: {}",
+                    lease.conn.violation().unwrap_or_default()
+                ))))
             }
             // The stream could not even be opened: nothing was sent.
             Ok(Err((true, _))) => {

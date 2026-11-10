@@ -70,6 +70,7 @@ mod client;
 mod config;
 mod connect;
 pub mod filename;
+mod h3guard;
 mod origin;
 mod pool;
 mod request;

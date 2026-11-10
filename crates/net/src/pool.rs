@@ -10,13 +10,14 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use tokio::task::AbortHandle;
 
+use crate::h3guard::Violation;
 use crate::lock;
 use crate::origin::Origin;
 
 pub(crate) type ReqBody = http_body_util::Full<Bytes>;
 pub(crate) type H1Sender = hyper::client::conn::http1::SendRequest<ReqBody>;
 pub(crate) type H2Sender = hyper::client::conn::http2::SendRequest<ReqBody>;
-pub(crate) type H3Sender = h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>;
+pub(crate) type H3Sender = h3::client::SendRequest<crate::h3guard::GuardedOpen, Bytes>;
 
 /// RFC 9114 §8.1: closing an HTTP/3 connection without an error.
 const H3_NO_ERROR: u32 = 0x100;
@@ -67,6 +68,8 @@ pub(crate) struct Mux<S> {
     retired: AtomicBool,
     task: AbortHandle,
     quic: Option<quinn::Connection>,
+    /// HTTP/3: set when the server broke a limit (see `h3guard`).
+    violation: Option<Violation>,
 }
 
 impl<S> Mux<S> {
@@ -75,6 +78,7 @@ impl<S> Mux<S> {
         closed: Arc<AtomicBool>,
         task: AbortHandle,
         quic: Option<quinn::Connection>,
+        violation: Option<Violation>,
     ) -> Arc<Self> {
         Arc::new(Self {
             sender,
@@ -84,7 +88,13 @@ impl<S> Mux<S> {
             retired: AtomicBool::new(false),
             task,
             quic,
+            violation,
         })
+    }
+
+    /// Why the server's connection was cut off, if it broke a limit.
+    pub fn violation(&self) -> Option<&str> {
+        self.violation.as_ref()?.get().map(String::as_str)
     }
 
     fn is_closed(&self) -> bool {

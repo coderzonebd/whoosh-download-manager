@@ -4720,6 +4720,7 @@ dependencies = [
  "nix",
  "percent-encoding",
  "quinn",
+ "rcgen",
  "rustls",
  "rustls-platform-verifier",
  "socket2",

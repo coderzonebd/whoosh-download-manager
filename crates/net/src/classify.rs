@@ -78,17 +78,23 @@ pub(crate) fn content_type(headers: &HeaderMap) -> Option<String> {
     text(headers, header::CONTENT_TYPE)
 }
 
-/// `Retry-After` as delta-seconds or an HTTP date (a date in the past is 0).
+/// The longest `Retry-After` passed on. The value is remote-controlled; the
+/// engine adds it to `Instant::now()`, which panics on overflow.
+pub(crate) const MAX_RETRY_AFTER: Duration = Duration::from_secs(3600);
+
+/// `Retry-After` as delta-seconds or an HTTP date (a date in the past is
+/// 0), at most [`MAX_RETRY_AFTER`].
 pub(crate) fn retry_after(headers: &HeaderMap) -> Option<Duration> {
     let v = headers.get(header::RETRY_AFTER)?.to_str().ok()?.trim();
-    if let Some(secs) = digits(v) {
-        return Some(Duration::from_secs(secs));
-    }
-    let at = httpdate::parse_http_date(v).ok()?;
-    Some(
+    let d = if !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) {
+        // Too large for u64: as long as allowed.
+        v.parse().map_or(MAX_RETRY_AFTER, Duration::from_secs)
+    } else {
+        let at = httpdate::parse_http_date(v).ok()?;
         at.duration_since(SystemTime::now())
-            .unwrap_or(Duration::ZERO),
-    )
+            .unwrap_or(Duration::ZERO)
+    };
+    Some(d.min(MAX_RETRY_AFTER))
 }
 
 /// The error for a final (non-redirect) status the source cannot use.
@@ -299,6 +305,17 @@ mod tests {
             "{d:?}"
         );
         assert_eq!(retry_after(&h(&[("retry-after", "soon")])), None);
+        // Remote-controlled: capped, never a value that overflows `now + d`.
+        for huge in [
+            "18446744073709551615",
+            "9223372036854775807",
+            "99999999999999999999999",
+            "Fri, 31 Dec 9999 23:59:59 GMT",
+        ] {
+            let d = retry_after(&h(&[("retry-after", huge)])).unwrap();
+            assert_eq!(d, MAX_RETRY_AFTER, "{huge}");
+            let _ = std::time::Instant::now() + d;
+        }
         assert_eq!(retry_after(&HeaderMap::new()), None);
     }
 

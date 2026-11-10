@@ -135,6 +135,9 @@ impl Tls {
                 t.stream_receive_window(QUIC_STREAM_WINDOW.into())
                     .receive_window(QUIC_CONN_WINDOW.into())
                     .max_concurrent_bidi_streams(0u32.into())
+                    // Control + two QPACK streams, plus room for GREASE;
+                    // each is byte-limited by `h3guard`.
+                    .max_concurrent_uni_streams(16u32.into())
                     // Pings keep a quiet (stalled) server's connection up,
                     // so the body's own idle backstop decides; a vanished
                     // server still times out (pings go unanswered).

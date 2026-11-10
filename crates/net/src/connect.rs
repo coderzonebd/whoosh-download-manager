@@ -30,13 +30,32 @@ enum Entry {
     Pending(Lookup),
 }
 
+/// How a name is turned into addresses (the OS resolver; replaceable in
+/// tests).
+pub(crate) type LookupFn =
+    Arc<dyn Fn(String) -> BoxFuture<'static, io::Result<Vec<IpAddr>>> + Send + Sync>;
+
+fn os_lookup() -> LookupFn {
+    Arc::new(|name: String| {
+        async move {
+            let found = tokio::net::lookup_host((name.as_str(), 0)).await?;
+            Ok(found.map(|a| a.ip()).collect())
+        }
+        .boxed()
+    })
+}
+
 /// Resolves host names; concurrent lookups of one name share one query.
-#[derive(Default)]
+/// A lookup that takes longer than `timeout` fails (for everyone waiting
+/// on it) and is forgotten, so the next request starts a fresh one rather
+/// than joining a stuck `getaddrinfo`.
 pub(crate) struct Resolver {
     cache: Mutex<HashMap<String, Entry>>,
     /// The address that last connected, per host: tried first next time
     /// (RFC 8305 §4 suggests remembering what worked).
     preferred: Mutex<HashMap<String, IpAddr>>,
+    timeout: Duration,
+    lookup: LookupFn,
 }
 
 impl std::fmt::Debug for Resolver {
@@ -46,6 +65,19 @@ impl std::fmt::Debug for Resolver {
 }
 
 impl Resolver {
+    pub fn new(timeout: Duration) -> Self {
+        Self::with_lookup(timeout, os_lookup())
+    }
+
+    pub fn with_lookup(timeout: Duration, lookup: LookupFn) -> Self {
+        Self {
+            cache: Mutex::new(HashMap::new()),
+            preferred: Mutex::new(HashMap::new()),
+            timeout,
+            lookup,
+        }
+    }
+
     /// Addresses for `host`, in the order to try them: the last address
     /// that worked first, then families interleaved (RFC 8305 §4).
     pub async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, SourceError> {
@@ -62,15 +94,19 @@ impl Resolver {
                 }
                 Some(Entry::Pending(l)) => l.clone(),
                 _ => {
-                    let name = host.to_string();
+                    let query = (self.lookup)(host.to_string());
+                    let limit = self.timeout;
                     let l: Lookup = async move {
-                        let found = tokio::net::lookup_host((name.as_str(), 0))
+                        // Inside the shared future: every waiter, including
+                        // later joiners, sees the same deadline.
+                        let found = tokio::time::timeout(limit, query)
                             .await
+                            .map_err(|_| format!("timed out after {limit:?}"))?
                             .map_err(|e| e.to_string())?;
                         let mut out: Vec<IpAddr> = Vec::new();
-                        for a in found {
-                            if !out.contains(&a.ip()) {
-                                out.push(a.ip());
+                        for ip in found {
+                            if !out.contains(&ip) {
+                                out.push(ip);
                             }
                         }
                         if out.is_empty() {
@@ -85,22 +121,26 @@ impl Resolver {
                 }
             }
         };
-        let res = lookup.await;
+        let res = lookup.clone().await;
         let mut cache = lock(&self.cache);
+        // Only this lookup's own entry is replaced or removed.
+        let ours = matches!(cache.get(host), Some(Entry::Pending(p)) if p.ptr_eq(&lookup));
         match res {
             Ok(addrs) => {
-                cache.insert(
-                    host.to_string(),
-                    Entry::Ready {
-                        addrs: addrs.clone(),
-                        expires: Instant::now() + DNS_TTL,
-                    },
-                );
+                if ours || !cache.contains_key(host) {
+                    cache.insert(
+                        host.to_string(),
+                        Entry::Ready {
+                            addrs: addrs.clone(),
+                            expires: Instant::now() + DNS_TTL,
+                        },
+                    );
+                }
                 drop(cache);
                 Ok(self.order(host, &addrs))
             }
             Err(e) => {
-                if matches!(cache.get(host), Some(Entry::Pending(_))) {
+                if ours {
                     cache.remove(host);
                 }
                 Err(SourceError::Transient(format!(
@@ -274,9 +314,55 @@ mod tests {
         assert!(interleave(&[]).is_empty());
     }
 
+    fn fake(calls: &Arc<std::sync::atomic::AtomicUsize>, answer: Option<Vec<IpAddr>>) -> LookupFn {
+        let calls = calls.clone();
+        Arc::new(move |_name| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            match answer.clone() {
+                Some(a) => futures::future::ready(Ok(a)).boxed(),
+                None => futures::future::pending().boxed(), // a stuck getaddrinfo
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn stuck_lookup_times_out_and_is_not_rejoined() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let r = Resolver::with_lookup(Duration::from_millis(100), fake(&calls, None));
+        let t0 = Instant::now();
+        // Two callers share the stuck lookup; both get the timeout.
+        let (a, b) = tokio::join!(r.resolve("stuck.test"), r.resolve("stuck.test"));
+        assert!(
+            matches!(&a, Err(SourceError::Transient(m)) if m.contains("timed out")),
+            "{a:?}"
+        );
+        assert!(matches!(b, Err(SourceError::Transient(_))));
+        assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
+        assert_eq!(calls.load(SeqCst), 1);
+        // The next request starts a fresh lookup instead of the stuck one.
+        assert!(r.resolve("stuck.test").await.is_err());
+        assert_eq!(calls.load(SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn answers_are_cached_and_failures_are_not() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let ip: IpAddr = "192.0.2.7".parse().unwrap();
+        let r = Resolver::with_lookup(Duration::from_secs(5), fake(&calls, Some(vec![ip, ip])));
+        assert_eq!(r.resolve("a.test").await.unwrap(), vec![ip]);
+        assert_eq!(r.resolve("a.test").await.unwrap(), vec![ip]);
+        assert_eq!(calls.load(SeqCst), 1);
+        let empty = Resolver::with_lookup(Duration::from_secs(5), fake(&calls, Some(vec![])));
+        assert!(empty.resolve("b.test").await.is_err());
+        assert!(empty.resolve("b.test").await.is_err());
+        assert_eq!(calls.load(SeqCst), 3);
+    }
+
     #[tokio::test]
     async fn literal_and_preferred_order() {
-        let r = Resolver::default();
+        let r = Resolver::new(Duration::from_secs(10));
         assert_eq!(
             r.resolve("127.0.0.1").await.unwrap(),
             vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]

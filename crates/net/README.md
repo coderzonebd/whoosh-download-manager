@@ -92,15 +92,17 @@ Crypto is rustls with `ring` (no C toolchain), the same as labserver.
 6. *Identity.* `Accept-Encoding: identity` on every request.
 
 **Connecting.** DNS via the OS resolver (`getaddrinfo`), cached 60 s,
-concurrent lookups of one name shared. Happy Eyeballs (RFC 8305) across
+concurrent lookups of one name shared; a lookup taking longer than
+`connect_timeout` fails for everyone waiting on it and is forgotten, so the
+next request starts a fresh one instead of joining a stuck `getaddrinfo`. Happy Eyeballs (RFC 8305) across
 every A/AAAA record: families interleaved, a new attempt every 250 ms or as
 soon as one fails, the address that last worked tried first; the same race
 is used for QUIC. TLS 1.3/1.2 with in-memory session resumption, ALPN
 `h2`/`http/1.1`.
 
 **HTTP/3.** `Alt-Svc: h3=…` on a TCP response from an `https` origin is
-cached per origin until `ma` (default 24 h; `clear` honoured; `http://`
-ignored). Requests to that origin then try QUIC first; TCP joins after
+cached per origin until `ma` (default 24 h, capped at 30 days; `clear`
+honoured; `http://` ignored). Requests to that origin then try QUIC first; TCP joins after
 `h3_fallback_delay`, or at once if QUIC fails. If TCP wins or QUIC fails,
 HTTP/3 is not tried for that origin for 5 minutes. `remember_http3` seeds
 the cache (for host profiles). quinn sends a keep-alive PING every
@@ -111,6 +113,20 @@ labserver-h3.md): the client never relies on its own close reaching the
 server, and a connection whose request failed is retired at once, because
 a server's stream reset can arrive a moment before its connection close.
 
+**HTTP/3 memory limits.** h3 0.0.8 buffers every non-DATA frame whole,
+whatever length its header announces, and quinn keeps granting credit, so a
+hostile server could make the client buffer gigabytes. `src/h3guard.rs`
+wraps h3-quinn's receive streams and checks bytes before h3 sees them: on a
+request stream a non-DATA frame may announce at most 64 KiB, and at most
+64 KiB of non-DATA framing may arrive without DATA payload in between (which
+also bounds everything before the response head); DATA payload passes
+through untouched (only frame headers are parsed). A server-opened
+unidirectional stream (control, QPACK, other) may carry 64 KiB in total, at
+most 16 of them at once; `SETTINGS_MAX_FIELD_SECTION_SIZE` is 64 KiB. A
+violation closes the QUIC connection with `H3_EXCESSIVE_LOAD` and the
+request fails with `Fatal` (the server is broken or hostile; retrying will
+not help).
+
 **Requests.** Built from `vayu_proto::RequestContext`: method (default
 GET), headers, `cookie`, `referer`, `user_agent` (the explicit fields win
 over the header list), `bodyBase64`. Dropped: hop-by-hop headers (including
@@ -120,7 +136,10 @@ which would turn a download into a revalidation). URL credentials become
 `Authorization: Basic`. Redirects: up to 10, `final_url` recorded; 303 (and
 301/302 after a POST) become a body-less GET; **on a change of origin
 (scheme, host or port) `Cookie` and `Authorization` are dropped** for the
-rest of the chain and for every later request that reuses it. The end of a
+rest of the chain and for every later request that reuses it, and the
+browser's `Referer` follows `strict-origin-when-cross-origin`: the full page
+URL only to the page's own origin, just its origin elsewhere, nothing after
+a downgrade from `https` to `http`. The end of a
 successful chain is cached per source, so a range request does not follow
 the chain again.
 
@@ -139,12 +158,12 @@ Windows also `<>:"|?*` → `_`).
 | What happened | `SourceError` |
 |---|---|
 | 401, 403, 410 | `LinkExpired` |
-| 429, 503 | `Throttled { retry_after }` (`Retry-After` seconds or HTTP date) |
+| 429, 503 | `Throttled { retry_after }` (`Retry-After` seconds or HTTP date, capped at 1 hour) |
 | Connection refused, or reset/closed before the response head (TCP RST, HTTP/2 `REFUSED_STREAM`/GOAWAY, HTTP/3 stream or connection close) | `Throttled { retry_after: None }` |
 | 408, 421, 425, 5xx (but 503), timeouts, DNS failure, any error mid-body, body ended early | `Transient` |
 | 416, changed validators | `RemoteChanged` |
 | `200` to a ranged request, wrong `Content-Range` | `RangesUnsupported` (or `RemoteChanged`, see point 3) |
-| Other 4xx, bad URL or scheme, too many redirects, untrusted certificate | `Fatal` |
+| Other 4xx, bad URL or scheme, too many redirects, untrusted certificate, an HTTP/3 server breaking the memory limits | `Fatal` |
 
 ## Testing
 
@@ -152,7 +171,7 @@ Windows also `<>:"|?*` → `_`).
 scripts/cargo-slot.sh cargo test -p vayu-net
 ```
 
-About 130 tests, ~30–60 s on the development laptop (debug build, load
+About 150 tests, ~20–60 s on the development laptop (debug build, load
 5–10):
 
 - unit tests (`src/`): Content-Disposition and sanitising, header
@@ -174,7 +193,12 @@ About 130 tests, ~30–60 s on the development laptop (debug build, load
   conflicts, every status class, refused connections, untrusted
   certificates, redirect security and methods, the redirect limit, the
   cached redirect target expiring, keep-alive, preconnect, pool expiry,
-  and a server closing idle connections.
+  and a server closing idle connections, hostile `Content-Range` and
+  `Retry-After` values, and `Referer` trimming on redirects;
+- `tests/h3_limits.rs`: a hostile HTTP/3 server (quinn + rcgen) announcing
+  a 2^40-byte HEADERS frame, sending endless GREASE frames, a huge frame
+  after valid data, and flooding its control stream: each fails with
+  `Fatal` within moments.
 
 Timing-based assertions are loose (they pass at load average 8+), but a
 machine starved for minutes can still trip them.

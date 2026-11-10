@@ -260,7 +260,7 @@ fn check_response(
                 // the range) beats a mismatched range.
                 if expect.conflicts_with(&seen) {
                     Err(SourceError::RemoteChanged)
-                } else if first == r.start && last + 1 == r.end {
+                } else if first == r.start && last.checked_add(1) == Some(r.end) {
                     Ok((Some(r.len()), seen))
                 } else {
                     Err(SourceError::RangesUnsupported)
@@ -288,7 +288,7 @@ fn check_response(
                 first: 0,
                 last,
                 total: Some(t),
-            }) if last + 1 == t => Ok((Some(t), classify::validators(h, Some(t)))),
+            }) if last.checked_add(1) == Some(t) => Ok((Some(t), classify::validators(h, Some(t)))),
             _ => Err(SourceError::RangesUnsupported),
         },
         (_, _) => Err(classify::status_error(resp.status, h)),

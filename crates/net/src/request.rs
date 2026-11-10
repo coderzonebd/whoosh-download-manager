@@ -147,10 +147,11 @@ impl Template {
         })
     }
 
-    /// Applies a redirect to `to` with `status` (RFC 9110 §15.4): drops
-    /// credentials on a change of origin, and turns the request into a
+    /// Applies a redirect to `to` with `status` (RFC 9110 §15.4): on a
+    /// change of origin, drops `Cookie` and `Authorization` and trims the
+    /// `Referer` (see [`referrer_for`]); turns the request into a
     /// body-less `GET` on 303, and on 301/302 after a `POST` (as browsers
-    /// do). Returns whether credentials were dropped.
+    /// do). Returns whether the origin changed.
     pub fn redirect(&mut self, from: &Url, to: &Url, status: u16) -> bool {
         let to_get = match status {
             303 => self.method != Method::HEAD,
@@ -168,9 +169,45 @@ impl Template {
         if cross {
             self.headers.remove(header::COOKIE);
             self.headers.remove(header::AUTHORIZATION);
+            let referer = self
+                .headers
+                .get(header::REFERER)
+                .map(|v| v.as_bytes().to_vec());
+            if let Some(r) = referer {
+                match referrer_for(&String::from_utf8_lossy(&r), to)
+                    .and_then(|v| HeaderValue::from_str(&v).ok())
+                {
+                    Some(v) => {
+                        self.headers.insert(header::REFERER, v);
+                    }
+                    None => {
+                        self.headers.remove(header::REFERER);
+                    }
+                }
+            }
         }
         cross
     }
+}
+
+/// The `Referer` to send to `to` after a cross-origin redirect, given the
+/// page URL the browser sent (`strict-origin-when-cross-origin`, the
+/// browsers' default policy): the full URL only to the page's own origin;
+/// just the page's origin elsewhere; nothing on a downgrade from `https`
+/// to `http`, or when the value is not a URL.
+pub(crate) fn referrer_for(referer: &str, to: &Url) -> Option<String> {
+    let page = Url::parse(referer.trim()).ok()?;
+    if page.scheme() == "https" && to.scheme() == "http" {
+        return None;
+    }
+    let origin = page.origin();
+    if !origin.is_tuple() {
+        return None;
+    }
+    if origin == to.origin() {
+        return Some(referer.trim().to_string());
+    }
+    Some(format!("{}/", origin.ascii_serialization()))
 }
 
 #[cfg(test)]
@@ -332,6 +369,56 @@ mod tests {
             assert!(!t.headers.contains_key(header::AUTHORIZATION), "{to}");
             assert_eq!(t.headers["x-other"], "1");
         }
+    }
+
+    #[test]
+    fn referer_is_trimmed_on_cross_origin_redirects() {
+        let page = "https://site.example/files/page?token=secret";
+        let c = RequestContext {
+            referer: Some(page.into()),
+            ..Default::default()
+        };
+        let from = url("https://dl.example/f");
+        let base = Template::new(&from, Some(&c), "ua").unwrap();
+        let after = |to: &str| {
+            let mut t = base.clone();
+            t.redirect(&from, &url(to), 302);
+            t.headers
+                .get(header::REFERER)
+                .map(|v| v.to_str().unwrap().to_string())
+        };
+        // Same origin as the previous hop: untouched.
+        assert_eq!(after("https://dl.example/g").as_deref(), Some(page));
+        // Another origin: the page's origin only.
+        assert_eq!(
+            after("https://cdn.example/f").as_deref(),
+            Some("https://site.example/")
+        );
+        // Back to the page's own origin: the full URL is fine.
+        assert_eq!(after("https://site.example/x").as_deref(), Some(page));
+        // Downgrade to cleartext: nothing.
+        assert_eq!(after("http://cdn.example/f"), None);
+        assert_eq!(after("http://site.example/x"), None);
+        // An http page keeps its origin on an http hop.
+        assert_eq!(
+            referrer_for("http://a.example/p?q=1", &url("http://b.example/")).as_deref(),
+            Some("http://a.example/")
+        );
+        // Not a URL (or an opaque origin): dropped.
+        assert_eq!(referrer_for("not a url", &url("https://b.example/")), None);
+        assert_eq!(
+            referrer_for("data:text/plain,x", &url("https://b.example/")),
+            None
+        );
+        // Credentials in the page URL never leak through the origin form.
+        assert_eq!(
+            referrer_for(
+                "https://u:p@site.example:8443/p",
+                &url("https://b.example/")
+            )
+            .as_deref(),
+            Some("https://site.example:8443/")
+        );
     }
 
     #[test]

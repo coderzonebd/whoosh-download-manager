@@ -16,7 +16,7 @@ use crate::classify::describe;
 use crate::origin::Origin;
 use crate::pool::{H1Conn, H2Sender, H3Sender, MuxLease, Pool};
 
-pub(crate) type H3Stream = h3::client::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>;
+pub(crate) type H3Stream = h3::client::RequestStream<crate::h3guard::GuardedBidi<Bytes>, Bytes>;
 
 /// The connection a response is using.
 pub(crate) enum Lease {
@@ -99,7 +99,7 @@ impl RespBody {
     }
 
     /// The next chunk of body bytes (zero-copy), `None` at the end.
-    pub fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, String>>> {
+    pub fn poll_chunk(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, SourceError>>> {
         match &mut self.inner {
             Inner::Hyper(b) => loop {
                 match ready!(Pin::new(&mut *b).poll_frame(cx)) {
@@ -114,7 +114,10 @@ impl RespBody {
                     }
                     Some(Err(e)) => {
                         retire(&self.lease);
-                        return Poll::Ready(Some(Err(describe(&e))));
+                        return Poll::Ready(Some(Err(SourceError::Transient(format!(
+                            "reading body: {}",
+                            describe(&e)
+                        )))));
                     }
                 }
             },
@@ -126,7 +129,16 @@ impl RespBody {
                 Ok(None) => Poll::Ready(None),
                 Err(e) => {
                     retire(&self.lease);
-                    Poll::Ready(Some(Err(e.to_string())))
+                    let err = match &self.lease {
+                        Lease::H3(l) if l.conn.violation().is_some() => {
+                            SourceError::Fatal(format!(
+                                "HTTP/3 server exceeded a limit: {}",
+                                l.conn.violation().unwrap_or_default()
+                            ))
+                        }
+                        _ => SourceError::Transient(format!("reading body: {e}")),
+                    };
+                    Poll::Ready(Some(Err(err)))
                 }
             },
         }
@@ -273,9 +285,7 @@ impl Stream for CheckedBody {
                     }
                     return Poll::Ready(Some(Ok(b)));
                 }
-                Poll::Ready(Some(Err(e))) => {
-                    return this.fail(SourceError::Transient(format!("reading body: {e}")));
-                }
+                Poll::Ready(Some(Err(e))) => return this.fail(e),
                 Poll::Ready(None) => {
                     if let Some(rem) = this.remaining.filter(|&r| r > 0) {
                         return this.fail(SourceError::Transient(format!(
@@ -290,7 +300,10 @@ impl Stream for CheckedBody {
                     if this.timer.as_mut().poll(cx).is_pending() {
                         return Poll::Pending;
                     }
-                    let deadline = this.last + this.idle;
+                    // A huge configured `idle` means no backstop.
+                    let Some(deadline) = this.last.checked_add(this.idle) else {
+                        return Poll::Pending;
+                    };
                     if Instant::now() >= deadline {
                         return this.fail(SourceError::Transient(format!(
                             "no data for {:?}",

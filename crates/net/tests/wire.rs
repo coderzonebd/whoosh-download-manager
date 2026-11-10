@@ -333,6 +333,49 @@ async fn an_empty_body_ends_without_chunks() {
     assert!(s.next().await.is_none());
 }
 
+/// Hostile `Content-Range` values: no arithmetic overflow (debug builds
+/// panic on one), just `RangesUnsupported`.
+#[tokio::test]
+async fn extreme_content_range_is_ranges_unsupported_not_a_panic() {
+    let fx = Fixture::start(|_s: &Seen| {
+        Reply::new(206)
+            .header("Content-Range", "bytes 0-18446744073709551615/*")
+            .body(&BODY[..10])
+    })
+    .await;
+    let f = plain_factory(|_| {});
+    let src = f.source(&fx.url("/ranged"), None).unwrap();
+    let e = open_err(&*src, Some(r(0, 10)), Validators::default()).await;
+    assert_eq!(e, SourceError::RangesUnsupported);
+    let src = f.source(&fx.url("/unranged"), None).unwrap();
+    let e = open_err(&*src, None, Validators::default()).await;
+    assert_eq!(e, SourceError::RangesUnsupported);
+}
+
+/// A remote `Retry-After` is capped (an engine computes `now + it`).
+#[tokio::test]
+async fn huge_retry_after_is_capped() {
+    let fx =
+        Fixture::start(|_s: &Seen| Reply::new(429).header("Retry-After", "18446744073709551615"))
+            .await;
+    let e = plain_factory(|_| {})
+        .source(&fx.url("/"), None)
+        .unwrap()
+        .probe()
+        .await
+        .unwrap_err();
+    match e {
+        SourceError::Throttled {
+            retry_after: Some(d),
+            ..
+        } => {
+            assert_eq!(d, Duration::from_secs(3600));
+            let _ = Instant::now() + d;
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn unsatisfiable_range_is_remote_changed() {
     let fx =
@@ -523,6 +566,39 @@ async fn cross_origin_redirect_drops_cookie_and_authorization() {
         assert_eq!(s.header("cookie"), None);
         assert_eq!(s.header("authorization"), None);
         assert_eq!(s.header("x-other"), Some("kept"));
+    }
+}
+
+/// The browser's `Referer` reaches another origin only as the page's
+/// origin, and not at all after a downgrade to `http`.
+#[tokio::test]
+async fn cross_origin_redirect_trims_the_referer() {
+    let target = Fixture::start(honest).await;
+    let to = target.url("/file");
+    let start = Fixture::start(move |_s: &Seen| Reply::new(302).header("Location", &to)).await;
+    let f = plain_factory(|_| {});
+    for (page, want) in [
+        (
+            "http://site.example/dl/page?token=secret",
+            Some("http://site.example/"),
+        ),
+        ("https://site.example/dl/page?token=secret", None),
+    ] {
+        let ctx = RequestContext {
+            referer: Some(page.into()),
+            ..Default::default()
+        };
+        f.source(&start.url("/away"), Some(&ctx))
+            .unwrap()
+            .probe()
+            .await
+            .unwrap();
+        assert_eq!(
+            start.last().header("referer"),
+            Some(page),
+            "first hop as the browser sent it"
+        );
+        assert_eq!(target.last().header("referer"), want, "{page}");
     }
 }
 

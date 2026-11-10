@@ -12,6 +12,16 @@ use crate::origin::Origin;
 
 /// RFC 7838 §3.1: freshness when `ma` is absent.
 const DEFAULT_MAX_AGE: Duration = Duration::from_secs(24 * 3600);
+/// The longest an `Alt-Svc` entry (from a server's `ma` or a caller's
+/// `ttl`) is kept. `ma` is remote-controlled: an unbounded value would
+/// overflow `Instant` arithmetic.
+pub(crate) const MAX_AGE_CAP: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// When an entry of age `d` (capped) expires. Never panics.
+fn expiry(d: Duration) -> Instant {
+    let now = Instant::now();
+    now.checked_add(d.min(MAX_AGE_CAP)).unwrap_or(now)
+}
 /// How long HTTP/3 is not tried again for an origin after it failed or
 /// lost the race against TCP.
 pub(crate) const BROKEN_FOR: Duration = Duration::from_secs(300);
@@ -51,7 +61,7 @@ impl AltSvcCache {
                 lock(&self.entries).remove(origin);
             }
             Parsed::H3 { alt, max_age } => {
-                let expires = Instant::now() + max_age;
+                let expires = expiry(max_age);
                 lock(&self.entries).insert(origin.clone(), Entry { alt, expires });
             }
             Parsed::Nothing => {}
@@ -61,7 +71,7 @@ impl AltSvcCache {
     /// Records an HTTP/3 endpoint for `origin` (from a host profile).
     pub fn remember(&self, origin: &Origin, alt: H3Alt, ttl: Duration) {
         if origin.is_https() && !ttl.is_zero() {
-            let expires = Instant::now() + ttl;
+            let expires = expiry(ttl);
             lock(&self.entries).insert(origin.clone(), Entry { alt, expires });
             lock(&self.broken).remove(origin);
         }
@@ -133,9 +143,9 @@ fn parse(v: &str) -> Parsed {
         for p in parts {
             if let Some((k, val)) = p.split_once('=')
                 && k.trim().eq_ignore_ascii_case("ma")
-                && let Ok(secs) = val.trim().trim_matches('"').parse::<u64>()
+                && let Some(secs) = seconds(val.trim().trim_matches('"'))
             {
-                max_age = Duration::from_secs(secs);
+                max_age = Duration::from_secs(secs).min(MAX_AGE_CAP);
             }
         }
         if max_age.is_zero() {
@@ -150,6 +160,14 @@ fn parse(v: &str) -> Parsed {
         };
     }
     Parsed::Nothing
+}
+
+/// Delta-seconds; values too large for `u64` saturate.
+fn seconds(v: &str) -> Option<u64> {
+    if v.is_empty() || !v.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(v.parse().unwrap_or(u64::MAX))
 }
 
 fn split_unquoted(s: &str, sep: char) -> Vec<&str> {
@@ -199,6 +217,42 @@ mod tests {
         assert_eq!(parse("h3=\":0\""), Parsed::Nothing);
         assert_eq!(parse("h3=\":443\"; ma=0"), Parsed::Nothing);
         assert_eq!(parse("garbage"), Parsed::Nothing);
+    }
+
+    #[test]
+    fn huge_max_age_is_capped_not_a_panic() {
+        let cap = MAX_AGE_CAP.as_secs();
+        for ma in [
+            "9223372036854775807",
+            "18446744073709551615",
+            "99999999999999999999999999",
+        ] {
+            assert_eq!(
+                parse(&format!("h3=\":443\"; ma={ma}")),
+                h3(None, 443, cap),
+                "{ma}"
+            );
+        }
+        let c = AltSvcCache::default();
+        let o = Origin::parse_url(&url::Url::parse("https://a.test/").unwrap()).unwrap();
+        let mut hm = HeaderMap::new();
+        hm.insert(
+            header::ALT_SVC,
+            HeaderValue::from_static("h3=\":443\"; ma=18446744073709551615"),
+        );
+        c.observe(&o, &hm);
+        assert!(c.get(&o).is_some());
+        c.remember(
+            &o,
+            H3Alt {
+                host: None,
+                port: 8443,
+            },
+            Duration::MAX,
+        );
+        assert_eq!(c.get(&o).map(|a| a.port), Some(8443));
+        let e = lock(&c.entries)[&o].expires;
+        assert!(e <= Instant::now() + MAX_AGE_CAP);
     }
 
     #[test]
