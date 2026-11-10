@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Runs the real WebSocket client (Node's global WebSocket) against a tiny
 // fake daemon built on the `ws` package.
+import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
+import { verifyHelloProof } from "./auth";
 import { VayuConnectionError, VayuRpcError } from "./errors";
 import { ErrorCode } from "./types";
 import { connectWs, type ConnectionStatus, type WsClientOptions, type WsVayuClient } from "./ws";
@@ -17,11 +19,17 @@ interface Req {
 
 type Handler = (req: Req, sock: ServerSocket) => unknown;
 
+/** The daemon's side of PROTOCOL.md §1 authentication, computed independently with node:crypto. */
+const proofFor = (token: string, nonce: unknown) =>
+  createHmac("sha256", token).update(`vayu-hello-proof-v1\n${String(nonce)}`).digest("hex");
+
 class FakeDaemon {
   readonly wss: WebSocketServer;
   readonly received: Req[] = [];
   readonly sockets: ServerSocket[] = [];
   token = "secret";
+  /** Accept any token and answer with a proof made from the wrong key (a port squatter). */
+  impostor = false;
   /** Respond to a method; return undefined to stay silent. Throw {code,message} for an error. */
   handlers = new Map<string, Handler>();
 
@@ -34,11 +42,12 @@ class FakeDaemon {
         const req = JSON.parse(String(raw)) as Req;
         this.received.push(req);
         if (!authed) {
-          const p = req.params as { token?: string; protocol?: number } | undefined;
-          if (req.method !== "session.hello" || p?.token !== this.token) return sock.close(4401, "unauthorized");
-          if (p.protocol !== 1) return sock.close(4426, "protocol");
+          const p = req.params as { token?: string; nonce?: string; protocol?: number } | undefined;
+          if (req.method !== "session.hello" || (!this.impostor && p?.token !== this.token)) return sock.close(4401, "unauthorized");
+          if (p?.protocol !== 1) return sock.close(4426, "protocol");
           authed = true;
-          return this.reply(sock, req.id, { daemonVersion: "test", protocol: 1, capabilities: ["http"] });
+          const proof = proofFor(this.impostor ? "not-the-token" : this.token, p.nonce);
+          return this.reply(sock, req.id, { daemonVersion: "test", protocol: 1, capabilities: ["http"], proof });
         }
         const h = this.handlers.get(req.method);
         if (!h) return this.error(sock, req.id, -32601, "method not found");
@@ -216,7 +225,8 @@ describe("WebSocket client", () => {
     back.on("connection", (s) =>
       s.on("message", (raw) => {
         const r = JSON.parse(String(raw)) as Req;
-        s.send(JSON.stringify({ jsonrpc: "2.0", id: r.id, result: r.method === "session.hello" ? { daemonVersion: "2", protocol: 1, capabilities: [] } : { downloadBps: 0, uploadBps: 0, active: 9, queued: 0 } }));
+        const nonce = (r.params as { nonce?: string } | undefined)?.nonce;
+        s.send(JSON.stringify({ jsonrpc: "2.0", id: r.id, result: r.method === "session.hello" ? { daemonVersion: "2", protocol: 1, capabilities: [], proof: proofFor("secret", nonce) } : { downloadBps: 0, uploadBps: 0, active: 9, queued: 0 } }));
       }),
     );
     try {
@@ -227,6 +237,41 @@ describe("WebSocket client", () => {
       for (const s of back.clients) s.terminate();
       await new Promise((r) => back.close(() => r(undefined)));
     }
+  });
+
+  it("sends a fresh nonce with every hello", async () => {
+    const c = connect();
+    await c.ready();
+    daemon.dropAll();
+    await until(() => daemon.received.filter((r) => r.method === "session.hello").length === 2);
+    const nonces = daemon.received
+      .filter((r) => r.method === "session.hello")
+      .map((r) => (r.params as { nonce: string }).nonce);
+    for (const n of nonces) expect(n).toMatch(/^[0-9a-f]{32}$/);
+    expect(nonces[0]).not.toBe(nonces[1]);
+  });
+
+  it("sends nothing to a process that cannot prove it is the daemon", async () => {
+    daemon.impostor = true;
+    const c = connect({ token: "stale-token" });
+    const pending = c.call("download.add", { url: "https://example.com/", request: { cookie: "session=SECRET" } });
+    pending.catch(() => {});
+    await until(() => daemon.received.filter((r) => r.method === "session.hello").length >= 2);
+    expect(daemon.received.every((r) => r.method === "session.hello")).toBe(true);
+    expect(c.status.state).not.toBe("open");
+    c.close();
+    await expect(pending).rejects.toBeInstanceOf(VayuConnectionError);
+  });
+
+  it("does not act on notifications before the proof is checked", async () => {
+    daemon.impostor = true;
+    const seen: unknown[] = [];
+    const c = connect();
+    c.on("event.stats", (s) => seen.push(s));
+    await until(() => daemon.received.length >= 1);
+    daemon.notify("event.stats", { downloadBps: 1, uploadBps: 0, active: 0, queued: 0 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen).toEqual([]);
   });
 
   it("does not reconnect after the daemon rejects the token (4401)", async () => {
@@ -273,6 +318,26 @@ describe("WebSocket client", () => {
 
   it("refuses to send session.hello manually", async () => {
     const c = connect();
-    await expect(c.call("session.hello", { token: "", protocol: 1, client: { name: "", version: "" } })).rejects.toThrow(/sent by the client/);
+    await expect(c.call("session.hello", { token: "", nonce: "", protocol: 1, client: { name: "", version: "" } })).rejects.toThrow(/sent by the client/);
+  });
+});
+
+describe("hello proof", () => {
+  // The same vector as crates/proto/src/auth.rs.
+  const token = "test-token";
+  const nonce = "00112233445566778899aabbccddeeff";
+  const proof = "e24aa162373347d76ec158c8507ca1a4157a8c521990640275c6d6c50ad548e4";
+
+  it("accepts the shared test vector", async () => {
+    expect(proofFor(token, nonce)).toBe(proof);
+    expect(await verifyHelloProof(token, nonce, proof)).toBe(true);
+  });
+
+  it("rejects a wrong token, nonce or malformed proof", async () => {
+    expect(await verifyHelloProof("other", nonce, proof)).toBe(false);
+    expect(await verifyHelloProof(token, "0".repeat(32), proof)).toBe(false);
+    expect(await verifyHelloProof(token, nonce, proof.toUpperCase())).toBe(false);
+    expect(await verifyHelloProof(token, nonce, proof.slice(2))).toBe(false);
+    expect(await verifyHelloProof(token, nonce, undefined)).toBe(false);
   });
 });

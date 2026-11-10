@@ -12,6 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod auth;
+pub mod runtime;
 pub mod service;
 
 /// Bumped on any breaking change to methods, params, results or events.
@@ -26,6 +28,8 @@ pub const RPC_PATH: &str = "/rpc";
 /// JSON-RPC method names.
 pub mod method {
     pub const SESSION_HELLO: &str = "session.hello";
+    /// Stops the daemon (authenticated; the daemon's own, not `Service`).
+    pub const DAEMON_SHUTDOWN: &str = "daemon.shutdown";
 
     pub const DOWNLOAD_PROBE: &str = "download.probe";
     pub const DOWNLOAD_ADD: &str = "download.add";
@@ -91,6 +95,23 @@ pub mod error_code {
     pub const MESSAGE_TOO_LARGE: i32 = -32008;
 }
 
+/// WebSocket close codes (PROTOCOL.md §1).
+pub mod close_code {
+    /// Bad or missing token or nonce, or a first message that is not a hello.
+    /// Final: the client must not retry with the same token.
+    pub const UNAUTHORIZED: u16 = 4401;
+    /// No `session.hello` within 10 s. Retryable.
+    pub const HELLO_TIMEOUT: u16 = 4408;
+    /// Incompatible protocol version. Final.
+    pub const PROTOCOL_MISMATCH: u16 = 4426;
+    /// The client fell more than 4096 lossless notifications behind.
+    /// Retryable (reconnect and re-read state).
+    pub const TOO_SLOW: u16 = 4429;
+}
+
+/// Opaque to clients. Daemons generate ids matching `[a-z0-9_-]{1,64}`
+/// (vayu-engine: `dl_` + lower-case hex); storage relies on that to keep
+/// file names short and portable.
 pub type DownloadId = String;
 pub type UnixMillis = i64;
 
@@ -100,6 +121,9 @@ pub type UnixMillis = i64;
 #[serde(rename_all = "camelCase")]
 pub struct HelloParams {
     pub token: String,
+    /// A fresh random value per connection, 32–128 lower-case hex characters
+    /// ([`auth::new_nonce`]). The daemon answers with [`HelloResult::proof`].
+    pub nonce: String,
     pub protocol: u32,
     pub client: ClientInfo,
 }
@@ -119,6 +143,9 @@ pub struct HelloResult {
     pub protocol: u32,
     /// Feature flags the daemon supports, e.g. "http", "torrent", "media", "preconnect".
     pub capabilities: Vec<String>,
+    /// [`auth::hello_proof`] of the client's nonce. Clients must check it with
+    /// [`auth::verify_hello_proof`] before sending anything else.
+    pub proof: String,
 }
 
 // ---------------------------------------------------------------- requests
@@ -205,7 +232,18 @@ pub struct AddParams {
     pub mirrors: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checksum: Option<Checksum>,
+    /// Use exactly this many connections (1–64) instead of learning the
+    /// count; still lowered when the server throttles. Out of range →
+    /// invalid params.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connections: Option<u32>,
+    /// A named queue (runs one download at a time); the main queue when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<String>,
 }
+
+/// Bounds of [`AddParams::connections`].
+pub const MAX_CONNECTIONS_PER_DOWNLOAD: u32 = 64;
 
 fn default_true() -> bool {
     true

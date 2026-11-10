@@ -189,14 +189,16 @@ impl MemStorage {
 
 impl Storage for MemStorage {
     fn preallocate(&self, len: u64) -> BoxFuture<'_, io::Result<()>> {
-        let mut d = lock(&self.data);
-        if (d.len() as u64) < len {
-            d.resize(len as usize, 0);
-        }
+        // Exactly `len` bytes: grows or truncates, like the real store.
+        lock(&self.data).resize(len as usize, 0);
         futures::future::ready(Ok(())).boxed()
     }
 
     fn write_at(&self, offset: u64, data: Bytes) -> BoxFuture<'_, io::Result<()>> {
+        if lock(&self.finished).is_some() {
+            let e = io::Error::other("storage already finished");
+            return futures::future::ready(Err(e)).boxed();
+        }
         let mut d = lock(&self.data);
         let end = offset as usize + data.len();
         if d.len() < end {
@@ -251,16 +253,32 @@ impl MemStorageProvider {
 
 impl StorageProvider for MemStorageProvider {
     fn open<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<Arc<dyn Storage>>> {
-        let s = lock(&self.open)
-            .entry(path.to_path_buf())
-            .or_insert_with(|| {
-                Arc::new(MemStorage {
-                    files: self.finished.clone(),
-                    ..MemStorage::default()
-                })
-            })
-            .clone();
+        let mut open = lock(&self.open);
+        let live = open
+            .get(path)
+            .filter(|s| lock(&s.finished).is_none())
+            .cloned();
+        let s = live.unwrap_or_else(|| {
+            // New, or the previous file at this path finished: a new file.
+            let s = Arc::new(MemStorage {
+                files: self.finished.clone(),
+                ..MemStorage::default()
+            });
+            open.insert(path.to_path_buf(), s.clone());
+            s
+        });
         futures::future::ready(Ok(s as Arc<dyn Storage>)).boxed()
+    }
+
+    fn file_len<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<Option<u64>>> {
+        let len = match lock(&self.finished).get(path) {
+            Some(b) => Some(b.len() as u64),
+            None => lock(&self.open)
+                .get(path)
+                .filter(|s| lock(&s.finished).is_none())
+                .map(|s| lock(&s.data).len() as u64),
+        };
+        futures::future::ready(Ok(len)).boxed()
     }
 
     fn remove<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
@@ -408,6 +426,32 @@ mod tests {
             let b = p.open(Path::new("/d/b.part")).await.unwrap();
             let e = b.finish(Path::new("/d/a")).await.unwrap_err();
             assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
+        });
+    }
+
+    #[test]
+    fn mem_storage_follows_the_reuse_and_length_rules() {
+        block_on(async {
+            let p = MemStorageProvider::default();
+            let path = Path::new("/d/x.part");
+            let a = p.open(path).await.unwrap();
+            a.write_at(0, Bytes::from_static(b"0123456789"))
+                .await
+                .unwrap();
+            // Same path while open: the same live storage.
+            let again = p.open(path).await.unwrap();
+            assert_eq!(again.read_at(0, 3).await.unwrap(), "012");
+            // Preallocate leaves exactly `len` bytes, truncating stale ones.
+            a.preallocate(4).await.unwrap();
+            assert_eq!(p.file_len(path).await.unwrap(), Some(4));
+            a.finish(Path::new("/d/x")).await.unwrap();
+            assert_eq!(p.file_len(Path::new("/d/x")).await.unwrap(), Some(4));
+            assert_eq!(p.file_len(path).await.unwrap(), None);
+            // After finish: old handles refuse writes, a reopen is a new file.
+            assert!(a.write_at(0, Bytes::from_static(b"z")).await.is_err());
+            let fresh = p.open(path).await.unwrap();
+            assert_eq!(fresh.read_at(0, 10).await.unwrap(), "");
+            assert_eq!(p.file_len(Path::new("/d/none")).await.unwrap(), None);
         });
     }
 }

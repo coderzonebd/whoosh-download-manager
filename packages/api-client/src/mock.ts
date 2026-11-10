@@ -558,8 +558,10 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
       if (p?.protocol !== PROTOCOL_VERSION) {
         throw new VayuRpcError(ErrorCode.Unsupported, `protocol ${String(p?.protocol)} not supported`);
       }
-      return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock"] };
+      // The in-process mock has no transport to authenticate, so no real proof.
+      return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock"], proof: "" };
     },
+    "daemon.shutdown": () => null,
     "download.probe": (p) => probe(p?.url),
     "download.add": (p) => ({ id: add(p) }),
     "download.list": (p) => {

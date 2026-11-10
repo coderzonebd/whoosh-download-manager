@@ -34,3 +34,16 @@ Phase 1 builds the engine (MASTER-PLAN §1, §8). To build it in parallel, it is
 ## Consequences
 - Four work streams run at once; ADR 0004's build budget (two build slots, `scripts/cargo-slot.sh`) keeps the machine usable.
 - End-to-end behaviour (engine + net + store against labserver, the bench, 1,000 simulated hard kills) is tested only after integration; each crate's own tests use test doubles or labserver directly.
+
+## Amendment 1 — after the first review round (2026-11-10)
+
+Applied on `phase1/engine` from the four work branches' proposals and the independent reviews:
+
+- **Mutual authentication.** `HelloParams.nonce` and `HelloResult.proof` (HMAC-SHA256 of the nonce under the token, `vayu_proto::auth`). A client checks the proof before it sends anything else. Without it, a process that took the port of a stale `runtime.json` received the user's cookies and headers (reproduced against the CLI in review). The native host and `packages/api-client` verify it in this change; the daemon and CLI pick it up on their branch.
+- **One runtime-file module**, `vayu_proto::runtime`, replacing three copies. On Unix it refuses a runtime file that is a symlink, not the user's, or readable by others, in a directory others can write to.
+- **Protocol**: `daemon.shutdown`; close codes `4408` (hello timeout, retryable) and `4429` (client too slow, retryable), so a hello timeout is no longer the final `4401`; `AddParams.connections` (1–64) and `AddParams.queue`; download id format `[a-z0-9_-]{1,64}`; the daemon's transport limits written into PROTOCOL.md §1.
+- **Storage**: `preallocate` leaves the file exactly `len` bytes; write and fsync errors are sticky and a cancelled future never loses one; `open` reuse rules; new `StorageProvider::file_len` so a crash between `finish` and the journal update is recognised. The in-memory doubles follow the same rules.
+- **State and journal**: `DownloadRecord.filename_locked`; `Journal::load` returns `Ok(None)` for a journal with no valid checkpoint; `StateStore::set_value` rejects non-JSON.
+- **Source**: `RemoteMeta::final_url` is display-only; never build a source from it.
+
+Deferred: a `SourceFactory::hint` plus `HostProfile.h3_port` so host profiles can start HTTP/3 on the first request (vayu-net already remembers Alt-Svc per process). HTTP/3 costs several times HTTP/2's CPU per GB today, so starting it earlier is not a win yet. Not needed: a `refused` flag on `Throttled`, because the engine already counts throttled rounds against its failure budget.

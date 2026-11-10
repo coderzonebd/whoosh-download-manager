@@ -15,8 +15,15 @@ export const JsonRpcErrorCode = {
 /** WebSocket close codes used by the daemon (PROTOCOL.md §1). */
 export const CloseCode = {
   Normal: 1000,
+  GoingAway: 1001,
+  /** Final. */
   Unauthorized: 4401,
+  /** No hello within 10 s; retryable. */
+  HelloTimeout: 4408,
+  /** Final. */
   ProtocolMismatch: 4426,
+  /** The client fell too far behind on notifications; reconnect and re-read state. */
+  TooSlow: 4429,
 } as const;
 
 /** The daemon answered a request with a JSON-RPC error object. */
