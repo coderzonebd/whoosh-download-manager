@@ -1,0 +1,13 @@
+# Live link after write gathering, the robust tuner and 1 worker thread (efa539c), interleaved 30 s windows
+vayu-c16   26.3 MB/s cpu=2.55 s => 3.22 s/GB targets: 
+aria2c-x16 34.5 MB/s cpu=3.05 s => 2.96 s/GB 
+vayu-auto  28.0 MB/s cpu=2.43 s => 2.89 s/GB targets: to=8 to=4 to=2 to=4 
+vayu-c16   17.2 MB/s cpu=1.64 s => 3.21 s/GB targets: 
+aria2c-x16 19.1 MB/s cpu=2.24 s => 3.92 s/GB 
+vayu-auto  29.1 MB/s cpu=2.06 s => 2.36 s/GB targets: to=8 to=4 to=2 to=4 
+vayu-c16   33.5 MB/s cpu=2.53 s => 2.53 s/GB targets: 
+aria2c-x16 33.8 MB/s cpu=2.92 s => 2.89 s/GB 
+vayu-auto  29.8 MB/s cpu=2.57 s => 2.88 s/GB targets: to=8 to=4 to=2 to=4 
+vayu-c16   33.7 MB/s cpu=2.93 s => 2.90 s/GB targets: 
+aria2c-x16 33.4 MB/s cpu=2.97 s => 2.97 s/GB 
+vayu-auto  28.5 MB/s cpu=2.49 s => 2.92 s/GB targets: to=8 to=4 to=16 to=8 
