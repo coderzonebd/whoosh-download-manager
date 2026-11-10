@@ -280,7 +280,7 @@ async fn a_file_that_changes_once_restarts_and_never_mixes() {
                 })
                 // Responses end early, so new requests see the change.
                 .script(|_, _| ReqPlan {
-                    reset_after: Some(3 * MIB),
+                    reset_after: Some(MIB),
                     ..ReqPlan::default()
                 }),
         ),
@@ -324,7 +324,7 @@ async fn a_file_that_keeps_changing_fails_with_remote_changed() {
                     c.per_conn_bps = Some(8 * MIB);
                 })
                 .script(|_, _| ReqPlan {
-                    reset_after: Some(3 * MIB),
+                    reset_after: Some(MIB),
                     ..ReqPlan::default()
                 }),
         ),
@@ -375,7 +375,7 @@ async fn an_expired_link_waits_for_a_refresh_and_resumes() {
                     c.per_conn_bps = Some(4 * MIB);
                 })
                 .script(|_, _| ReqPlan {
-                    reset_after: Some(2 * MIB),
+                    reset_after: Some(MIB),
                     ..ReqPlan::default()
                 }),
         ),
@@ -423,7 +423,7 @@ async fn a_refreshed_link_to_a_different_file_restarts() {
                     c.per_conn_bps = Some(2 * MIB);
                 })
                 .script(|_, _| ReqPlan {
-                    reset_after: Some(MIB),
+                    reset_after: Some(MIB / 2),
                     ..ReqPlan::default()
                 }),
         ),
