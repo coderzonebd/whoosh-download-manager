@@ -1,0 +1,50 @@
+[package]
+name = "vayu-net"
+description = "The engine's network layer: HTTP/1.1, HTTP/2 and HTTP/3 range sources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+futures.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+vayu-core.workspace = true
+vayu-proto.workspace = true
+
+base64 = "0.23"
+# Only to look inside hyper's HTTP/2 errors (REFUSED_STREAM, GOAWAY).
+h2 = "0.4"
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
+httpdate = "1"
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+percent-encoding = "2"
+# `ring` like labserver: no C/cmake build, shared build artefacts.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-platform-verifier = "0.7"
+socket2 = "0.6"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+url = "2"
+# HTTP/3: the same versions as labserver, so build artefacts are shared.
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
+
+[dev-dependencies]
+vayu-labserver = { path = "../labserver" }
+vayu-core = { workspace = true, features = ["testing"] }
+hyper = { version = "1", features = ["client", "server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.31", default-features = false, features = ["resource"] }
+
+[lints]
+workspace = true
