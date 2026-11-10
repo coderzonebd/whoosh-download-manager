@@ -36,8 +36,20 @@ impl std::fmt::Debug for Tls {
     }
 }
 
+/// ring, with AES-128-GCM offered before AES-256-GCM, as browsers do: four
+/// fewer AES rounds per block, about 10 % less client CPU per GB on a fast
+/// TLS download (measured, see the README), the same suites offered.
 fn provider() -> Arc<rustls::crypto::CryptoProvider> {
-    Arc::new(rustls::crypto::ring::default_provider())
+    let mut p = rustls::crypto::ring::default_provider();
+    p.cipher_suites.sort_by_key(|s| {
+        use rustls::CipherSuite::*;
+        match s.suite() {
+            TLS13_AES_128_GCM_SHA256 => 0,
+            TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 | TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 => 1,
+            _ => 2, // the rest keep ring's order (the sort is stable)
+        }
+    });
+    Arc::new(p)
 }
 
 impl Tls {
@@ -155,5 +167,31 @@ impl Tls {
             })
             .clone()
             .map_err(|e| SourceError::Fatal(format!("quic setup: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustls::CipherSuite::*;
+
+    #[test]
+    fn aes_128_gcm_is_offered_first_and_nothing_is_dropped() {
+        let ours: Vec<_> = provider().cipher_suites.iter().map(|s| s.suite()).collect();
+        let ring: Vec<_> = rustls::crypto::ring::default_provider()
+            .cipher_suites
+            .iter()
+            .map(|s| s.suite())
+            .collect();
+        assert_eq!(ours[0], TLS13_AES_128_GCM_SHA256);
+        let pos = |s| ours.iter().position(|&x| x == s);
+        assert!(pos(TLS13_AES_128_GCM_SHA256) < pos(TLS13_AES_256_GCM_SHA384));
+        assert!(
+            pos(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256) < pos(TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384)
+        );
+        let (mut a, mut b) = (ours.clone(), ring);
+        a.sort_by_key(|s| u16::from(*s));
+        b.sort_by_key(|s| u16::from(*s));
+        assert_eq!(a, b, "same suites, only reordered");
     }
 }

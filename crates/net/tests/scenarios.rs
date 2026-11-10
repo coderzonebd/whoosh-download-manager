@@ -19,6 +19,8 @@ macro_rules! per_transport {
             #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
             async fn h1() { super::$name(T::H1).await }
             #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+            async fn h1s() { super::$name(T::H1s).await }
+            #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
             async fn h2() { super::$name(T::H2).await }
             #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
             async fn h3() { super::$name(T::H3).await }
@@ -127,6 +129,32 @@ async fn concurrent_opens(t: T) {
         assert!(err.is_none(), "{err:?}");
         assert_eq!(bytes.len() as u64, len);
         lab.verify(sc, "100m.bin", i as u64 * len, &bytes);
+    }
+}
+
+/// Over TLS, decrypted records that arrived together reach the reader as
+/// one chunk, not one chunk per 16 KiB TLS record (each chunk costs a
+/// wake-up downstream).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tls_records_are_coalesced() {
+    for t in [T::H1s, T::H2] {
+        let lab = Lab::new(t).await;
+        let src = lab.source("clean", "10m.bin");
+        let m = src.probe().await.unwrap();
+        let mut s = src
+            .open(open_req(Some(r(0, 10 * MIB)), m.validators()))
+            .await
+            .unwrap();
+        let (mut n, mut biggest, mut all) = (0usize, 0usize, Vec::new());
+        while let Some(c) = s.next().await {
+            let c = c.unwrap();
+            n += 1;
+            biggest = biggest.max(c.len());
+            all.extend_from_slice(&c);
+        }
+        lab.verify("clean", "10m.bin", 0, &all);
+        assert!(biggest > 16 * 1024, "{t:?}: largest chunk {biggest} B");
+        assert!(n < 10 * 64, "{t:?}: {n} chunks for 10 MiB");
     }
 }
 
