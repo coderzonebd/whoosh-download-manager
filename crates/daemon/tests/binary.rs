@@ -114,7 +114,16 @@ fn serves_refuses_a_second_instance_and_stops_cleanly_on_sigterm() {
         let text = std::fs::read_to_string(&log).unwrap();
         assert!(text.contains("vayu-daemon ready"), "{text}");
         assert!(!text.contains(&info.token), "token in {}", log.display());
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "{} is {mode:o}", log.display());
     }
+    let mode = |p: &Path| {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+    };
+    assert_eq!(mode(dir.path()), 0o700, "the data dir was made private");
+    assert_eq!(mode(&dir.path().join("logs")), 0o700);
     // Foreground mode also logs to stderr.
     assert!(stderr_of(&mut first).contains("vayu-daemon ready"));
 }
@@ -137,6 +146,24 @@ fn sigint_also_stops_it_and_detached_mode_is_quiet() {
         "",
         "detached mode writes nothing to stderr"
     );
+}
+
+#[test]
+fn daemon_shutdown_stops_the_process() {
+    let dir = TempDir::new("bin-rpc-stop");
+    let mut child = daemon(dir.path()).spawn().unwrap();
+    let info = wait_for_runtime(dir.path(), &mut child);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let reply = rt.block_on(async {
+        let mut c = vayu_daemon::client::Client::connect(info.port, &info.token, "test")
+            .await
+            .unwrap();
+        c.call("daemon.shutdown", serde_json::Value::Null).await
+    });
+    assert_eq!(reply.unwrap(), serde_json::Value::Null);
+    let status = wait_exit(&mut child, Duration::from_secs(20));
+    assert!(status.success(), "{status}");
+    assert!(!dir.path().join("runtime.json").exists());
 }
 
 #[test]

@@ -9,9 +9,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use serde_json::Value;
+
 use crate::client::{Client, ConnectError};
 use crate::error::{CliError, Result};
-use crate::runtime::{self, RuntimeInfo};
+use crate::runtime::{self, Lookup, RuntimeInfo};
 
 pub const DAEMON_BIN_ENV: &str = "VAYU_DAEMON_BIN";
 /// `vayu-daemon`'s exit code when another daemon owns the data directory.
@@ -26,58 +28,79 @@ pub struct Connected {
     pub info: RuntimeInfo,
 }
 
-/// Connects to the daemon in `data_dir` if one is running.
-pub async fn connect_running(data_dir: &Path) -> Result<Option<Connected>> {
+/// Whether the daemon of `data_dir` is up.
+#[derive(Debug)]
+pub enum Found {
+    Running(Box<Connected>),
+    /// No daemon answers for this runtime file; the reason is for messages.
+    NotRunning(String),
+}
+
+/// Connects to the daemon in `data_dir` if one is running. A runtime file
+/// whose port is held by something that cannot prove it knows the token, or
+/// whose daemon rejects the token, is stale: that is "not running" (so a
+/// new daemon may be started), never a reason to send it anything more.
+pub async fn connect_running(data_dir: &Path) -> Result<Found> {
     // Twice: the file may be replaced (a daemon restarting) between the read
     // and the hello, which shows up as a rejected token.
     for attempt in 0..2 {
         let info = match runtime::read(data_dir) {
-            Ok(Some(info)) => info,
-            Ok(None) => return Ok(None),
-            Err(e) => {
-                return Err(CliError::DaemonUnavailable(format!(
-                    "cannot read {}: {e}",
-                    data_dir.join(runtime::RUNTIME_FILE).display()
+            Ok(Lookup::Found(info)) => info,
+            Ok(Lookup::Unusable(why)) => return Ok(Found::NotRunning(why)),
+            Err(e) => return Err(CliError::DaemonUnavailable(e.to_string())),
+        };
+        let port = info.port;
+        match Client::connect(port, &info.token, CONNECT_TIMEOUT).await {
+            Ok(client) => return Ok(Found::Running(Box::new(Connected { client, info }))),
+            Err(ConnectError::Unreachable) => {
+                return Ok(Found::NotRunning(format!(
+                    "nothing answers on port {port}; runtime.json is stale"
                 )));
             }
-        };
-        match Client::connect(info.port, &info.token, CONNECT_TIMEOUT).await {
-            Ok(client) => return Ok(Some(Connected { client, info })),
-            Err(ConnectError::Unreachable) => return Ok(None),
-            Err(ConnectError::Rejected { code, reason }) => {
-                if attempt == 0 && code == Some(4401) {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    continue;
-                }
-                return Err(rejected(code, &reason));
+            Err(ConnectError::BadProof) => {
+                return Ok(Found::NotRunning(format!(
+                    "the process on port {port} is not the daemon runtime.json describes \
+                     (it could not prove it knows the token); runtime.json is stale"
+                )));
             }
+            Err(ConnectError::Local(e)) => return Err(CliError::Other(e)),
+            Err(ConnectError::Rejected { code, reason }) => match code {
+                Some(4426) => {
+                    return Err(CliError::Rejected(format!(
+                        "the daemon speaks a different protocol version ({reason}); \
+                         use a vayu CLI of the same version as the daemon"
+                    )));
+                }
+                Some(4401) if attempt == 0 => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                _ => {
+                    return Ok(Found::NotRunning(format!(
+                        "the daemon on port {port} refused the token in runtime.json \
+                         ({}); runtime.json is stale",
+                        if reason.is_empty() {
+                            "no reason given"
+                        } else {
+                            &reason
+                        }
+                    )));
+                }
+            },
         }
     }
-    unreachable!("the loop returns")
-}
-
-fn rejected(code: Option<u16>, reason: &str) -> CliError {
-    match code {
-        Some(4426) => CliError::Rejected(format!(
-            "the daemon speaks a different protocol version ({reason}); \
-             use a vayu CLI of the same version as the daemon"
-        )),
-        Some(4401) => CliError::Rejected(format!(
-            "the daemon rejected the token in runtime.json ({reason})"
-        )),
-        _ => CliError::Rejected(format!("the daemon refused the connection ({reason})")),
-    }
+    unreachable!("the second attempt always returns")
 }
 
 /// Connects, starting the daemon first if needed and allowed.
 pub async fn ensure(data_dir: &Path, autostart: bool) -> Result<Connected> {
-    if let Some(connected) = connect_running(data_dir).await? {
-        return Ok(connected);
-    }
+    let why = match connect_running(data_dir).await? {
+        Found::Running(connected) => return Ok(*connected),
+        Found::NotRunning(why) => why,
+    };
     if !autostart {
-        return Err(CliError::DaemonUnavailable(
-            "the vayu daemon is not running (start it with `vayu daemon start`)".into(),
-        ));
+        return Err(CliError::DaemonUnavailable(format!(
+            "the vayu daemon is not running ({why}); start it with `vayu daemon start`"
+        )));
     }
     let child = spawn_detached(data_dir, &[])?;
     wait_until_up(data_dir, child).await
@@ -109,7 +132,7 @@ pub fn spawn_detached(data_dir: &Path, extra_args: &[String]) -> Result<Child> {
     let exe = daemon_exe();
     let log = start_log(data_dir);
     create_private_dirs(log.parent().unwrap_or(data_dir))?;
-    let stderr = std::fs::File::create(&log)
+    let stderr = private_log(&log)
         .map(Stdio::from)
         .unwrap_or_else(|_| Stdio::null());
     let mut cmd = Command::new(&exe);
@@ -142,6 +165,24 @@ pub fn spawn_detached(data_dir: &Path, extra_args: &[String]) -> Result<Child> {
     })
 }
 
+/// Truncates or creates `path`, owner-only (0600) on Unix.
+fn private_log(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(file)
+}
+
 fn create_private_dirs(dir: &Path) -> Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -162,8 +203,8 @@ pub async fn wait_until_up(data_dir: &Path, mut child: Child) -> Result<Connecte
     let deadline = Instant::now() + START_TIMEOUT;
     let mut child_done = false;
     loop {
-        if let Some(connected) = connect_running(data_dir).await? {
-            return Ok(connected);
+        if let Found::Running(connected) = connect_running(data_dir).await? {
+            return Ok(*connected);
         }
         if !child_done && let Ok(Some(status)) = child.try_wait() {
             child_done = true;
@@ -188,69 +229,29 @@ pub async fn wait_until_up(data_dir: &Path, mut child: Child) -> Result<Connecte
     }
 }
 
-/// Asks the daemon to stop (SIGTERM) and waits until it has removed its
-/// runtime file.
+/// Asks the daemon to stop (`daemon.shutdown`, PROTOCOL.md §3) and waits
+/// until it has removed its runtime file, the last step of a clean exit.
 pub async fn stop(connected: Connected, data_dir: &Path) -> Result<()> {
     let Connected { client, info } = connected;
+    client
+        .call_value(vayu_proto::method::DAEMON_SHUTDOWN, Value::Null)
+        .await?;
     client.close().await;
-    let pid = info.pid.ok_or_else(|| {
-        CliError::Other("runtime.json has no pid; stop the daemon by hand".into())
-    })?;
-    send_terminate(pid)?;
-    // The daemon removes runtime.json as the last step of a clean shutdown.
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let gone = match runtime::read(data_dir) {
-            Ok(Some(now)) => now.pid != Some(pid),
+            Ok(Lookup::Found(now)) => now.pid != info.pid || now.token != info.token,
             _ => true,
         };
         if gone {
-            break;
+            return Ok(());
         }
         if Instant::now() > deadline {
             return Err(CliError::Other(format!(
-                "vayu-daemon (pid {pid}) did not stop within 30 s"
+                "vayu-daemon (pid {}) did not stop within 30 s",
+                info.pid
             )));
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    // Then the process exits; give it a moment (a zombie still "exists"
-    // until its parent reaps it, so this is best effort).
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while process_alive(pid) && Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn send_terminate(pid: u32) -> Result<()> {
-    use nix::sys::signal::{Signal, kill};
-    use nix::unistd::Pid;
-    let pid = i32::try_from(pid).map_err(|_| CliError::Other(format!("bad pid {pid}")))?;
-    kill(Pid::from_raw(pid), Signal::SIGTERM)
-        .map_err(|e| CliError::Other(format!("cannot signal vayu-daemon (pid {pid}): {e}")))
-}
-
-#[cfg(unix)]
-fn process_alive(pid: u32) -> bool {
-    use nix::sys::signal::kill;
-    use nix::unistd::Pid;
-    i32::try_from(pid).is_ok_and(|pid| kill(Pid::from_raw(pid), None).is_ok())
-}
-
-#[cfg(not(unix))]
-fn send_terminate(_pid: u32) -> Result<()> {
-    // A detached daemon has no console to send Ctrl-C to; stopping it needs
-    // an RPC (`daemon.shutdown`, proposed for the protocol).
-    Err(CliError::Unsupported(
-        "`vayu daemon stop` is not supported on this platform yet; \
-         end vayu-daemon from the task manager"
-            .into(),
-    ))
-}
-
-#[cfg(not(unix))]
-fn process_alive(_pid: u32) -> bool {
-    false
 }

@@ -37,9 +37,8 @@ subtle = "2"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
 tracing-appender = "0.2"
 
-[dev-dependencies]
-# The native messaging host's own data-dir rule, to prove both agree.
-vayu-nmhost = { path = "../nmhost" }
+[target."cfg(unix)".dependencies]
+rustix = { version = "1", default-features = false, features = ["std", "process"] }
 
 [lints]
 workspace = true

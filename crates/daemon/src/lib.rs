@@ -9,13 +9,17 @@
 //! let service = MockService::new(MockOptions::default());
 //! let config = DaemonConfig::new(vayu_daemon::paths::default_data_dir()?);
 //! let daemon = vayu_daemon::serve(service, config).await?;
-//! vayu_daemon::shutdown_signal().await;
+//! tokio::select! {
+//!     _ = vayu_daemon::shutdown_signal() => {}
+//!     _ = daemon.stop_requested() => {} // a client called daemon.shutdown
+//! }
 //! daemon.shutdown().await;
 //! # Ok(()) }
 //! ```
 //!
 //! `serve` does, in order:
-//! 1. create the data directory (owner-only on Unix);
+//! 1. create the data directory, or make an existing one of ours owner-only
+//!    (0700); refuse a symlink or someone else's ([`ServeError::InsecureDataDir`]);
 //! 2. take `daemon.lock` (an OS file lock) — if another process holds it,
 //!    fail with [`ServeError::AlreadyRunning`]; if `runtime.json` exists and
 //!    its daemon answers `session.hello`, fail the same way; otherwise the
@@ -26,6 +30,7 @@
 
 pub mod client;
 pub mod config;
+mod limit;
 pub mod logging;
 pub mod mock;
 pub mod outbox;
@@ -53,6 +58,8 @@ pub enum ServeError {
     AlreadyRunning { pid: Option<u32>, port: Option<u16> },
     #[error("data directory {0}: {1}")]
     DataDir(PathBuf, std::io::Error),
+    #[error("refusing the data directory {0}: {1}")]
+    InsecureDataDir(PathBuf, String),
     #[error("cannot listen on 127.0.0.1: {0}")]
     Bind(std::io::Error),
     #[error("cannot write {0}: {1}")]

@@ -195,10 +195,14 @@ pub async fn ws(daemon: &RunningDaemon) -> Ws {
         .0
 }
 
+/// The nonce the tests send (PROTOCOL.md's example).
+pub const NONCE: &str = "00112233445566778899aabbccddeeff";
+
 pub fn hello_frame(token: &str, protocol: u32, id: Value) -> String {
     json!({
         "jsonrpc": "2.0", "id": id, "method": "session.hello",
-        "params": { "token": token, "protocol": protocol, "client": { "name": "test", "version": "0" } }
+        "params": { "token": token, "nonce": NONCE, "protocol": protocol,
+                    "client": { "name": "test", "version": "0" } }
     })
     .to_string()
 }
@@ -220,7 +224,12 @@ pub async fn say_hello(ws: &mut Ws, daemon: &RunningDaemon) -> Value {
     .unwrap();
     let reply = next_json(ws).await;
     assert_eq!(reply["id"], "h", "{reply}");
-    assert!(reply.get("result").is_some(), "{reply}");
+    // The daemon proves it knows the token.
+    let proof = reply["result"]["proof"].as_str().unwrap_or_default();
+    assert!(
+        vayu_proto::auth::verify_hello_proof(&daemon.runtime_info().token, NONCE, proof),
+        "bad proof in {reply}"
+    );
     reply
 }
 

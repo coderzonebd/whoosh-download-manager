@@ -29,8 +29,15 @@ pub struct DaemonConfig {
     pub single_instance: bool,
     /// See [`default_allowed_origins`].
     pub allowed_origins: Vec<String>,
-    /// A connection must complete `session.hello` within this.
+    /// A connection must complete `session.hello` within this (else 4408).
     pub hello_timeout: Duration,
+    /// Before `session.hello` completes, a connection may send at most this
+    /// many bytes (the hello itself, in practice); more closes it (1009)
+    /// without the daemon ever buffering or parsing the rest.
+    pub max_hello_bytes: usize,
+    /// WebSocket connections that may wait for their hello at once; further
+    /// upgrades get HTTP 503 until one finishes or times out.
+    pub max_pending_hellos: usize,
     /// Largest WebSocket message (and frame) accepted from a client; larger
     /// ones close the connection with 1009.
     pub max_message_bytes: usize,
@@ -57,6 +64,8 @@ impl DaemonConfig {
             single_instance: true,
             allowed_origins: default_allowed_origins(),
             hello_timeout: Duration::from_secs(10),
+            max_hello_bytes: 64 * 1024,
+            max_pending_hellos: 8,
             max_message_bytes: 16 * 1024 * 1024,
             ping_interval: Duration::from_secs(20),
             pong_timeout: Duration::from_secs(20),

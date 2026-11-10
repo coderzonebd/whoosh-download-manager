@@ -184,6 +184,7 @@ async fn hello_returns_version_protocol_and_service_capabilities() {
             "daemonVersion": vayu_daemon::VERSION,
             "protocol": PROTOCOL_VERSION,
             "capabilities": ["http", "scripted"],
+            "proof": vayu_proto::auth::hello_proof(&d.runtime_info().token, NONCE),
         })
     );
     // A second hello on the same session is an invalid request.
@@ -218,9 +219,27 @@ async fn bad_or_missing_hello_closes_with_4401() {
         ),
         ("invalid JSON first", "{not json".to_owned()),
         (
+            "no nonce",
+            json!({"jsonrpc":"2.0","id":1,"method":"session.hello",
+                   "params":{"token": token.clone(),"protocol":1,"client":{"name":"t","version":"0"}}})
+            .to_string(),
+        ),
+        (
+            "short nonce",
+            hello_frame(&token, 1, json!(1)).replace(NONCE, &NONCE[..30]),
+        ),
+        (
+            "upper-case nonce",
+            hello_frame(&token, 1, json!(1)).replace(NONCE, &NONCE.to_uppercase()),
+        ),
+        (
+            "nonce not a string",
+            hello_frame(&token, 1, json!(1)).replace(&format!("\"{NONCE}\""), "42"),
+        ),
+        (
             "hello as a notification",
             json!({"jsonrpc":"2.0","method":"session.hello",
-                   "params":{"token": token.clone(),"protocol":1,"client":{"name":"t","version":"0"}}})
+                   "params":{"token": token.clone(),"nonce": NONCE,"protocol":1,"client":{"name":"t","version":"0"}}})
             .to_string(),
         ),
     ];
@@ -265,7 +284,8 @@ async fn hello_must_arrive_in_time() {
     .await;
     let mut ws = ws(&d).await;
     let started = std::time::Instant::now();
-    assert_eq!(close_code(&mut ws).await, Some(4401));
+    // 4408, not 4401: a timeout is retryable.
+    assert_eq!(close_code(&mut ws).await, Some(4408));
     assert!(started.elapsed() < Duration::from_secs(3));
     d.shutdown().await;
 }
@@ -278,7 +298,8 @@ async fn malformed_hello_with_the_right_token_can_be_retried() {
     let token = d.runtime_info().token.clone();
     send(
         &mut ws,
-        &json!({"jsonrpc":"2.0","id":1,"method":"session.hello","params":{"token":token,"protocol":1}}),
+        &json!({"jsonrpc":"2.0","id":1,"method":"session.hello",
+                "params":{"token":token,"nonce":NONCE,"protocol":1}}),
     )
     .await;
     let reply = next_json(&mut ws).await;
@@ -850,4 +871,227 @@ async fn the_bundled_client_and_probe() {
     assert_eq!(done["state"], "completed");
     c.close().await;
     d.shutdown().await;
+}
+
+// ------------------------------------------------------------ review round
+
+#[tokio::test]
+async fn before_hello_at_most_64_kib_is_read() {
+    let dir = TempDir::new("prehello");
+    let d = start(ScriptedService::new(), dir.path()).await;
+    // A 70 KiB first message: closed without being parsed (1009, or a reset
+    // if the client was still writing when the daemon hung up).
+    let mut ws = ws(&d).await;
+    let big = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"x","params":"{}"}}"#,
+        "a".repeat(70 * 1024)
+    );
+    let _ = ws.send(Message::text(big)).await;
+    let code = close_code(&mut ws).await;
+    assert!(matches!(code, Some(1009) | None), "{code:?}");
+    // 60 KiB is still read and judged: a bad hello is a 4401.
+    let mut ws = ws_connect(&d).await;
+    let padded = hello_frame("wrong", 1, json!(1)).replace(
+        r#""name":"test""#,
+        &format!(r#""name":"{}""#, "n".repeat(60 * 1024)),
+    );
+    send_text(&mut ws, &padded).await;
+    assert_eq!(close_code(&mut ws).await, Some(4401));
+    // After hello the normal limit applies.
+    let mut ws = authed(&d).await;
+    let reply = call(
+        &mut ws,
+        2,
+        "net.preconnect",
+        json!({"url": "x".repeat(1 << 20)}),
+    )
+    .await;
+    assert_eq!(reply["result"], Value::Null, "{reply}");
+    d.shutdown().await;
+}
+
+async fn ws_connect(d: &vayu_daemon::RunningDaemon) -> Ws {
+    common::ws(d).await
+}
+
+#[tokio::test]
+async fn only_a_few_connections_may_wait_for_their_hello() {
+    let dir = TempDir::new("slots");
+    let d = start_with(ScriptedService::new(), dir.path(), |c| {
+        c.max_pending_hellos = 3
+    })
+    .await;
+    let mut waiting = Vec::new();
+    for _ in 0..3 {
+        waiting.push(ws_connect(&d).await);
+    }
+    match tokio_tungstenite::connect_async(d.rpc_url()).await {
+        Err(tungstenite::Error::Http(res)) => assert_eq!(res.status(), 503),
+        other => panic!("a fourth pending connection was accepted: {other:?}"),
+    }
+    // A hello frees its slot; authenticated sessions do not hold one.
+    say_hello(&mut waiting[0], &d).await;
+    let mut more = Vec::new();
+    for _ in 0..3 {
+        more.push(authed(&d).await);
+        // (each takes the free slot, then frees it again)
+    }
+    drop(waiting);
+    d.shutdown().await;
+}
+
+#[tokio::test]
+async fn daemon_shutdown_answers_then_everyone_gets_1001() {
+    let dir = TempDir::new("rpc-shutdown");
+    let svc = ScriptedService::new();
+    let d = start(svc.clone(), dir.path()).await;
+    let mut a = authed(&d).await;
+    let mut b = authed(&d).await;
+
+    // Params are refused, and nothing stops.
+    let reply = call(&mut a, 1, "daemon.shutdown", json!({"now": true})).await;
+    assert_eq!(reply["error"]["code"], -32602);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), d.stop_requested())
+            .await
+            .is_err()
+    );
+
+    let reply = call(&mut a, 2, "daemon.shutdown", Value::Null).await;
+    assert_eq!(reply, json!({"jsonrpc": "2.0", "id": 2, "result": null}));
+    tokio::time::timeout(Duration::from_secs(5), d.stop_requested())
+        .await
+        .expect("stop requested");
+    d.shutdown().await;
+    assert_eq!(close_code(&mut a).await, Some(1001));
+    assert_eq!(close_code(&mut b).await, Some(1001));
+    assert!(svc.shutdown_called.load(Ordering::SeqCst));
+    assert!(!dir.path().join("runtime.json").exists());
+}
+
+#[tokio::test]
+async fn clients_see_the_services_shutdown_before_1001() {
+    let dir = TempDir::new("order");
+    let d = start(mock(), dir.path()).await;
+    let mut ws = authed(&d).await;
+    let reply = call(
+        &mut ws,
+        1,
+        "download.add",
+        json!({"url": "https://example.com/long.bin?size=4GiB&bps=1MiB"}),
+    )
+    .await;
+    let id = reply["result"]["id"].as_str().unwrap().to_owned();
+    // Wait until it is downloading.
+    loop {
+        let msg = next_json(&mut ws).await;
+        if msg["method"] == "event.download.state" && msg["params"]["state"] == "downloading" {
+            break;
+        }
+    }
+    let shutdown = tokio::spawn(d.shutdown());
+    let mut paused = false;
+    let code = loop {
+        match tokio::time::timeout(Duration::from_secs(10), ws.next())
+            .await
+            .unwrap()
+        {
+            Some(Ok(Message::Text(t))) => {
+                let msg: Value = serde_json::from_str(t.as_str()).unwrap();
+                if msg["method"] == "event.download.state" && msg["params"]["id"] == id.as_str() {
+                    paused |= msg["params"]["state"] == "paused";
+                }
+            }
+            Some(Ok(Message::Close(f))) => break f.map(|f| u16::from(f.code)),
+            Some(Ok(_)) => {}
+            other => panic!("{other:?}"),
+        }
+    };
+    assert!(
+        paused,
+        "the pause from Service::shutdown arrived before the close"
+    );
+    assert_eq!(code, Some(1001));
+    shutdown.await.unwrap();
+}
+
+/// Something that answers `session.hello` on a port, without the token.
+async fn impostor() -> (u16, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let task = tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                    return;
+                };
+                if let Some(Ok(Message::Text(t))) = ws.next().await {
+                    let hello: Value = serde_json::from_str(t.as_str()).unwrap_or_default();
+                    let reply = json!({"jsonrpc": "2.0", "id": hello["id"], "result": {
+                        "daemonVersion": "evil", "protocol": 1, "capabilities": [],
+                        "proof": "0".repeat(64)}});
+                    let _ = ws.send(Message::text(reply.to_string())).await;
+                    while let Some(Ok(_)) = ws.next().await {}
+                }
+            });
+        }
+    });
+    (port, task)
+}
+
+#[tokio::test]
+async fn a_port_that_answers_without_the_proof_is_not_the_daemon() {
+    let (port, task) = impostor().await;
+    let token = vayu_daemon::token::Token::from_string("stale-token".into());
+    let err = vayu_daemon::client::probe(port, &token, Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, vayu_daemon::client::ClientError::BadProof),
+        "{err}"
+    );
+
+    // A stale runtime.json pointing at that port does not stop a new daemon.
+    let dir = TempDir::new("impostor");
+    vayu_daemon::runtime::create_data_dir(dir.path()).unwrap();
+    vayu_daemon::runtime::secure_dir(dir.path()).unwrap();
+    runtime::write_atomic(
+        dir.path(),
+        &runtime::RuntimeInfo {
+            port,
+            token: "stale-token".into(),
+            pid: 1,
+            version: "0".into(),
+        },
+    )
+    .unwrap();
+    let d = start(ScriptedService::new(), dir.path()).await;
+    let now = runtime::read(dir.path()).unwrap().unwrap();
+    assert_eq!(now.port, d.port());
+    assert_ne!(now.port, port);
+    d.shutdown().await;
+    task.abort();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn the_data_dir_is_made_private_or_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let base = TempDir::new("private");
+    let data = base.path().join("data");
+    std::fs::create_dir(&data).unwrap();
+    std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o775)).unwrap();
+    let d = start(ScriptedService::new(), &data).await;
+    let mode = std::fs::metadata(&data).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o700, "tightened");
+    d.shutdown().await;
+
+    let link = base.path().join("link");
+    std::os::unix::fs::symlink(&data, &link).unwrap();
+    match vayu_daemon::serve(ScriptedService::new(), config(&link)).await {
+        Err(ServeError::InsecureDataDir(_, reason)) => {
+            assert!(reason.contains("symlink"), "{reason}")
+        }
+        other => panic!("a symlinked data dir was accepted: {other:?}"),
+    }
 }

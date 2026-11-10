@@ -16,7 +16,7 @@ use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Notify, watch};
+use tokio::sync::{Notify, Semaphore, watch};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
@@ -25,6 +25,7 @@ use vayu_proto::RPC_PATH;
 use vayu_proto::service::Service;
 
 use crate::config::DaemonConfig;
+use crate::limit::{Budget, Limited};
 use crate::runtime::{self, InstanceLock, RuntimeInfo};
 use crate::token::Token;
 use crate::{ServeError, client, session};
@@ -36,8 +37,21 @@ pub(crate) struct Shared {
     pub service: Arc<dyn Service>,
     pub token: Token,
     pub config: DaemonConfig,
+    /// Sessions, handshakes and HTTP connections close when this turns true.
     pub shutdown: watch::Receiver<bool>,
+    /// Set by `daemon.shutdown`; [`RunningDaemon::stop_requested`] waits on it.
+    pub stop: watch::Sender<bool>,
+    /// Slots for connections that have not completed `session.hello`.
+    pub pending_hellos: Arc<Semaphore>,
     pub tracker: Tracker,
+}
+
+impl Shared {
+    /// A client asked the daemon to stop (`daemon.shutdown`).
+    pub fn request_stop(&self) {
+        // `send` would drop the value when nobody waits yet.
+        self.stop.send_replace(true);
+    }
 }
 
 /// Counts live connections so shutdown can wait for them.
@@ -83,6 +97,7 @@ pub struct RunningDaemon {
     info: RuntimeInfo,
     shared: Arc<Shared>,
     shutdown_tx: watch::Sender<bool>,
+    stop_accepting: watch::Sender<bool>,
     accept: Option<JoinHandle<()>>,
     _lock: Option<InstanceLock>,
 }
@@ -124,21 +139,31 @@ impl RunningDaemon {
         &self.info
     }
 
-    /// Clean shutdown: stop accepting, close every session with 1001, call
-    /// [`Service::shutdown`], then remove `runtime.json`.
+    /// Resolves when a client has called `daemon.shutdown`. The binary waits
+    /// for this or a signal, then calls [`RunningDaemon::shutdown`].
+    pub async fn stop_requested(&self) {
+        let mut rx = self.shared.stop.subscribe();
+        let _ = rx.wait_for(|stop| *stop).await;
+    }
+
+    /// Clean shutdown (PROTOCOL.md `daemon.shutdown`): stop accepting
+    /// connections, [`Service::shutdown`] (pause transfers, save state; the
+    /// clients still see the resulting events), close every session with
+    /// 1001 after what is already queued for it, then remove `runtime.json`.
     pub async fn shutdown(mut self) {
         tracing::info!("shutting down");
-        let _ = self.shutdown_tx.send(true);
+        let _ = self.stop_accepting.send(true);
         if let Some(accept) = self.accept.take() {
             let _ = accept.await;
         }
+        self.shared.service.shutdown().await;
+        let _ = self.shutdown_tx.send(true);
         if tokio::time::timeout(Duration::from_secs(5), self.shared.tracker.wait_idle())
             .await
             .is_err()
         {
             tracing::warn!("some connections did not close in time");
         }
-        self.shared.service.shutdown().await;
         match runtime::remove_if_ours(&self.data_dir, &self.info) {
             Ok(true) => {}
             Ok(false) => tracing::warn!("runtime.json belongs to another daemon; left in place"),
@@ -150,6 +175,7 @@ impl RunningDaemon {
 
 impl Drop for RunningDaemon {
     fn drop(&mut self) {
+        let _ = self.stop_accepting.send(true);
         let _ = self.shutdown_tx.send(true);
     }
 }
@@ -162,6 +188,8 @@ pub async fn serve(
 ) -> Result<RunningDaemon, ServeError> {
     let data_dir = config.data_dir.clone();
     runtime::create_data_dir(&data_dir).map_err(|e| ServeError::DataDir(data_dir.clone(), e))?;
+    runtime::secure_dir(&data_dir)
+        .map_err(|reason| ServeError::InsecureDataDir(data_dir.clone(), reason))?;
 
     let lock = if config.single_instance {
         let lock =
@@ -217,14 +245,18 @@ pub async fn serve(
         .map_err(|e| ServeError::RuntimeFile(runtime::runtime_file(&data_dir), e))?;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let (stop_accepting, accepting_rx) = watch::channel(false);
+    let pending_hellos = Arc::new(Semaphore::new(config.max_pending_hellos.max(1)));
     let shared = Arc::new(Shared {
         service,
         token,
         config,
         shutdown: shutdown_rx,
+        stop: watch::Sender::new(false),
+        pending_hellos,
         tracker: Tracker::default(),
     });
-    let accept = tokio::spawn(accept_loop(listener, shared.clone()));
+    let accept = tokio::spawn(accept_loop(listener, shared.clone(), accepting_rx));
     tracing::info!(%addr, data_dir = %data_dir.display(), "listening");
 
     Ok(RunningDaemon {
@@ -233,6 +265,7 @@ pub async fn serve(
         info,
         shared,
         shutdown_tx,
+        stop_accepting,
         accept: Some(accept),
         _lock: lock,
     })
@@ -251,11 +284,10 @@ async fn bind(port: u16, fallback: bool) -> Result<TcpListener, ServeError> {
     }
 }
 
-async fn accept_loop(listener: TcpListener, shared: Arc<Shared>) {
-    let mut shutdown = shared.shutdown.clone();
+async fn accept_loop(listener: TcpListener, shared: Arc<Shared>, mut stop: watch::Receiver<bool>) {
     loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
+            _ = stop.changed() => break,
             accepted = listener.accept() => match accepted {
                 Ok((stream, _peer)) => {
                     tokio::spawn(serve_http(stream, shared.clone()));
@@ -336,20 +368,31 @@ fn route(mut req: Request<Incoming>, shared: Arc<Shared>) -> Response<Body> {
                 Ok(key) => key,
                 Err(res) => return *res,
             };
+            // Only a few connections may wait for their hello at once, so
+            // unauthenticated peers cannot pile up buffers.
+            let Ok(slot) = shared.pending_hellos.clone().try_acquire_owned() else {
+                tracing::info!("too many connections waiting for session.hello; refusing one");
+                let mut res = plain(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "too many connections waiting for session.hello\n",
+                );
+                res.headers_mut()
+                    .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+                return res;
+            };
             let on_upgrade = hyper::upgrade::on(&mut req);
             let config = WebSocketConfig::default()
                 .max_message_size(Some(shared.config.max_message_bytes))
                 .max_frame_size(Some(shared.config.max_message_bytes));
+            // Room for the hello plus frame headers and a few control frames.
+            let budget = Budget::new(shared.config.max_hello_bytes + 1024);
             tokio::spawn(async move {
                 match on_upgrade.await {
                     Ok(upgraded) => {
-                        let ws = WebSocketStream::from_raw_socket(
-                            TokioIo::new(upgraded),
-                            Role::Server,
-                            Some(config),
-                        )
-                        .await;
-                        session::run(ws, shared).await;
+                        let io = Limited::new(TokioIo::new(upgraded), budget.clone());
+                        let ws =
+                            WebSocketStream::from_raw_socket(io, Role::Server, Some(config)).await;
+                        session::run(ws, shared, budget, slot).await;
                     }
                     Err(e) => tracing::debug!(error = %e, "upgrade failed"),
                 }

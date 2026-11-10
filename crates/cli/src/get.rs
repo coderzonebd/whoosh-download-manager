@@ -13,7 +13,7 @@ use vayu_proto::{
 };
 
 use crate::client::{Client, Event};
-use crate::commands::{Ctx, add_params};
+use crate::commands::{Ctx, add_params, request_context};
 use crate::daemon::Connected;
 use crate::error::{CliError, Result, exit};
 use crate::{DownloadOpts, format};
@@ -22,7 +22,7 @@ use crate::{DownloadOpts, format};
 const POLL: Duration = Duration::from_secs(2);
 
 pub async fn get(ctx: &Ctx, url: String, opts: &DownloadOpts) -> Result<u8> {
-    let params = add_params(url, opts, true)?;
+    let params = add_params(url, opts, request_context(opts)?, true)?;
     let Connected { client, .. } = ctx.connect().await?;
     let started = Instant::now();
     let id = client

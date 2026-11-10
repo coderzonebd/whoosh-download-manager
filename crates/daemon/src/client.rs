@@ -1,7 +1,7 @@
 //! A small, sequential client for the local API. The daemon uses it for the
-//! single-instance check (does the daemon in `runtime.json` answer hello?),
-//! and tests use it to drive a daemon. Real clients (CLI, desktop, nmhost)
-//! have their own.
+//! single-instance check (does the daemon in `runtime.json` answer hello,
+//! with a valid proof?), and tests use it to drive a daemon. Real clients
+//! (CLI, desktop, nmhost) have their own.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use vayu_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, method};
+use vayu_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, auth, method};
 
 use crate::token::Token;
 
@@ -25,6 +25,10 @@ pub enum ClientError {
     BadReply(String),
     #[error("timed out")]
     Timeout,
+    /// Whatever answered on that port does not know the token: not the
+    /// daemon of this runtime file.
+    #[error("the hello proof is wrong (not the daemon this runtime file describes)")]
+    BadProof,
     #[error("JSON-RPC error {code}: {message}")]
     Rpc { code: i64, message: String },
 }
@@ -77,10 +81,13 @@ impl Client {
                 daemon_version: String::new(),
                 protocol: 0,
                 capabilities: Vec::new(),
+                proof: String::new(),
             },
         };
+        let nonce = auth::new_nonce().map_err(|e| ClientError::BadReply(e.to_string()))?;
         let params = HelloParams {
             token: token.to_owned(),
+            nonce: nonce.clone(),
             protocol: PROTOCOL_VERSION,
             client: ClientInfo {
                 name: name.to_owned(),
@@ -93,8 +100,12 @@ impl Client {
                 serde_json::to_value(params).unwrap_or_default(),
             )
             .await?;
-        client.hello =
+        let hello: HelloResult =
             serde_json::from_value(result).map_err(|e| ClientError::BadReply(e.to_string()))?;
+        if !auth::verify_hello_proof(token, &nonce, &hello.proof) {
+            return Err(ClientError::BadProof);
+        }
+        client.hello = hello;
         Ok(client)
     }
 

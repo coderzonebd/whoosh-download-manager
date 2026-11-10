@@ -225,56 +225,16 @@ async fn the_native_host_and_the_daemon_agree_on_the_xdg_data_dir() {
     d.shutdown().await;
 }
 
-/// The two data-dir implementations agree for every OS and environment.
-#[test]
-fn data_dir_rule_matches_vayu_nmhost() {
-    use vayu_nmhost::runtime as nm;
-    let opt = |s: &str| (!s.is_empty()).then(|| PathBuf::from(s));
-    let combos = [
-        ("", "/home/u", "", r"C:\Users\u\AppData\Local"),
-        ("/portable", "/home/u", "/xdg", ""),
-        ("", "/home/u", "/xdg", ""),
-        ("", "", "/xdg", ""),
-        ("", "", "", ""),
-        ("", "/home/u", "", ""),
-        ("", "", "", r"C:\L"),
-    ];
-    for (vayu, home, xdg, local) in combos {
-        let ours = paths::Env {
-            vayu_data_dir: opt(vayu),
-            home: opt(home),
-            xdg_data_home: opt(xdg),
-            local_app_data: opt(local),
-        };
-        let theirs = nm::Env {
-            vayu_data_dir: opt(vayu),
-            home: opt(home),
-            xdg_data_home: opt(xdg),
-            xdg_config_home: None,
-            local_app_data: opt(local),
-        };
-        for (os, nm_os) in [
-            (paths::Os::Linux, nm::Os::Linux),
-            (paths::Os::MacOs, nm::Os::MacOs),
-            (paths::Os::Windows, nm::Os::Windows),
-        ] {
-            let a = paths::data_dir(os, &ours).ok();
-            let b = nm::data_dir(nm_os, &theirs).ok();
-            assert_eq!(a, b, "{os:?} {vayu:?} {home:?} {xdg:?} {local:?}");
-        }
-    }
-    assert_eq!(paths::Os::current() as u8, nm::Os::current() as u8);
-}
-
-/// The host's reader accepts the file the daemon writes.
+/// Every client's reader (`vayu_proto::runtime`, with its ownership and
+/// permission checks) accepts the file the daemon writes.
 #[tokio::test]
-async fn the_native_host_reads_our_runtime_file() {
+async fn clients_accept_our_runtime_file() {
     let dir = TempDir::new("nmhost-rt");
     let d = start(mock(), dir.path()).await;
-    let info = vayu_nmhost::runtime::read_runtime(&d.runtime_file()).unwrap();
+    let info = vayu_proto::runtime::read_runtime(&d.runtime_file()).unwrap();
     assert_eq!(info.port, d.port());
     assert_eq!(info.token, d.runtime_info().token);
-    assert_eq!(info.pid, Some(std::process::id()));
-    assert_eq!(info.version.as_deref(), Some(vayu_daemon::VERSION));
+    assert_eq!(info.pid, std::process::id());
+    assert_eq!(info.version, vayu_daemon::VERSION);
     d.shutdown().await;
 }

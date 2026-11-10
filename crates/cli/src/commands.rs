@@ -10,9 +10,9 @@ use vayu_proto::{
     ListParams, PreconnectParams, RemoveParams, RequestContext, Settings, method,
 };
 
-use crate::daemon::{self, Connected};
+use crate::daemon::{self, Connected, Found};
 use crate::error::{CliError, Result, exit};
-use crate::runtime::{self, Env, Os};
+use crate::runtime;
 use crate::{DaemonCmd, DownloadOpts, Global, SettingsCmd, format};
 
 /// What every command needs: where the daemon is and how to print.
@@ -27,8 +27,8 @@ impl Ctx {
     pub fn new(global: &Global) -> Result<Self> {
         let data_dir = match &global.data_dir {
             Some(dir) => absolute(dir)?,
-            None => runtime::data_dir(Os::current(), &Env::from_process())
-                .map_err(CliError::DaemonUnavailable)?,
+            None => runtime::default_data_dir()
+                .map_err(|e| CliError::DaemonUnavailable(e.to_string()))?,
         };
         Ok(Self {
             data_dir,
@@ -61,11 +61,15 @@ fn absolute(p: &Path) -> Result<PathBuf> {
 
 // ------------------------------------------------------------------ add
 
-/// Builds `download.add` params from the shared download options.
-pub fn add_params(url: String, opts: &DownloadOpts, start: bool) -> Result<AddParams> {
-    if opts.queue.is_some() {
-        return Err(CliError::Unsupported(
-            "--queue is not supported yet: protocol v1 has no queue field in download.add".into(),
+/// The request context from the download options: the flags, then the
+/// files (each read once, so `-` can be stdin even for several URLs). The
+/// dedicated flags (`--cookie`, `--cookie-file`, `--referer`,
+/// `--user-agent`) win over the same header given with `-H`.
+pub fn request_context(opts: &DownloadOpts) -> Result<Option<RequestContext>> {
+    let stdin = Path::new("-");
+    if opts.cookie_file.as_deref() == Some(stdin) && opts.headers_file.as_deref() == Some(stdin) {
+        return Err(CliError::Usage(
+            "--cookie-file and --headers-file cannot both read stdin".into(),
         ));
     }
     let mut request = RequestContext {
@@ -74,35 +78,90 @@ pub fn add_params(url: String, opts: &DownloadOpts, start: bool) -> Result<AddPa
         user_agent: opts.user_agent.clone(),
         ..RequestContext::default()
     };
-    for raw in &opts.headers {
-        let Some((name, value)) = raw.split_once(':') else {
+    if let Some(path) = &opts.cookie_file {
+        let text = read_source(path, "--cookie-file")?;
+        let value = text.trim();
+        if value.is_empty() || value.contains(['\r', '\n', '\0']) {
             return Err(CliError::Usage(format!(
-                "-H {raw:?}: expected 'Name: value'"
+                "--cookie-file {}: expected one Cookie header value on one line",
+                path.display()
             )));
-        };
-        let (name, value) = (name.trim(), value.trim());
-        if name.is_empty() || name.contains(char::is_whitespace) {
-            return Err(CliError::Usage(format!("-H {raw:?}: bad header name")));
         }
-        // The protocol has dedicated fields for these three.
-        let slot = match name.to_ascii_lowercase().as_str() {
-            "cookie" => Some(&mut request.cookie),
-            "referer" => Some(&mut request.referer),
-            "user-agent" => Some(&mut request.user_agent),
-            _ => None,
-        };
-        match slot {
-            Some(slot) => {
-                if slot.is_none() {
-                    *slot = Some(value.to_owned());
-                }
+        request.cookie = Some(value.to_owned());
+    }
+    for raw in &opts.headers {
+        add_header(&mut request, "-H", raw)?;
+    }
+    if let Some(path) = &opts.headers_file {
+        let text = read_source(path, "--headers-file")?;
+        for line in text.lines().map(str::trim) {
+            if !line.is_empty() && !line.starts_with('#') {
+                add_header(&mut request, "--headers-file", line)?;
             }
-            None => request.headers.push(Header {
-                name: name.to_owned(),
-                value: value.to_owned(),
-            }),
         }
     }
+    Ok((request != RequestContext::default()).then_some(request))
+}
+
+/// A file's contents, or stdin's for `-`.
+fn read_source(path: &Path, flag: &str) -> Result<String> {
+    let read = if path == Path::new("-") {
+        std::io::read_to_string(std::io::stdin())
+    } else {
+        std::fs::read_to_string(path)
+    };
+    read.map_err(|e| CliError::Usage(format!("{flag} {}: {e}", path.display())))
+}
+
+fn add_header(request: &mut RequestContext, flag: &str, raw: &str) -> Result<()> {
+    // Never echo a header value: it may be a secret.
+    let shown = raw.split(':').next().unwrap_or_default();
+    let Some((name, value)) = raw.split_once(':') else {
+        return Err(CliError::Usage(format!(
+            "{flag} {shown:?}: expected 'Name: value'"
+        )));
+    };
+    let (name, value) = (name.trim(), value.trim());
+    let token_char = |c: char| c.is_ascii_graphic() && !"()<>@,;:\\\"/[]?={}".contains(c);
+    if name.is_empty() || !name.chars().all(token_char) {
+        return Err(CliError::Usage(format!(
+            "{flag} {shown:?}: bad header name"
+        )));
+    }
+    if value.contains(['\r', '\n', '\0']) {
+        return Err(CliError::Usage(format!(
+            "{flag} {name}: the value contains a line break"
+        )));
+    }
+    // The protocol has dedicated fields for these three.
+    let slot = match name.to_ascii_lowercase().as_str() {
+        "cookie" => Some(&mut request.cookie),
+        "referer" => Some(&mut request.referer),
+        "user-agent" => Some(&mut request.user_agent),
+        _ => None,
+    };
+    match slot {
+        Some(slot) => {
+            if slot.is_none() {
+                *slot = Some(value.to_owned());
+            }
+        }
+        None => request.headers.push(Header {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        }),
+    }
+    Ok(())
+}
+
+/// Builds `download.add` params from the shared download options and the
+/// request context from [`request_context`].
+pub fn add_params(
+    url: String,
+    opts: &DownloadOpts,
+    request: Option<RequestContext>,
+    start: bool,
+) -> Result<AddParams> {
     let checksum = opts.checksum.as_deref().map(parse_checksum).transpose()?;
     let directory = opts
         .dir
@@ -111,13 +170,15 @@ pub fn add_params(url: String, opts: &DownloadOpts, start: bool) -> Result<AddPa
         .transpose()?;
     Ok(AddParams {
         url,
-        request: (request != RequestContext::default()).then_some(request),
+        request,
         filename: opts.name.clone(),
         directory,
         category: opts.category.clone(),
         start,
         mirrors: opts.mirrors.clone(),
         checksum,
+        connections: opts.connections,
+        queue: opts.queue.clone(),
     })
 }
 
@@ -154,9 +215,10 @@ pub async fn add(ctx: &Ctx, urls: Vec<String>, opts: &DownloadOpts, paused: bool
             "-n/--name only makes sense with a single URL".into(),
         ));
     }
+    let request = request_context(opts)?;
     let params: Vec<AddParams> = urls
         .into_iter()
-        .map(|url| add_params(url, opts, !paused))
+        .map(|url| add_params(url, opts, request.clone(), !paused))
         .collect::<Result<_>>()?;
     let Connected { client, .. } = ctx.connect().await?;
     let mut results = Vec::new();
@@ -469,7 +531,8 @@ pub fn parse_size(s: &str) -> Option<u64> {
 pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
     match action {
         DaemonCmd::Status => match daemon::connect_running(&ctx.data_dir).await? {
-            Some(Connected { client, info }) => {
+            Found::Running(connected) => {
+                let Connected { client, info } = *connected;
                 let hello = client.hello.clone();
                 client.close().await;
                 if ctx.json {
@@ -485,28 +548,28 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                 } else {
                     println!(
                         "vayu-daemon {} is running (pid {}, port {})",
-                        hello.daemon_version,
-                        info.pid.map_or("?".into(), |p| p.to_string()),
-                        info.port
+                        hello.daemon_version, info.pid, info.port
                     );
                     println!("data dir:     {}", ctx.data_dir.display());
                     println!("capabilities: {}", hello.capabilities.join(", "));
                 }
                 Ok(exit::OK)
             }
-            None => {
+            Found::NotRunning(why) => {
                 if ctx.json {
-                    ctx.print_json(&json!({ "running": false, "dataDir": ctx.data_dir }));
+                    ctx.print_json(
+                        &json!({ "running": false, "reason": why, "dataDir": ctx.data_dir }),
+                    );
                 } else {
-                    println!("vayu-daemon is not running");
+                    println!("vayu-daemon is not running ({why})");
                 }
                 Ok(exit::DAEMON_UNAVAILABLE)
             }
         },
         DaemonCmd::Stop => match daemon::connect_running(&ctx.data_dir).await? {
-            Some(connected) => {
+            Found::Running(connected) => {
                 let pid = connected.info.pid;
-                daemon::stop(connected, &ctx.data_dir).await?;
+                daemon::stop(*connected, &ctx.data_dir).await?;
                 if ctx.json {
                     ctx.print_json(&json!({ "stopped": true, "pid": pid }));
                 } else {
@@ -514,26 +577,27 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                 }
                 Ok(exit::OK)
             }
-            None => {
+            // Nothing is signalled or sent: a stale runtime file's pid or
+            // port may belong to something else by now.
+            Found::NotRunning(why) => {
                 if ctx.json {
-                    ctx.print_json(&json!({ "stopped": false, "running": false }));
+                    ctx.print_json(&json!({ "stopped": false, "running": false, "reason": why }));
                 } else {
-                    println!("vayu-daemon is not running");
+                    println!("vayu-daemon is not running ({why})");
                 }
                 Ok(exit::OK)
             }
         },
         DaemonCmd::Start { foreground, args } => {
-            if let Some(Connected { client, info }) = daemon::connect_running(&ctx.data_dir).await?
-            {
+            if let Found::Running(connected) = daemon::connect_running(&ctx.data_dir).await? {
+                let Connected { client, info } = *connected;
                 client.close().await;
                 if ctx.json {
                     ctx.print_json(&json!({ "started": false, "running": true, "pid": info.pid, "port": info.port }));
                 } else {
                     println!(
                         "vayu-daemon is already running (pid {}, port {})",
-                        info.pid.map_or("?".into(), |p| p.to_string()),
-                        info.port
+                        info.pid, info.port
                     );
                 }
                 return Ok(exit::OK);
@@ -547,11 +611,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
             if ctx.json {
                 ctx.print_json(&json!({ "started": true, "running": true, "pid": info.pid, "port": info.port }));
             } else {
-                println!(
-                    "vayu-daemon started (pid {}, port {})",
-                    info.pid.map_or("?".into(), |p| p.to_string()),
-                    info.port
-                );
+                println!("vayu-daemon started (pid {}, port {})", info.pid, info.port);
             }
             Ok(exit::OK)
         }
@@ -597,10 +657,17 @@ mod tests {
             ],
             cookie: Some("from-flag".into()),
             checksum: Some("SHA256:".to_owned() + &"AB".repeat(32)),
+            connections: Some(4),
+            queue: Some("night".into()),
             ..DownloadOpts::default()
         };
-        let p = add_params("https://e/x".into(), &opts, false).unwrap();
+        let request = request_context(&opts).unwrap();
+        let p = add_params("https://e/x".into(), &opts, request, false).unwrap();
         assert!(!p.start);
+        assert_eq!(
+            (p.connections, p.queue.as_deref()),
+            (Some(4), Some("night"))
+        );
         assert!(Path::new(p.directory.as_deref().unwrap()).is_absolute());
         let r = p.request.unwrap();
         assert_eq!(r.cookie.as_deref(), Some("from-flag"), "the flag wins");
@@ -616,38 +683,107 @@ mod tests {
         assert_eq!(c.algorithm, "sha256");
         assert_eq!(c.value, "ab".repeat(32));
 
-        let bare = add_params("https://e/x".into(), &DownloadOpts::default(), true).unwrap();
-        assert_eq!(bare.request, None);
+        assert_eq!(request_context(&DownloadOpts::default()).unwrap(), None);
 
-        let usage = |o: DownloadOpts| add_params("u".into(), &o, true).unwrap_err().exit_code();
-        assert_eq!(
-            usage(DownloadOpts {
-                headers: vec!["nocolon".into()],
-                ..Default::default()
-            }),
-            2
-        );
-        assert_eq!(
-            usage(DownloadOpts {
-                checksum: Some("sha256:12".into()),
-                ..Default::default()
-            }),
-            2
-        );
-        assert_eq!(
-            usage(DownloadOpts {
-                checksum: Some("crc32:12345678".into()),
-                ..Default::default()
-            }),
-            2
-        );
-        assert_eq!(
-            usage(DownloadOpts {
-                queue: Some("night".into()),
-                ..Default::default()
-            }),
-            10
-        );
+        let usage = |o: DownloadOpts| {
+            request_context(&o)
+                .and_then(|r| add_params("u".into(), &o, r, true))
+                .unwrap_err()
+        };
+        for (opts, needle) in [
+            (
+                DownloadOpts {
+                    headers: vec!["nocolon".into()],
+                    ..Default::default()
+                },
+                "Name: value",
+            ),
+            (
+                DownloadOpts {
+                    headers: vec!["Bad Name: x".into()],
+                    ..Default::default()
+                },
+                "bad header",
+            ),
+            (
+                DownloadOpts {
+                    headers: vec!["X: a\nInjected: b".into()],
+                    ..Default::default()
+                },
+                "line break",
+            ),
+            (
+                DownloadOpts {
+                    checksum: Some("sha256:12".into()),
+                    ..Default::default()
+                },
+                "64 hex",
+            ),
+            (
+                DownloadOpts {
+                    checksum: Some("crc32:12345678".into()),
+                    ..Default::default()
+                },
+                "ALG",
+            ),
+            (
+                DownloadOpts {
+                    cookie_file: Some("-".into()),
+                    headers_file: Some("-".into()),
+                    ..Default::default()
+                },
+                "stdin",
+            ),
+            (
+                DownloadOpts {
+                    cookie_file: Some("/nonexistent/c".into()),
+                    ..Default::default()
+                },
+                "--cookie-file",
+            ),
+        ] {
+            let e = usage(opts);
+            assert_eq!(e.exit_code(), 2, "{e}");
+            assert!(e.to_string().contains(needle), "{e}");
+        }
+        // A secret header value is never echoed in an error.
+        let e = usage(DownloadOpts {
+            headers: vec!["Bad Name: s3cret".into()],
+            ..Default::default()
+        });
+        assert!(!e.to_string().contains("s3cret"), "{e}");
+    }
+
+    #[test]
+    fn cookie_and_header_files() {
+        let dir = std::env::temp_dir().join(format!("vayu-cli-files-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cookie = dir.join("cookie");
+        std::fs::write(&cookie, "session=abc; theme=dark\n").unwrap();
+        let headers = dir.join("headers");
+        std::fs::write(
+            &headers,
+            "# comment\n\nAuthorization: Bearer t0k\nUser-Agent: from-file\nX-A: 1\n",
+        )
+        .unwrap();
+        let opts = DownloadOpts {
+            cookie_file: Some(cookie.clone()),
+            headers_file: Some(headers.clone()),
+            user_agent: Some("from-flag".into()),
+            ..DownloadOpts::default()
+        };
+        let r = request_context(&opts).unwrap().unwrap();
+        assert_eq!(r.cookie.as_deref(), Some("session=abc; theme=dark"));
+        assert_eq!(r.user_agent.as_deref(), Some("from-flag"));
+        assert_eq!(r.headers.len(), 2);
+        assert_eq!(r.headers[0].value, "Bearer t0k");
+        std::fs::write(&cookie, "a=1\nb=2\n").unwrap();
+        let opts = DownloadOpts {
+            cookie_file: Some(cookie),
+            ..DownloadOpts::default()
+        };
+        assert_eq!(request_context(&opts).unwrap_err().exit_code(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

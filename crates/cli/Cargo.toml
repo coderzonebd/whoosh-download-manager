@@ -22,12 +22,5 @@ tokio.workspace = true
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
 vayu-proto.workspace = true
 
-[target."cfg(unix)".dependencies]
-nix = { version = "0.31", default-features = false, features = ["signal"] }
-
-[dev-dependencies]
-# The native messaging host's data-dir rule, to prove the CLI agrees.
-vayu-nmhost = { path = "../nmhost" }
-
 [lints]
 workspace = true

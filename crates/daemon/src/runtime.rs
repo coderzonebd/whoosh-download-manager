@@ -14,36 +14,16 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+pub use vayu_proto::runtime::{RUNTIME_FILE, RuntimeError, RuntimeInfo};
 
-pub const RUNTIME_FILE: &str = "runtime.json";
 pub const LOCK_FILE: &str = "daemon.lock";
-
-/// The contents of `runtime.json`. `token` is a secret.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RuntimeInfo {
-    pub port: u16,
-    pub token: String,
-    pub pid: u32,
-    pub version: String,
-}
-
-impl std::fmt::Debug for RuntimeInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RuntimeInfo")
-            .field("port", &self.port)
-            .field("token", &"<redacted>")
-            .field("pid", &self.pid)
-            .field("version", &self.version)
-            .finish()
-    }
-}
 
 pub fn runtime_file(data_dir: &Path) -> PathBuf {
     data_dir.join(RUNTIME_FILE)
 }
 
-/// Creates the data directory (owner-only on Unix when it is new).
+/// Creates a directory and its parents; the new ones are owner-only (0700)
+/// on Unix. Use [`secure_dir`] afterwards for one that already existed.
 pub fn create_data_dir(dir: &Path) -> io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -53,6 +33,34 @@ pub fn create_data_dir(dir: &Path) -> io::Result<()> {
         builder.mode(0o700);
     }
     builder.create(dir)
+}
+
+/// Makes `dir` private, or refuses it (PROTOCOL.md §1): a directory of ours
+/// that others could read or write is tightened to 0700; a symlink or a
+/// directory owned by someone else is refused, since that user could swap
+/// `runtime.json` under us. Always Ok on Windows, where `%LOCALAPPDATA%` is
+/// private by inheritance.
+pub fn secure_dir(dir: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let meta = std::fs::symlink_metadata(dir).map_err(|e| e.to_string())?;
+        if !meta.file_type().is_dir() {
+            return Err("not a directory (a symlink is not accepted)".into());
+        }
+        let me = rustix::process::geteuid().as_raw();
+        if meta.uid() != me {
+            return Err(format!(
+                "owned by uid {}, not by this user (uid {me})",
+                meta.uid()
+            ));
+        }
+        if meta.permissions().mode() & 0o077 != 0 {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| format!("cannot make it private (chmod 700): {e}"))?;
+        }
+    }
+    vayu_proto::runtime::check_private_dir(dir).map_err(|e| e.to_string())
 }
 
 /// Creates a new, empty file that only the owner can read or write. The
@@ -112,13 +120,12 @@ fn sync_dir(dir: &Path) {
 #[cfg(not(unix))]
 fn sync_dir(_dir: &Path) {}
 
-/// Reads `<dir>/runtime.json`. `Ok(None)` when there is none.
-pub fn read(dir: &Path) -> io::Result<Option<RuntimeInfo>> {
-    match std::fs::read(runtime_file(dir)) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+/// Reads `<dir>/runtime.json` with [`vayu_proto::runtime::read_runtime`]'s
+/// checks. `Ok(None)` when there is none.
+pub fn read(dir: &Path) -> Result<Option<RuntimeInfo>, RuntimeError> {
+    match vayu_proto::runtime::read_runtime(&runtime_file(dir)) {
+        Ok(info) => Ok(Some(info)),
+        Err(RuntimeError::Missing(_)) => Ok(None),
         Err(e) => Err(e),
     }
 }
@@ -131,13 +138,15 @@ pub fn remove_if_ours(dir: &Path, ours: &RuntimeInfo) -> io::Result<bool> {
             Ok(true)
         }
         Ok(_) => Ok(false),
-        // Unreadable or corrupt: not provably someone else's, and a daemon
-        // that is exiting must not leave a file pointing at a dead port.
-        Err(e) if e.kind() == io::ErrorKind::InvalidData => {
+        // Corrupt: not provably someone else's, and a daemon that is exiting
+        // must not leave a file pointing at a dead port.
+        Err(RuntimeError::Invalid { .. }) => {
             std::fs::remove_file(runtime_file(dir))?;
             Ok(true)
         }
-        Err(e) => Err(e),
+        // Not ours (another owner, a symlink, other permissions): leave it.
+        Err(RuntimeError::Insecure { .. }) => Ok(false),
+        Err(e) => Err(io::Error::other(e.to_string())),
     }
 }
 
@@ -187,6 +196,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         create_data_dir(&dir).unwrap();
+        secure_dir(&dir).unwrap();
         dir
     }
 
@@ -202,7 +212,7 @@ mod tests {
     #[test]
     fn round_trip_and_debug_redacts_the_token() {
         let dir = temp_dir("roundtrip");
-        assert_eq!(read(&dir).unwrap(), None);
+        assert!(read(&dir).unwrap().is_none());
         write_atomic(&dir, &info(1234)).unwrap();
         assert_eq!(read(&dir).unwrap(), Some(info(1234)));
         let debug = format!("{:?}", info(1234));
@@ -241,6 +251,28 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn secure_dir_tightens_ours_and_refuses_symlinks() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("secure");
+        let open = dir.join("open");
+        std::fs::create_dir(&open).unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o775)).unwrap();
+        secure_dir(&open).unwrap();
+        let mode = std::fs::metadata(&open).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&open, &link).unwrap();
+        let err = secure_dir(&link).unwrap_err();
+        assert!(err.contains("symlink"), "{err}");
+        let file = dir.join("file");
+        std::fs::write(&file, b"").unwrap();
+        assert!(secure_dir(&file).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -302,6 +302,8 @@ struct Sim {
     expire_at: Option<f64>,
     corrupt: bool,
     has_checksum: bool,
+    /// `AddParams::connections`: this many connections instead of the setting.
+    connections: Option<u32>,
     /// Time spent in `probing` or `verifying`.
     phase: Duration,
     since_segments: Duration,
@@ -505,6 +507,25 @@ impl State {
         for mirror in &params.mirrors {
             parse_url(mirror)?;
         }
+        if let Some(c) = params.connections
+            && !(1..=vayu_proto::MAX_CONNECTIONS_PER_DOWNLOAD).contains(&c)
+        {
+            return Err(ServiceError::invalid_params(format!(
+                "connections must be 1–{}",
+                vayu_proto::MAX_CONNECTIONS_PER_DOWNLOAD
+            )));
+        }
+        let queue = match params.queue.as_deref().map(str::trim) {
+            None => None,
+            Some(q)
+                if q.is_empty() || q.chars().count() > 64 || q.chars().any(char::is_control) =>
+            {
+                return Err(ServiceError::invalid_params(
+                    "queue must be a name of 1–64 printable characters",
+                ));
+            }
+            Some(q) => Some(q.to_owned()),
+        };
         let wanted = match params.filename.as_deref() {
             Some(name) => sanitize_filename(name),
             None => probed.result.filename.clone(),
@@ -535,7 +556,7 @@ impl State {
                 connections: 0,
                 resumable: probed.result.resumable,
                 category: Some(category),
-                queue: None,
+                queue,
                 added_at: now_ms(),
                 completed_at: None,
                 error: None,
@@ -548,6 +569,7 @@ impl State {
             expire_at: probed.expire_at,
             corrupt: probed.corrupt,
             has_checksum,
+            connections: params.connections,
             phase: Duration::ZERO,
             since_segments: Duration::ZERO,
             dirty: false,
@@ -713,17 +735,31 @@ impl State {
             }
         }
 
-        // Start queued downloads, oldest first, up to the active limit.
+        // Start queued downloads, oldest first, up to the active limit; a
+        // named queue runs one download at a time.
         let mut active = self.sims.iter().filter(|s| s.is_active()).count();
+        let mut busy: HashSet<String> = self
+            .sims
+            .iter()
+            .filter(|s| s.is_active())
+            .filter_map(|s| s.s.queue.clone())
+            .collect();
         let max_active = self.settings.max_active_downloads.max(1) as usize;
         for i in 0..self.sims.len() {
             if active >= max_active {
                 break;
             }
-            if self.sims[i].s.state == DownloadState::Queued {
-                self.set_state(i, DownloadState::Probing, None);
-                active += 1;
+            if self.sims[i].s.state != DownloadState::Queued {
+                continue;
             }
+            if let Some(q) = &self.sims[i].s.queue {
+                if busy.contains(q) {
+                    continue;
+                }
+                busy.insert(q.clone());
+            }
+            self.set_state(i, DownloadState::Probing, None);
+            active += 1;
         }
 
         // Transfer.
@@ -745,7 +781,8 @@ impl State {
         let max_conns = self.settings.max_connections_per_download.clamp(1, 64) as usize;
         let mut finished = Vec::new();
         for (&i, want) in downloading.iter().zip(desired) {
-            if let Some(end) = self.transfer(i, (want * scale * secs) as u64, secs, max_conns) {
+            let conns = self.sims[i].connections.map_or(max_conns, |c| c as usize);
+            if let Some(end) = self.transfer(i, (want * scale * secs) as u64, secs, conns) {
                 finished.push((i, end));
             }
         }
@@ -790,10 +827,11 @@ impl State {
         let source = self.sims[i].source();
         let sim = &mut self.sims[i];
         if sim.segments.is_empty() && sim.s.total_bytes.is_some() {
-            let n = if sim.s.resumable {
-                max_conns.min(8).min((sim.size / MIB).max(1))
-            } else {
-                1
+            let n = match (sim.s.resumable, sim.connections) {
+                (false, _) => 1,
+                // Exactly as many as asked for (each needs at least a byte).
+                (true, Some(c)) => u64::from(c).min(sim.size.max(1)),
+                (true, None) => max_conns.min(8).min((sim.size / MIB).max(1)),
             };
             let chunk = sim.size.div_ceil(n);
             sim.segments = (0..n)
@@ -932,6 +970,7 @@ impl State {
                 expire_at: None,
                 corrupt: false,
                 has_checksum: false,
+                connections: None,
                 phase: Duration::ZERO,
                 since_segments: Duration::ZERO,
                 dirty: false,
@@ -1674,6 +1713,64 @@ mod tests {
         let mut bad = settings;
         bad.speed_limit_bps = Some(0);
         assert_eq!(mock.set_settings(bad).await.unwrap_err().code, -32602);
+    }
+
+    #[tokio::test]
+    async fn connections_and_queues() {
+        let mock = manual();
+        for bad in [0, 65] {
+            let mut p = add("https://example.com/c.bin?size=8MiB");
+            p.connections = Some(bad);
+            assert_eq!(mock.add(p).await.unwrap_err().code, -32602, "{bad}");
+        }
+        let mut p = add("https://example.com/q.bin");
+        p.queue = Some("  ".into());
+        assert_eq!(mock.add(p).await.unwrap_err().code, -32602);
+
+        let mut p = add("https://example.com/c.bin?size=64MiB&bps=8MiB");
+        p.connections = Some(3);
+        let id = mock.add(p).await.unwrap().id;
+        // Two downloads in one named queue run one after the other.
+        let queued: Vec<String> = futures::future::join_all((0..2).map(|k| {
+            let mut p = add(&format!("https://example.com/n{k}.bin?size=2MiB&bps=4MiB"));
+            p.queue = Some("night".into());
+            mock.add(p)
+        }))
+        .await
+        .into_iter()
+        .map(|r| r.unwrap().id)
+        .collect();
+        mock.advance(Duration::from_secs(1));
+        let d = mock.get(IdParams { id }).await.unwrap();
+        assert_eq!(d.segments.len(), 3);
+        assert_eq!(d.summary.connections, 3);
+        let states: Vec<DownloadState> = futures::future::join_all(
+            queued
+                .iter()
+                .map(|id| mock.get(IdParams { id: id.clone() })),
+        )
+        .await
+        .into_iter()
+        .map(|d| d.unwrap().summary.state)
+        .collect();
+        assert_eq!(states[0], DownloadState::Downloading);
+        assert_eq!(
+            states[1],
+            DownloadState::Queued,
+            "one at a time in a named queue"
+        );
+        let first = mock
+            .get(IdParams {
+                id: queued[0].clone(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(first.summary.queue.as_deref(), Some("night"));
+        mock.advance(Duration::from_secs(6));
+        for id in &queued {
+            let s = mock.get(IdParams { id: id.clone() }).await.unwrap().summary;
+            assert_eq!(s.state, DownloadState::Completed);
+        }
     }
 
     #[tokio::test]

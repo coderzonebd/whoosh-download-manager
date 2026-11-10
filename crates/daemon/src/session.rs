@@ -15,8 +15,9 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use vayu_proto::service::Notification;
-use vayu_proto::{HelloParams, HelloResult, PROTOCOL_VERSION, method};
+use vayu_proto::{HelloParams, HelloResult, PROTOCOL_VERSION, auth, method};
 
+use crate::limit::{Budget, is_over_budget};
 use crate::outbox::{Item, Outbox, Pushed};
 use crate::rpc::{self, Incoming};
 use crate::server::Shared;
@@ -27,14 +28,17 @@ pub mod close {
     pub const NORMAL: u16 = 1000;
     /// The daemon is shutting down, or the client stopped answering pings.
     pub const GOING_AWAY: u16 = 1001;
-    /// A message over the size limit.
+    /// A message over the size limit (64 KiB before hello, 16 MiB after).
     pub const TOO_BIG: u16 = 1009;
-    /// No `session.hello` first, a wrong token, or no hello in time.
-    pub const UNAUTHORIZED: u16 = 4401;
+    /// Something other than `session.hello` first, a wrong token, or a
+    /// missing or malformed nonce.
+    pub const UNAUTHORIZED: u16 = vayu_proto::close_code::UNAUTHORIZED;
+    /// No `session.hello` within the hello timeout.
+    pub const HELLO_TIMEOUT: u16 = vayu_proto::close_code::HELLO_TIMEOUT;
     /// `session.hello` with a protocol version this daemon does not speak.
-    pub const PROTOCOL: u16 = 4426;
+    pub const PROTOCOL: u16 = vayu_proto::close_code::PROTOCOL_MISMATCH;
     /// The client fell too far behind on lossless notifications.
-    pub const TOO_SLOW: u16 = crate::outbox::CLOSE_TOO_SLOW;
+    pub const TOO_SLOW: u16 = vayu_proto::close_code::TOO_SLOW;
 }
 
 enum HandshakeEnd {
@@ -43,8 +47,15 @@ enum HandshakeEnd {
     Gone,
 }
 
-pub(crate) async fn run<S>(mut ws: WebSocketStream<S>, shared: Arc<Shared>)
-where
+/// Runs one connection. `budget` limits what an unauthenticated peer can
+/// make us read; `slot` is its place among the connections waiting for
+/// their hello. Both are released once the hello succeeds.
+pub(crate) async fn run<S>(
+    mut ws: WebSocketStream<S>,
+    shared: Arc<Shared>,
+    budget: Budget,
+    slot: OwnedSemaphorePermit,
+) where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let _alive = shared.tracker.enter();
@@ -57,6 +68,8 @@ where
         }
         Err(HandshakeEnd::Gone) => return,
     };
+    budget.lift();
+    drop(slot);
 
     // Subscribe before answering hello, so no event falls in between; the
     // events are only sent after the hello result.
@@ -65,6 +78,7 @@ where
         daemon_version: shared.config.version.clone(),
         protocol: PROTOCOL_VERSION,
         capabilities: shared.service.capabilities(),
+        proof: auth::hello_proof(shared.token.expose(), &hello.nonce),
     };
     let reply = rpc::result_response(
         hello_id,
@@ -95,7 +109,9 @@ where
         tokio::select! {
             biased;
             _ = shutdown.changed() => {
-                outbox.close(close::GOING_AWAY, "daemon shutting down");
+                // After what is queued: the answer to `daemon.shutdown`, the
+                // events of the service's own shutdown.
+                outbox.close_after_pending(close::GOING_AWAY, "daemon shutting down");
                 break;
             }
             _ = &mut writer => {
@@ -199,14 +215,19 @@ where
         let msg = match msg {
             Err(_elapsed) => {
                 return Err(HandshakeEnd::Close(
-                    close::UNAUTHORIZED,
+                    close::HELLO_TIMEOUT,
                     "session.hello was not received in time".into(),
                 ));
             }
             Ok(None) => return Err(HandshakeEnd::Gone),
             Ok(Some(Err(e))) => {
-                return Err(match too_big(&e) {
-                    true => HandshakeEnd::Close(close::TOO_BIG, "message too big".into()),
+                let over = too_big(&e)
+                    || matches!(&e, tokio_tungstenite::tungstenite::Error::Io(io) if is_over_budget(io));
+                return Err(match over {
+                    true => HandshakeEnd::Close(
+                        close::TOO_BIG,
+                        "too much data before session.hello".into(),
+                    ),
                     false => HandshakeEnd::Gone,
                 });
             }
@@ -218,6 +239,13 @@ where
             Message::Close(_) => return Err(HandshakeEnd::Gone),
             Message::Binary(_) => return Err(first()),
         };
+        // Never parse a large unauthenticated message (PROTOCOL.md §1).
+        if text.len() > shared.config.max_hello_bytes {
+            return Err(HandshakeEnd::Close(
+                close::TOO_BIG,
+                "session.hello is too large".into(),
+            ));
+        }
         let req = match rpc::parse(text.as_str()) {
             Incoming::Request(req) if req.method == method::SESSION_HELLO => req,
             _ => return Err(first()),
@@ -231,6 +259,16 @@ where
             return Err(HandshakeEnd::Close(
                 close::UNAUTHORIZED,
                 "invalid or missing token".into(),
+            ));
+        }
+        let nonce_ok = params
+            .get("nonce")
+            .and_then(Value::as_str)
+            .is_some_and(auth::is_valid_nonce);
+        if !nonce_ok {
+            return Err(HandshakeEnd::Close(
+                close::UNAUTHORIZED,
+                "missing or malformed nonce (32-128 lower-case hex characters)".into(),
             ));
         }
         if params.get("protocol").and_then(Value::as_u64) != Some(u64::from(PROTOCOL_VERSION)) {
@@ -274,6 +312,30 @@ fn on_text(
         }
         Incoming::Ignore => return,
     };
+    if req.method == method::DAEMON_SHUTDOWN {
+        let no_params = match &req.params {
+            None => true,
+            Some(Value::Object(m)) => m.is_empty(),
+            Some(Value::Array(a)) => a.is_empty(),
+            Some(_) => false,
+        };
+        if !no_params {
+            if let Some(id) = req.id {
+                let reply =
+                    rpc::error_response(id, rpc::INVALID_PARAMS, "this method takes no params");
+                outbox.push_response(reply.to_string(), permit);
+            }
+            return;
+        }
+        tracing::info!("daemon.shutdown requested by a client");
+        // Answer first: the session closes with 1001 only after this is sent.
+        if let Some(id) = req.id {
+            let reply = rpc::result_response(id, Value::Null);
+            outbox.push_response(reply.to_string(), permit);
+        }
+        shared.request_stop();
+        return;
+    }
     if req.method == method::SESSION_HELLO {
         if let Some(id) = req.id {
             let reply = rpc::error_response(

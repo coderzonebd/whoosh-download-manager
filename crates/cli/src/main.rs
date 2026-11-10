@@ -58,12 +58,23 @@ pub struct DownloadOpts {
     /// File name to save as (default: from the server or the URL).
     #[arg(short = 'n', long = "name", value_name = "NAME")]
     pub name: Option<String>,
-    /// Extra request header, e.g. -H 'Authorization: Bearer …'. Repeatable.
+    /// Extra request header, e.g. -H 'X-Requested-With: vayu'. Repeatable.
+    /// Command lines are visible to other local users (`ps`): put secret
+    /// headers in --headers-file.
     #[arg(short = 'H', long = "header", value_name = "'K: V'")]
     pub headers: Vec<String>,
-    /// Cookie header value to send.
-    #[arg(long, value_name = "COOKIE")]
+    /// Read headers from FILE (`-` = stdin): one `Name: value` per line;
+    /// blank lines and lines starting with # are skipped.
+    #[arg(long, value_name = "FILE")]
+    pub headers_file: Option<PathBuf>,
+    /// Cookie header value to send. Visible to other local users in the
+    /// process list: prefer --cookie-file.
+    #[arg(long, value_name = "COOKIE", conflicts_with = "cookie_file")]
     pub cookie: Option<String>,
+    /// Read the Cookie header value from FILE (`-` = stdin), e.g.
+    /// `session=abc; theme=dark`.
+    #[arg(long, value_name = "FILE")]
+    pub cookie_file: Option<PathBuf>,
     /// Referer to send.
     #[arg(long, value_name = "URL")]
     pub referer: Option<String>,
@@ -77,9 +88,14 @@ pub struct DownloadOpts {
     /// other, or a name of your own.
     #[arg(long, value_name = "NAME")]
     pub category: Option<String>,
-    /// Queue to put the download in (not yet in the protocol; see README).
+    /// Put the download in a named queue (one download at a time per queue).
     #[arg(long, value_name = "NAME")]
     pub queue: Option<String>,
+    /// Use exactly N connections (1–64) instead of letting the engine learn
+    /// the best count.
+    #[arg(short = 'c', long, value_name = "N",
+          value_parser = clap::value_parser!(u32).range(1..=64))]
+    pub connections: Option<u32>,
     /// Another URL serving the identical file. Repeatable.
     #[arg(long = "mirror", value_name = "URL")]
     pub mirrors: Vec<String>,
@@ -337,6 +353,13 @@ mod tests {
         assert_eq!(args, ["--mock"]);
 
         assert!(Cli::try_parse_from(["vayu", "get"]).is_err());
+        assert!(Cli::try_parse_from(["vayu", "get", "u", "-c", "8", "--queue", "q"]).is_ok());
+        assert!(Cli::try_parse_from(["vayu", "get", "u", "-c", "0"]).is_err());
+        assert!(Cli::try_parse_from(["vayu", "get", "u", "-c", "65"]).is_err());
+        assert!(
+            Cli::try_parse_from(["vayu", "get", "u", "--cookie", "a", "--cookie-file", "f"])
+                .is_err()
+        );
         assert!(Cli::try_parse_from(["vayu", "pause"]).is_err());
         assert!(Cli::try_parse_from(["vayu", "rm", "--delete-files", "dl_1"]).is_ok());
         assert!(Cli::try_parse_from(["vayu", "settings", "set", "theme=dark"]).is_ok());

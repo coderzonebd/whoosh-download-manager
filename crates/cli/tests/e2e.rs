@@ -129,11 +129,21 @@ impl World {
 impl Drop for World {
     fn drop(&mut self) {
         let _ = self.run(&["daemon", "stop"]);
-        if let Some(pid) = self.runtime().and_then(|r| r["pid"].as_u64()) {
+        // Safety net for a daemon that did not stop: only ever a process
+        // that really is a vayu-daemon (runtime files in these tests may
+        // name made-up pids).
+        if let Some(pid) = self.runtime().and_then(|r| r["pid"].as_u64())
+            && is_vayu_daemon(pid)
+        {
             let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
         }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
+}
+
+fn is_vayu_daemon(pid: u64) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .is_ok_and(|comm| comm.trim() == "vayu-daemon")
 }
 
 #[derive(Debug)]
@@ -414,10 +424,11 @@ fn get_exit_codes() {
             "64 hex",
         ),
         (
-            &["get", "https://example.com/x", "--queue", "night"],
-            10,
+            &["get", "https://example.com/x", "--queue", " "],
+            7,
             "queue",
         ),
+        (&["get", "https://example.com/x", "-c", "65"], 2, "65"),
         (&["get"], 2, ""),
         (&["frobnicate"], 2, ""),
     ];
@@ -649,5 +660,254 @@ fn preconnect_and_watch() {
     #[cfg(not(unix))]
     {
         let _ = watch.kill();
+    }
+}
+
+// ---------------------------------------------------------------- stale runtime files
+
+/// A WebSocket server standing in for "whatever holds the port now". With
+/// `token`, it proves itself like a real daemon (and records requests);
+/// without, it answers hello with a wrong proof, like an impostor on the
+/// port of a stale runtime file. Every message it receives is recorded.
+struct Fake {
+    rt: tokio::runtime::Runtime,
+    port: u16,
+    received: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
+}
+
+impl Fake {
+    fn start(token: Option<&str>) -> Self {
+        use futures::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let listener = rt
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let received: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let (rec, token) = (received.clone(), token.map(str::to_owned));
+        rt.spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let (rec, token) = (rec.clone(), token.clone());
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(Message::Text(t))) = ws.next().await {
+                        let msg: Value = serde_json::from_str(t.as_str()).unwrap_or_default();
+                        rec.lock().unwrap().push(msg.clone());
+                        let result = match msg["method"].as_str() {
+                            Some("session.hello") => {
+                                let nonce = msg["params"]["nonce"].as_str().unwrap_or_default();
+                                let proof = match &token {
+                                    Some(t) => vayu_proto::auth::hello_proof(t, nonce),
+                                    None => "0".repeat(64),
+                                };
+                                serde_json::json!({"daemonVersion": "fake", "protocol": 1,
+                                                   "capabilities": [], "proof": proof})
+                            }
+                            Some("download.add") => serde_json::json!({"id": "dl_fake"}),
+                            _ => Value::Null,
+                        };
+                        let reply = serde_json::json!({"jsonrpc": "2.0", "id": msg["id"], "result": result});
+                        if ws.send(Message::text(reply.to_string())).await.is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        Self { rt, port, received }
+    }
+
+    fn received(&self) -> Vec<Value> {
+        self.received.lock().unwrap().clone()
+    }
+}
+
+impl Drop for Fake {
+    fn drop(&mut self) {
+        let _ = &self.rt;
+    }
+}
+
+/// Writes `runtime.json` the way a daemon does (private dir, 0600 file).
+#[cfg(unix)]
+fn write_runtime(data: &Path, port: u16, token: &str, pid: u32) {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    std::fs::create_dir_all(data).unwrap();
+    std::fs::set_permissions(data, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let path = data.join("runtime.json");
+    let _ = std::fs::remove_file(&path);
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .unwrap();
+    write!(
+        f,
+        r#"{{"port":{port},"token":"{token}","pid":{pid},"version":"0"}}"#
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_stale_runtime_file_whose_port_was_taken_gets_nothing_but_a_hello() {
+    let w = World::new("impostor");
+    let impostor = Fake::start(None);
+    write_runtime(&w.data(), impostor.port, "stale-token", 1);
+    let cookie = w.dir.join("cookie");
+    std::fs::write(&cookie, "session=s3cret-cookie").unwrap();
+
+    // Without auto-start: refused, and only the hello reached the impostor.
+    let r = w.run(&["--no-start", "list"]);
+    assert_eq!(r.code, 3, "{r:?}");
+    assert!(r.stderr.contains("stale"), "{r:?}");
+    // `daemon stop` sends nothing to it either (and signals no pid).
+    let r = w.run(&["daemon", "stop"]);
+    assert_eq!(r.code, 0, "{r:?}");
+    assert!(r.stdout.contains("not running"), "{r:?}");
+
+    // With auto-start: a real daemon replaces the stale file.
+    let r = w.run(&[
+        "add",
+        "https://example.com/a.bin?size=1MiB",
+        "--paused",
+        "--cookie-file",
+        cookie.to_str().unwrap(),
+        "-H",
+        "X-Secret: s3cret-header",
+    ]);
+    assert_eq!(r.code, 0, "{r:?}");
+    let rt = w.runtime().unwrap();
+    assert_ne!(rt["port"], impostor.port);
+    assert_ne!(rt["pid"], 1);
+
+    let received = impostor.received();
+    assert!(!received.is_empty());
+    for msg in &received {
+        assert_eq!(msg["method"], "session.hello", "the impostor got {msg}");
+        assert!(!msg.to_string().contains("s3cret"), "{msg}");
+    }
+}
+
+#[test]
+fn a_daemon_of_another_data_dir_on_the_port_means_start_our_own() {
+    let a = World::new("other-a");
+    assert_eq!(a.run(&["daemon", "start"]).code, 0);
+    let a_rt = a.runtime().unwrap();
+    let b = World::new("other-b");
+    #[cfg(unix)]
+    write_runtime(
+        &b.data(),
+        a_rt["port"].as_u64().unwrap() as u16,
+        "not-a-token",
+        a_rt["pid"].as_u64().unwrap() as u32,
+    );
+    let r = b.run(&["list"]);
+    assert_eq!(r.code, 0, "{r:?}");
+    let b_rt = b.runtime().unwrap();
+    assert_ne!(b_rt["port"], a_rt["port"]);
+    assert_ne!(b_rt["pid"], a_rt["pid"]);
+    // A was neither stopped nor touched.
+    assert_eq!(a.run(&["daemon", "status"]).code, 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn requests_carry_files_headers_connections_and_queue() {
+    let w = World::new("recorded");
+    let fake = Fake::start(Some("good-token"));
+    write_runtime(&w.data(), fake.port, "good-token", 4_000_000);
+    let headers = w.dir.join("headers");
+    std::fs::write(&headers, "# secrets\nAuthorization: Bearer t0k\n\nX-A: 1\n").unwrap();
+    let mut cmd = w.cmd(&[
+        "--no-start",
+        "add",
+        "https://example.com/r.bin",
+        "--cookie-file",
+        "-",
+        "--headers-file",
+        headers.to_str().unwrap(),
+        "-c",
+        "4",
+        "--queue",
+        "night",
+        "--paused",
+    ]);
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(b"session=from-stdin\n").unwrap();
+    }
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "dl_fake\n");
+
+    let received = fake.received();
+    let add = received
+        .iter()
+        .find(|m| m["method"] == "download.add")
+        .expect("download.add sent");
+    let p = &add["params"];
+    assert_eq!(p["connections"], 4);
+    assert_eq!(p["queue"], "night");
+    assert_eq!(p["start"], false);
+    assert_eq!(p["request"]["cookie"], "session=from-stdin");
+    assert_eq!(
+        p["request"]["headers"],
+        serde_json::json!([{"name": "Authorization", "value": "Bearer t0k"}, {"name": "X-A", "value": "1"}])
+    );
+    let hello = &received[0];
+    assert_eq!(hello["method"], "session.hello");
+    assert!(vayu_proto::auth::is_valid_nonce(
+        hello["params"]["nonce"].as_str().unwrap()
+    ));
+    // Not a daemon of ours: nothing for the world to stop when dropped.
+    std::fs::remove_file(w.data().join("runtime.json")).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_loose_data_dir_is_tightened_and_files_are_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let w = World::new("loose");
+    let data = w.data();
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o775)).unwrap();
+    // A world-readable runtime file (an old build?) is not trusted...
+    std::fs::write(
+        data.join("runtime.json"),
+        r#"{"port":1,"token":"t","pid":1,"version":"0"}"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        data.join("runtime.json"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    let r = w.run(&["--no-start", "list"]);
+    assert_eq!(r.code, 3, "{r:?}");
+    // ...and starting a daemon fixes everything.
+    let r = w.run(&["list"]);
+    assert_eq!(r.code, 0, "{r:?}");
+    let mode = |p: PathBuf| std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(data.clone()), 0o700);
+    assert_eq!(mode(data.join("runtime.json")), 0o600);
+    assert_eq!(mode(data.join("logs")), 0o700);
+    for entry in std::fs::read_dir(data.join("logs")).unwrap() {
+        let path = entry.unwrap().path();
+        assert_eq!(mode(path.clone()), 0o600, "{}", path.display());
     }
 }

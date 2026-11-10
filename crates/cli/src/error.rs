@@ -35,7 +35,7 @@ EXIT CODES:
     7    the daemon rejected an argument (-32602)
     8    network error, e.g. the server says 404 (-32005)
     9    I/O error, e.g. disk full (-32004)
-    10   not supported by this daemon or protocol (-32006)
+    10   not supported by this daemon (-32006)
     11   get: the download failed
     12   get: the link expired (the download needs a fresh URL)
     13   get: the file does not match its checksum
@@ -54,8 +54,6 @@ pub enum CliError {
     Rpc { code: i64, message: String },
     #[error("{message}")]
     Download { exit: u8, message: String },
-    #[error("{0}")]
-    Unsupported(String),
     #[error("interrupted")]
     Interrupted,
     #[error("{0}")]
@@ -79,7 +77,6 @@ impl CliError {
                 _ => exit::OTHER,
             },
             Self::Download { exit, .. } => *exit,
-            Self::Unsupported(_) => exit::UNSUPPORTED,
             Self::Interrupted => exit::INTERRUPTED,
             Self::Other(_) => exit::OTHER,
         }

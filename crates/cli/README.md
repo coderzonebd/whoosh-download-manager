@@ -31,11 +31,16 @@ States for `--state`: `queued`, `probing`, `downloading`, `paused`, `needs_refre
 | `-o, --dir DIR` | `directory` (made absolute against the current directory) |
 | `-n, --name NAME` | `filename` (one URL only) |
 | `-H, --header 'K: V'` (repeatable) | `request.headers`; `Cookie`, `Referer` and `User-Agent` go to their own fields |
+| `--headers-file FILE` (`-` = stdin) | the same, one `Name: value` per line; blank lines and `#` comments skipped |
 | `--cookie STR` · `--referer URL` · `--user-agent UA` | `request.cookie` / `referer` / `userAgent` (they win over the same `-H`) |
+| `--cookie-file FILE` (`-` = stdin) | `request.cookie`, the file holding one Cookie header value (`a=1; b=2`) |
 | `--checksum ALG:HEX` | `checksum` (`md5`, `sha1`, `sha256`, `sha512`; checked locally for length) |
 | `--category NAME` | `category` |
 | `--mirror URL` (repeatable) | `mirrors` |
-| `--queue NAME` | **not supported yet**: protocol v1 has no queue field in `download.add`, so this fails with exit code 10 (see the contract proposal in the branch report) |
+| `--queue NAME` | `queue`: a named queue runs one download at a time |
+| `-c, --connections N` | `connections`: exactly N connections (1–64) instead of the learned count |
+
+**Secrets on the command line:** other local users can read every process's arguments (`ps`, `/proc/<pid>/cmdline`). Put cookies and secret headers in `--cookie-file` / `--headers-file` (or pipe them on stdin with `-`), not in `--cookie` or `-H`. Header names and values are checked for line breaks, and error messages never echo a header value.
 
 **Settings keys** accept camelCase, snake_case or kebab-case, plus short forms: `defaultDirectory` (`dir`), `maxActiveDownloads` (`maxActive`), `maxConnectionsPerDownload` (`connections`), `speedLimitBps` (`speedLimit`; a byte rate like `10MiB`, or `none`), `language`, `theme`. `settings set` reads the current settings, applies the changes and sends the full object, as `settings.set` requires.
 
@@ -52,15 +57,15 @@ JSON shapes: `add` → `[{url, id} | {url, error}]`; `get` → the final `Downlo
 
 ## The daemon
 
-Every command that needs the daemon reads `runtime.json`, connects to `ws://127.0.0.1:<port>/rpc` and says `session.hello` with the token. If nothing answers, it starts `vayu-daemon --detached --data-dir <dir>` in its own process group (Unix) or detached (Windows), with stdin/stdout closed and stderr going to `<data dir>/logs/daemon-start.log`, then waits up to 20 s for hello. If several commands race to start it, one daemon wins the lock and the others exit with status 3; every command then uses the winner. If the daemon cannot start, its own message is shown (e.g. "start it with --mock" while the engine is not wired in). The environment is inherited, so `VAYU_DAEMON_MOCK=1 vayu list` starts a mock daemon.
+Every command that needs the daemon reads `runtime.json` (through `vayu_proto::runtime`, which refuses a symlink, a file other users could read or write, or one in a directory others can write), connects to `ws://127.0.0.1:<port>/rpc` and says `session.hello` with the token and a fresh nonce. **It checks the daemon's proof before sending anything else**, so a process that took the port of a stale runtime file gets nothing but that hello (and an old token the daemon no longer uses). A wrong proof, a daemon that rejects the token (another data directory's daemon on that port), nothing answering, or an unusable file all mean "not running": the command then starts `vayu-daemon --detached --data-dir <dir>` in its own process group (Unix) or detached (Windows), with stdin/stdout closed and stderr going to `<data dir>/logs/daemon-start.log`, then waits up to 20 s for hello. If several commands race to start it, one daemon wins the lock and the others exit with status 3; every command then uses the winner. If the daemon cannot start, its own message is shown (e.g. "start it with --mock" while the engine is not wired in). The environment is inherited, so `VAYU_DAEMON_MOCK=1 vayu list` starts a mock daemon.
 
-- `vayu daemon status` — exit 0 if running (pid, port, version, capabilities), 3 if not. Never starts it.
+- `vayu daemon status` — exit 0 if running (pid, port, version, capabilities), 3 if not (with the reason, e.g. a stale runtime file). Never starts it.
 - `vayu daemon start` — no-op if it is running; `--foreground` runs it in this terminal (on Unix the CLI `exec`s it), logging to stderr until Ctrl-C. Arguments after `--` go to `vayu-daemon`, e.g. `vayu daemon start -- --mock`.
-- `vayu daemon stop` — sends SIGTERM to the pid in `runtime.json` (after checking that daemon answers hello) and waits until it has removed `runtime.json`. A no-op if it is not running. **Unix only for now**: a detached daemon on Windows has no console to signal; stopping it needs an RPC (`daemon.shutdown`, proposed).
+- `vayu daemon stop` — calls `daemon.shutdown` on the daemon (after its proof checked out) and waits until it has removed `runtime.json`. Works on every OS; it never signals a pid from the file. A no-op if it is not running.
 
 ## `vayu get` for scripts and benchmarks
 
-`vayu get URL -o DIR` behaves like a downloader binary: it prints only the final path on stdout, prints nothing on stderr unless stderr is a terminal (progress bar) or something failed, and exits with a code that says what happened. Ctrl-C pauses the download (it can be resumed with `vayu resume ID`) and exits 130. The daemon it starts keeps running afterwards; a harness that wants nothing left behind runs `vayu daemon stop` (and should give each run its own `VAYU_DATA_DIR`). Note that the daemon is not a child of `vayu`, so `getrusage(RUSAGE_CHILDREN)` around `vayu get` does not include the daemon's CPU time.
+`vayu get URL -o DIR [-c N]` behaves like a downloader binary: it prints only the final path on stdout, prints nothing on stderr unless stderr is a terminal (progress bar) or something failed, and exits with a code that says what happened. Ctrl-C pauses the download (it can be resumed with `vayu resume ID`) and exits 130. The daemon it starts keeps running afterwards; a harness that wants nothing left behind runs `vayu daemon stop` (and should give each run its own `VAYU_DATA_DIR`). Note that the daemon is not a child of `vayu`, so `getrusage(RUSAGE_CHILDREN)` around `vayu get` does not include the daemon's CPU time.
 
 ## Exit codes
 
@@ -76,7 +81,7 @@ Every command that needs the daemon reads `runtime.json`, connects to `ws://127.
 | 7 | the daemon rejected an argument (`-32602`) |
 | 8 | network error, e.g. 404 or DNS failure while adding (`-32005`) |
 | 9 | I/O error (`-32004`) |
-| 10 | not supported by this daemon or protocol (`-32006`, `--queue`, `daemon stop` on Windows) |
+| 10 | not supported by this daemon (`-32006`, e.g. an `ftp://` URL) |
 | 11 | `get`: the download failed (the error code is shown, e.g. `[remote_changed]`) |
 | 12 | `get`: the link expired (`needs_refresh`) |
 | 13 | `get`: the file does not match its checksum (`checksum_mismatch`) |
@@ -91,6 +96,6 @@ With several URLs, `add` adds every URL it can and exits with the first failure'
 scripts/cargo-slot.sh cargo test -p vayu-cli
 ```
 
-Unit tests cover argument parsing, request building, settings edits, exit-code mapping, event folding and number formatting, and that the CLI's data-dir rule matches `vayu-nmhost`'s. `tests/e2e.rs` builds `vayu-daemon` from the workspace (it lands next to `vayu`, where auto-start looks; `VAYU_DAEMON_BIN_FOR_TESTS` overrides) and runs the real binaries with `VAYU_DAEMON_MOCK=1` in private data directories: auto-start from any command, concurrent auto-starts, `daemon start/stop/status`, a daemon that cannot start, the XDG data dir shared with the daemon, `get` (path on stdout, silent stderr, `--json`, checksum), every `get` exit code, Ctrl-C pausing, add/list/info/pause/resume/rm with their error codes, settings, preconnect and `watch --json`.
+Unit tests cover argument parsing, request building (cookie and header files, stdin, line-break and secret-echo checks), settings edits, exit-code mapping, event folding, number formatting and unusable runtime files. `tests/e2e.rs` builds `vayu-daemon` from the workspace (it lands next to `vayu`, where auto-start looks; `VAYU_DAEMON_BIN_FOR_TESTS` overrides) and runs the real binaries with `VAYU_DAEMON_MOCK=1` in private data directories: auto-start from any command, concurrent auto-starts, `daemon start/stop/status`, a daemon that cannot start, the XDG data dir shared with the daemon, `get` (path on stdout, silent stderr, `--json`, checksum), every `get` exit code, Ctrl-C pausing, add/list/info/pause/resume/rm with their error codes, settings, preconnect and `watch --json`. Against fakes on the port: a stale runtime file whose port answers without the proof gets only a hello (no cookie, no header, no request, nothing from `daemon stop`) and a real daemon is started; another data directory's daemon on the port leads to starting our own; a recording fake with the right proof receives exactly the cookie (from stdin), headers file, `connections` and `queue` given. A loose data directory with a world-readable runtime file is refused until a daemon is started, which makes the directory 0700 and every file in it 0600.
 
 Not covered: Windows and macOS have not been run; the progress bar and the live `watch` table were checked by hand under a pseudo-terminal only.

@@ -25,8 +25,8 @@ use vayu_proto::service::Notification;
 use vayu_proto::{ProgressEvent, ProgressItem, Stats};
 
 /// Close code for a client that fell too far behind on lossless
-/// notifications (proposed for PROTOCOL.md §1 next to 4401 and 4426).
-pub const CLOSE_TOO_SLOW: u16 = 4429;
+/// notifications (PROTOCOL.md §1).
+pub const CLOSE_TOO_SLOW: u16 = vayu_proto::close_code::TOO_SLOW;
 
 #[derive(Debug)]
 pub enum Item {
@@ -194,6 +194,20 @@ impl Outbox {
             return;
         }
         inner.close_now(code, reason);
+        drop(inner);
+        self.notify.notify_one();
+    }
+
+    /// Queues a close frame *after* everything already queued (a shutdown:
+    /// pending answers, such as the one to `daemon.shutdown`, still go out).
+    /// Later pushes are ignored. Does nothing if already closing.
+    pub fn close_after_pending(&self, code: u16, reason: &str) {
+        let mut inner = self.lock();
+        if inner.closing {
+            return;
+        }
+        inner.closing = true;
+        inner.push(Item::Close(code, reason.to_owned()));
         drop(inner);
         self.notify.notify_one();
     }
@@ -387,6 +401,24 @@ mod tests {
         assert_eq!(outbox.push_notification(state("a")), Pushed::Closed);
         assert_eq!(outbox.push_response("x".into(), None), Pushed::Closed);
         assert_eq!(drain(&outbox), ["close:4429"]);
+    }
+
+    #[test]
+    fn a_graceful_close_keeps_what_is_queued() {
+        let outbox = Outbox::new(10);
+        outbox.push_response("bye".into(), None);
+        outbox.push_notification(state("a"));
+        outbox.close_after_pending(1001, "shutdown");
+        assert_eq!(outbox.push_response("late".into(), None), Pushed::Closed);
+        outbox.close(4429, "ignored: already closing");
+        assert_eq!(
+            drain(&outbox),
+            [
+                "resp:bye",
+                r#"event.download.state:{"id":"a","state":"paused"}"#,
+                "close:1001"
+            ]
+        );
     }
 
     #[test]

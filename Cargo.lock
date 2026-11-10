@@ -4559,13 +4559,11 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "futures",
- "nix",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tokio-tungstenite",
- "vayu-nmhost",
  "vayu-proto",
 ]
 
@@ -4592,6 +4590,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "rustix",
  "serde",
  "serde_json",
  "subtle",
@@ -4601,7 +4600,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "vayu-nmhost",
  "vayu-proto",
 ]
 

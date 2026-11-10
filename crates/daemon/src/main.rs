@@ -128,7 +128,10 @@ async fn run(args: Args, data_dir: PathBuf) -> ExitCode {
         None
     };
 
-    vayu_daemon::shutdown_signal().await;
+    tokio::select! {
+        _ = vayu_daemon::shutdown_signal() => {}
+        _ = daemon.stop_requested() => tracing::info!("stopping: daemon.shutdown"),
+    }
     tokio::spawn(async {
         vayu_daemon::shutdown_signal().await;
         eprintln!("vayu-daemon: second signal, exiting immediately");

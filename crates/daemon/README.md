@@ -31,11 +31,14 @@ Without `--mock` the binary currently exits with status 1 and says so: the engin
 let service: Arc<dyn Service> = /* vayu-engine, or MockService::new(MockOptions::default()) */;
 let config = vayu_daemon::DaemonConfig::new(vayu_daemon::paths::default_data_dir()?);
 let daemon = vayu_daemon::serve(service, config).await?;   // -> RunningDaemon
-vayu_daemon::shutdown_signal().await;                       // SIGINT/SIGTERM, Ctrl-C/console close
-daemon.shutdown().await;                                    // close sessions, Service::shutdown, remove runtime.json
+tokio::select! {
+    _ = vayu_daemon::shutdown_signal() => {}                // SIGINT/SIGTERM, Ctrl-C/console close
+    _ = daemon.stop_requested() => {}                       // a client called daemon.shutdown
+}
+daemon.shutdown().await;    // stop accepting, Service::shutdown, close sessions (1001), remove runtime.json
 ```
 
-`serve` does, in order: create the data directory (0700 when new) → take `daemon.lock` (an OS file lock held for the daemon's lifetime; if another process holds it → `ServeError::AlreadyRunning`) → if `runtime.json` exists and its daemon answers `session.hello` → `AlreadyRunning` too, otherwise it is stale and replaced → bind `127.0.0.1:<port>` (free port if taken) → write `runtime.json` → accept connections.
+`serve` does, in order: create the data directory (0700 when new), tighten an existing one of ours to 0700, refuse a symlink or someone else's (`ServeError::InsecureDataDir`) → take `daemon.lock` (an OS file lock held for the daemon's lifetime; if another process holds it → `ServeError::AlreadyRunning`) → if `runtime.json` exists and its daemon answers `session.hello` **with a valid proof** → `AlreadyRunning` too, otherwise it is stale and replaced (whatever holds its port now cannot block the start) → bind `127.0.0.1:<port>` (free port if taken) → write `runtime.json` → accept connections.
 
 `DaemonConfig` exposes every limit (see the table below) so tests can shrink them.
 
@@ -45,7 +48,7 @@ daemon.shutdown().await;                                    // close sessions, S
 - **Address:** `ws://127.0.0.1:<port>/rpc`, loopback only. Default port 47210, falling back to a free port.
 - **`runtime.json`** = `{ "port", "token", "pid", "version" }`. Created as a new temporary file with mode 0600 *in the `open` call* (so it is never readable by others, not even empty), written, fsynced and renamed over `runtime.json`: readers never see a partial file. Removed on clean shutdown, but only if it still holds our pid and token. On Windows the file inherits the data directory's ACL (`%LOCALAPPDATA%` is the user's own); no explicit ACL is set.
 - **Token:** 32 bytes from the OS RNG (`getrandom`), base64url without padding (43 characters), compared in constant time (`subtle`). New on every start. Never logged; `Debug` is redacted.
-- **Data dir:** `$VAYU_DATA_DIR`; else Linux `$XDG_DATA_HOME/vayu` (relative values ignored, default `~/.local/share/vayu`), macOS `~/Library/Application Support/vayu`, Windows `%LOCALAPPDATA%\vayu`. Same code shape as `vayu-nmhost`'s `runtime` module; a test compares both for every OS and environment combination.
+- **Data dir:** `$VAYU_DATA_DIR`; else Linux `$XDG_DATA_HOME/vayu` (relative values ignored, default `~/.local/share/vayu`), macOS `~/Library/Application Support/vayu`, Windows `%LOCALAPPDATA%\vayu` — `vayu_proto::runtime`, the one copy the CLI and `vayu-nmhost` use too. On Unix the daemon makes the directory (and `logs/`) 0700 if it owns it, and refuses to start in a symlink or a directory owned by someone else. Clients read `runtime.json` through `vayu_proto::runtime::read_runtime`, which refuses a symlink, a foreign owner, a mode other than owner-only, or a directory others can write.
 
 ### HTTP layer
 | Request | Answer |
@@ -61,8 +64,10 @@ daemon.shutdown().await;                                    // close sessions, S
 Allowed `Origin`: none (native clients), `tauri://localhost`, `http://tauri.localhost`, `https://tauri.localhost`. `Origin: null`, several `Origin` headers, or anything else → 403.
 
 ### Session
-- The first message must be `session.hello` within 10 s. A wrong or missing token, anything else first (another method, invalid JSON, a binary frame, a hello without an id), or no hello in time → close **4401**. Correct token but `protocol` ≠ 1 → close **4426**. The token is checked before the protocol. A hello with the right token and protocol but malformed otherwise (e.g. no `client`) gets `-32602` and may be retried.
-- `HelloResult` = `{ daemonVersion, protocol: 1, capabilities: Service::capabilities() }`. A second `session.hello` → `-32600`.
+- The first message must be `session.hello` within 10 s, else close **4408** (retryable). A wrong or missing token, a missing or malformed `nonce` (32–128 lower-case hex), or anything else first (another method, invalid JSON, a binary frame, a hello without an id) → close **4401**. Correct token and nonce but `protocol` ≠ 1 → close **4426**. Checked in that order. A hello right in all three but malformed otherwise (e.g. no `client`) gets `-32602` and may be retried.
+- `HelloResult` = `{ daemonVersion, protocol: 1, capabilities: Service::capabilities(), proof }` with `proof = vayu_proto::auth::hello_proof(token, nonce)`, so the client can tell the real daemon from whatever holds the port of a stale runtime file. A second `session.hello` → `-32600`.
+- **Before hello** a connection may send at most 64 KiB in total: the upgraded socket is wrapped in a read budget, so a peer without the token can never make the daemon buffer or parse more (more → 1009 or a dropped connection), and at most 8 connections may wait for their hello at once (more → HTTP **503** with `Retry-After: 1`). A test streams four 16 MiB `[0,0,…` first frames and checks that peak memory grows by less than 48 MiB (without the limit it grew by 576 MiB).
+- **`daemon.shutdown`** (no params; anything else is `-32602`): answered with `null`, then the daemon stops as on SIGTERM — `RunningDaemon::stop_requested()` resolves and the binary runs the shutdown below.
 
 ### JSON-RPC 2.0
 - One message per text frame. Invalid JSON → `-32700` (id `null`). Not a request object → `-32600` (the request's id if usable, else `null`).
@@ -81,8 +86,10 @@ One `Service::subscribe()` per connection, started before the hello result is se
 ### Limits and close codes
 | Setting (`DaemonConfig`) | Default | Effect |
 |---|---|---|
-| `hello_timeout` | 10 s | close 4401 |
-| `max_message_bytes` | 16 MiB (message and frame) | close 1009 |
+| `hello_timeout` | 10 s | close 4408 |
+| `max_hello_bytes` | 64 KiB read before hello | close 1009 (or the connection is dropped) |
+| `max_pending_hellos` | 8 connections | HTTP 503 at the upgrade |
+| `max_message_bytes` | 16 MiB (message and frame), after hello | close 1009 |
 | `ping_interval` / `pong_timeout` | 20 s / 20 s | ping every 20 s; a client silent for 40 s (while we are reading it) is closed with 1001 |
 | `max_pending_events` | 4096 lossless events | close 4429 |
 | `max_inflight_requests` | 32 per connection | stops reading that client until one is answered |
@@ -91,18 +98,19 @@ One `Service::subscribe()` per connection, started before the hello result is se
 | Close code | Meaning |
 |---|---|
 | 1000 | the client closed first |
-| 1001 | daemon shutting down, or ping timeout |
+| 1001 | daemon shutting down (after what was queued for the client), or ping timeout |
 | 1009 | message over the size limit |
-| 4401 | no/invalid `session.hello` or token, or hello too late |
+| 4401 | no/invalid `session.hello`, token or nonce |
+| 4408 | no `session.hello` within 10 s |
 | 4426 | unsupported protocol version |
-| 4429 | client too slow (lossless backlog) — proposed for PROTOCOL.md |
+| 4429 | client too slow (lossless backlog) |
 
 ### Logging
-`tracing` to `<data dir>/logs/vayu-daemon.<date>.log` (daily rotation, 7 files kept, owner-only directory), plus stderr unless `--detached`. Request **params are never logged** (they carry cookies and headers), only method names; the token never is. The `log` crate is deliberately not bridged into `tracing` (the WebSocket library logs whole frames, hello included, at trace level through it), and `tungstenite` targets are filtered off as well. A test captures trace-level output across hello, cookies, headers and a bad token and checks no secret appears.
+`tracing` to `<data dir>/logs/vayu-daemon.<YYYY-MM-DD>.log` (UTC days, 7 files kept), plus stderr unless `--detached`. The files are written by the daemon's own writer, created 0600 whatever the umask (an older, wider file is tightened), in a 0700 directory. Request **params are never logged** (they carry cookies and headers), only method names; the token never is. The `log` crate is deliberately not bridged into `tracing` (the WebSocket library logs whole frames, hello included, at trace level through it), and `tungstenite` targets are filtered off as well. A test captures trace-level output across hello, cookies, headers and a bad token and checks no secret appears.
 
 ### Shutdown and single instance
 - Unix: SIGINT or SIGTERM. Windows: Ctrl-C, Ctrl-Break, console close, log-off, system shutdown. A second signal exits immediately (130).
-- Shutdown order: stop accepting → close every session with 1001 (waiting up to 5 s) → `Service::shutdown()` → remove `runtime.json`.
+- Shutdown order (signal or `daemon.shutdown`): stop accepting → `Service::shutdown()` (pause transfers, save state; connected clients still receive the resulting events) → close every session with 1001 after what is already queued for it (waiting up to 5 s) → remove `runtime.json`.
 - A second daemon for the same data directory exits with status 3 and `another vayu-daemon is already running for this data directory (pid …, port …)`, leaving the first one's files alone. A crashed daemon's lock is released by the OS and its stale `runtime.json` is replaced.
 
 ## The mock service
@@ -111,7 +119,7 @@ One `Service::subscribe()` per connection, started before the hello result is se
 
 - Downloads move `queued → probing → downloading → (verifying →) completed` over time, split into up to 8 segments that are re-split when a connection finishes its range, with wobbling speeds; `maxActiveDownloads`, `maxConnectionsPerDownload` and `speedLimitBps` are honoured.
 - Events: `added`, `state` (on change), `progress` (≤ 4 per second; segments at most once per second per download; a download's last progress precedes its final state), `removed`, `stats` (1 per second), `settings`.
-- Pause, resume (retrying failed ones), remove, `refreshUrl`, settings validation and the error codes (`-32002`, `-32003`, `-32602`, `-32005`, `-32006`) behave as the protocol says. The `demo` scenario has a download in every state.
+- Pause, resume (retrying failed ones), remove, `refreshUrl`, settings validation and the error codes (`-32002`, `-32003`, `-32602`, `-32005`, `-32006`) behave as the protocol says. `AddParams.connections` (1–64, else `-32602`) fixes the segment count; `AddParams.queue` puts a download in a named queue that runs one download at a time. The `demo` scenario has a download in every state.
 
 The URL decides how a mock download behaves:
 
@@ -134,10 +142,11 @@ The URL decides how a mock download behaves:
 scripts/cargo-slot.sh cargo test -p vayu-daemon
 ```
 
-- `src/*` unit tests: token and base64url vectors, runtime-file permissions (0600 from creation), atomicity under a concurrent reader, the lock, data-dir rules, JSON-RPC parsing, the outbox's coalescing and overflow, the mock's state machine.
-- `tests/conformance.rs` (in-process daemon): `/healthz` and routes, port fallback, Origin and Host checks, 1009, ping/pong and dead clients, hello (4401 in seven variants, 4426, timeout, retry), every JSON-RPC error code, client notifications, concurrency, events from the mock, **slow clients** (lossy coalesced, lossless complete and in order) and **4429** while a fast client on the same daemon gets everything, runtime-file contents and permissions, single instance (lock and hello), stale files, clean shutdown.
-- `tests/binary.rs`: the real executable — second instance exits 3, SIGTERM/SIGINT stop it cleanly and remove `runtime.json`, logs land in `logs/` without the token, detached mode ignores SIGHUP.
+- `src/*` unit tests: token and base64url vectors, runtime-file permissions (0600 from creation), atomicity under a concurrent reader, the lock, tightening the data dir and refusing symlinks, private and pruned log files, the pre-hello read budget, JSON-RPC parsing, the outbox's coalescing, overflow and graceful close, the mock's state machine (connections, queues).
+- `tests/conformance.rs` (in-process daemon): `/healthz` and routes, port fallback, Origin and Host checks, 1009, ping/pong and dead clients, hello (proof, 4401 in twelve variants including nonces, 4426, 4408, retry), the 64 KiB pre-hello limit and the 503 slot limit, `daemon.shutdown` (answer, then 1001 to everyone), the service's shutdown events reaching clients before 1001, a stale runtime file whose port answers without the proof, the data dir made private or refused, every JSON-RPC error code, client notifications, concurrency, events from the mock, **slow clients** (lossy coalesced, lossless complete and in order) and **4429** while a fast client on the same daemon gets everything, runtime-file contents and permissions, single instance (lock and hello), stale files, clean shutdown.
+- `tests/binary.rs`: the real executable — second instance exits 3, SIGTERM/SIGINT and `daemon.shutdown` stop it cleanly and remove `runtime.json`, logs land in `logs/` (0600, directory 0700) without the token, detached mode ignores SIGHUP.
+- `tests/memory.rs`: hostile 16 MiB first frames do not grow peak memory (Linux; a binary of its own).
 - `tests/logging.rs`: no token, cookie or header value in trace-level logs.
-- `tests/nmhost.rs`: the real **`vayu-nmhost`** (built from the workspace by the test, or `$VAYU_NMHOST_BIN`) pointed at this daemon only through `VAYU_DATA_DIR` (and, on Linux, through `XDG_DATA_HOME`): `nm.status`, `download.add`/`list`/`get`, error codes, `event.download.*` relayed, `event.nm.status` on daemon stop and restart (new port and token), clean exit on EOF. Plus the data-dir rule compared with nmhost's for every OS.
+- `tests/nmhost.rs`: the real **`vayu-nmhost`** (built from the workspace by the test, or `$VAYU_NMHOST_BIN`; it checks the hello proof) pointed at this daemon only through `VAYU_DATA_DIR` (and, on Linux, through `XDG_DATA_HOME`): `nm.status`, `download.add`/`list`/`get`, error codes, `event.download.*` relayed, `event.nm.status` on daemon stop and restart (new port and token), clean exit on EOF. Plus: `vayu_proto::runtime::read_runtime` accepts the file the daemon writes.
 
 Not covered: Windows and macOS (signals, console events, paths, ACLs) have not been run; the real engine is not wired yet.

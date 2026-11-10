@@ -15,7 +15,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use vayu_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, method};
+use vayu_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, auth, method};
 
 use crate::error::CliError;
 
@@ -35,6 +35,12 @@ pub enum ConnectError {
     /// Nothing answers on that port (or not in time): no daemon, or a stale
     /// runtime file.
     Unreachable,
+    /// Something answered without knowing the token: the runtime file is
+    /// stale and another process holds its port. Nothing but the hello was
+    /// sent to it.
+    BadProof,
+    /// A local failure (no random numbers).
+    Local(String),
     /// A daemon answered and refused us (4401 / 4426).
     Rejected { code: Option<u16>, reason: String },
 }
@@ -68,12 +74,14 @@ impl Client {
         let (mut ws, _) = tokio_tungstenite::connect_async(url)
             .await
             .map_err(|_| ConnectError::Unreachable)?;
+        let nonce = auth::new_nonce().map_err(|e| ConnectError::Local(e.to_string()))?;
         let hello = json!({
             "jsonrpc": "2.0",
             "id": 0,
             "method": method::SESSION_HELLO,
             "params": HelloParams {
                 token: token.to_owned(),
+                nonce: nonce.clone(),
                 protocol: PROTOCOL_VERSION,
                 client: ClientInfo { name: "cli".into(), version: env!("CARGO_PKG_VERSION").into() },
             },
@@ -95,8 +103,16 @@ impl Client {
                             reason: error["message"].as_str().unwrap_or_default().to_owned(),
                         });
                     }
-                    break serde_json::from_value::<HelloResult>(reply["result"].clone())
+                    let hello = serde_json::from_value::<HelloResult>(reply["result"].clone())
                         .map_err(|_| ConnectError::Unreachable)?;
+                    // PROTOCOL.md §1: check the daemon's proof before sending
+                    // anything else (requests carry cookies and headers).
+                    if !auth::verify_hello_proof(token, &nonce, &hello.proof) {
+                        let _ =
+                            tokio::time::timeout(Duration::from_millis(200), ws.close(None)).await;
+                        return Err(ConnectError::BadProof);
+                    }
+                    break hello;
                 }
                 Some(Ok(Message::Close(frame))) => {
                     return Err(ConnectError::Rejected {
