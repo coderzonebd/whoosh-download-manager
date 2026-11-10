@@ -380,6 +380,19 @@ impl Inner {
         self.save(id).await;
     }
 
+    /// Send the current summary of `id` as `event.download.updated`: its
+    /// name, size or category changed after `event.download.added`.
+    pub(crate) fn announce(&self, id: &str) {
+        let summary = {
+            let st = lock(&self.st);
+            match st.downloads.get(id) {
+                Some(e) => self.summary(e),
+                None => return,
+            }
+        };
+        self.bus.emit(Notification::DownloadUpdated(summary));
+    }
+
     /// A run ended: apply its outcome, persist, notify, start what's next.
     pub(crate) async fn run_ended(
         self: &Arc<Self>,
@@ -454,6 +467,10 @@ impl Inner {
         };
         let (progress, state) = event;
         let completed = state.state == DownloadState::Completed;
+        if completed {
+            // The finished file may have taken a numbered name (`name (1)`).
+            self.announce(id);
+        }
         self.bus.emit(Notification::DownloadProgress(ProgressEvent {
             items: vec![progress],
         }));

@@ -64,6 +64,7 @@ pub type ServiceResult<T> = Result<T, ServiceError>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notification {
     DownloadAdded(DownloadSummary),
+    DownloadUpdated(DownloadSummary),
     DownloadProgress(ProgressEvent),
     DownloadState(StateEvent),
     DownloadRemoved(RemovedEvent),
@@ -76,6 +77,7 @@ impl Notification {
     pub fn method(&self) -> &'static str {
         match self {
             Self::DownloadAdded(_) => event::DOWNLOAD_ADDED,
+            Self::DownloadUpdated(_) => event::DOWNLOAD_UPDATED,
             Self::DownloadProgress(_) => event::DOWNLOAD_PROGRESS,
             Self::DownloadState(_) => event::DOWNLOAD_STATE,
             Self::DownloadRemoved(_) => event::DOWNLOAD_REMOVED,
@@ -91,6 +93,7 @@ impl Notification {
         }
         match self {
             Self::DownloadAdded(v) => json(v),
+            Self::DownloadUpdated(v) => json(v),
             Self::DownloadProgress(v) => json(v),
             Self::DownloadState(v) => json(v),
             Self::DownloadRemoved(v) => json(v),

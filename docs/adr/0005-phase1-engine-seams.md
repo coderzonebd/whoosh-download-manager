@@ -54,3 +54,7 @@ The real-process crash test (`vayu-bench hardkill`, 1,000 SIGKILLs) found no cor
 
 - `Checkpoint::finishing: Option<Finishing { name, len }>` replaces the engine's interim marker in the journalled `RemoteMeta::final_url`.
 - `StateStore::sync()`: make resolved saves durable against power loss. The engine calls it after saving a completed record and before removing the journal entry; otherwise a power cut with SQLite's WAL at `synchronous=NORMAL` could roll the record back to "downloading" after the journal entry is gone, and the download would run again. The default is a no-op for stores whose saves are already durable; `vayu-store` overrides it.
+
+## Amendment 3 — start in one request (2026-11-10)
+
+The Phase 1 labserver run (docs/bench/data/2026-11-10-pop-os-phase1-labserver) showed a separate probe costing a full round trip before the first byte: high-latency 1.06 s against wget's 0.51 s, and most of the time of every small file. `RangeSource::start()` probes and starts the body from offset 0 in one request; a fresh download's first connection is that response, and the other connections split work off it. The default implementation (probe, then open) keeps every existing source correct; vayu-net overrides it with one `GET` carrying `Range: bytes=0-`. Resumes keep probing first, because the validators must be checked before any byte is accepted.

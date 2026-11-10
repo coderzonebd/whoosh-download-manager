@@ -202,6 +202,34 @@ pub trait RangeSource: Send + Sync {
     /// Start one request. Resolves once the response headers have been
     /// checked (points 2 and 3), so the time it takes is time-to-first-byte.
     fn open(&self, req: OpenRequest) -> BoxFuture<'_, Result<ByteStream, SourceError>>;
+
+    /// Probe and start downloading in one request (e.g. `GET` with
+    /// `Range: bytes=0-`): what [`RangeSource::probe`] would learn, plus the
+    /// body from offset 0. A fresh download starts with this, so its first
+    /// bytes arrive one round trip sooner than probe-then-open; on a small
+    /// file or a high-latency link that round trip is most of the time.
+    ///
+    /// The body follows `open`'s contract (exact bytes from offset 0, cancel
+    /// on drop, no hidden retries). It runs to the end of the entity: the
+    /// engine stops reading where the range this connection still owns ends,
+    /// after other connections took over the rest. When the server ignores
+    /// the range (`200`), the body is the whole entity and `accepts_ranges`
+    /// says whether later ranged requests may still work.
+    ///
+    /// The default probes, then opens the whole entity: correct, but two
+    /// round trips. Network sources should override it.
+    fn start(&self) -> BoxFuture<'_, Result<(RemoteMeta, ByteStream), SourceError>> {
+        Box::pin(async move {
+            let meta = self.probe().await?;
+            let stream = self
+                .open(OpenRequest {
+                    range: None,
+                    expect: meta.validators(),
+                })
+                .await?;
+            Ok((meta, stream))
+        })
+    }
 }
 
 /// Builds sources from what the user or the browser handed us.

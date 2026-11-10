@@ -415,6 +415,16 @@ mod tests {
     }
 
     #[test]
+    fn start_defaults_to_probe_then_whole_body() {
+        block_on(async {
+            let src = MemSource::new(Bytes::from_static(b"0123456789"));
+            let (meta, stream) = src.start().await.unwrap();
+            assert_eq!(meta.size, Some(10));
+            assert_eq!(read_all(stream).await.unwrap(), b"0123456789");
+        });
+    }
+
+    #[test]
     fn mem_storage_finish_never_overwrites() {
         block_on(async {
             let p = MemStorageProvider::default();

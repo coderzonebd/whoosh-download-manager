@@ -593,6 +593,8 @@ impl Driver {
                 r.resumable = resumable;
             })
             .await;
+        // Clients learned the add-time name; tell them the real one.
+        self.inner.announce(&self.id);
         self.live
             .total
             .store(size.unwrap_or(u64::MAX), Ordering::Relaxed);

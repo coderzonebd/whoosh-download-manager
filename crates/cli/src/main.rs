@@ -105,8 +105,13 @@ pub struct DownloadOpts {
 enum Cmd {
     /// Add downloads; they start right away unless --paused.
     Add {
-        #[arg(required = true, value_name = "URL")]
+        /// URLs to add; empty ones are skipped.
+        #[arg(value_name = "URL", required_unless_present = "input_file")]
         urls: Vec<String>,
+        /// Also read URLs from FILE (`-` = stdin), one per line; blank lines
+        /// and lines starting with # are skipped.
+        #[arg(short = 'i', long, value_name = "FILE")]
+        input_file: Option<PathBuf>,
         #[command(flatten)]
         opts: DownloadOpts,
         /// Add without starting.
@@ -263,7 +268,15 @@ fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<u8, CliError> {
     let ctx = commands::Ctx::new(&cli.global)?;
     match cli.cmd {
-        Cmd::Add { urls, opts, paused } => commands::add(&ctx, urls, &opts, paused).await,
+        Cmd::Add {
+            urls,
+            input_file,
+            opts,
+            paused,
+        } => {
+            let urls = commands::url_list(urls, input_file.as_deref(), &opts)?;
+            commands::add(&ctx, urls, &opts, paused).await
+        }
         Cmd::Get { url, opts } => get::get(&ctx, url, &opts).await,
         Cmd::List {
             state,
@@ -328,12 +341,34 @@ mod tests {
         ])
         .unwrap();
         assert!(cli.global.json);
-        let Cmd::Add { urls, opts, paused } = cli.cmd else {
+        let Cmd::Add {
+            urls,
+            input_file,
+            opts,
+            paused,
+        } = cli.cmd
+        else {
             panic!("not add")
         };
         assert_eq!(urls.len(), 2);
+        assert_eq!(input_file, None);
         assert_eq!(opts.headers.len(), 2);
         assert!(paused);
+
+        // `-i FILE` alone is enough; no URL argument needed.
+        let cli = Cli::try_parse_from(["vayu", "add", "-i", "links.txt"]).unwrap();
+        let Cmd::Add {
+            urls, input_file, ..
+        } = cli.cmd
+        else {
+            panic!("not add")
+        };
+        assert!(urls.is_empty());
+        assert_eq!(
+            input_file.as_deref(),
+            Some(std::path::Path::new("links.txt"))
+        );
+        assert!(Cli::try_parse_from(["vayu", "add"]).is_err());
 
         let cli = Cli::try_parse_from(["vayu", "list", "--state", "paused,needs_refresh"]).unwrap();
         let Cmd::List { state, .. } = cli.cmd else {

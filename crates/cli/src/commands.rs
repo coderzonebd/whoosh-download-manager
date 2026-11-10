@@ -103,6 +103,44 @@ pub fn request_context(opts: &DownloadOpts) -> Result<Option<RequestContext>> {
     Ok((request != RequestContext::default()).then_some(request))
 }
 
+/// The URLs of `vayu add`: the arguments, then `-i FILE`'s lines, with
+/// blank entries and `#` comments skipped (a list pasted with empty lines
+/// between links must not add empty downloads).
+pub fn url_list(
+    args: Vec<String>,
+    input_file: Option<&Path>,
+    opts: &DownloadOpts,
+) -> Result<Vec<String>> {
+    let stdin = Path::new("-");
+    if input_file == Some(stdin)
+        && (opts.cookie_file.as_deref() == Some(stdin)
+            || opts.headers_file.as_deref() == Some(stdin))
+    {
+        return Err(CliError::Usage(
+            "-i/--input-file cannot read stdin together with --cookie-file or --headers-file"
+                .into(),
+        ));
+    }
+    let mut urls: Vec<String> = args
+        .into_iter()
+        .map(|u| u.trim().to_owned())
+        .filter(|u| !u.is_empty())
+        .collect();
+    if let Some(path) = input_file {
+        let text = read_source(path, "-i/--input-file")?;
+        urls.extend(
+            text.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .map(str::to_owned),
+        );
+    }
+    if urls.is_empty() {
+        return Err(CliError::Usage("no URLs to add".into()));
+    }
+    Ok(urls)
+}
+
 /// A file's contents, or stdin's for `-`.
 fn read_source(path: &Path, flag: &str) -> Result<String> {
     let read = if path == Path::new("-") {
@@ -819,5 +857,24 @@ mod tests {
         assert_eq!(parse_size("1.5k"), Some(1536));
         assert_eq!(parse_size("2MiB/s"), Some(2 << 20));
         assert_eq!(parse_size("x"), None);
+    }
+
+    #[test]
+    fn url_lists_skip_blank_lines_and_comments() {
+        let dir = std::env::temp_dir().join(format!("vayu-cli-urls-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("links.txt");
+        // Pasted with empty lines between links, a comment and CRLF endings.
+        std::fs::write(&file, "https://a/1\r\n\r\n  https://a/2  \n# later\n\n").unwrap();
+        let opts = DownloadOpts::default();
+        let urls = url_list(vec!["".into(), " https://x/0 ".into()], Some(&file), &opts).unwrap();
+        assert_eq!(urls, ["https://x/0", "https://a/1", "https://a/2"]);
+        assert!(url_list(vec!["  ".into()], None, &opts).is_err());
+        let both_stdin = DownloadOpts {
+            headers_file: Some("-".into()),
+            ..DownloadOpts::default()
+        };
+        assert!(url_list(vec![], Some(Path::new("-")), &both_stdin).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
