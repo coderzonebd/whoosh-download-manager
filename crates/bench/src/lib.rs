@@ -8,9 +8,12 @@
 //! turns a run set into Markdown with medians, p90s and Mann-Whitney U
 //! tests ([`stats`]). [`fetch`] installs pinned competitor builds from
 //! their official GitHub releases, verified against published checksums.
+//! [`hardkill`] is the crash test: SIGKILL the real daemon mid-download,
+//! restart it, and verify every finished file.
 
 pub mod adapter;
 pub mod fetch;
+pub mod hardkill;
 pub mod lab;
 pub mod measure;
 pub mod names;

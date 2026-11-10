@@ -1,0 +1,298 @@
+# vayu-net
+
+The engine's network layer. `HttpSourceFactory` implements
+`vayu_core::SourceFactory` for `http` and `https`; the `HttpSource`s it makes
+implement `vayu_core::RangeSource` over HTTP/1.1, HTTP/2 and HTTP/3. It
+performs requests and reports precisely what happened; retries, connection
+counts and hedging belong to the engine (ADR 0005).
+
+## Using it
+
+```rust
+use futures::StreamExt;
+use vayu_core::{ByteRange, OpenRequest, SourceFactory};
+use vayu_net::{HttpSourceFactory, NetConfig};
+
+let factory = HttpSourceFactory::new(NetConfig::default()); // one per process
+factory.preconnect("https://example.com/big.iso").await;    // optional, on hover
+let source = factory.source("https://example.com/big.iso", Some(&request_context))?;
+let meta = source.probe().await?;          // size, ranges, validators, name, protocol
+let mut s = source
+    .open(OpenRequest { range: ByteRange::new(0, 8 << 20), expect: meta.validators() })
+    .await?;                               // resolves at time-to-first-byte
+while let Some(chunk) = s.next().await {   // `Bytes`, zero-copy
+    let bytes = chunk?;
+}
+```
+
+Public surface: `HttpSourceFactory` (`new`, `http_source`, `remember_http3`,
+`config`), `HttpSource`, `NetConfig`, `DEFAULT_USER_AGENT`, and the
+`filename` module (`filename_from_content_disposition`, `sanitize_filename`,
+also useful for the engine's URL-path fallback name).
+
+### `NetConfig`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `user_agent` | `vayu/<version>` | Sent when the `RequestContext` has no `User-Agent` |
+| `connect_timeout` | 10 s | Per connection attempt (one address: TCP + TLS, or QUIC) |
+| `happy_eyeballs_delay` | 250 ms | RFC 8305 Connection Attempt Delay |
+| `idle_timeout` | 60 s | Backstop: no response head, or no body bytes, for this long → `Transient`. Keep ≥ 30 s; stall detection is the engine's |
+| `pool_idle_timeout` | 30 s | How long unused connections (kept alive or preconnected) stay warm |
+| `max_redirects` | 10 | |
+| `http2` | true | Offer `h2` in ALPN |
+| `http3` | true | Use HTTP/3 for `https` origins whose `Alt-Svc` advertises `h3` |
+| `h2c_prior_knowledge` | false | HTTP/2 without TLS for `http://` (tests, benchmarks) |
+| `max_streams_per_connection` | 1 | Requests per HTTP/2 or HTTP/3 connection before another is opened |
+| `h3_fallback_delay` | 300 ms | QUIC's head start before TCP joins the race |
+| `preconnect_connections` | 1 | Connections `preconnect` opens |
+| `extra_root_certs` | none | Extra trusted roots (DER), e.g. `lab.cert_der()` |
+| `platform_roots` | true | Trust the OS store (tests set false) |
+
+**User-Agent.** The default is an honest product token, `vayu/<version>`
+(as `curl/8.x`, `Wget/1.x`, `aria2/1.x` do). Downloads handed over by the
+browser extension carry the browser's own `User-Agent` in the
+`RequestContext`, and that is what gets sent, so sites that gate or vary
+files by browser behave exactly as they did in the browser.
+
+**Trust store.** `rustls-platform-verifier` (OS roots: the native store on
+Windows/macOS, `/etc/ssl` via `rustls-native-certs` on Linux) plus
+`extra_root_certs`. If the OS store cannot be loaded and extra roots are
+given, only those are trusted; with neither, `https` fails with `Fatal`.
+Crypto is rustls with `ring` (no C toolchain), the same as labserver.
+
+## How it works
+
+**Contract** (`vayu_core::RangeSource` points 1–6; each has tests):
+
+1. *Concurrency.* Each `open` is its own request. HTTP/1.1: one connection
+   per request in flight, kept alive and reused (LIFO, most recently used
+   first). HTTP/2 and HTTP/3: up to `max_streams_per_connection` requests per
+   connection, least-loaded connection first; the default of 1 gives every
+   concurrent `open` its own connection (one connection = one congestion
+   window and one per-connection server cap), so the engine's connection
+   count means connections. HTTP/2 windows are 16 MiB per stream / 32 MiB per
+   connection with 256 KiB frames; QUIC windows 16 / 32 MiB.
+2. *Exact bytes.* Ranged requests need `206` and a `Content-Range` equal to
+   the request (else `RangesUnsupported`); a body that ends early is
+   `Transient`, a long one is cut off at the end of the range.
+3. *Same version.* A strong ETag in `expect` goes out as `If-Range`; ETag,
+   Last-Modified and size (from `Content-Range` or `Content-Length`) are
+   compared with `expect` before the first byte → `RemoteChanged`. A `200`
+   to a ranged request is `RemoteChanged` when its validators differ (the
+   `If-Range` did not match), otherwise `RangesUnsupported`.
+4. *Cancellation.* Dropping a stream or an `open` future closes the HTTP/1.1
+   connection, sends `RST_STREAM` on HTTP/2 and `STOP_SENDING` on HTTP/3.
+5. *No hidden retries.* Only redirects, and address racing while
+   connecting. Two cases look like retries but are not: a request whose
+   *pooled* connection turned out to be closed before the request was
+   written goes out once on a new connection (the server never saw it);
+   and a cached redirect target (see below) that answers 401/403/404/410 is
+   forgotten and the chain followed again from the original URL.
+6. *Identity.* `Accept-Encoding: identity` on every request.
+
+**Connecting.** DNS via the OS resolver (`getaddrinfo`), cached 60 s,
+concurrent lookups of one name shared; a lookup taking longer than
+`connect_timeout` fails for everyone waiting on it and is forgotten, so the
+next request starts a fresh one instead of joining a stuck `getaddrinfo`. Happy Eyeballs (RFC 8305) across
+every A/AAAA record: families interleaved, a new attempt every 250 ms or as
+soon as one fails, the address that last worked tried first; the same race
+is used for QUIC. TLS 1.3/1.2 with in-memory session resumption, ALPN
+`h2`/`http/1.1`.
+
+**HTTP/3.** `Alt-Svc: h3=…` on a TCP response from an `https` origin is
+cached per origin until `ma` (default 24 h, capped at 30 days; `clear`
+honoured; `http://` ignored). Requests to that origin then try QUIC first; TCP joins after
+`h3_fallback_delay`, or at once if QUIC fails. If TCP wins or QUIC fails,
+HTTP/3 is not tried for that origin for 5 minutes. `remember_http3` seeds
+the cache (for host profiles). quinn sends a keep-alive PING every
+`idle_timeout/3` (≤ 10 s) so a stalled server is judged by the body
+backstop, not QUIC's idle timeout. On the quinn close quirk (a
+`CONNECTION_CLOSE` queued behind a full congestion window is never sent,
+labserver-h3.md): the client never relies on its own close reaching the
+server, and a connection whose request failed is retired at once, because
+a server's stream reset can arrive a moment before its connection close.
+
+**HTTP/3 memory limits.** h3 0.0.8 buffers every non-DATA frame whole,
+whatever length its header announces, and quinn keeps granting credit, so a
+hostile server could make the client buffer gigabytes. `src/h3guard.rs`
+wraps h3-quinn's receive streams and checks bytes before h3 sees them: on a
+request stream a non-DATA frame may announce at most 64 KiB, and at most
+64 KiB of non-DATA framing may arrive without DATA payload in between (which
+also bounds everything before the response head); DATA payload passes
+through untouched (only frame headers are parsed). A server-opened
+unidirectional stream (control, QPACK, other) may carry 64 KiB in total, at
+most 16 of them at once; `SETTINGS_MAX_FIELD_SECTION_SIZE` is 64 KiB. A
+violation closes the QUIC connection with `H3_EXCESSIVE_LOAD` and the
+request fails with `Fatal` (the server is broken or hostile; retrying will
+not help).
+
+**Requests.** Built from `vayu_proto::RequestContext`: method (default
+GET), headers, `cookie`, `referer`, `user_agent` (the explicit fields win
+over the header list), `bodyBase64`. Dropped: hop-by-hop headers (including
+those listed in `Connection`), `Host`, `Content-Length`, `Expect`, `Range`,
+`If-Range`, `Accept-Encoding` and cache validators (`If-None-Match`, …,
+which would turn a download into a revalidation). URL credentials become
+`Authorization: Basic`. Redirects: up to 10, `final_url` recorded; 303 (and
+301/302 after a POST) become a body-less GET; **on a change of origin
+(scheme, host or port) `Cookie` and `Authorization` are dropped** for the
+rest of the chain and for every later request that reuses it, and the
+browser's `Referer` follows `strict-origin-when-cross-origin`: the full page
+URL only to the page's own origin, just its origin elsewhere, nothing after
+a downgrade from `https` to `http`. The end of a
+successful chain is cached per source, so a range request does not follow
+the chain again.
+
+**Probe.** `GET` (or the context's method) with `Range: bytes=0-0`: size
+from `Content-Range` (or `Content-Length` on a `200`; `416 bytes */0` is an
+empty file), `accepts_ranges` only after a real `206 bytes 0-0/…`,
+validators, `Content-Type`, `protocol`, and the file name from
+`Content-Disposition`: `filename*` (RFC 8187, UTF-8 or ISO-8859-1) before
+`filename`; raw bytes as UTF-8 if valid, else Latin-1; then sanitised to one
+path component (last segment of a path, no control or bidi characters, no
+leading dots, Windows device names prefixed with `_`, ≤ 255 bytes; on
+Windows also `<>:"|?*` → `_`).
+
+**Errors.**
+
+| What happened | `SourceError` |
+|---|---|
+| 401, 403, 410 | `LinkExpired` |
+| 429, 503 | `Throttled { retry_after }` (`Retry-After` seconds or HTTP date, capped at 1 hour) |
+| Connection refused, or reset/closed before the response head (TCP RST, HTTP/2 `REFUSED_STREAM`/GOAWAY, HTTP/3 stream or connection close) | `Throttled { retry_after: None }` |
+| 408, 421, 425, 5xx (but 503), timeouts, DNS failure, any error mid-body, body ended early | `Transient` |
+| 416, changed validators | `RemoteChanged` |
+| `200` to a ranged request, wrong `Content-Range` | `RangesUnsupported` (or `RemoteChanged`, see point 3) |
+| Other 4xx, bad URL or scheme, too many redirects, untrusted certificate, an HTTP/3 server breaking the memory limits | `Fatal` |
+
+## Testing
+
+```bash
+scripts/cargo-slot.sh cargo test -p vayu-net
+```
+
+About 150 tests, ~20–60 s on the development laptop (debug build, load
+5–10):
+
+- unit tests (`src/`): Content-Disposition and sanitising, header
+  filtering and redirects, `Content-Range`/`Retry-After` parsing, status and
+  error classification, `Alt-Svc` parsing and cache, Happy Eyeballs;
+- `tests/scenarios.rs`: every labserver scenario, each run over HTTP/1.1
+  (`http://`), HTTP/2 (`https://`, ALPN) and HTTP/3 (QUIC; trusting
+  `lab.cert_der()`): clean, concurrency (16 opens on 16 connections),
+  keep-alive reuse, lying-ranges, no-range, changing-file, expiring-url,
+  rate-limited, conn-cap-2, conn-cap-reset, resets mid-body, stalls, the
+  idle backstop, no-length, no-validators, redirect-chain, cookie-required,
+  referer-required, high-latency, bangla-filename (all six variants),
+  empty files, cancellation mid-body and before the head; plus the built-in
+  `flaky` scenario, learning HTTP/3 from `Alt-Svc`, falling back to TCP,
+  streams per connection, head timeout and preconnect;
+- `tests/wire.rs`: a raw HTTP/1.1 fixture server that records requests,
+  for exact wire checks: headers sent and dropped, `If-Range` only with a
+  strong ETag, `Content-Range` mismatches, long and short bodies, validator
+  conflicts, every status class, refused connections, untrusted
+  certificates, redirect security and methods, the redirect limit, the
+  cached redirect target expiring, keep-alive, preconnect, pool expiry,
+  and a server closing idle connections, hostile `Content-Range` and
+  `Retry-After` values, and `Referer` trimming on redirects;
+- `tests/h3_limits.rs`: a hostile HTTP/3 server (quinn + rcgen) announcing
+  a 2^40-byte HEADERS frame, sending endless GREASE frames, a huge frame
+  after valid data, and flooding its control stream: each fails with
+  `Fatal` within moments.
+
+Timing-based assertions are loose (they pass at load average 8+), but a
+machine starved for minutes can still trip them.
+
+## Benchmarking
+
+```bash
+cargo run --release -p vayu-net --example throughput -- --compare
+```
+
+Options: `--transports h1,h2,h3 --conns 1,4,16 --file 100m.bin --gb 1
+--runs 5 --threads 4 --cache-mb 256 --compare`, and `--attach "<READY line>"`
+to use a server started separately with `--serve` (e.g. to `strace` the
+client alone). The labserver runs in a
+child process (this binary with `--serve`) so `getrusage(RUSAGE_SELF)` is the
+client's CPU alone. Each run moves `--gb` GB: N workers each fetch their Nth
+of the file over and over, one ranged request per pass (as the engine
+does), on connections warmed by an unmeasured pass. `--compare` times
+`wget` and `curl` fetching the same bytes over one HTTP/1.1 connection (CPU
+from `RUSAGE_CHILDREN`). `100m.bin` with a 256 MiB cache keeps the server
+from regenerating content (the machine had ~1.3 GB of RAM free).
+
+### Results
+
+Measured 2026-11-10 on the development laptop (Intel i5-10210U, 4 cores /
+8 threads, 7.5 GB RAM, Linux 7.0), release build, loopback, **while other
+sessions were compiling (load average 7–10)**. `100m.bin` from `clean`, 5
+runs of 1 GB per row; client runtime 4 worker threads; labserver in its own
+process.
+
+| transport | conns | GB/s (median) | best | client CPU s/GB | KiB/chunk | load avg (1/5/15 min) |
+|---|---:|---:|---:|---:|---:|---|
+| HTTP/1.1 | 1 | 1.72 | 2.66 | 0.41 | 61 | 8.16 8.79 10.29 |
+| HTTP/1.1 | 4 | 1.71 | 1.86 | 1.23 | 208 | 7.82 8.71 10.26 |
+| HTTP/1.1 | 16 | 1.54 | 1.60 | 1.53 | 730 | 8.24 8.78 10.27 |
+| HTTP/2 (TLS) | 1 | 0.80 | 0.84 | 1.13 | 64 | 8.24 8.78 10.27 |
+| HTTP/2 (TLS) | 4 | 0.83 | 1.06 | 2.77 | 64 | 7.51 8.61 10.20 |
+| HTTP/2 (TLS) | 16 | 0.91 | 1.04 | 2.93 | 64 | 7.95 8.68 10.22 |
+| HTTP/3 | 1 | 0.20 | 0.29 | 4.87 | 1.4 | 9.23 8.94 10.29 |
+| HTTP/3 | 4 | 0.58 | 0.62 | 3.80 | 1.4 | 7.55 8.56 10.13 |
+| HTTP/3 | 16 | 0.55 | 0.56 | 4.28 | 1.4 | 8.93 8.82 10.20 |
+| wget, HTTP/1.1 | 1 | 2.77 | 3.00 | 0.23 | | 9.63 8.97 10.23 |
+| curl, HTTP/1.1 | 1 | 1.60 | 2.41 | 0.45 | | 9.18 8.89 10.20 |
+
+Run-to-run variation on this loaded machine is large (the same row moved
+by 2× between sessions), so single-connection HTTP/1.1 was also compared
+with wget and curl in back-to-back rounds (GB/s @ CPU s/GB):
+
+| round | vayu-net, 4 threads | vayu-net, 1 thread | wget | curl |
+|---|---|---|---|---|
+| 1 (load 8.2) | 0.95 @ 0.80 | 1.02 @ 0.72 | 1.34 @ 0.48 | 1.39 @ 0.55 |
+| 2 (load 7.3) | 1.85 @ 0.39 | 2.84 @ 0.24 | 3.19 @ 0.20 | 3.00 @ 0.25 |
+| 3 (load 6.9) | 2.37 @ 0.31 | — | 2.67 @ 0.25 | 2.03 @ 0.37 |
+| earlier (load 9.7) | 1.82 @ 0.46 | — | 1.15 @ 0.52 | 1.60 @ 0.52 |
+
+Reading it:
+
+- **HTTP/1.1, one connection** is in curl's range and close to wget:
+  0.75–1.6× wget's throughput, 0.9–1.9× its CPU per GB, closest with a
+  single-threaded runtime (no cross-thread wake-ups per chunk). The engine's
+  runtime choice matters as much as this crate here. Syscalls are not the
+  gap: under strace the client made ~2,000 `recvfrom` per GB (wget: 17,700
+  `read` + 35,400 `write`) and no allocation churn (31 `mmap`).
+- **More connections do not help on loopback** and cost CPU (4 cores,
+  server in the same machine), as in the Phase 0 baseline; on real links
+  with per-connection caps they do (see `per-conn-throttle`). Choosing the
+  count is the engine's job.
+- **HTTP/2** pays for TLS (AES-GCM in software on both ends) and h2
+  framing: ~1.1 CPU s/GB on one connection.
+- **HTTP/3** matches labserver's own figure (~0.26 GB/s per QUIC
+  connection) but costs 4–5 CPU s/GB: quinn delivers one packet's payload
+  (~1.4 KiB) per read, and per-packet decryption and ACK work dominate. **On
+  HTTPS hosts that advertise `h3`, HTTP/3 therefore costs several times the
+  CPU of HTTP/2** (on loopback; unmeasured on real links, where the rates
+  are lower). `NetConfig { http3: false, .. }` turns it off.
+
+## Not covered
+
+- **Windows and macOS**: written to be portable (no Unix-only code outside
+  the benchmark's CPU measurement), but built and tested on Linux only.
+- **Real CDNs and real networks**: everything here is loopback against
+  labserver (no RTT, loss or reordering; `tc netem` was not used).
+- **Proxies** (HTTP, SOCKS, system settings): out of scope until Phase 3.
+- **TLS 0-RTT**, QUIC connection migration, BBR (quinn's default congestion
+  controller, Cubic, is used), DNS-over-HTTPS.
+- **Coalescing concurrent connects** when `max_streams_per_connection` > 1:
+  a burst of opens to a cold origin opens one connection each; later
+  requests fill connections up to the limit.
+- **HTTP/3 CPU**: quinn hands over one packet's payload (~1.4 KiB) at a
+  time, and per-packet decryption and ACKs dominate; see the table. A
+  receive adapter under `h3` that coalesces packets (reading through
+  quinn's `AsyncRead` into large buffers) would save the per-chunk part,
+  estimated at no more than a fifth of the cost.
+- `Content-Disposition` RFC 2231 continuations (`filename*0*=`) and
+  percent-encoded plain `filename=` values are not decoded.
+- IPv6: Happy Eyeballs is exercised with `localhost` (`::1` refused, then
+  `127.0.0.1`), not on a real dual-stack network.
