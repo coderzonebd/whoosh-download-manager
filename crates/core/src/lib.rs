@@ -27,7 +27,7 @@ pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-pub use journal::{Checkpoint, Journal};
+pub use journal::{Checkpoint, Finishing, Journal};
 pub use range::{ByteRange, RangeSet};
 pub use source::{
     ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, SourceFactory,

@@ -18,6 +18,24 @@ pub struct Checkpoint {
     pub meta: RemoteMeta,
     /// Ranges whose bytes were flushed to storage before this checkpoint.
     pub done: RangeSet,
+    /// Set by the engine just before it moves the finished file into place
+    /// (`Storage::finish`): the file it is about to create and its exact
+    /// length. After a crash between that move and the record update, a
+    /// part file that is gone and a file of this name and length mean the
+    /// download already finished. Absent in every other checkpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finishing: Option<Finishing>,
+}
+
+/// The file a finishing download is about to become (see
+/// [`Checkpoint::finishing`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Finishing {
+    /// File name inside the download's directory (after collision
+    /// numbering, e.g. `name (1).ext`).
+    pub name: String,
+    /// Exact length of the finished file, in bytes.
+    pub len: u64,
 }
 
 /// Persists [`Checkpoint`]s, one series per download.

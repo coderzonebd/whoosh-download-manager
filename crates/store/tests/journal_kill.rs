@@ -30,6 +30,7 @@ fn checkpoint(n: u64) -> Checkpoint {
         done: RangeSet::from_ranges(
             (0..ranges).map(|i| ByteRange::new(i * 100, i * 100 + 50 + n % 40).unwrap()),
         ),
+        finishing: None,
     }
 }
 

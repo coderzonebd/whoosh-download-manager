@@ -47,3 +47,10 @@ Applied on `phase1/engine` from the four work branches' proposals and the indepe
 - **Source**: `RemoteMeta::final_url` is display-only; never build a source from it.
 
 Deferred: a `SourceFactory::hint` plus `HostProfile.h3_port` so host profiles can start HTTP/3 on the first request (vayu-net already remembers Alt-Svc per process). HTTP/3 costs several times HTTP/2's CPU per GB today, so starting it earlier is not a win yet. Not needed: a `refused` flag on `Throttled`, because the engine already counts throttled rounds against its failure budget.
+
+## Amendment 2 — crash-consistent finish (2026-11-10)
+
+The real-process crash test (`vayu-bench hardkill`, 1,000 SIGKILLs) found no corruption but three duplicates: a kill between the final rename and the record update made the engine download the file again into `name (1)`, because nothing claimed the whole file in the journal (small files finish before the first checkpoint; stream mode never checkpoints). The engine now commits a checkpoint naming the file it is about to create before every rename, and removes the journal entry only after the completed record is saved.
+
+- `Checkpoint::finishing: Option<Finishing { name, len }>` replaces the engine's interim marker in the journalled `RemoteMeta::final_url`.
+- `StateStore::sync()`: make resolved saves durable against power loss. The engine calls it after saving a completed record and before removing the journal entry; otherwise a power cut with SQLite's WAL at `synchronous=NORMAL` could roll the record back to "downloading" after the journal entry is gone, and the download would run again. The default is a no-op for stores whose saves are already durable; `vayu-store` overrides it.

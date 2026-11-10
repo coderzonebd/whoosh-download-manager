@@ -246,7 +246,9 @@ fn parse_bins(b: &BinArgs) -> Result<BTreeMap<String, PathBuf>> {
         .iter()
         .map(|s| {
             let (k, v) = s.split_once('=').context("--bin expects TOOL=PATH")?;
-            Ok((k.to_owned(), PathBuf::from(v)))
+            // Absolute: clients run with the download folder as their
+            // working directory, where a relative path means nothing.
+            Ok((k.to_owned(), std::path::absolute(v)?))
         })
         .collect()
 }
