@@ -715,6 +715,7 @@ mod tests {
             }),
             mirrors: vec![],
             filename: "f".into(),
+            filename_locked: false,
             directory: "/d".into(),
             category: None,
             queue: None,

@@ -55,7 +55,8 @@ C toolchain (see [Testing](#testing)).
 - **Ordering.** `read_at`, `flush`, `preallocate` and `finish` go through
   the same queue as writes. So `read_at` sees every write that resolved
   before it was called, as the contract requires.
-- **Errors that lose data are sticky.** After a failed buffered write or a
+- **Errors that lose data are sticky.** This is the `Storage` contract's
+  error model (ADR 0005, amendment 1). After a failed buffered write or a
   failed fsync, every later `write_at`, `read_at`, `flush`, `preallocate` and
   `finish` on that storage fails with the same error. Queued writes are
   dropped, and the storage never writes again.
@@ -65,7 +66,9 @@ C toolchain (see [Testing](#testing)).
   - Nothing accepted since the last successful `flush` can be trusted. The
     engine commits to the journal only after a successful flush.
   - To continue, open the path again: that gives a fresh storage on the same
-    file.
+    file. The contract only promises recovery after remove-and-reopen;
+    reopening without `remove` also works here and is safe, because the
+    journal holds only flushed ranges.
   - Errors that lose no data stay per call: a taken final name
     (`AlreadyExists`), a failed preallocation, a failed read.
   - `ENOSPC`, `ERROR_DISK_FULL` and `ERROR_HANDLE_DISK_FULL` all arrive as
@@ -129,6 +132,13 @@ C toolchain (see [Testing](#testing)).
     through an old handle can reach a file opened at that path later.
     - `open` and `remove` of the same path must not run concurrently.
   - `remove` treats a missing file as success.
+  - `file_len(path)`:
+    - For an open storage, the length after every resolved write; the
+      request goes through the writer's queue, like `read_at`.
+    - Otherwise the length on disk, without following a symbolic link,
+      after waiting for a draining writer.
+    - `None` when there is no file; `InvalidInput` for a symbolic link or
+      anything other than a regular file.
   - When the writer thread ends (finished, removed, dropped, or a panic),
     the buffer is closed, so a `write_at` waiting for space fails instead of
     hanging.
@@ -226,6 +236,9 @@ C toolchain (see [Testing](#testing)).
   this build. None of them is a reason to set the user's data aside.
 - **Unreadable rows.** A row whose JSON no longer parses is skipped with a
   warning, so one bad row doesn't stop startup.
+- **Records are stored as JSON**, so new `DownloadRecord` fields need no
+  migration. `filename_locked` (amendment 1) round-trips, and rows written
+  before it existed read as `false` (`#[serde(default)]`).
 
 ## `unsafe`
 
@@ -273,6 +286,18 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
   leaves the old handle failing. A file opened at the path afterwards never
   receives old bytes.
 - A symlink in place of the part file is refused; its target is untouched.
+- **Contract conformance.** One scenario runs against both
+  `MemStorageProvider` and `FileStorageProvider`:
+  - Reuse while open.
+  - `file_len`, and `preallocate` truncating to the exact size.
+  - `finish`, then a reopen is a new file.
+  - `remove`, then a reopen is a new file.
+  - In both cases, old handles never reach the new file.
+- `file_len` counts writes not yet written out, and waits for a draining
+  storage. It returns `None` when missing, and `InvalidInput` for
+  directories and symbolic links.
+- A cancelled `write_at` (waiting for space), `flush` or `finish` never
+  loses the error behind it.
 - No-replace semantics of both rename fallbacks.
 - 16 concurrent writers in 1 B–64 KiB chunks, with hedged rewrites and a
   256 KiB buffer, checked byte for byte against
@@ -321,6 +346,7 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
   `delete_downloads` resolves, and, once cleared, within the checkpoint
   interval while other writes continue (`src/state.rs`).
 - Symlinked `state.db` or `-wal`: refused, and the target is untouched.
+- `filename_locked` round-trips; a row written without it reads as `false`.
 
 **Other targets.** The file and journal code (no SQLite) can be checked
 for Windows and macOS from Linux:

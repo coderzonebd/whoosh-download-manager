@@ -30,6 +30,7 @@ fn record(i: u64) -> DownloadRecord {
         }),
         mirrors: vec![],
         filename: format!("archive-{i}.tar.zst"),
+        filename_locked: i.is_multiple_of(4),
         directory: "/home/user/Downloads/Compressed".into(),
         category: Some("compressed".into()),
         queue: Some("main".into()),
@@ -326,4 +327,36 @@ async fn a_symlinked_database_is_refused() {
     let e = SqliteStateStore::open(&path).await.unwrap_err();
     assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
     assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
+}
+
+/// `filename_locked` (contract amendment 1) is stored with the record;
+/// rows written before it existed read as `false`.
+#[tokio::test]
+async fn filename_locked_round_trips_and_old_rows_read_false() {
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("state.db");
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    assert!(record(4).filename_locked && !record(1).filename_locked);
+    s.save_download(&record(4)).await.unwrap();
+    s.save_download(&record(1)).await.unwrap();
+    s.close().await.unwrap();
+    {
+        // A row as an older build wrote it: no `filename_locked` key.
+        let mut old = serde_json::to_value(record(8)).unwrap();
+        old.as_object_mut()
+            .unwrap()
+            .remove("filename_locked")
+            .unwrap();
+        let c = rusqlite::Connection::open(&path).unwrap();
+        c.execute(
+            "INSERT INTO downloads (id, added_at, json) VALUES (?1, 0, ?2)",
+            [record(8).id, old.to_string()],
+        )
+        .unwrap();
+    }
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    let all = sorted(s.load_downloads().await.unwrap());
+    let mut old8 = record(8);
+    old8.filename_locked = false;
+    assert_eq!(all, vec![record(1), record(4), old8]);
 }

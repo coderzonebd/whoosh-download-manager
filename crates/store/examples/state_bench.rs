@@ -29,6 +29,7 @@ fn record(i: u64) -> DownloadRecord {
         }),
         mirrors: vec![],
         filename: format!("archive-{i}.tar.zst"),
+        filename_locked: false,
         directory: "/home/user/Downloads/Compressed".into(),
         category: Some("compressed".into()),
         queue: Some("main".into()),

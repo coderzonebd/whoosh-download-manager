@@ -164,6 +164,42 @@ impl FileStorageProvider {
         }
     }
 
+    async fn file_len_of(&self, path: &Path) -> io::Result<Option<u64>> {
+        let key = std::path::absolute(path)?;
+        loop {
+            let found = Self::lookup(&lock(&self.open), &key);
+            match found {
+                // Through the writer's queue, so it counts every write that
+                // has resolved, written out or not.
+                Lookup::Live(s) => match s.call(|reply| Cmd::Len { reply }).await {
+                    Ok(len) => return Ok(Some(len)),
+                    // It failed or finished meanwhile: ask the filesystem.
+                    Err(_) => break,
+                },
+                Lookup::Draining(shared) => shared.wait_closed().await,
+                Lookup::Free => break,
+            }
+        }
+        blocking::run(move || match std::fs::symlink_metadata(&key) {
+            Ok(m) if m.is_file() => Ok(Some(m.len())),
+            Ok(m) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "{} is {}, not a file",
+                    key.display(),
+                    if m.file_type().is_symlink() {
+                        "a symbolic link"
+                    } else {
+                        "something else"
+                    }
+                ),
+            )),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        })
+        .await
+    }
+
     async fn remove_path(&self, path: &Path) -> io::Result<()> {
         let key = std::path::absolute(path)?;
         let entry = lock(&self.open).remove(&key);
@@ -192,6 +228,14 @@ impl FileStorageProvider {
 impl StorageProvider for FileStorageProvider {
     fn open<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<Arc<dyn Storage>>> {
         Box::pin(async move { Ok(self.open_storage(path).await? as Arc<dyn Storage>) })
+    }
+
+    /// The length including every resolved write when the path's storage
+    /// is open; otherwise the file's length on disk, without following a
+    /// symbolic link. `None` when there is no file; `InvalidInput` when the
+    /// path is a symbolic link or not a regular file.
+    fn file_len<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<Option<u64>>> {
+        Box::pin(self.file_len_of(path))
     }
 
     fn remove<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
@@ -257,6 +301,10 @@ enum Cmd {
     Finish {
         to: PathBuf,
         reply: oneshot::Sender<io::Result<()>>,
+    },
+    /// The file's length once every queued write is written.
+    Len {
+        reply: oneshot::Sender<io::Result<u64>>,
     },
     /// The provider removed the file: close it and stop.
     Abandon,
@@ -597,6 +645,12 @@ impl Writer {
                 let done = r.is_ok();
                 let _ = reply.send(r);
                 return done;
+            }
+            Cmd::Len { reply } => {
+                let r = self
+                    .checked()
+                    .and_then(|()| Ok(self.file()?.metadata()?.len()));
+                let _ = reply.send(r);
             }
             Cmd::Abandon => return true,
         }
@@ -1007,5 +1061,66 @@ mod tests {
         let e = provider(1 << 20).open_storage(&part).await.unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
         assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
+    }
+
+    #[tokio::test]
+    async fn file_len_counts_writes_not_yet_written_out() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f");
+        let p = provider(1 << 20);
+        let s = p.open_storage(&path).await.unwrap();
+        s.pause(true);
+        s.write_at(100, Bytes::from_static(b"0123456789"))
+            .await
+            .unwrap();
+        let len = p.file_len_of(&path);
+        let mut len = std::pin::pin!(len);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut len)
+                .await
+                .is_err(),
+            "file_len answered before the queued write was written"
+        );
+        s.pause(false);
+        assert_eq!(len.await.unwrap(), Some(110));
+        // A dropped storage still writing its buffer: waits for it.
+        s.pause(true);
+        s.write_at(1 << 20, Bytes::from_static(b"x")).await.unwrap();
+        let shared = s.shared.clone();
+        drop(s);
+        let len = p.file_len_of(&path);
+        let mut len = std::pin::pin!(len);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut len)
+                .await
+                .is_err()
+        );
+        *lock(&shared.paused.0) = false;
+        shared.paused.1.notify_all();
+        assert_eq!(len.await.unwrap(), Some((1 << 20) + 1));
+    }
+
+    /// Cancelling `write_at` (waiting for space), `flush` or `finish` never
+    /// loses the write error behind it.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn cancelled_calls_never_lose_an_error() {
+        let p = provider(4096);
+        let s = p.open_storage(Path::new("/dev/full")).await.unwrap();
+        s.pause(true);
+        s.write_at(0, Bytes::from(vec![1u8; 4096])).await.unwrap();
+        let short = Duration::from_millis(20);
+        let waiting = s.write_at(4096, Bytes::from(vec![2u8; 4096]));
+        assert!(tokio::time::timeout(short, waiting).await.is_err());
+        assert!(tokio::time::timeout(short, s.flush()).await.is_err());
+        let to = Path::new("/nonexistent/final");
+        assert!(tokio::time::timeout(short, s.finish(to)).await.is_err());
+        s.pause(false);
+        for _ in 0..2 {
+            let e = s.flush().await.unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
+            let e = s.finish(to).await.unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
+        }
     }
 }

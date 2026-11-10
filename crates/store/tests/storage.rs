@@ -290,3 +290,95 @@ async fn works_without_a_tokio_runtime() {
     .join()
     .unwrap();
 }
+
+/// The contract's reuse, length and isolation rules, run against the
+/// in-memory reference and against `FileStorageProvider` alike.
+async fn contract_rules(p: &dyn StorageProvider, dir: &Path) {
+    let part = dir.join("x.vayu-part");
+    let fin = dir.join("x");
+    assert_eq!(p.file_len(&part).await.unwrap(), None);
+    let a = p.open(&part).await.unwrap();
+    a.write_at(0, Bytes::from_static(b"0123456789"))
+        .await
+        .unwrap();
+    // Open again while open: the same live storage, resolved writes visible.
+    let again = p.open(&part).await.unwrap();
+    assert!(same(&a, &again));
+    assert_eq!(again.read_at(0, 3).await.unwrap(), "012");
+    assert_eq!(p.file_len(&part).await.unwrap(), Some(10));
+    // preallocate leaves exactly `len` bytes.
+    a.preallocate(4).await.unwrap();
+    assert_eq!(p.file_len(&part).await.unwrap(), Some(4));
+    a.preallocate(6).await.unwrap();
+    assert_eq!(a.read_at(0, 10).await.unwrap(), &b"0123\0\0"[..]);
+    a.finish(&fin).await.unwrap();
+    assert_eq!(p.file_len(&fin).await.unwrap(), Some(6));
+    assert_eq!(p.file_len(&part).await.unwrap(), None);
+    // After finish: the old handle refuses writes, a reopen is a new file,
+    // and nothing written through the old handle reaches it.
+    assert!(a.write_at(0, Bytes::from_static(b"OLD")).await.is_err());
+    let fresh = p.open(&part).await.unwrap();
+    assert!(!same(&a, &fresh));
+    assert_eq!(fresh.read_at(0, 10).await.unwrap(), "");
+    assert!(a.write_at(0, Bytes::from_static(b"OLD")).await.is_err());
+    fresh.write_at(0, Bytes::from_static(b"new")).await.unwrap();
+    assert_eq!(fresh.read_at(0, 10).await.unwrap(), "new");
+    // After remove: the same, and the file is gone.
+    p.remove(&part).await.unwrap();
+    assert_eq!(p.file_len(&part).await.unwrap(), None);
+    let after = p.open(&part).await.unwrap();
+    assert!(!same(&fresh, &after));
+    let _ = fresh.write_at(0, Bytes::from_static(b"OLD")).await;
+    assert_eq!(after.read_at(0, 10).await.unwrap(), "");
+    p.remove(&fin).await.unwrap();
+    assert_eq!(p.file_len(&fin).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn follows_the_contract_like_the_reference() {
+    contract_rules(&MemStorageProvider::default(), Path::new("/mem")).await;
+    let d = tempfile::tempdir().unwrap();
+    contract_rules(&provider(), d.path()).await;
+}
+
+#[tokio::test]
+async fn file_len_reports_files_only() {
+    let d = tempfile::tempdir().unwrap();
+    let p = provider();
+    assert_eq!(p.file_len(&d.path().join("missing")).await.unwrap(), None);
+    let e = p.file_len(d.path()).await.unwrap_err();
+    assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+    let plain = d.path().join("plain");
+    std::fs::write(&plain, b"12345").unwrap();
+    assert_eq!(p.file_len(&plain).await.unwrap(), Some(5));
+    #[cfg(unix)]
+    {
+        let link = d.path().join("link");
+        std::os::unix::fs::symlink(&plain, &link).unwrap();
+        let e = p.file_len(&link).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
+    }
+}
+
+/// The engine's other isolation assumption, for `finish`: a write through
+/// the finished handle never reaches the next file at either path.
+#[tokio::test]
+async fn after_finish_old_handles_never_reach_the_new_file() {
+    let d = tempfile::tempdir().unwrap();
+    let p = provider();
+    let part = d.path().join("f.vayu-part");
+    let old = p.open(&part).await.unwrap();
+    old.write_at(0, Bytes::from_static(b"first")).await.unwrap();
+    old.finish(&d.path().join("f")).await.unwrap();
+    let new = p.open(&part).await.unwrap();
+    for _ in 0..3 {
+        assert!(old.write_at(0, Bytes::from_static(b"OLD")).await.is_err());
+        assert!(old.flush().await.is_err());
+    }
+    new.write_at(0, Bytes::from_static(b"second"))
+        .await
+        .unwrap();
+    new.finish(&d.path().join("g")).await.unwrap();
+    assert_eq!(std::fs::read(d.path().join("f")).unwrap(), b"first");
+    assert_eq!(std::fs::read(d.path().join("g")).unwrap(), b"second");
+}
