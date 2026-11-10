@@ -720,3 +720,20 @@ async fn add_without_start_waits_for_resume() {
         .unwrap();
     finish(&lab.engine, &id, LONG).await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_resume_during_a_pause_wins() {
+    let lab = Lab::new(config()).await;
+    let data = content(8 * MIB, 13);
+    lab.serve(URL, slow(data.clone(), MIB));
+    let id = lab.add(URL).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let ids = IdsParams {
+        ids: vec![id.clone()],
+    };
+    let (p, r) = tokio::join!(lab.engine.pause(ids.clone()), lab.engine.resume(ids));
+    p.unwrap();
+    r.unwrap();
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+}

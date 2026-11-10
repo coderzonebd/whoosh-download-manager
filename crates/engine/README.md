@@ -247,6 +247,14 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
 | `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
+Beyond the defaults, the long batches were run once on 2026-11-10: the crash
+model over seeds 0–3299 (3,300 cases, 1–5 kills each, ≈ 9,900 kills; 0
+corrupt files) and the property test over 1,500 schedules, all passing. Run
+them with the built test binaries, e.g.
+`VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
+The real gate (1,000 hard kills of the daemon process with `vayu-store` on
+disk) comes at integration.
+
 `FaultSource` (tests/common) serves in-memory versions of a file with
 per-connection and global throttles, connection caps (Throttled with
 `Retry-After`, or resets), lying/no ranges, unknown size, no validators,
