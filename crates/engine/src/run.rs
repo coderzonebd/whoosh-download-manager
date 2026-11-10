@@ -54,6 +54,35 @@ pub(crate) enum Outcome {
     Stopped(StopReason),
 }
 
+/// What a start found of a download that had finished downloading.
+enum Recovery {
+    None,
+    /// The part file holds every byte: verify and finish.
+    FinishAgain,
+    /// The final file is in place: completed.
+    Adopted,
+}
+
+/// Marks an intent checkpoint: `RemoteMeta::final_url` holds this prefix and
+/// the name `finish` is about to create. (`final_url` is display-only and
+/// the journalled meta is the engine's own; a dedicated `Checkpoint` field
+/// is proposed in the README.)
+const FINISHING: &str = "vayu-finishing:";
+
+fn intent_name(meta: &RemoteMeta) -> Option<String> {
+    meta.final_url
+        .as_deref()?
+        .strip_prefix(FINISHING)
+        .map(str::to_string)
+}
+
+fn without_intent(mut meta: RemoteMeta) -> RemoteMeta {
+    if intent_name(&meta).is_some() {
+        meta.final_url = None;
+    }
+    meta
+}
+
 /// Why the transfer left its loop early.
 enum Abort {
     /// `RemoteChanged`: restart from zero (once).
@@ -345,8 +374,11 @@ impl Driver {
     }
 
     async fn download(&mut self) -> Result<(), Outcome> {
-        if self.adopt_finished().await? {
-            return Ok(());
+        match self.recover_finish().await? {
+            Recovery::Adopted => return Ok(()),
+            // Every byte is on disk already: verify (if asked) and finish.
+            Recovery::FinishAgain => return self.verify().await,
+            Recovery::None => {}
         }
         self.state(DownloadState::Probing).await;
         let source = self
@@ -413,14 +445,23 @@ impl Driver {
         }
     }
 
-    /// A crash between `Storage::finish` and the journal/record update
-    /// leaves the journal claiming the whole file, no part file, and the
-    /// finished file in place. Recognise that (no network needed) instead of
-    /// downloading again into `name (1).ext`. Conservative: the finished
-    /// file must be the last of `name`, `name (1)`, … (`finish` takes the
-    /// first free one), have exactly the journalled size, and pass the
-    /// checksum when one was requested; anything else downloads normally.
-    async fn adopt_finished(&mut self) -> Result<bool, Outcome> {
+    /// Finishing is crash-consistent through the journal: before every
+    /// rename `finish` commits a checkpoint that claims the whole file at
+    /// its final length and names the file it is about to create (an
+    /// *intent*), and the journal entry is removed only after the record
+    /// says completed. On start, a journal that claims the whole file means
+    /// the download had finished downloading:
+    ///
+    /// - the part file is still there at that length → finish again, no
+    ///   network needed (verifying the checksum first, if one was asked);
+    /// - the part file is gone and the intent's file exists at exactly that
+    ///   length (and passes the checksum, if one was asked) → it was
+    ///   renamed just before the process died: completed;
+    /// - anything else → download normally.
+    ///
+    /// This covers every mode: ranged, stream (no ranges or unknown size;
+    /// the length is what was written) and empty files.
+    async fn recover_finish(&mut self) -> Result<Recovery, Outcome> {
         let Some(cp) = self
             .inner
             .deps
@@ -429,10 +470,10 @@ impl Driver {
             .await
             .map_err(io_failed)?
         else {
-            return Ok(false);
+            return Ok(Recovery::None);
         };
         let Some(size) = cp.meta.size else {
-            return Ok(false);
+            return Ok(Recovery::None);
         };
         if cp.done.len() != size
             || !cp.done.contains(ByteRange {
@@ -440,52 +481,50 @@ impl Driver {
                 end: size,
             })
         {
-            return Ok(false);
+            return Ok(Recovery::None);
         }
         let provider = self.inner.deps.storage.clone();
         let Some(part) = names::part_path(&self.directory, &self.filename) else {
-            return Ok(false);
+            return Ok(Recovery::None);
         };
-        if provider.file_len(&part).await.map_err(io_failed)?.is_some() {
-            return Ok(false);
-        }
-        let mut last = None;
-        for n in 0..10_000u32 {
-            let candidate = if n == 0 {
-                self.filename.clone()
-            } else {
-                names::numbered(&self.filename, n)
-            };
-            let Some(path) = names::inside(&self.directory, &candidate) else {
-                break;
-            };
-            match provider.file_len(&path).await.map_err(io_failed)? {
-                Some(len) => last = Some((candidate, path, len)),
-                None => break,
+        match provider.file_len(&part).await.map_err(io_failed)? {
+            Some(len) if len == size => {
+                tracing::info!(id = %self.id, "downloaded before a restart; finishing");
+                self.part = part;
+                self.size = Some(size);
+                self.meta = without_intent(cp.meta);
+                self.ranged = false;
+                self.open_storage().await?;
+                return Ok(Recovery::FinishAgain);
             }
+            Some(_) => return Ok(Recovery::None),
+            None => {}
         }
-        let Some((name, path, len)) = last else {
-            return Ok(false);
+        let Some(name) = intent_name(&cp.meta) else {
+            return Ok(Recovery::None);
         };
-        if len != size {
-            return Ok(false);
+        let Some(path) = names::inside(&self.directory, &name) else {
+            return Ok(Recovery::None);
+        };
+        if provider.file_len(&path).await.map_err(io_failed)? != Some(size) {
+            return Ok(Recovery::None);
         }
         if let Some(ck) = self.checksum.clone() {
             let Ok((algo, want)) = checksum::parse(&ck) else {
-                return Ok(false);
+                return Ok(Recovery::None);
             };
             let Ok(file) = provider.open(&path).await else {
-                return Ok(false);
+                return Ok(Recovery::None);
             };
             let got = checksum::digest(&*file, size, algo, self.t.verify_chunk).await;
             if !matches!(got, Ok(got) if got == want) {
-                return Ok(false);
+                return Ok(Recovery::None);
             }
         }
-        tracing::info!(id = %self.id, name, "already finished before a restart; adopting it");
+        tracing::info!(id = %self.id, name, "finished just before a restart; adopting it");
         self.size = Some(size);
         self.adopted = Some((name, size));
-        Ok(true)
+        Ok(Recovery::Adopted)
     }
 
     /// Take in what a probe learned: file name (only before a part file
@@ -824,15 +863,17 @@ impl Driver {
     /// cancellable.
     async fn finish(&mut self) -> Outcome {
         if let Some((filename, total)) = self.adopted.take() {
-            if let Err(e) = self.inner.deps.journal.remove(&self.id).await {
-                tracing::warn!(id = %self.id, "journal remove failed: {e}");
-            }
             return Outcome::Completed { filename, total };
         }
         let storage = match self.open_storage().await {
             Ok(s) => s,
             Err(o) => return o,
         };
+        // The intents below claim every byte: they must be on disk first.
+        if let Err(e) = storage.flush().await {
+            return io_failed(e);
+        }
+        let len = self.size.unwrap_or(0);
         let mut chosen = None;
         for n in 0..10_000u32 {
             let candidate = if n == 0 {
@@ -846,6 +887,19 @@ impl Driver {
                     "file name leaves the directory",
                 ));
             };
+            // Intent first, durably: if the process dies after the rename,
+            // the next start knows which file is ours.
+            let intent = Checkpoint {
+                meta: RemoteMeta {
+                    size: Some(len),
+                    final_url: Some(format!("{FINISHING}{candidate}")),
+                    ..without_intent(self.meta.clone())
+                },
+                done: RangeSet::from_ranges(ByteRange::new(0, len)),
+            };
+            if let Err(e) = self.inner.deps.journal.commit(&self.id, &intent).await {
+                return io_failed(e);
+            }
             match storage.finish(&path).await {
                 Ok(()) => {
                     chosen = Some(candidate);
@@ -858,11 +912,12 @@ impl Driver {
         let Some(filename) = chosen else {
             return Outcome::Failed(error_info("io", "no free file name"));
         };
-        if let Err(e) = self.inner.deps.journal.remove(&self.id).await {
-            tracing::warn!(id = %self.id, "journal remove failed: {e}");
+        // The journal entry goes only after the record says completed
+        // (`Inner::run_ended`).
+        Outcome::Completed {
+            filename,
+            total: len,
         }
-        let total = self.size.unwrap_or(0);
-        Outcome::Completed { filename, total }
     }
 
     /// Stop every connection and wait until none can write any more.
