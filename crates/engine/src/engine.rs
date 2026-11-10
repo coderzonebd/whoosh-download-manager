@@ -314,13 +314,18 @@ impl Inner {
     }
 
     /// Persist the current record of `id` (no-op if it was removed).
-    async fn save(&self, id: &str) {
+    /// Returns whether it was saved.
+    async fn save(&self, id: &str) -> bool {
         let _g = self.save_lock.lock().await;
-        let rec = self.record(id);
-        if let Some(r) = rec
-            && let Err(e) = self.deps.state.save_download(&r).await
-        {
-            tracing::warn!(id, "saving download record failed: {e}");
+        let Some(r) = self.record(id) else {
+            return false;
+        };
+        match self.deps.state.save_download(&r).await {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!(id, "saving download record failed: {e}");
+                false
+            }
         }
     }
 
@@ -453,12 +458,18 @@ impl Inner {
             items: vec![progress],
         }));
         self.bus.emit(Notification::DownloadState(state));
-        self.save(id).await;
+        let saved = self.save(id).await;
         if completed {
-            // Only now: until the record says completed, the journal's
-            // finish intent is what lets a restart recognise the file.
+            // Only once the completed record is durable (saved, then synced
+            // against power loss): until then the journal's finish intent is
+            // what lets a restart recognise the file. A failed save or sync
+            // keeps the entry; it is harmless next to a completed record.
             let id = id.to_string();
-            if let Err(e) = self.deps.journal.remove(&id).await {
+            if !saved {
+                tracing::warn!(id, "completed record not saved; keeping its journal entry");
+            } else if let Err(e) = self.deps.state.sync().await {
+                tracing::warn!(id, "state sync failed, keeping the journal entry: {e}");
+            } else if let Err(e) = self.deps.journal.remove(&id).await {
                 tracing::warn!(id, "journal remove failed: {e}");
             }
         }
