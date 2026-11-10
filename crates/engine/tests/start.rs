@@ -355,10 +355,14 @@ async fn an_empty_file_takes_one_request() {
 
 /// labserver's per-conn-throttle and slow-drip on the paused clock: 10 MiB
 /// at 2 MB/s and ~3.2 MB/s per connection (16 KiB chunks), one millisecond
-/// to the first byte. Returns how long it took and the peak connection
-/// count.
-async fn short_throttled(per_conn: u64, fast: bool) -> (Duration, usize) {
+/// to the first byte. `jump`: the first connection's solo rate may send the
+/// count to 16 at once; `fast`: the fast first climb. Returns how long it
+/// took and the peak connection count.
+async fn short_throttled(per_conn: u64, jump: bool, fast: bool) -> (Duration, usize) {
     let mut cfg = config();
+    if !jump {
+        cfg.tuning.solo_window = 0;
+    }
     if !fast {
         cfg.tuning.tune_fast_scaling = f64::INFINITY;
     }
@@ -381,17 +385,71 @@ async fn short_throttled(per_conn: u64, fast: bool) -> (Duration, usize) {
 #[tokio::test(start_paused = true)]
 async fn a_short_per_connection_limited_download_climbs_at_once() {
     for per_conn in [2_000_000, 3_200_000] {
-        let (careful, careful_peak) = short_throttled(per_conn, false).await;
-        let (fast, peak) = short_throttled(per_conn, true).await;
+        let (careful, careful_peak) = short_throttled(per_conn, false, false).await;
+        let (fast, fast_peak) = short_throttled(per_conn, false, true).await;
+        let (jump, jump_peak) = short_throttled(per_conn, true, true).await;
         eprintln!(
-            "{per_conn} B/s per connection: careful {careful:?} (peak {careful_peak}), fast {fast:?} (peak {peak})"
+            "{per_conn} B/s per connection: careful {careful:?} (peak {careful_peak}), \
+             fast climb {fast:?} (peak {fast_peak}), jump {jump:?} (peak {jump_peak})"
         );
         // Careful windows end with the download: it never leaves 8.
         assert!(careful_peak <= 9, "{careful_peak}");
-        assert!(peak >= 16, "{peak}");
+        // The fast climb reaches 16 within a few windows...
+        assert!(fast_peak >= 16, "{fast_peak}");
         assert!(
             fast.as_secs_f64() < careful.as_secs_f64() * 0.8,
             "{fast:?} vs {careful:?}"
         );
+        // ...the jump from the first connection's solo rate at once.
+        assert!(jump_peak >= 16, "{jump_peak}");
+        assert!(
+            jump.as_secs_f64() < fast.as_secs_f64() * 0.9,
+            "{jump:?} vs {fast:?}"
+        );
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shared_limit_does_not_jump() {
+    // 20 MB/s for everyone at 1 ms: one connection alone gets 20 KB per
+    // round trip, over TCP's initial window, so nothing says "limited per
+    // connection": the first plan is 8, not 16.
+    let lab = Lab::new(config()).await;
+    let data = content(10 * MIB, 117);
+    let src = lab.serve(
+        URL,
+        native(data.clone(), |c| {
+            c.global_bps = Some(20_000_000);
+            c.chunk = 16 * KIB as usize;
+            c.ttfb = ms(1);
+        }),
+    );
+    let id = lab.add(URL).await;
+    tokio::time::sleep(ms(60)).await;
+    assert!(src.peak() <= 8, "peak {} before any climb", src.peak());
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_capped_server_refuses_one_wave_of_the_jump() {
+    // 2 MB/s per connection says "limited per connection", but only two are
+    // allowed: the jump to 16 opens 8 at a time, so 6 are refused, not 14.
+    let lab = Lab::new(config()).await;
+    let data = content(8 * MIB, 118);
+    let src = lab.serve(
+        URL,
+        native(data.clone(), |c| {
+            c.per_conn_bps = Some(2_000_000);
+            c.chunk = 16 * KIB as usize;
+            c.ttfb = ms(1);
+            c.cap = Some((2, Cap::Throttle(Some(Duration::from_secs(1)))));
+        }),
+    );
+    let id = lab.add(URL).await;
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    assert!(src.peak() <= 2);
+    // The start, a wave of 8 (6 refused), then the pieces two at a time.
+    assert!(src.opens() <= 18, "opens {}", src.opens());
 }

@@ -307,8 +307,9 @@ impl Segment {
 
     /// Split off the unclaimed tail for another connection. The current
     /// owner keeps `keep_frac` of the remaining bytes (both pieces at least
-    /// `min`); the split point is rounded down to `align` when that still
-    /// leaves `min` bytes. Hedged and open-ended segments are not split.
+    /// `min`); the split point is rounded to `align` — down, else up — when
+    /// that still leaves `min` bytes on both sides. Hedged and open-ended
+    /// segments are not split.
     pub(crate) fn split(&self, min: u64, keep_frac: f64, align: u64) -> Option<Arc<Segment>> {
         let mut s = self.lock();
         if s.open_ended || s.challenger.is_some() {
@@ -320,10 +321,13 @@ impl Segment {
         }
         let keep = ((rem as f64 * keep_frac.clamp(0.0, 1.0)) as u64).clamp(min, rem - min);
         let mut at = s.claimed + keep;
-        if align > 1 {
-            let aligned = at - at % align;
-            if aligned >= s.claimed + min {
-                at = aligned;
+        if align > 1 && !at.is_multiple_of(align) {
+            let down = at - at % align;
+            let up = down + align;
+            if down >= s.claimed + min {
+                at = down;
+            } else if up + min <= s.end {
+                at = up;
             }
         }
         let tail = Segment::new(at, s.end);

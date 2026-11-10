@@ -68,6 +68,14 @@ pub struct Tuning {
     pub solo_min_eta: Duration,
     pub solo_check: Duration,
     pub solo_silence: Duration,
+    /// When the first connection alone delivers less than `solo_window`
+    /// bytes per round trip (its rate past the first burst × what `start`
+    /// took, at least 1 ms) — under TCP's initial window, so the sender
+    /// paces it: 2 MB/s at 1 ms is 2 KB — the server limits each
+    /// connection, and the others start `limited_connections` strong at
+    /// once instead of climbing there.
+    pub solo_window: u64,
+    pub limited_connections: u16,
     /// Never split a range into pieces smaller than this; on a slow link,
     /// down to `min_split_floor`, as long as a piece still takes at least
     /// `max(min_split_time, 4 × median TTFB)` at the median connection's
@@ -172,6 +180,13 @@ pub struct Tuning {
     pub checkpoint_bytes: u64,
     pub checkpoint_share: f64,
     pub checkpoint_interval_max: Duration,
+    /// While a transfer runs, flush (and, when resumable, commit) once this
+    /// many new bytes are written and no flush is in flight, checked every
+    /// `writeback_check`: the store syncs on a thread of its own, so the
+    /// disk works alongside the network and the flush `finish` needs
+    /// before the rename has little left to do.
+    pub writeback_bytes: u64,
+    pub writeback_check: Duration,
     /// The download record (progress) is saved this often while running.
     pub record_interval: Duration,
     /// Retry backoff: `min(retry_cap, retry_base × 2^(n−1))` with jitter in
@@ -206,6 +221,8 @@ impl Default for Tuning {
             solo_min_eta: Duration::from_millis(100),
             solo_check: Duration::from_millis(5),
             solo_silence: Duration::from_millis(20),
+            solo_window: 16 * 1024,
+            limited_connections: 16,
             min_split: MIB,
             min_split_floor: 256 * 1024,
             min_split_time: Duration::from_millis(100),
@@ -242,6 +259,8 @@ impl Default for Tuning {
             checkpoint_bytes: u64::MAX,
             checkpoint_share: 0.05,
             checkpoint_interval_max: Duration::from_secs(30),
+            writeback_bytes: 16 * MIB,
+            writeback_check: Duration::from_millis(10),
             record_interval: Duration::from_secs(3),
             retry_base: Duration::from_millis(50),
             retry_cap: Duration::from_secs(30),
