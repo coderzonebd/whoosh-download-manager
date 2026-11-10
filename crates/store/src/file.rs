@@ -347,6 +347,10 @@ struct Shared {
     paused: (Mutex<bool>, std::sync::Condvar),
     #[cfg(test)]
     sync_paused: (Mutex<bool>, std::sync::Condvar),
+    /// Test hook: the syncer panics inside (`Sync`) or after (`Bookkeeping`)
+    /// its next fdatasync.
+    #[cfg(test)]
+    sync_panic: Mutex<Option<SyncPanic>>,
     #[cfg(test)]
     synced_dirs: Mutex<Vec<PathBuf>>,
 }
@@ -461,13 +465,15 @@ impl FileStorage {
             #[cfg(test)]
             sync_paused: Default::default(),
             #[cfg(test)]
+            sync_panic: Mutex::new(None),
+            #[cfg(test)]
             synced_dirs: Mutex::default(),
         });
         let (tx, rx) = mpsc::channel();
         let writer = Writer {
             file: Some(Arc::new(file)),
             path: path.clone(),
-            syncer: Syncer::start(shared.clone(), opts)?,
+            syncer: Syncer::start(shared.clone(), &path, opts)?,
             shared: shared.clone(),
             batch: Vec::new(),
             max_batch: (cap as usize / 4).max(1),
@@ -634,11 +640,12 @@ impl Writer {
 
     fn serve(&mut self, rx: mpsc::Receiver<Cmd>) {
         'outer: while let Ok(first) = rx.recv() {
-            #[cfg(test)]
-            self.shared.wait_unpaused();
             let mut next = Some(first);
             let mut batch_bytes = 0;
             while let Some(cmd) = next.take() {
+                // Test hook: holds every command, however it was received.
+                #[cfg(test)]
+                self.shared.wait_unpaused();
                 match cmd {
                     Cmd::Write(w) => {
                         batch_bytes += w.data.len();
@@ -870,39 +877,96 @@ struct Syncer {
     thread: Option<std::thread::JoinHandle<()>>,
     /// Flush jobs sent and not yet done.
     outstanding: Arc<(Mutex<usize>, std::sync::Condvar)>,
+    shared: Arc<Shared>,
 }
 
+/// Fields drop in order: the handle goes before the job stops counting
+/// as in flight, so `wait_idle` returning means no second handle is held.
 struct SyncJob {
     file: Arc<File>,
     reply: oneshot::Sender<io::Result<()>>,
+    _in_flight: InFlight,
+}
+
+/// One flush counted as in flight from hand-over until it is dropped:
+/// answered, or lost to a panic or a closed channel. Counting by drop means
+/// no path can leave `wait_idle` waiting forever.
+struct InFlight(Arc<(Mutex<usize>, std::sync::Condvar)>);
+
+impl InFlight {
+    fn new(outstanding: &Arc<(Mutex<usize>, std::sync::Condvar)>) -> Self {
+        *lock(&outstanding.0) += 1;
+        Self(outstanding.clone())
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        let (m, cv) = &*self.0;
+        *lock(m) -= 1;
+        cv.notify_all();
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncPanic {
+    Sync,
+    Bookkeeping,
+}
+
+/// Test hook: consume the injected panic if it is this one.
+#[cfg(test)]
+fn injected(shared: &Shared, at: SyncPanic) -> bool {
+    let mut slot = lock(&shared.sync_panic);
+    if *slot == Some(at) {
+        *slot = None;
+        true
+    } else {
+        false
+    }
+}
+
+fn syncer_panicked() -> io::Error {
+    io::Error::other("the store's syncer thread panicked")
 }
 
 impl Syncer {
-    fn start(shared: Arc<Shared>, opts: &StorageOptions) -> io::Result<Self> {
+    fn start(shared: Arc<Shared>, path: &Path, opts: &StorageOptions) -> io::Result<Self> {
         let (tx, rx) = mpsc::channel();
         let outstanding: Arc<(Mutex<usize>, std::sync::Condvar)> = Arc::default();
         let drop_cache = opts.drop_cache_after_flush;
         let thread = std::thread::Builder::new()
             .name("vayu-store-sync".into())
             .spawn({
-                let outstanding = outstanding.clone();
-                move || sync_loop(&rx, &shared, &outstanding, drop_cache)
+                let (shared, path) = (shared.clone(), path.to_path_buf());
+                move || sync_loop(&rx, &shared, &path, drop_cache)
             })?;
         Ok(Self {
             tx: Some(tx),
             thread: Some(thread),
             outstanding,
+            shared,
         })
     }
 
     fn flush(&self, file: Arc<File>, reply: oneshot::Sender<io::Result<()>>) {
         let tx = self.tx.as_ref().expect("the syncer runs until shutdown");
-        *lock(&self.outstanding.0) += 1;
-        if let Err(mpsc::SendError(job)) = tx.send(SyncJob { file, reply }) {
-            let (m, cv) = &*self.outstanding;
-            *lock(m) -= 1;
-            cv.notify_all();
-            let _ = job.reply.send(Err(finished_error()));
+        let job = SyncJob {
+            file,
+            reply,
+            _in_flight: InFlight::new(&self.outstanding),
+        };
+        if let Err(mpsc::SendError(job)) = tx.send(job) {
+            // The syncer thread is gone: nothing can be made durable any
+            // more, so the storage is dead (sticky), not just this flush.
+            let e = self.shared.error().unwrap_or_else(|| {
+                self.shared
+                    .fail(io::Error::other("the store's syncer thread has stopped"))
+            });
+            let SyncJob { file, reply, .. } = job;
+            drop(file);
+            let _ = reply.send(Err(e));
         }
     }
 
@@ -929,41 +993,104 @@ impl Drop for Syncer {
     }
 }
 
-fn sync_loop(
-    rx: &mpsc::Receiver<SyncJob>,
-    shared: &Shared,
-    outstanding: &(Mutex<usize>, std::sync::Condvar),
-    drop_cache: bool,
-) {
+/// A panic that ends the syncer thread is recorded as the storage's
+/// sticky error. (Its jobs stop counting as in flight as they are dropped,
+/// so `finish`, `remove` and close never wait for it.)
+struct SyncerExit<'a>(&'a Shared);
+
+impl Drop for SyncerExit<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.set_error(&syncer_panicked());
+        }
+    }
+}
+
+fn sync_loop(rx: &mpsc::Receiver<SyncJob>, shared: &Shared, path: &Path, drop_cache: bool) {
+    let _exit = SyncerExit(shared);
     while let Ok(first) = rx.recv() {
         // Every flush waiting now was handed over before this fdatasync
         // starts, so one covers them all.
         let mut jobs = vec![first];
         jobs.extend(rx.try_iter());
-        #[cfg(test)]
-        shared.wait_sync_unpaused();
         let file = jobs[0].file.clone();
-        let result = match shared.error() {
-            Some(e) => Err(e),
-            None => sync_file(&file, shared),
-        };
-        if result.is_ok() && drop_cache {
-            sys::drop_cache(&file);
-        }
-        // Let go of every handle before anyone may see these jobs as done.
+        // A panic in here becomes the storage's sticky error, recorded
+        // before the waiting flushes are answered with it.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            shared.wait_sync_unpaused();
+            #[cfg(test)]
+            if injected(shared, SyncPanic::Sync) {
+                panic!("injected syncer panic");
+            }
+            let r = match shared.error() {
+                Some(e) => Err(e),
+                None => sync_file(&sync_handle(&file, path), shared),
+            };
+            if r.is_ok() && drop_cache {
+                sys::drop_cache(&file);
+            }
+            r
+        }))
+        .unwrap_or_else(|_| Err(shared.fail(syncer_panicked())));
         drop(file);
-        let replies: Vec<_> = jobs.into_iter().map(|j| j.reply).collect();
-        {
-            let (m, cv) = outstanding;
-            *lock(m) -= replies.len();
-            cv.notify_all();
+        #[cfg(test)]
+        if injected(shared, SyncPanic::Bookkeeping) {
+            panic!("injected syncer panic after the sync");
         }
-        for reply in replies {
+        for SyncJob {
+            file,
+            reply,
+            _in_flight,
+        } in jobs
+        {
+            // Let go of the handle, then stop counting as in flight, then
+            // answer.
+            drop(file);
+            drop(_in_flight);
             let out = match &result {
                 Ok(()) => Ok(()),
                 Err(e) => Err(io::Error::new(e.kind(), e.to_string())),
             };
             let _ = reply.send(out);
+        }
+    }
+}
+
+/// The handle to fsync through. Windows serialises synchronous I/O per
+/// handle, so a `FlushFileBuffers` on the writer's handle would hold up its
+/// `WriteFile`s; a second handle to the same file avoids that, and
+/// `FlushFileBuffers` flushes the file's data whichever handle wrote it.
+/// It is opened per flush, so none is held while idle (a rename in
+/// `finish` needs that), and if it cannot be opened the shared handle is
+/// used: slower, never less durable. Elsewhere the shared handle is used:
+/// `fdatasync` does not serialise with `pwrite` on the same descriptor.
+fn sync_handle(shared: &Arc<File>, path: &Path) -> SyncHandle {
+    #[cfg(windows)]
+    {
+        let mut o = File::options();
+        o.write(true);
+        if let Ok(own) = sys::open_nofollow(&mut o, path) {
+            return SyncHandle::Own(own);
+        }
+    }
+    let _ = path;
+    SyncHandle::Shared(shared.clone())
+}
+
+enum SyncHandle {
+    Shared(Arc<File>),
+    #[cfg(windows)]
+    Own(File),
+}
+
+impl std::ops::Deref for SyncHandle {
+    type Target = File;
+    fn deref(&self) -> &File {
+        match self {
+            SyncHandle::Shared(f) => f,
+            #[cfg(windows)]
+            SyncHandle::Own(f) => f,
         }
     }
 }
@@ -1462,5 +1589,55 @@ mod tests {
         assert_eq!(s.read_at(0, 4 << 20).await.unwrap(), want);
         s.finish(&d.path().join("f")).await.unwrap();
         assert!(std::fs::read(d.path().join("f")).unwrap() == want);
+    }
+
+    /// A panic on the syncer thread, inside its fsync or after it, fails
+    /// the storage (sticky) instead of hanging `finish`, `remove` or `open`.
+    #[tokio::test]
+    async fn a_panicking_syncer_fails_the_storage_instead_of_hanging() {
+        async fn within<T>(what: &str, f: impl std::future::Future<Output = T>) -> T {
+            tokio::time::timeout(Duration::from_secs(10), f)
+                .await
+                .unwrap_or_else(|_| panic!("{what} hung"))
+        }
+        for kind in [SyncPanic::Sync, SyncPanic::Bookkeeping] {
+            let d = tempfile::tempdir().unwrap();
+            let path = d.path().join("f.vayu-part");
+            let p = provider(1 << 20);
+            let s = p.open_storage(&path).await.unwrap();
+            s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+            *lock(&s.shared.sync_panic) = Some(kind);
+            assert!(within("flush", s.flush()).await.is_err(), "{kind:?}");
+            // The panic is recorded, the storage is dead, and nothing waits.
+            within("the sticky error", async {
+                while !s.shared.has_error() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await;
+            for _ in 0..2 {
+                let e = within("flush", s.flush()).await.unwrap_err();
+                assert!(e.to_string().contains("syncer"), "{kind:?}: {e}");
+            }
+            assert!(
+                within("write_at", s.write_at(4, Bytes::from_static(b"x")))
+                    .await
+                    .is_err()
+            );
+            let e = within("finish", s.finish(&d.path().join("f")))
+                .await
+                .unwrap_err();
+            assert!(e.to_string().contains("syncer"), "{kind:?}: {e}");
+            assert!(!d.path().join("f").exists());
+            // A failed storage is not handed out again; open and remove
+            // go through.
+            let fresh = within("open", p.open_storage(&path)).await.unwrap();
+            assert!(!Arc::ptr_eq(&s, &fresh));
+            fresh.write_at(0, Bytes::from_static(b"new")).await.unwrap();
+            within("flush", fresh.flush()).await.unwrap();
+            drop(fresh);
+            within("remove", p.remove_path(&path)).await.unwrap();
+            assert!(!path.exists());
+        }
     }
 }
