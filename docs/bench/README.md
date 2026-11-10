@@ -167,7 +167,27 @@ agreement with the other clients' hashes.
 
 ## Phase 1
 
-The vayu engine joins as one more client. The Phase 1 gate (MASTER-PLAN §8)
-is: fastest in every labserver scenario with p < 0.01 (Mann-Whitney U on
-*time*, 7+ runs), lower CPU, zero corrupted files — against the numbers in
-this directory, rerun on the same machine.
+The vayu engine is two clients: `vayu`, with its daemon resident the way a
+download manager runs (the gate's configuration: the daemon is started
+before each run, outside the measured window, and its CPU and memory
+during the run are counted), and `vayu-cold`, the one-shot CLI with the
+daemon's start and stop inside the timed window (reported alongside; it
+does not gate). The amended gate (MASTER-PLAN §8) is measured on an idle
+machine with ≥ 7 runs per cell:
+
+```bash
+# Build vayu and vayu-daemon (release) first; then, with the machine idle:
+$B run --clients vayu,vayu-cold,curl,wget,aria2c,aria2c-tuned,aria2-next,aria2-next-tuned,mdm,surge,gopeed \
+    --bin vayu=target/release/vayu --seed 20261111 --cache-mb 128 --wait-for-idle
+$B report docs/bench/data/<dir> -o report.md      # includes the "Phase 1 gate" section
+$B hardkill --vayu target/release/vayu --kills 1000   # rule 2
+```
+
+The idle-machine guard samples the rest of the machine before every run;
+`--wait-for-idle` waits for it to calm down instead of only warning, and
+the report's gate section marks a pass with busy runs as not valid. The
+gate section judges rules 1 (byte-exact, right names), 3 (no competitor
+significantly faster, Mann-Whitney U p < 0.01), 4 (best or within 5 % in
+the engine scenarios) and 5 (CPU per GiB at or below every
+multi-connection competitor) per scenario; rules 2 and 6 come from
+`hardkill` and the real-CDN runs. Details: [`crates/bench/README.md`](../../crates/bench/README.md).

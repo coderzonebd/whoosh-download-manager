@@ -338,6 +338,251 @@ fn parse_measured(s: &str, started_unix_us: u64) -> Measured {
         })
 }
 
+// ---------------------------------------------------- other processes --
+
+/// CPU time of a running process (all its threads, live and exited) from
+/// `/proc/<pid>/stat`, in microseconds. Linux only; resolution 1/CLK_TCK
+/// (10 ms on most systems).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProcCpu {
+    pub user_us: u64,
+    pub sys_us: u64,
+}
+
+/// Parses `utime` and `stime` (fields 14 and 15, clock ticks) out of a
+/// `/proc/<pid>/stat` line. The command name (field 2) is in parentheses
+/// and may itself contain spaces or parentheses, so fields are counted
+/// from the last `)`.
+pub fn parse_proc_stat(stat: &str, ticks_per_s: u64) -> Option<ProcCpu> {
+    let rest = &stat[stat.rfind(')')? + 1..];
+    let mut f = rest.split_whitespace();
+    // After `)`: field 3 (state) is index 0, so utime (14) is index 11.
+    let utime: u64 = f.nth(11)?.parse().ok()?;
+    let stime: u64 = f.next()?.parse().ok()?;
+    let us = |t: u64| t.saturating_mul(1_000_000) / ticks_per_s.max(1);
+    Some(ProcCpu {
+        user_us: us(utime),
+        sys_us: us(stime),
+    })
+}
+
+/// Clock ticks per second (`sysconf(_SC_CLK_TCK)`; 100 if unknown).
+pub fn clk_tck() -> u64 {
+    #[cfg(unix)]
+    if let Ok(Some(t)) = nix::unistd::sysconf(nix::unistd::SysconfVar::CLK_TCK)
+        && t > 0
+    {
+        return t as u64;
+    }
+    100
+}
+
+/// CPU time used so far by process `pid` (Linux).
+pub fn proc_cpu(pid: u32) -> Option<ProcCpu> {
+    let s = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    parse_proc_stat(&s, clk_tck())
+}
+
+/// A `kB` field (`VmHWM`, `VmRSS`) of `/proc/<pid>/status`.
+pub fn parse_status_kib(status: &str, field: &str) -> Option<u64> {
+    status
+        .lines()
+        .find(|l| l.starts_with(field) && l[field.len()..].starts_with(':'))
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|v| v.parse().ok())
+}
+
+/// Peak resident set (`VmHWM`) of process `pid`, KiB (Linux).
+pub fn proc_hwm_kib(pid: u32) -> Option<u64> {
+    let s = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    parse_status_kib(&s, "VmHWM")
+}
+
+/// Resets the peak resident set of `pid` to its current size, so a later
+/// [`proc_hwm_kib`] reports the peak since now (`echo 5 >
+/// /proc/<pid>/clear_refs`, Linux ≥ 4.0, own processes only). `false` if
+/// the kernel refused.
+pub fn proc_reset_hwm(pid: u32) -> bool {
+    std::fs::write(format!("/proc/{pid}/clear_refs"), b"5").is_ok()
+}
+
+// ----------------------------------------------------------- resident --
+
+/// What a resident helper (a client's daemon) used during one run.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ResidentUsage {
+    /// Helper start until it was ready (not part of the measured time).
+    pub startup_s: f64,
+    /// CPU used between just before the client started and just after it
+    /// finished (plus the settle time below). `None` where `/proc` is not
+    /// available.
+    pub cpu_user_s: Option<f64>,
+    pub cpu_sys_s: Option<f64>,
+    /// Peak resident set during the run (after resetting the kernel's
+    /// high-water mark when the window opened), MiB.
+    pub max_rss_mib: Option<f64>,
+    /// `false` if the high-water mark could not be reset, so the peak may
+    /// come from the helper's own start-up.
+    pub rss_window_only: bool,
+    /// How long after the client finished the harness kept counting the
+    /// helper's CPU (until it went quiet, at most 0.5 s).
+    pub settle_s: f64,
+}
+
+/// A resident helper process around one measured run.
+#[derive(Debug)]
+pub struct ResidentProc {
+    child: Child,
+    pid: u32,
+    started: Instant,
+    startup: Duration,
+    cpu0: Option<ProcCpu>,
+    hwm_reset: bool,
+}
+
+impl ResidentProc {
+    /// Starts `r` and waits until its ready file names its pid.
+    pub fn start(r: &crate::adapter::Resident, timeout: Duration) -> Result<Self> {
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&r.log)
+            .with_context(|| format!("open {}", r.log.display()))?;
+        let mut cmd = Command::new(&r.program);
+        cmd.args(&r.args)
+            .envs(r.env.iter().map(|(k, v)| (k, v)))
+            .current_dir(&r.cwd)
+            .stdin(Stdio::null())
+            .stdout(log.try_clone()?)
+            .stderr(log);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+        let started = Instant::now();
+        let child = cmd
+            .spawn()
+            .with_context(|| format!("start {}", r.program.display()))?;
+        let pid = child.id();
+        let mut p = Self {
+            child,
+            pid,
+            started,
+            startup: Duration::ZERO,
+            cpu0: None,
+            hwm_reset: false,
+        };
+        loop {
+            if let Ok(bytes) = std::fs::read(&r.ready_file)
+                && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
+                && v["pid"].as_u64() == Some(u64::from(pid))
+            {
+                break;
+            }
+            if let Some(status) = p.child.try_wait()? {
+                bail!(
+                    "{} exited during start-up ({status}): {}",
+                    r.program.display(),
+                    tail(&r.log, 400).unwrap_or_default()
+                );
+            }
+            if started.elapsed() > timeout {
+                bail!("{} not ready after {timeout:?}", r.program.display());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        p.startup = started.elapsed();
+        Ok(p)
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    /// Opens the measured window: resets the peak-RSS mark and records the
+    /// CPU used so far. Call right before starting the client.
+    pub fn open_window(&mut self) {
+        self.hwm_reset = proc_reset_hwm(self.pid);
+        self.cpu0 = proc_cpu(self.pid);
+    }
+
+    /// Closes the window right after the client finished: keeps sampling
+    /// the helper's CPU every 50 ms until it stops rising (at most 0.5 s),
+    /// so bookkeeping it does after the download counts too.
+    pub fn close_window(&mut self) -> ResidentUsage {
+        let t0 = Instant::now();
+        let mut last = proc_cpu(self.pid);
+        while t0.elapsed() < Duration::from_millis(500) {
+            std::thread::sleep(Duration::from_millis(50));
+            let now = proc_cpu(self.pid);
+            if now == last {
+                break;
+            }
+            last = now;
+        }
+        let (user, sys) = match (self.cpu0, last) {
+            (Some(a), Some(b)) => (
+                Some(b.user_us.saturating_sub(a.user_us) as f64 / 1e6),
+                Some(b.sys_us.saturating_sub(a.sys_us) as f64 / 1e6),
+            ),
+            _ => (None, None),
+        };
+        ResidentUsage {
+            startup_s: self.startup.as_secs_f64(),
+            cpu_user_s: user,
+            cpu_sys_s: sys,
+            max_rss_mib: proc_hwm_kib(self.pid).map(|k| k as f64 / 1024.0),
+            rss_window_only: self.hwm_reset,
+            settle_s: t0.elapsed().as_secs_f64(),
+        }
+    }
+
+    /// Stops the helper: SIGTERM (a clean shutdown), then SIGKILL to its
+    /// process group after `grace`.
+    pub fn stop(mut self, grace: Duration) {
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{Signal, kill};
+            use nix::unistd::Pid;
+            let _ = kill(Pid::from_raw(self.pid as i32), Signal::SIGTERM);
+            let t0 = Instant::now();
+            while t0.elapsed() < grace {
+                if matches!(self.child.try_wait(), Ok(Some(_))) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        let _ = grace;
+        self.kill_now();
+    }
+
+    fn kill_now(&mut self) {
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{Signal, killpg};
+            use nix::unistd::Pid;
+            let _ = killpg(Pid::from_raw(self.pid as i32), Signal::SIGKILL);
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+
+    /// How long the helper has been running.
+    pub fn uptime(&self) -> Duration {
+        self.started.elapsed()
+    }
+}
+
+impl Drop for ResidentProc {
+    fn drop(&mut self) {
+        if matches!(self.child.try_wait(), Ok(None)) {
+            self.kill_now();
+        }
+    }
+}
+
 /// Runs `program args` to completion and returns its stdout (for
 /// `--version` probes). `None` if it fails to start or times out.
 pub fn capture(program: &Path, args: &[&str], timeout: Duration) -> Option<String> {
@@ -430,6 +675,95 @@ mod tests {
         assert_eq!(s.program, "curl");
         assert_eq!(s.args, ["-O", "--", "x"].map(OsString::from));
         assert!(parse_shim_args(&a[..4]).is_err());
+    }
+
+    #[test]
+    fn proc_stat_and_status_parsing() {
+        // A command name with spaces and a parenthesis, as the kernel shows it.
+        let stat = "4242 (vayu (x) d) S 1 4242 4242 0 -1 4194560 900 0 0 0 \
+                    250 75 0 0 20 0 3 0 12345 100000 2000 18446744073709551615";
+        let c = parse_proc_stat(stat, 100).unwrap();
+        assert_eq!(c.user_us, 2_500_000, "250 ticks at 100 Hz");
+        assert_eq!(c.sys_us, 750_000);
+        assert_eq!(parse_proc_stat(stat, 1000).unwrap().user_us, 250_000);
+        assert!(parse_proc_stat("garbage", 100).is_none());
+        assert!(
+            parse_proc_stat("1 (x) S 2 3", 100).is_none(),
+            "too few fields"
+        );
+
+        let status =
+            "Name:\tvayu-daemon\nVmPeak:\t  999 kB\nVmHWM:\t   20480 kB\nVmRSS:\t   10240 kB\n";
+        assert_eq!(parse_status_kib(status, "VmHWM"), Some(20_480));
+        assert_eq!(parse_status_kib(status, "VmRSS"), Some(10_240));
+        assert_eq!(parse_status_kib(status, "VmSwap"), None);
+        assert!(clk_tck() >= 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn proc_readers_see_this_process() {
+        let me = std::process::id();
+        let before = proc_cpu(me).unwrap();
+        // Burn a little CPU so the counter can move.
+        let mut x = 0u64;
+        for i in 0..20_000_000u64 {
+            x = x.wrapping_mul(31).wrapping_add(i);
+        }
+        std::hint::black_box(x);
+        let after = proc_cpu(me).unwrap();
+        assert!(after.user_us + after.sys_us >= before.user_us + before.sys_us);
+        assert!(proc_hwm_kib(me).unwrap() > 0);
+        // Resetting our own peak is allowed (Linux >= 4.0).
+        assert!(proc_reset_hwm(me));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn resident_helper_lifecycle() {
+        let dir = std::env::temp_dir().join(format!("vayu-bench-resident-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A fake daemon: announces its pid in the ready file, then idles
+        // (exec keeps the pid), the way vayu-daemon writes runtime.json.
+        let spec = crate::adapter::Resident {
+            program: PathBuf::from("/bin/sh"),
+            args: vec![
+                "-c".into(),
+                r#"sleep 0.05; printf '{"pid": %s}' $$ > "$READY.tmp" && mv "$READY.tmp" "$READY"; exec sleep 30"#.into(),
+            ],
+            env: vec![("READY".into(), dir.join("runtime.json").into_os_string())],
+            cwd: dir.clone(),
+            ready_file: dir.join("runtime.json"),
+            log: dir.join("daemon.log"),
+        };
+        let mut p = ResidentProc::start(&spec, Duration::from_secs(10)).unwrap();
+        assert!(
+            p.uptime() >= Duration::from_millis(40),
+            "waited for the ready file"
+        );
+        p.open_window();
+        let u = p.close_window();
+        assert!(u.startup_s >= 0.04);
+        assert!(u.cpu_user_s.is_some() && u.cpu_sys_s.is_some(), "{u:?}");
+        assert!(
+            u.cpu_user_s.unwrap() < 0.5,
+            "an idle helper used no CPU: {u:?}"
+        );
+        assert!(u.max_rss_mib.unwrap() > 0.0);
+        assert!(u.rss_window_only, "own process: clear_refs is allowed");
+        let pid = p.pid();
+        p.stop(Duration::from_secs(2));
+        assert!(!Path::new(&format!("/proc/{pid}")).exists() || proc_cpu(pid).is_none());
+
+        // A helper that dies during start-up is reported, not waited for.
+        let bad = crate::adapter::Resident {
+            args: vec!["-c".into(), "echo broken config >&2; exit 2".into()],
+            ..spec
+        };
+        let e = ResidentProc::start(&bad, Duration::from_secs(10)).unwrap_err();
+        assert!(format!("{e:#}").contains("broken config"), "{e:#}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

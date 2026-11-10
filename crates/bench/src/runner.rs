@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use crate::adapter::{self, Adapter, ApiScript, Completion, Conn, Job, Mode};
 use crate::fetch::{self, Installed};
 use crate::lab::Lab;
-use crate::measure::{self, Measured, unix_us};
+use crate::measure::{self, Measured, ResidentProc, ResidentUsage, unix_us};
 use crate::names::{self, NameCheck};
 use crate::sys::{self, Machine};
 
@@ -323,6 +323,20 @@ pub struct RunRecord {
     pub extra_files: Vec<String>,
     pub note: Option<String>,
     pub stderr_tail: Option<String>,
+    /// The client's resident helper (vayu's daemon) during this run; its
+    /// CPU is included in `cpu_*_s` and its peak RSS in `max_rss_mib`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resident: Option<ResidentUsage>,
+    /// CPUs' worth of work the rest of the machine did just before the run
+    /// (see [`sys::busy_cpus`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub busy_cpus: Option<f64>,
+    /// The run started although the idle-machine guard said busy.
+    #[serde(default)]
+    pub machine_busy: bool,
+    /// How long the guard waited for the machine to become idle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_wait_s: Option<f64>,
 }
 
 impl RunRecord {
@@ -367,6 +381,10 @@ impl RunRecord {
             extra_files: Vec::new(),
             note: None,
             stderr_tail: None,
+            resident: None,
+            busy_cpus: None,
+            machine_busy: false,
+            idle_wait_s: None,
         }
     }
 
@@ -437,9 +455,118 @@ pub struct Meta {
     pub matrix: Vec<MatrixRow>,
     #[serde(default)]
     pub notes: Vec<String>,
+    /// The idle-machine guard's settings (absent in older run sets).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guard: Option<IdleGuard>,
+    /// Runs that started while the guard said the machine was busy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub busy_runs: Option<u32>,
 }
 
 // ------------------------------------------------------------ options --
+
+/// The idle-machine guard: before every run, the harness checks the 1-min
+/// load average and samples how busy the rest of the machine is
+/// ([`sys::busy_cpus`], while the harness itself is quiet), and warns —
+/// or, with `wait`, waits — when either is above its threshold.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IdleGuard {
+    /// Busy when the 1-min load average is above this. The previous run
+    /// keeps the load average up for a minute, so this must sit above what
+    /// the benchmark itself produces.
+    pub max_load: Option<f64>,
+    /// Busy when the rest of the machine uses more than this many CPUs.
+    pub max_busy_cpus: Option<f64>,
+    /// Wait (re-checking every 2 s) instead of only warning.
+    pub wait: bool,
+    /// Give up waiting after this long and run anyway (marked busy).
+    pub wait_timeout_s: u64,
+    /// Length of the busy-CPU sample before each run, milliseconds.
+    pub sample_ms: u64,
+}
+
+impl Default for IdleGuard {
+    fn default() -> Self {
+        let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+        Self {
+            max_load: Some(cpus as f64 / 2.0),
+            max_busy_cpus: Some(1.0),
+            wait: false,
+            wait_timeout_s: 600,
+            sample_ms: 200,
+        }
+    }
+}
+
+/// One guard check.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GuardCheck {
+    pub load1: Option<f64>,
+    pub busy_cpus: Option<f64>,
+}
+
+impl IdleGuard {
+    /// Why the machine counts as busy, if it does.
+    pub fn verdict(&self, c: &GuardCheck) -> Option<String> {
+        let mut why = Vec::new();
+        if let (Some(max), Some(l)) = (self.max_load, c.load1)
+            && l > max
+        {
+            why.push(format!("1-min load {l:.2} > {max:.2}"));
+        }
+        if let (Some(max), Some(b)) = (self.max_busy_cpus, c.busy_cpus)
+            && b > max
+        {
+            why.push(format!("other processes busy on {b:.2} CPUs > {max:.2}"));
+        }
+        (!why.is_empty()).then(|| why.join(", "))
+    }
+
+    fn check(&self) -> GuardCheck {
+        GuardCheck {
+            load1: sys::loadavg().map(|l| l[0]),
+            busy_cpus: sys::busy_cpus(Duration::from_millis(self.sample_ms)),
+        }
+    }
+
+    /// Checks before a run, waiting if configured. Fills the record's
+    /// `busy_cpus`, `machine_busy` and `idle_wait_s`.
+    fn before_run(&self, rec: &mut RunRecord, quiet: bool) {
+        let t0 = Instant::now();
+        let mut c = self.check();
+        let mut warned = false;
+        while let Some(why) = self.verdict(&c) {
+            if !self.wait || t0.elapsed().as_secs() >= self.wait_timeout_s {
+                rec.machine_busy = true;
+                eprintln!(
+                    "\n!!! WARNING: machine busy before run {} ({} {} {}): {why}. \
+                     Numbers from this run are not idle-machine numbers.{}\n",
+                    rec.seq,
+                    rec.client,
+                    rec.scenario,
+                    rec.file,
+                    if self.wait {
+                        " (gave up waiting)"
+                    } else {
+                        " Pass --wait-for-idle to wait."
+                    }
+                );
+                break;
+            }
+            if !warned && !quiet {
+                eprintln!("waiting for an idle machine before run {}: {why}", rec.seq);
+                warned = true;
+            }
+            std::thread::sleep(Duration::from_secs(2));
+            c = self.check();
+        }
+        rec.busy_cpus = c.busy_cpus;
+        rec.load1 = c.load1.or(rec.load1);
+        if warned {
+            rec.idle_wait_s = Some(t0.elapsed().as_secs_f64());
+        }
+    }
+}
 
 /// Options of `vayu-bench run`.
 #[derive(Debug, Clone)]
@@ -468,6 +595,8 @@ pub struct RunOptions {
     pub internet: Option<Vec<(String, String)>>,
     pub command: Vec<String>,
     pub quiet: bool,
+    /// `None` disables the idle-machine guard.
+    pub guard: Option<IdleGuard>,
 }
 
 // ---------------------------------------------------------- resolving --
@@ -701,6 +830,8 @@ pub fn run(opts: &RunOptions) -> Result<PathBuf> {
         clients: client_metas,
         matrix: rows.clone(),
         notes: Vec::new(),
+        guard: opts.guard.clone(),
+        busy_runs: None,
     };
     if opts.resume.is_some()
         && let Ok(old) = read_meta(&dir)
@@ -810,6 +941,16 @@ pub fn run(opts: &RunOptions) -> Result<PathBuf> {
     meta.finished_utc = Some(sys::datetime_utc(unix_us()));
     meta.duration_s = Some(t0.elapsed().as_secs_f64());
     meta.load_at_end = sys::loadavg();
+    if opts.guard.is_some() {
+        let busy = read_runs(&dir)?.iter().filter(|r| r.machine_busy).count() as u32;
+        meta.busy_runs = Some(busy);
+        if busy > 0 {
+            eprintln!(
+                "\n!!! {busy} run(s) started on a busy machine (see `machine_busy` in runs.jsonl); \
+                 the report flags them.\n"
+            );
+        }
+    }
     write_meta(&dir, &meta)?;
     let _ = std::fs::remove_dir_all(&work);
     Ok(dir)
@@ -917,6 +1058,9 @@ fn run_one_inner(
 ) -> Result<()> {
     let base = ctx.work.join(format!("run-{}", rec.seq));
     let (root, out, state) = run_dirs(&base)?;
+    if let Some(g) = &ctx.opts.guard {
+        g.before_run(rec, ctx.opts.quiet);
+    }
 
     let (url, headers) = match (t.internet_url, ctx.lab) {
         (Some(u), _) => (u.to_owned(), Vec::new()),
@@ -951,9 +1095,28 @@ fn run_one_inner(
     };
     let inv = a.invocation(program, &job);
 
+    // ---- resident helper (outside the measured window)
+    let mut resident = match a.resident(program, &job) {
+        None => None,
+        Some(spec) => match ResidentProc::start(&spec, Duration::from_secs(30)) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                rec.outcome = Outcome::Error;
+                rec.note = Some(format!("resident helper failed to start: {e:#}"));
+                let _ = std::fs::remove_dir_all(&base);
+                return Ok(());
+            }
+        },
+    };
+
     // ---- run
     rec.started_unix_us = unix_us();
-    rec.load1 = sys::loadavg().map(|l| l[0]);
+    if ctx.opts.guard.is_none() {
+        rec.load1 = sys::loadavg().map(|l| l[0]);
+    }
+    if let Some(r) = resident.as_mut() {
+        r.open_window();
+    }
     let mut running = measure::start(&ctx.opts.shim_exe, &inv, &base)?;
     let completion = a.completion();
     rec.completion = Some(completion);
@@ -966,6 +1129,10 @@ fn run_one_inner(
         },
     };
     drop(running);
+    let usage = resident.as_mut().map(ResidentProc::close_window);
+    if let Some(r) = resident.take() {
+        r.stop(Duration::from_secs(5));
+    }
 
     rec.timed_out = timed_out;
     rec.exit_code = measured.exit_code;
@@ -973,6 +1140,17 @@ fn run_one_inner(
     rec.cpu_user_s = measured.cpu_user_us.map(|u| u as f64 / 1e6);
     rec.cpu_sys_s = measured.cpu_sys_us.map(|u| u as f64 / 1e6);
     rec.max_rss_mib = measured.max_rss_kib.map(|k| k as f64 / 1024.0);
+    if let Some(u) = usage {
+        // The helper's share counts: CPU adds up; peak memory is the sum
+        // of both peaks (an upper bound: they need not coincide). Where the
+        // helper could not be measured the totals stay unknown rather than
+        // silently client-only.
+        let add = |a: Option<f64>, b: Option<f64>| Some(a? + b?);
+        rec.cpu_user_s = add(rec.cpu_user_s, u.cpu_user_s);
+        rec.cpu_sys_s = add(rec.cpu_sys_s, u.cpu_sys_s);
+        rec.max_rss_mib = add(rec.max_rss_mib, u.max_rss_mib);
+        rec.resident = Some(u);
+    }
     rec.wall_s = Some(measured.wall_us as f64 / 1e6);
     let done_us = match done_unix_us {
         Some(d) => d.saturating_sub(measured.spawn_unix_us),
@@ -1380,6 +1558,8 @@ pub fn manual(opts: &ManualOptions) -> Result<PathBuf> {
             why: "manual".into(),
         }],
         notes: vec!["manual mode: wall time is labserver's first request to last byte".into()],
+        guard: None,
+        busy_runs: None,
     };
     write_meta(&dir, &meta)?;
     let mut jsonl = std::fs::OpenOptions::new()
@@ -1555,6 +1735,60 @@ mod tests {
         assert_eq!(o.unwrap(), root.join("a/etc/passwd"));
         assert!(esc, "a file outside out/ is an escape");
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn idle_guard_verdicts() {
+        let g = IdleGuard {
+            max_load: Some(4.0),
+            max_busy_cpus: Some(1.0),
+            wait: false,
+            wait_timeout_s: 1,
+            sample_ms: 10,
+        };
+        let c = |l, b| GuardCheck {
+            load1: l,
+            busy_cpus: b,
+        };
+        assert_eq!(g.verdict(&c(Some(3.9), Some(0.9))), None);
+        assert_eq!(g.verdict(&c(None, None)), None, "unknown is not busy");
+        assert_eq!(
+            g.verdict(&c(Some(5.5), Some(0.2))).unwrap(),
+            "1-min load 5.50 > 4.00"
+        );
+        assert_eq!(
+            g.verdict(&c(Some(6.0), Some(2.25))).unwrap(),
+            "1-min load 6.00 > 4.00, other processes busy on 2.25 CPUs > 1.00"
+        );
+        let off = IdleGuard {
+            max_load: None,
+            max_busy_cpus: None,
+            ..g.clone()
+        };
+        assert_eq!(off.verdict(&c(Some(99.0), Some(8.0))), None);
+
+        // A threshold nothing can meet: the run is marked busy, not stalled.
+        let strict = IdleGuard {
+            max_load: Some(-1.0),
+            ..g
+        };
+        let mut rec = RunRecord::new(0, "curl", "clean", "1m.bin", 0);
+        strict.before_run(&mut rec, true);
+        if sys::loadavg().is_some() {
+            assert!(rec.machine_busy);
+            assert!(rec.idle_wait_s.is_none(), "warn-only does not wait");
+            // Waiting with no time left gives up at once and marks the run.
+            let waiting = IdleGuard {
+                wait: true,
+                wait_timeout_s: 0,
+                ..strict.clone()
+            };
+            let mut rec = RunRecord::new(1, "curl", "clean", "1m.bin", 0);
+            waiting.before_run(&mut rec, true);
+            assert!(rec.machine_busy);
+        }
+        let d = IdleGuard::default();
+        assert!(d.max_load.unwrap() >= 0.5 && !d.wait);
     }
 
     #[test]
