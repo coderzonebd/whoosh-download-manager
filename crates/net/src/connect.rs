@@ -338,7 +338,8 @@ mod tests {
             "{a:?}"
         );
         assert!(matches!(b, Err(SourceError::Transient(_))));
-        assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
+        // (A hang would be the bug; the bound is only far from 100 ms.)
+        assert!(t0.elapsed() < Duration::from_secs(10), "{:?}", t0.elapsed());
         assert_eq!(calls.load(SeqCst), 1);
         // The next request starts a fresh lookup instead of the stuck one.
         assert!(r.resolve("stuck.test").await.is_err());
@@ -392,15 +393,16 @@ mod tests {
         let t0 = Instant::now();
         let (_s, a) = tcp(
             &[closed, good],
-            Duration::from_secs(5),
-            Duration::from_secs(5),
+            Duration::from_secs(60),
+            Duration::from_secs(60),
             "t",
         )
         .await
         .unwrap();
         assert_eq!(a, good);
-        // A refusal starts the next attempt immediately, not after `delay`.
-        assert!(t0.elapsed() < Duration::from_secs(2));
+        // A refusal starts the next attempt immediately, not after `delay`
+        // (60 s; the bound is far from both, whatever the load).
+        assert!(t0.elapsed() < Duration::from_secs(30), "{:?}", t0.elapsed());
         // Everything refused: Throttled (the contract's "connections refused").
         let e = tcp(
             &[closed],
@@ -426,12 +428,13 @@ mod tests {
         let (_s, a) = tcp(
             &[black, good],
             Duration::from_millis(100),
-            Duration::from_secs(10),
+            Duration::from_secs(120),
             "t",
         )
         .await
         .unwrap();
         assert_eq!(a, good);
-        assert!(t0.elapsed() < Duration::from_secs(3), "{:?}", t0.elapsed());
+        // Long before the blackholed attempt's 120 s timeout.
+        assert!(t0.elapsed() < Duration::from_secs(60), "{:?}", t0.elapsed());
     }
 }

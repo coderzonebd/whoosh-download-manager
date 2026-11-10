@@ -266,7 +266,11 @@ impl Client {
                 tracing::trace!(error = %e, "http/1.1 connection ended");
             }
         });
-        Ok(NewConn::H1(H1Conn::new(sender, task.abort_handle())))
+        Ok(NewConn::H1(H1Conn::new(
+            sender,
+            task.abort_handle(),
+            &self.pool,
+        )))
     }
 
     async fn handshake_h2<T>(&self, io: T, origin: &Origin) -> Result<NewConn, SourceError>
