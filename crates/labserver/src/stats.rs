@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::IpAddr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::lock;
 
@@ -37,6 +38,17 @@ pub struct ScenarioStats {
     pub refused: u64,
     /// Per client IP.
     pub clients: BTreeMap<String, ClientStats>,
+    /// Wall-clock time (microseconds since the Unix epoch) of the first
+    /// request since start or the last reset. Lets a harness on the same
+    /// host measure time to first request / first byte from its own clock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_request_unix_us: Option<u64>,
+    /// When the first response body byte was handed to a connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_byte_unix_us: Option<u64>,
+    /// When the most recent response body byte was handed to a connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_byte_unix_us: Option<u64>,
 }
 
 /// Counters for one client IP within a scenario.
@@ -74,7 +86,21 @@ pub(crate) struct Stats {
     pub bytes_sent: AtomicU64,
     pub resets: AtomicU64,
     pub stalls: AtomicU64,
+    /// Unix microseconds; 0 = not yet.
+    first_request_us: AtomicU64,
+    first_byte_us: AtomicU64,
+    last_byte_us: AtomicU64,
     inner: Mutex<Inner>,
+}
+
+fn unix_us() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_micros() as u64)
+}
+
+fn nonzero(v: u64) -> Option<u64> {
+    (v != 0).then_some(v)
 }
 
 #[derive(Debug, Default)]
@@ -91,6 +117,9 @@ struct Inner {
 
 impl Stats {
     pub fn count_request(&self, ip: IpAddr) {
+        let _ = self
+            .first_request_us
+            .compare_exchange(0, unix_us(), Relaxed, Relaxed);
         let mut s = lock(&self.inner);
         s.requests += 1;
         s.clients.entry(ip).or_default().requests += 1;
@@ -98,6 +127,16 @@ impl Stats {
 
     pub fn count_status(&self, code: u16) {
         *lock(&self.inner).status.entry(code).or_default() += 1;
+    }
+
+    /// Records `len` body bytes handed to a connection now.
+    pub fn sent(&self, len: u64) {
+        self.bytes_sent.fetch_add(len, Relaxed);
+        let now = unix_us();
+        let _ = self
+            .first_byte_us
+            .compare_exchange(0, now, Relaxed, Relaxed);
+        self.last_byte_us.fetch_max(now, Relaxed);
     }
 
     /// Takes an in-flight slot unless the client is at `cap`.
@@ -155,6 +194,9 @@ impl Stats {
         self.bytes_sent.store(0, Relaxed);
         self.resets.store(0, Relaxed);
         self.stalls.store(0, Relaxed);
+        self.first_request_us.store(0, Relaxed);
+        self.first_byte_us.store(0, Relaxed);
+        self.last_byte_us.store(0, Relaxed);
         let mut s = lock(&self.inner);
         s.requests = 0;
         s.refused = 0;
@@ -188,6 +230,9 @@ impl Stats {
                 .iter()
                 .map(|(ip, c)| (ip.to_string(), c.clone()))
                 .collect(),
+            first_request_unix_us: nonzero(self.first_request_us.load(Relaxed)),
+            first_byte_unix_us: nonzero(self.first_byte_us.load(Relaxed)),
+            last_byte_unix_us: nonzero(self.last_byte_us.load(Relaxed)),
         }
     }
 }
@@ -218,6 +263,31 @@ mod tests {
         assert_eq!(snap.refused, 0);
         assert_eq!(snap.peak_active_requests, 2, "peak restarts at current");
         assert_eq!(snap.clients["10.0.0.1"].peak_active_requests, 1);
+    }
+
+    #[test]
+    fn timestamps_track_first_and_last_byte() {
+        let s = Stats::default();
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        let snap = s.snapshot();
+        assert_eq!(snap.first_request_unix_us, None);
+        assert_eq!(snap.first_byte_unix_us, None);
+        s.count_request(ip);
+        s.sent(10);
+        let a = s.snapshot();
+        let first = a.first_byte_unix_us.unwrap();
+        assert!(a.first_request_unix_us.unwrap() <= first);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        s.sent(10);
+        let b = s.snapshot();
+        assert_eq!(b.first_byte_unix_us, Some(first), "first byte is sticky");
+        assert!(b.last_byte_unix_us.unwrap() > first);
+        assert_eq!(b.bytes_sent, 20);
+        s.reset();
+        let c = s.snapshot();
+        assert_eq!(c.first_byte_unix_us, None);
+        assert_eq!(c.last_byte_unix_us, None);
+        assert_eq!(c.first_request_unix_us, None);
     }
 
     #[test]

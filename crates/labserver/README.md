@@ -269,7 +269,10 @@ All under `/_lab/`; JSON unless noted.
       "open_connections": 0,
       "peak_open_connections": 4
     }
-  }
+  },
+  "first_request_unix_us": 1794280095726810,
+  "first_byte_unix_us": 1794280095742228,
+  "last_byte_unix_us": 1794280095804429
 }
 ```
 
@@ -283,6 +286,12 @@ All under `/_lab/`; JSON unless noted.
   `peak_active_requests`).
 - `bytes_sent`: body bytes handed to the connection (a reset can discard some
   of them before they reach the client).
+- `first_request_unix_us`, `first_byte_unix_us`, `last_byte_unix_us`:
+  wall-clock time (microseconds since the Unix epoch) of the first request,
+  the first response body byte and the latest response body byte handed to
+  a connection since start or the last reset; absent until they happen. A
+  harness on the same host subtracts its own start time to get time to
+  first/last byte (the bench harness's TTFB and speed metrics).
 
 The same types are `vayu_labserver::ScenarioStats` / `ClientStats`
 (`Serialize + Deserialize`).

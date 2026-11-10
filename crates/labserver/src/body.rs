@@ -191,7 +191,7 @@ impl St {
         let data = block.slice(off..off + len as usize);
         self.pos += len;
         self.sent += len;
-        rt.stats.bytes_sent.fetch_add(len, Relaxed);
+        rt.stats.sent(len);
         self.plan.file.served.fetch_add(len, Relaxed);
         if self.pos >= self.plan.end {
             // Free the client's slot before the last byte leaves, so a client
