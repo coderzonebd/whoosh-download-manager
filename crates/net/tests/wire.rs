@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use futures::StreamExt;
 use support::*;
 use vayu_core::{SourceError, SourceFactory, Validators};
 use vayu_proto::{Header, RequestContext};
@@ -786,4 +787,186 @@ async fn server_closed_idle_connection_is_replaced() {
     }
     assert_eq!(fx.requests().len(), 4, "each request sent exactly once");
     assert_eq!(fx.accepts.load(Ordering::SeqCst), 4);
+}
+
+// ---------------------------------------------------------------- start
+
+/// `bytes=a-` and `bytes=a-b`, like a real server.
+fn open_ended(s: &Seen) -> Option<(usize, usize)> {
+    let spec = s.header("range")?.strip_prefix("bytes=")?;
+    let (a, b) = spec.split_once('-')?;
+    let a: usize = a.parse().ok()?;
+    let b: usize = if b.is_empty() {
+        BODY.len() - 1
+    } else {
+        b.parse().ok()?
+    };
+    Some((a, b.min(BODY.len() - 1)))
+}
+
+fn honest_open_ended(s: &Seen) -> Reply {
+    let total = BODY.len();
+    match open_ended(s) {
+        Some((a, b)) => Reply::new(206)
+            .header("Content-Range", &format!("bytes {a}-{b}/{total}"))
+            .header("ETag", "\"v1\"")
+            .header("Content-Disposition", "attachment; filename=\"data.bin\"")
+            .body(&BODY[a..=b]),
+        None => Reply::new(200).header("ETag", "\"v1\"").body(BODY),
+    }
+}
+
+#[tokio::test]
+async fn start_is_one_open_ended_request() {
+    let fx = Fixture::start(honest_open_ended).await;
+    let src = plain_factory(|_| {}).source(&fx.url("/f"), None).unwrap();
+    let (m, s) = src.start().await.unwrap();
+    assert_eq!(fx.requests().len(), 1);
+    let seen = fx.last();
+    assert_eq!(seen.header("range"), Some("bytes=0-"));
+    assert_eq!(seen.header("if-range"), None);
+    assert_eq!(seen.header("accept-encoding"), Some("identity"));
+    assert_eq!((m.size, m.accepts_ranges), (Some(64), true));
+    assert_eq!(m.etag.as_deref(), Some("\"v1\""));
+    assert_eq!(m.filename.as_deref(), Some("data.bin"));
+    let (b, e) = read_all(s).await;
+    assert_eq!((b.as_slice(), e), (BODY, None));
+}
+
+/// A server that answers `bytes=0-` with only a prefix: the bytes that came
+/// are delivered, then `Transient` (never a clean end short of the entity).
+#[tokio::test]
+async fn start_with_a_partial_answer_is_a_short_body() {
+    let fx = Fixture::start(|_s: &Seen| {
+        Reply::new(206)
+            .header("Content-Range", "bytes 0-9/64")
+            .body(&BODY[..10])
+    })
+    .await;
+    let src = plain_factory(|_| {}).source(&fx.url("/f"), None).unwrap();
+    let (m, s) = src.start().await.unwrap();
+    assert_eq!((m.size, m.accepts_ranges), (Some(64), true));
+    let (b, e) = read_all(s).await;
+    assert_eq!(b, &BODY[..10]);
+    assert!(matches!(e, Some(SourceError::Transient(_))), "{e:?}");
+}
+
+/// `200` with `Accept-Ranges: bytes` (as `lying-ranges` sends): the whole
+/// entity, and no claim of range support, as `probe` decides.
+#[tokio::test]
+async fn start_with_ok_is_the_whole_entity() {
+    let fx = Fixture::start(|_s: &Seen| {
+        Reply::new(200)
+            .header("Accept-Ranges", "bytes")
+            .header("ETag", "\"v1\"")
+            .body(BODY)
+    })
+    .await;
+    let f = plain_factory(|_| {});
+    let probed = f
+        .source(&fx.url("/f"), None)
+        .unwrap()
+        .probe()
+        .await
+        .unwrap();
+    let (m, s) = f
+        .source(&fx.url("/f"), None)
+        .unwrap()
+        .start()
+        .await
+        .unwrap();
+    assert_eq!(m, probed);
+    assert_eq!((m.size, m.accepts_ranges), (Some(64), false));
+    let (b, e) = read_all(s).await;
+    assert_eq!((b.as_slice(), e), (BODY, None));
+}
+
+/// A `206` that does not start at 0: what probe-then-open would do (the
+/// whole entity, unranged), not bytes from the wrong offset.
+#[tokio::test]
+async fn start_with_a_misplaced_range_falls_back_to_the_whole_entity() {
+    let fx = Fixture::start(|s: &Seen| match s.header("range") {
+        Some(_) => Reply::new(206)
+            .header("Content-Range", "bytes 5-63/64")
+            .body(&BODY[5..]),
+        None => Reply::new(200).body(BODY),
+    })
+    .await;
+    let src = plain_factory(|_| {}).source(&fx.url("/f"), None).unwrap();
+    let (m, s) = src.start().await.unwrap();
+    assert_eq!((m.size, m.accepts_ranges), (Some(64), false));
+    let (b, e) = read_all(s).await;
+    assert_eq!((b.as_slice(), e), (BODY, None));
+    let reqs = fx.requests();
+    assert_eq!(reqs.len(), 2);
+    assert_eq!(reqs[1].header("range"), None);
+}
+
+#[tokio::test]
+async fn start_of_an_empty_file_and_errors() {
+    let fx = Fixture::start(|s: &Seen| match s.target.as_str() {
+        "/empty" => Reply::new(416).header("Content-Range", "bytes */0"),
+        "/gone" => Reply::new(404).body("no"),
+        "/busy" => Reply::new(503).header("Retry-After", "3"),
+        _ => Reply::new(416).header("Content-Range", "bytes */50"),
+    })
+    .await;
+    let f = plain_factory(|_| {});
+    let (m, s) = f
+        .source(&fx.url("/empty"), None)
+        .unwrap()
+        .start()
+        .await
+        .unwrap();
+    assert_eq!((m.size, m.accepts_ranges), (Some(0), false));
+    assert_eq!(read_all(s).await, (Vec::new(), None));
+    let err = |path: &str| {
+        let src = f.source(&fx.url(path), None).unwrap();
+        async move { src.start().await.err().unwrap() }
+    };
+    assert!(matches!(err("/gone").await, SourceError::Fatal(_)));
+    assert!(matches!(
+        err("/busy").await,
+        SourceError::Throttled { retry_after: Some(d), .. } if d == Duration::from_secs(3)
+    ));
+    assert!(matches!(err("/odd").await, SourceError::Fatal(_)));
+}
+
+/// Dropping a `start` body before its end closes that HTTP/1.1 connection
+/// (it is never pooled with unread bytes); a body read to the end is reused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn start_dropped_mid_body_is_not_pooled() {
+    let big = vec![b'x'; 4 << 20];
+    let fx = Fixture::start(move |s: &Seen| {
+        if s.target != "/big" {
+            return honest_open_ended(s);
+        }
+        let spec = s.header("range").and_then(|r| r.strip_prefix("bytes="));
+        let Some((a, b)) = spec.and_then(|r| r.split_once('-')) else {
+            return Reply::new(200).body(big.clone());
+        };
+        let a: usize = a.parse().unwrap();
+        let b: usize = b.parse().unwrap_or(big.len() - 1);
+        Reply::new(206)
+            .header("Content-Range", &format!("bytes {a}-{b}/{}", big.len()))
+            .body(&big[a..=b])
+    })
+    .await;
+    let f = plain_factory(|_| {});
+    // Read to the end: the connection is reused.
+    let src = f.source(&fx.url("/f"), None).unwrap();
+    let (_, s) = src.start().await.unwrap();
+    assert_eq!(read_all(s).await.0, BODY);
+    fetch(&*src, Some(r(0, 8)), Validators::default()).await;
+    assert_eq!(fx.accepts.load(Ordering::SeqCst), 1);
+    // Dropped after the first chunk: the next request gets a new connection.
+    let src = f.source(&fx.url("/big"), None).unwrap();
+    let (m, mut s) = src.start().await.unwrap();
+    assert_eq!(m.size, Some(4 << 20));
+    s.next().await.unwrap().unwrap();
+    drop(s);
+    let b = fetch(&*src, Some(r(100, 200)), m.validators()).await;
+    assert_eq!(b, vec![b'x'; 100]);
+    let reqs = fx.requests();
+    assert_ne!(reqs[reqs.len() - 1].conn, reqs[reqs.len() - 2].conn);
 }

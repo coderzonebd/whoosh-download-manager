@@ -153,6 +153,23 @@ path component (last segment of a path, no control or bidi characters, no
 leading dots, Windows device names prefixed with `_`, ≤ 255 bytes; on
 Windows also `<>:"|?*` → `_`).
 
+**Start.** `start()` (ADR 0005 amendment 3) is the probe and the download
+in one request: `GET` with `Range: bytes=0-`, redirects followed under the
+same cookie, `Authorization` and `Referer` rules. The metadata is parsed as
+the probe parses it (a test checks `start` and `probe` agree on every
+labserver scenario): `206 bytes 0-(N-1)/N` → size N, `accepts_ranges`; `200`
+→ the whole entity, size from `Content-Length`, and **no** range support
+claimed even with `Accept-Ranges: bytes` (only a real 206 counts, as for the
+probe: `lying-ranges` advertises it and ignores `Range`); `416 bytes */0` →
+an empty file. The body follows `open`'s contract and runs to the end of the
+entity: a server that answers with only a prefix (`0-K/N`) gives K+1 correct
+bytes and then `Transient`, never a clean end. A `206` that does not start
+at 0 falls back to what probe-then-open does (a second, unranged request).
+Dropping the stream where the engine's range ends closes that HTTP/1.1
+connection (never pooled with an unread body) or resets the HTTP/2 / HTTP/3
+stream. On `high-latency` (500 ms before every response head) the first
+byte arrives after ~0.50 s instead of ~1.01 s, on all four transports.
+
 **Errors.**
 
 | What happened | `SourceError` |
@@ -171,7 +188,7 @@ Windows also `<>:"|?*` → `_`).
 scripts/cargo-slot.sh cargo test -p vayu-net
 ```
 
-About 170 tests, ~20–60 s on the development laptop (debug build, load
+About 210 tests, ~20–60 s on the development laptop (debug build, load
 5–10):
 
 - unit tests (`src/`): Content-Disposition and sanitising, header
@@ -196,6 +213,14 @@ About 170 tests, ~20–60 s on the development laptop (debug build, load
   cached redirect target expiring, keep-alive, preconnect, pool expiry,
   and a server closing idle connections, hostile `Content-Range` and
   `Retry-After` values, and `Referer` trimming on redirects;
+- `tests/start.rs`: `start` over HTTP/1.1, HTTP/1.1+TLS, HTTP/2 and
+  HTTP/3 on clean, no-range, lying-ranges, no-length, no-validators,
+  redirect-chain, cookie-required, referer-required, expiring-url,
+  changing-file, empty.bin and every bangla-filename variant (metadata must
+  equal the probe's, bytes must verify), cancellation, and the saved round
+  trip on high-latency; `tests/wire.rs` checks the request sent, partial
+  and misplaced `206`s, `200` with `Accept-Ranges`, `416`, errors, and that
+  a dropped body's connection is not pooled;
 - `tests/h3_limits.rs`: a hostile HTTP/3 server (quinn + rcgen) announcing
   a 2^40-byte HEADERS frame, sending endless GREASE frames, a huge frame
   after valid data, and flooding its control stream: each fails with
