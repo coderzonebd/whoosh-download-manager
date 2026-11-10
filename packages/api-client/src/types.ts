@@ -7,6 +7,7 @@ export const RPC_PATH = "/rpc";
 
 export const Method = {
   SessionHello: "session.hello",
+  DaemonShutdown: "daemon.shutdown",
   DownloadProbe: "download.probe",
   DownloadAdd: "download.add",
   DownloadList: "download.list",
@@ -70,6 +71,8 @@ export interface ClientInfo {
 
 export interface HelloParams {
   token: string;
+  /** Fresh per connection: 32–128 lower-case hex characters (see auth.ts). */
+  nonce: string;
   protocol: number;
   client: ClientInfo;
 }
@@ -78,6 +81,8 @@ export interface HelloResult {
   daemonVersion: string;
   protocol: number;
   capabilities: string[];
+  /** HMAC of the nonce under the token; the client checks it before sending anything else. */
+  proof: string;
 }
 
 // ------------------------------------------------------------ requests
@@ -126,7 +131,14 @@ export interface AddParams {
   start?: boolean;
   mirrors?: string[];
   checksum?: Checksum;
+  /** Use exactly this many connections (1–64) instead of learning the count. */
+  connections?: number;
+  /** A named queue (one download at a time); the main queue when absent. */
+  queue?: string;
 }
+
+/** Upper bound of `AddParams.connections`. */
+export const MAX_CONNECTIONS_PER_DOWNLOAD = 64;
 
 export interface AddResult {
   id: DownloadId;
@@ -268,6 +280,7 @@ export interface NmStatus {
 
 export interface MethodMap {
   "session.hello": { params: HelloParams; result: HelloResult };
+  "daemon.shutdown": { params: undefined; result: null };
   "download.probe": { params: ProbeParams; result: ProbeResult };
   "download.add": { params: AddParams; result: AddResult };
   "download.list": { params: ListParams; result: DownloadSummary[] };

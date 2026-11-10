@@ -7,11 +7,15 @@
 // - calls made while (re)connecting are queued and flushed after hello;
 // - a dropped socket rejects in-flight calls with `connection_lost` (they may
 //   or may not have been applied) and reconnects with exponential backoff;
-// - close codes 4401 (bad token) and 4426 (protocol) are final: no retry.
+// - close codes 4401 (bad token) and 4426 (protocol) are final: no retry;
+//   4408 (hello timeout), 4429 (too slow) and 1001 (daemon stopping) retry;
+// - the daemon must prove it knows the token (`proof`, auth.ts) before the
+//   client sends anything else or acts on anything it received.
 //
 // `url` and `token` may be functions so a client can re-read the daemon's
 // runtime file on every attempt (the daemon may restart on another port).
 
+import { newNonce, verifyHelloProof } from "./auth";
 import { CloseCode, VayuConnectionError, VayuRpcError, type ConnectionErrorReason } from "./errors";
 import {
   PROTOCOL_VERSION,
@@ -100,6 +104,10 @@ export class WsVayuClient implements VayuClient {
   #status: ConnectionStatus = { state: "connecting", attempt: 0 };
   #final = false;
   #helloId = -1;
+  #helloToken = "";
+  #helloNonce = "";
+  /** Messages that arrived while the hello proof was being checked. */
+  #held: unknown[] | undefined;
 
   constructor(opts: WsClientOptions) {
     this.#opts = opts;
@@ -212,12 +220,15 @@ export class WsVayuClient implements VayuClient {
     socket.onopen = () => {
       if (socket !== this.#socket) return;
       this.#helloId = this.#nextId++;
+      this.#helloToken = token;
+      this.#helloNonce = newNonce();
+      this.#held = undefined;
       socket.send(
         JSON.stringify({
           jsonrpc: "2.0",
           id: this.#helloId,
           method: "session.hello",
-          params: { token, protocol: this.#protocol, client: this.#opts.client },
+          params: { token, nonce: this.#helloNonce, protocol: this.#protocol, client: this.#opts.client },
         }),
       );
     };
@@ -231,7 +242,10 @@ export class WsVayuClient implements VayuClient {
         console.warn("[vayu ws] dropping a frame that is not JSON");
         return;
       }
-      for (const m of Array.isArray(msg) ? msg : [msg]) this.#handleMessage(m);
+      for (const m of Array.isArray(msg) ? msg : [msg]) {
+        if (this.#held) this.#held.push(m);
+        else this.#handleMessage(m);
+      }
     };
     socket.onerror = () => {
       // A close event always follows; reconnect logic lives there.
@@ -245,6 +259,27 @@ export class WsVayuClient implements VayuClient {
       this.#failInflight();
       this.#scheduleReconnect(ev.reason || `closed with code ${ev.code}`);
     };
+  }
+
+  #helloChecked(socket: WebSocketLike | undefined, hello: HelloResult, ok: boolean): void {
+    if (!socket || socket !== this.#socket || this.#final) return;
+    const held = this.#held ?? [];
+    this.#held = undefined;
+    if (!ok) {
+      // Not the daemon: a stale runtime file whose port another process now
+      // holds. Send it nothing more, and retry later, when the real daemon
+      // may have written a new runtime file.
+      this.#socket = undefined;
+      socket.close(CloseCode.Normal);
+      this.#scheduleReconnect("the process on the daemon's port could not prove it is the daemon");
+      return;
+    }
+    this.#attempt = 0;
+    this.#setStatus({ state: "open", hello });
+    const queued = this.#outbox;
+    this.#outbox = [];
+    for (const p of queued) this.#send(p);
+    for (const m of held) this.#handleMessage(m);
   }
 
   #handleMessage(m: unknown): void {
@@ -279,11 +314,14 @@ export class WsVayuClient implements VayuClient {
         this.#shutdown("protocol_mismatch");
         return;
       }
-      this.#attempt = 0;
-      this.#setStatus({ state: "open", hello });
-      const queued = this.#outbox;
-      this.#outbox = [];
-      for (const p of queued) this.#send(p);
+      // Nothing is sent, and nothing received is acted on, until the daemon
+      // has proven it knows the token (PROTOCOL.md §1).
+      const socket = this.#socket;
+      this.#held = [];
+      void verifyHelloProof(this.#helloToken, this.#helloNonce, hello.proof).then(
+        (ok) => this.#helloChecked(socket, hello, ok),
+        () => this.#helloChecked(socket, hello, false),
+      );
       return;
     }
 

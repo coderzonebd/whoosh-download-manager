@@ -104,6 +104,10 @@ pub enum ConnectError {
     Rejected(String),
     #[error("unexpected session.hello reply: {0}")]
     BadHello(String),
+    /// Whatever listens on the port did not prove it knows the token: a stale
+    /// runtime file whose port someone else now holds.
+    #[error("the process on the daemon's port could not prove it is the daemon")]
+    Impostor,
     #[error("connection task failed: {0}")]
     Task(String),
 }
@@ -588,12 +592,15 @@ async fn connect(cfg: &Config) -> Result<Box<Daemon>, ConnectError> {
     let url = format!("ws://127.0.0.1:{}{RPC_PATH}", info.port);
     let (mut ws, _response) = tokio_tungstenite::connect_async(url).await?;
 
+    let nonce = vayu_proto::auth::new_nonce().map_err(|e| ConnectError::Task(e.to_string()))?;
+    let token = info.token;
     let hello = json!({
         "jsonrpc": "2.0",
         "id": HELLO_ID,
         "method": method::SESSION_HELLO,
         "params": HelloParams {
-            token: info.token,
+            token: token.clone(),
+            nonce: nonce.clone(),
             protocol: PROTOCOL_VERSION,
             client: cfg.client.clone(),
         },
@@ -621,6 +628,12 @@ async fn connect(cfg: &Config) -> Result<Box<Daemon>, ConnectError> {
         let result = reply.get("result").cloned().unwrap_or(Value::Null);
         let hello: HelloResult =
             serde_json::from_value(result).map_err(|e| ConnectError::BadHello(e.to_string()))?;
+        if !vayu_proto::auth::verify_hello_proof(&token, &nonce, &hello.proof) {
+            // Close without relaying anything: no request of the extension's
+            // (cookies, headers) may reach an impostor.
+            let _ = ws.close(None).await;
+            return Err(ConnectError::Impostor);
+        }
         return Ok(Box::new(Daemon {
             ws,
             version: hello.daemon_version,

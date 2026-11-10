@@ -35,6 +35,12 @@ impl TempDir {
             std::env::temp_dir().join(format!("vayu-nmhost-test-{tag}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        // The host refuses a runtime file in a directory others can write to.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
         Self(dir)
     }
 
@@ -53,6 +59,11 @@ fn write_runtime(path: &Path, port: u16, token: &str) {
     let tmp = path.with_extension("tmp");
     let body = json!({ "port": port, "token": token, "pid": 1, "version": "9.9.9-fake" });
     std::fs::write(&tmp, body.to_string()).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
     std::fs::rename(&tmp, path).unwrap();
 }
 
@@ -73,6 +84,16 @@ struct FakeDaemon {
 
 impl FakeDaemon {
     async fn start(token: &str) -> Self {
+        Self::start_as(token, false).await
+    }
+
+    /// Something else on the daemon's port: accepts any token, but cannot
+    /// compute the hello proof because it does not know the real token.
+    async fn impostor() -> Self {
+        Self::start_as("", true).await
+    }
+
+    async fn start_as(token: &str, impostor: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (received_tx, received) = mpsc::unbounded_channel();
@@ -104,7 +125,8 @@ impl FakeDaemon {
                 };
                 let hello: Value = serde_json::from_str(&first).unwrap();
                 hellos_task.lock().unwrap().push(hello.clone());
-                if hello["method"] != "session.hello" || hello["params"]["token"] != token.as_str()
+                if hello["method"] != "session.hello"
+                    || (!impostor && hello["params"]["token"] != token.as_str())
                 {
                     let _ = ws
                         .close(Some(CloseFrame {
@@ -114,10 +136,21 @@ impl FakeDaemon {
                         .await;
                     continue;
                 }
+                let nonce = hello["params"]["nonce"].as_str().unwrap_or_default();
+                let key = if impostor {
+                    "not-the-token"
+                } else {
+                    token.as_str()
+                };
                 let reply = json!({
                     "jsonrpc": "2.0",
                     "id": hello["id"],
-                    "result": { "daemonVersion": "9.9.9-fake", "protocol": 1, "capabilities": ["http"] },
+                    "result": {
+                        "daemonVersion": "9.9.9-fake",
+                        "protocol": 1,
+                        "capabilities": ["http"],
+                        "proof": vayu_proto::auth::hello_proof(key, nonce),
+                    },
                 });
                 ws.send(Message::text(reply.to_string())).await.unwrap();
 
@@ -450,6 +483,52 @@ async fn a_wrong_token_is_reported_as_unavailable() {
 
     browser.close().await.unwrap();
     daemon.crash().await;
+}
+
+#[tokio::test]
+async fn never_relays_to_an_impostor_on_the_daemons_port() {
+    let dir = TempDir::new("impostor");
+    let mut impostor = FakeDaemon::impostor().await;
+    write_runtime(&dir.runtime_file(), impostor.port, "stale-token");
+    let mut browser = Browser::start(test_config(dir.runtime_file()));
+
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":1,"method":"download.add","params":{"url":"https://example.com/","request":{"cookies":"session=SECRET"}}}"#)
+        .await;
+    let reply = browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(reply["error"]["code"], -32007);
+    assert_eq!(browser.status(2).await["daemonRunning"], false);
+    // The hello went out (with the stale token), but nothing after it.
+    assert!(!impostor.hellos().is_empty());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), impostor.received.recv())
+            .await
+            .is_err(),
+        "a request reached the impostor"
+    );
+
+    browser.close().await.unwrap();
+    impostor.crash().await;
+}
+
+#[tokio::test]
+async fn sends_a_fresh_valid_nonce_on_every_connection() {
+    let dir = TempDir::new("nonce");
+    let mut daemon = FakeDaemon::start("t").await;
+    write_runtime(&dir.runtime_file(), daemon.port, "t");
+    let mut browser = Browser::start(test_config(dir.runtime_file()));
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":1,"method":"stats.get"}"#)
+        .await;
+    daemon.recv().await;
+    let nonce = daemon.hellos()[0]["params"]["nonce"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(vayu_proto::auth::is_valid_nonce(&nonce), "{nonce}");
+
+    browser.close().await.unwrap();
+    daemon.stop().await;
 }
 
 #[tokio::test]

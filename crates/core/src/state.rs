@@ -21,6 +21,10 @@ pub struct DownloadRecord {
     pub request: Option<RequestContext>,
     pub mirrors: Vec<String>,
     pub filename: String,
+    /// The user chose `filename` (`AddParams::filename`), so a probe must not
+    /// replace it with the server's name.
+    #[serde(default)]
+    pub filename_locked: bool,
     pub directory: String,
     pub category: Option<String>,
     pub queue: Option<String>,
@@ -71,6 +75,8 @@ pub trait StateStore: Send + Sync {
     /// `"categories"`, … The engine owns the schema of each value.
     fn get_value<'a>(&'a self, key: &'a str) -> BoxFuture<'a, io::Result<Option<String>>>;
 
+    /// Insert or replace. `json` must be valid JSON; anything else is
+    /// rejected with [`io::ErrorKind::InvalidInput`].
     fn set_value<'a>(&'a self, key: &'a str, json: &'a str) -> BoxFuture<'a, io::Result<()>>;
 
     fn host_profile<'a>(&'a self, host: &'a str) -> BoxFuture<'a, io::Result<Option<HostProfile>>>;
