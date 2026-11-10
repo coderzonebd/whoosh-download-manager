@@ -167,17 +167,68 @@ fn daemon_shutdown_stops_the_process() {
 }
 
 #[test]
-fn without_an_engine_it_explains_how_to_run_the_mock() {
-    let dir = TempDir::new("bin-noengine");
+fn without_mock_it_runs_the_real_engine_and_stops_cleanly() {
+    let dir = TempDir::new("bin-engine");
+    let mut child = Command::new(EXE)
+        .args(["--port", "0"])
+        .env("VAYU_DATA_DIR", dir.path())
+        .env_remove("VAYU_DAEMON_MOCK")
+        .env_remove("VAYU_DAEMON_PORT")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let info = wait_for_runtime(dir.path(), &mut child);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let (list, hello_caps) = rt.block_on(async {
+        let mut c = vayu_daemon::client::Client::connect(info.port, &info.token, "test")
+            .await
+            .unwrap();
+        let caps = c.hello().capabilities.clone();
+        let list = c
+            .call("download.list", serde_json::json!({}))
+            .await
+            .unwrap();
+        c.call("daemon.shutdown", serde_json::Value::Null)
+            .await
+            .unwrap();
+        (list, caps)
+    });
+    assert_eq!(
+        list,
+        serde_json::json!([]),
+        "a fresh engine has no downloads"
+    );
+    assert!(hello_caps.iter().any(|c| c == "https"), "{hello_caps:?}");
+    let status = wait_exit(&mut child, Duration::from_secs(20));
+    assert!(status.success(), "{status}");
+    // The engine keeps its state in the data directory.
+    assert!(dir.path().join("state.db").exists());
+    assert!(dir.path().join("journal").is_dir());
+    assert!(!dir.path().join("runtime.json").exists());
+}
+
+#[test]
+fn a_second_daemon_never_starts_the_engine_of_the_first() {
+    // The engine resumes stored downloads at start; the single-instance
+    // claim must come first, so a second daemon exits before touching them.
+    let dir = TempDir::new("bin-engine-twice");
+    let mut first = daemon(dir.path()).spawn().unwrap();
+    wait_for_runtime(dir.path(), &mut first);
     let out = Command::new(EXE)
         .args(["--port", "0"])
         .env("VAYU_DATA_DIR", dir.path())
         .env_remove("VAYU_DAEMON_MOCK")
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--mock"));
-    assert!(!dir.path().join("runtime.json").exists());
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    assert!(
+        !dir.path().join("state.db").exists(),
+        "the second daemon opened the engine's state"
+    );
+    let _ = first.kill();
+    let _ = first.wait();
 }
 
 #[test]

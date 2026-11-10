@@ -3,7 +3,7 @@
 //! Exit codes: 0 clean shutdown, 1 error, 2 usage, 3 another daemon already
 //! runs for this data directory, 130 forced exit (second signal).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -82,35 +82,44 @@ fn main() -> ExitCode {
     code
 }
 
+fn serve_error(e: &ServeError) -> ExitCode {
+    tracing::error!("{e}");
+    eprintln!("vayu-daemon: {e}");
+    match e {
+        ServeError::AlreadyRunning { .. } => ExitCode::from(EXIT_ALREADY_RUNNING),
+        _ => ExitCode::FAILURE,
+    }
+}
+
 async fn run(args: Args, data_dir: PathBuf) -> ExitCode {
+    let mut config = DaemonConfig::new(data_dir.clone());
+    config.port = args.port;
+    // Claim the data directory first: the engine loads and resumes the
+    // downloads stored there, which must never happen in two daemons.
+    let claim = match vayu_daemon::claim(config).await {
+        Ok(claim) => claim,
+        Err(e) => return serve_error(&e),
+    };
+
     let service: Arc<dyn Service> = if args.mock {
         MockService::new(MockOptions {
             scenario: args.mock_scenario,
             ..MockOptions::default()
         })
     } else {
-        // The engine is wired here at Phase 1 integration (ADR 0005).
-        eprintln!(
-            "vayu-daemon: this build has no download engine yet; \
-             start it with --mock (or VAYU_DAEMON_MOCK=1) to serve the mock service"
-        );
-        return ExitCode::FAILURE;
+        match start_engine(&data_dir).await {
+            Ok(engine) => engine,
+            Err(e) => {
+                tracing::error!(error = %e, "cannot start the download engine");
+                eprintln!("vayu-daemon: cannot start the download engine: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
     };
 
-    let mut config = DaemonConfig::new(data_dir);
-    config.port = args.port;
-    let daemon = match vayu_daemon::serve(service, config).await {
+    let daemon = match claim.serve(service).await {
         Ok(daemon) => daemon,
-        Err(e @ ServeError::AlreadyRunning { .. }) => {
-            tracing::error!("{e}");
-            eprintln!("vayu-daemon: {e}");
-            return ExitCode::from(EXIT_ALREADY_RUNNING);
-        }
-        Err(e) => {
-            tracing::error!("{e}");
-            eprintln!("vayu-daemon: {e}");
-            return ExitCode::FAILURE;
-        }
+        Err(e) => return serve_error(&e),
     };
     tracing::info!(
         version = VERSION,
@@ -139,4 +148,58 @@ async fn run(args: Args, data_dir: PathBuf) -> ExitCode {
     });
     daemon.shutdown().await;
     ExitCode::SUCCESS
+}
+
+/// The real service: vayu-engine over vayu-net and vayu-store, with its state
+/// in the data directory (`state.db`, `journal/`).
+async fn start_engine(data_dir: &Path) -> std::io::Result<Arc<dyn Service>> {
+    let net = vayu_net::NetConfig::default();
+    let mut capabilities: Vec<String> = vec!["http".into(), "https".into(), "preconnect".into()];
+    if net.http2 {
+        capabilities.push("h2".into());
+    }
+    if net.http3 {
+        capabilities.push("h3".into());
+    }
+    let sources = vayu_net::HttpSourceFactory::new(net);
+    let storage = Arc::new(vayu_store::FileStorageProvider::new(
+        vayu_store::StorageOptions::default(),
+    ));
+    let journal = Arc::new(vayu_store::FileJournal::open(data_dir.join("journal"))?);
+    let state = Arc::new(vayu_store::SqliteStateStore::open(data_dir.join("state.db")).await?);
+
+    let mut config = vayu_engine::EngineConfig::new(default_download_dir(data_dir));
+    config.capabilities = capabilities;
+    let engine = vayu_engine::Engine::start(
+        vayu_engine::EngineDeps {
+            sources,
+            storage,
+            journal,
+            state,
+        },
+        config,
+    )
+    .await?;
+    tracing::info!("download engine started");
+    Ok(engine)
+}
+
+/// Where downloads go until the user picks a folder: `$XDG_DOWNLOAD_DIR`
+/// when set (Linux), else `Downloads` in the home folder, else a folder in
+/// the data directory.
+fn default_download_dir(data_dir: &Path) -> String {
+    let var = |name: &str| {
+        std::env::var_os(name)
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+    };
+    let dir = var("XDG_DOWNLOAD_DIR")
+        .filter(|_| cfg!(all(unix, not(target_os = "macos"))))
+        .or_else(|| {
+            var("HOME")
+                .or_else(|| var("USERPROFILE"))
+                .map(|h| h.join("Downloads"))
+        })
+        .unwrap_or_else(|| data_dir.join("downloads"));
+    dir.to_string_lossy().into_owned()
 }

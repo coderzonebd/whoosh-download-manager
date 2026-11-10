@@ -26,6 +26,10 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 clap = { workspace = true, features = ["env"] }
 vayu-proto.workspace = true
+# The real service, wired only in the binary (src/main.rs; ADR 0005).
+vayu-engine.workspace = true
+vayu-net.workspace = true
+vayu-store.workspace = true
 
 bytes = "1"
 getrandom = "0.3"

@@ -44,7 +44,7 @@ pub mod token;
 use std::path::PathBuf;
 
 pub use config::DaemonConfig;
-pub use server::{HEALTHZ_PATH, RunningDaemon, serve};
+pub use server::{Claim, HEALTHZ_PATH, RunningDaemon, claim, serve};
 
 /// This crate's version: `daemonVersion` and `runtime.json`'s `version`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

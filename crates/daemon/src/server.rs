@@ -186,6 +186,23 @@ pub async fn serve(
     service: Arc<dyn Service>,
     config: DaemonConfig,
 ) -> Result<RunningDaemon, ServeError> {
+    claim(config).await?.serve(service).await
+}
+
+/// The data directory, secured and (with `single_instance`) locked for this
+/// process, before anything is served. A binary that builds a real
+/// [`Service`] (the engine loads and resumes downloads from this directory)
+/// claims first and builds the service only once the claim succeeded, so a
+/// second daemon never touches the first one's downloads.
+#[derive(Debug)]
+pub struct Claim {
+    config: DaemonConfig,
+    lock: Option<runtime::InstanceLock>,
+}
+
+/// Secures and locks the data directory (see [`Claim`]). Fails with
+/// [`ServeError::AlreadyRunning`] when another daemon owns it.
+pub async fn claim(config: DaemonConfig) -> Result<Claim, ServeError> {
     let data_dir = config.data_dir.clone();
     runtime::create_data_dir(&data_dir).map_err(|e| ServeError::DataDir(data_dir.clone(), e))?;
     runtime::secure_dir(&data_dir)
@@ -223,7 +240,26 @@ pub async fn serve(
     } else {
         None
     };
+    Ok(Claim { config, lock })
+}
 
+impl Claim {
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.config.data_dir
+    }
+
+    /// Binds, writes `runtime.json` and starts serving `service`.
+    pub async fn serve(self, service: Arc<dyn Service>) -> Result<RunningDaemon, ServeError> {
+        serve_claimed(self, service).await
+    }
+}
+
+async fn serve_claimed(
+    claim: Claim,
+    service: Arc<dyn Service>,
+) -> Result<RunningDaemon, ServeError> {
+    let Claim { config, lock } = claim;
+    let data_dir = config.data_dir.clone();
     let listener = bind(config.port, config.port_fallback).await?;
     let addr = listener.local_addr().map_err(ServeError::Bind)?;
     if addr.port() != config.port && config.port != 0 {

@@ -289,14 +289,35 @@ fn daemon_start_stop_status() {
 }
 
 #[test]
+fn the_real_engine_starts_without_mock() {
+    let w = World::new("engine");
+    let mut cmd = w.cmd(&["--json", "list"]);
+    cmd.env_remove("VAYU_DAEMON_MOCK");
+    let r = run(cmd);
+    assert_eq!(r.code, 0, "{r:?}");
+    assert_eq!(
+        r.stdout.trim(),
+        "[]",
+        "a fresh engine has no downloads: {r:?}"
+    );
+    assert!(
+        w.data().join("state.db").exists(),
+        "the engine keeps its state in the data dir"
+    );
+    let mut cmd = w.cmd(&["daemon", "stop"]);
+    cmd.env_remove("VAYU_DAEMON_MOCK");
+    assert_eq!(run(cmd).code, 0);
+}
+
+#[test]
 fn a_daemon_that_cannot_start_is_reported() {
     let w = World::new("nostart-engine");
     let mut cmd = w.cmd(&["list"]);
-    cmd.env_remove("VAYU_DAEMON_MOCK");
+    cmd.env("VAYU_DAEMON_PORT", "not-a-port");
     let r = run(cmd);
     assert_eq!(r.code, 3, "{r:?}");
     assert!(
-        r.stderr.contains("--mock"),
+        r.stderr.contains("not-a-port"),
         "the daemon's own message: {r:?}"
     );
 
