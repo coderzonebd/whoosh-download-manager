@@ -38,18 +38,44 @@ an optional RNG seed (tests), and `Tuning`, the scheduler's knobs (below).
 
 ### Scheduler (Speed Doctrine §1)
 
+**Start (ADR 0005 amendment 3).** A fresh download (no journal entry)
+begins with `RangeSource::start`: one request that describes the file and
+starts its body at offset 0, so the first byte arrives a round trip sooner
+than probe-then-open. That response is connection #1 and owns the whole
+file; when ranges do not work or the size is unknown it simply is the
+stream-mode download (#5). #1 runs **alone** while the rest of the file
+would take it no longer than `max(solo_ttfb_factor × what start took,
+solo_min_eta)` (2×, 100 ms), judged from its rate so far every `solo_check`
+(5 ms): a new connection could not deliver sooner, and on a fast link more
+connections cost more than they save (labserver on loopback: 100 MiB on one
+connection 0.18 s against 0.21–0.23 s when split at once; 10 MiB at 500 ms
+time-to-first-byte 0.5 s instead of 1.0 s). Then its range is cut for the
+target count exactly like a resume's first plan, the others start, and #1
+keeps reading its response up to the end of the piece it still owns, where
+the stream is dropped (the source aborts the rest). Alone, a fault on #1
+would hold up the whole download: when it goes silent for
+`max(solo_silence, 4 × start's TTFB)` (20 ms on loopback) the others start
+at once; when it breaks, one replacement takes over the rest — by the rule
+above, less than a new connection is worth — without waiting out the retry
+backoff, since nothing else was running. A resume still probes
+first: the validators must be checked against the journal before any byte
+is taken.
+
 **Plan.** A ranged download (server honours ranges, size known) starts with
 the journalled gaps (everything, for a new download) cut into one range per
 connection, never below `min_split` (1 MiB). Each connection owns a
 *segment*; it *claims* bytes before writing them, so the scheduler can split
 the unclaimed tail off at any moment without ever giving away a byte in
-flight.
+flight. Once connection speeds are known, a slow link may split finer: a
+piece must take at least `max(min_split_time, 4 × median TTFB)` (100 ms) at
+the median connection speed, and be at least `min_split_floor` (256 KiB),
+so 10 MiB at 2 MB/s per connection can use 16 connections, not 8.
 
 **Work stealing (#1).** The moment a connection finishes, its slot takes
 (1) an ownerless range (left by a failed or cancelled connection), else
 (2) the range that would finish last (`remaining / owner's EWMA speed`),
 split so both sides finish together (`owner keeps v/(v+u)` of it, `u` = the
-median connection speed), both pieces ≥ `min_split`, the split point rounded
+median connection speed), both pieces ≥ the minimum above, the split point rounded
 down to 64 KiB; else (3) an endgame hedge. Every connection has work until
 the last byte.
 
@@ -97,6 +123,22 @@ throughput swings ±30 % second to second:
 - *a warm-up* after every change: every connection streaming, then at least
   `max(tune_window / 2, 4 × TTFB)`, and longer while throughput still rises
   > 10 % per sample (slow start);
+- *a fast first climb*: a short download ends before careful windows decide
+  anything (10 MiB at 8 × 2 MB/s takes 0.66 s; a careful step needs ≥ 0.6 s
+  plus margin), yet the commonest reason more connections pay — each one is
+  limited on its own (a server throttle, a long thin path) — is the easiest
+  to see: doubling the count about doubles the throughput. So a download's
+  first climb uses short windows (`tune_fast_window` 100 ms, at least 4
+  TTFBs; warm-up half that; samples every `tune_fast_sample` 50 ms) and
+  takes a doubling from one trial window when it delivers at least
+  `tune_fast_scaling` (half) of linear scaling beyond 2 standard errors
+  (≥ 1.5× for 2×), then tries the next at once. The first doubling that
+  scales less ends the fast climb and is judged carefully from there (as
+  below). Steps down are always careful. On the paused-clock model of
+  labserver's per-conn-throttle and slow-drip (10 MiB, 2 and 3.2 MB/s per
+  connection) it reaches 16 connections and finishes in 0.50 s / 0.38 s
+  instead of 0.74 s / 0.50 s at 8; on the 180 s link models below it
+  changes nothing measurable;
 - *paired, alternating comparisons*: after the first base and trial windows
   they alternate (B T B T B …, up to `tune_rounds` = 4 trials); each trial
   window is compared with the mean of the base windows on either side of
@@ -147,7 +189,10 @@ as one round. `Retry-After` is honoured up to `retry_cap` (a server asking
 for a day must not park a download outside the error budget). After
 `error_budget` (10) rounds without a single byte, the
 download fails with `ErrorInfo { code: SourceError::code(), message }`.
-Connections that finish normally are replaced at once, backoff or not.
+Connections that finish normally are replaced at once, backoff or not, and
+so is one reset (`Transient`) after delivering at least `min_split_floor`
+(256 KiB): real progress, not the server pushing back. The failure round
+still counts; a server that resets right away still gets the backoff.
 
 **Ranges unsupported or size unknown (#5).** One connection, whole file,
 from zero. Any failure discards the partial file (journal first, then the
@@ -192,11 +237,23 @@ fetched again. A chunk at least `write_coalesce` long is written as is,
 without a copy; `write_coalesce = 0` restores one write per chunk.
 
 **Durability (#8).** Every byte goes through `Storage`. Every
-`checkpoint_interval` (2 s) or `checkpoint_bytes` (64 MiB) of new bytes,
-whichever first: `storage.flush()` *then* `journal.commit()` (never the
-reverse), off the scheduler loop and one at a time (a commit in flight is
-awaited before any newer one, including the empty checkpoint of a restart);
-also on pause, shutdown, `needs_refresh` and failure. The journal records only the contiguous prefix
+`checkpoint_interval` (2 s): `storage.flush()` *then* `journal.commit()`
+(never the reverse), off the scheduler loop and one at a time (a commit in
+flight is awaited before any newer one, including the empty checkpoint of a
+restart); also on pause, shutdown, `needs_refresh` and failure. A flush is
+a stall — `vayu-store`'s writer thread syncs while new writes queue behind
+it, and once its buffer is full the network waits too — so checkpoints are
+spaced by what the last one cost: never sooner than its duration divided by
+`checkpoint_share` (5 %), up to `checkpoint_interval_max` (30 s). On the
+disk-bound bench machine (`dirty_bytes` 256 MiB) a 1 GiB download used to
+sync every 64 MiB: nine `fdatasync`s of 58–254 ms, about 1 s of a 2 s
+download; time-based checkpoints alone took it from 1.77 s to 1.39–1.43 s.
+`checkpoint_bytes` (a byte trigger) is off by default. A download that never
+needed the journal skips it: a fresh one commits no empty checkpoint before
+its first byte (nothing claims anything yet), and a completed transfer
+without a checksum to verify goes straight to finishing, whose intent claims
+every byte after a flush anyway — so a small file commits once instead of
+three times. The journal records only the contiguous prefix
 of each range whose writes resolved before the snapshot. Preallocation when
 the size is known. Records are saved on every state change and every
 `record_interval` (3 s) while running; writes to the `StateStore` are
@@ -325,7 +382,9 @@ and ends every subscription.
 |---|---|---|
 | `initial_connections` | 8 | start count without a host profile |
 | `fixed_connections` | none | pin every download's count, no learning (`AddParams::connections` pins one) |
+| `solo_ttfb_factor`, `solo_min_eta`, `solo_check`, `solo_silence` | 2, 100 ms, 5 ms, 20 ms | a fresh download's first connection runs alone while it would finish within max(2 × start's TTFB, 100 ms), checked every 5 ms; silence of max(20 ms, 4 × that TTFB) ends it |
 | `min_split` | 1 MiB | smaller = better tail balance, more requests |
+| `min_split_floor`, `min_split_time` | 256 KiB, 100 ms | on slow links pieces may shrink to what the median connection fetches in max(100 ms, 4 TTFB), not below 256 KiB |
 | `split_align` | 64 KiB | split points round down to this |
 | `tick` | 50 ms | sampling/hedge/tuner cadence (refills are immediate) |
 | `tune_window`, `tune_window_max` | 200 ms, 4 s | shortest and longest measurement window |
@@ -333,6 +392,7 @@ and ends every subscription.
 | `tune_sample`, `tune_target_rse` | 100 ms, 0.02 | windows grow until their samples' RSE is this low |
 | `tune_warm_rtts`, `tune_warm_rise` | 4, 0.10 | warm-up: at least 4 TTFBs, longer while rising > 10 % per sample |
 | `tune_z`, `tune_rounds` | 2.0, 4 | confidence (standard errors) a step needs; most trial windows of an alternating comparison |
+| `tune_fast_window`, `tune_fast_sample`, `tune_fast_scaling` | 100 ms, 50 ms, 0.5 | fast first climb: short windows; a doubling delivering ≥ half of linear scaling (beyond 2 SE) is taken from one window (`INFINITY` turns it off) |
 | `tune_reprobe` | 30 s | re-probe one step, alternately up and down, after settling (doubling up to 5 min) |
 | `climb_gain` / `keep_ratio` | 0.04 / 0.97 | a doubling's gain must clearly reach 4 %; a halving must keep 97 % |
 | `ewma_tau` | 400 ms | speed smoothing |
@@ -342,7 +402,8 @@ and ends every subscription.
 | `hedge_gain`, `endgame_silence` | 2.0, 60 ms | endgame hedging |
 | `max_hedges_per_range`, `max_extra_hedges` | 3, 4 | hedge bounds |
 | `stream_idle_timeout` | 20 s | silence before a no-range stream starts over |
-| `checkpoint_interval`, `checkpoint_bytes` | 2 s, 64 MiB | flush + commit cadence |
+| `checkpoint_interval`, `checkpoint_bytes` | 2 s, off | flush + commit cadence (time; an optional byte trigger) |
+| `checkpoint_share`, `checkpoint_interval_max` | 0.05, 30 s | a checkpoint that took `d` is next due no sooner than `d / 0.05`, at most 30 s |
 | `record_interval` | 3 s | record saves while running |
 | `retry_base`, `retry_cap` | 50 ms, 30 s | backoff |
 | `error_budget` | 10 | failure rounds without progress before `failed` |
@@ -367,14 +428,16 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | Suite | What |
 |---|---|
 | unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, +8 % per doubling climbs (≥ 2/3 of seeds to 16, never below 4), a shared one spends ≤ 10 % of the time above the start and comes down over 10 min, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander |
-| `tests/scenarios.rs` (29) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
+| `tests/scenarios.rs` (30) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, a reset after real progress taken up at once (one after 64 KiB waits out the backoff), and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
 | `tests/coalesce.rs` (5) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), a source that goes silent mid-buffer has its gathered bytes written by the timer, gathered bytes survive a hedge takeover and a pause |
-| `tests/service.rs` (19) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
+| `tests/service.rs` (20) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/contract.rs` (5) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic) |
 | `tests/finish.rs` (10) | the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact, without downloading again; also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) |
-| `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
-| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %). `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
+| `tests/start.rs` (15) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models climb to 16 at once (0.50 s / 0.38 s against 0.74 s / 0.50 s without the fast climb) |
+| `tests/checkpoints.rs` (3) | a 400 ms flush spaces checkpoints 8 s apart (4–6 commits in 32 s instead of 14–18); a fresh download without a checksum commits only its finish intent, with a checksum one checkpoint before verifying |
+| `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off, `start` in one request or two): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
+| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
 model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999,
@@ -382,7 +445,9 @@ model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999,
 cases, 1–5 kills each, ≈ 52,000 kills; 0 corrupt files; since 20000 also
 exactly one finished file each; since 60000 across every mode — ranged, no
 ranges, unknown size, empty — with crash-consistent finishing) and the
-property test over 5,100 schedules, all passing. Run
+property test over 5,100 schedules, all passing; after the speed round
+(half the cases starting in one request) seeds 80000–82999 and 90000–92999
+(6,000 cases) and 4,000 more schedules, all passing. Run
 them with the built test binaries, e.g.
 `VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
 The real gate (1,000 hard kills of the daemon process with `vayu-store` on
@@ -395,6 +460,106 @@ version changes after N bytes served, link expiry after N bytes, and a
 per-request script (TTFB, rate, stall, reset, failure).
 
 ## Benchmarks
+
+### Speed round (2026-11-10, labserver on loopback)
+
+Measured on the Phase 1 bench machine (i5-10210U, 8 threads, NVMe,
+`dirty_bytes` 256 MiB / `dirty_background_bytes` 128 MiB, so the page cache
+does not absorb 1 GiB; load 2–4 from other sessions) with
+`vayu-bench run --clients vayu --scenarios … --runs 4 --force-runs`
+against daemon + CLI release builds of this branch before (2d8270b) and
+after, alternating builds round by round. `vayu-net` on this branch still
+uses the trait's default `start` (probe, then open: two requests), so the
+round trip `start` saves on `high-latency` is not in these numbers yet (the
+paused-clock model shows it: 1.04 s → 0.54 s).
+
+Median time (start of `vayu get` to the file complete, daemon start-up
+included) over all rounds: before 32 runs per scenario, after 8 (flaky and
+stall: 56 and 32, from three extra rounds of just those two); wget and curl
+from one interleaved round of 4 for reference. Medians of 8 runs move by up
+to ±10 % from round to round on this machine (`no-validators` measured
+−14 % to −17 % in the two previous rounds of the same rules).
+
+| scenario | file | before s | after s | change | peak conns | requests | wget s | curl s |
+|---|---|---:|---:|---:|---|---|---:|---:|
+| per-conn-throttle | 10m.bin | 0.684 | 0.491 | -28 % | 8 → 16 | 9 → 17 | 5.197 | 5.201 |
+| slow-drip | 10m.bin | 0.561 | 0.459 | -18 % | 8 → 16 | 9 → 17 | 3.918 | 3.934 |
+| global-throttle | 10m.bin | 0.526 | 0.527 | +0 % | 8 → 15 | 9 → 11 | 0.479 | 0.482 |
+| rate-limited | 10m.bin | 0.585 | 0.527 | -10 % | 8 → 8 | 13 → 13 | 2.051 | 2.055 |
+| conn-cap-2 | 10m.bin | 1.098 | 1.102 | +0 % | 8 → 8 | 15 → 15 | 2.051 | 2.054 |
+| conn-cap-reset | 10m.bin | 1.090 | 1.073 | -2 % | 8 → 8 | 15 → 15 | 2.051 | 2.054 |
+| high-latency | 10m.bin | 1.091 | 1.104 | +1 % | 8 → 1 | 9 → 2 | 0.514 | 0.516 |
+| clean | 1g.bin | 1.799 | 1.452 | -19 % | 17 → 17 | 23 → 27 | 1.003 | 1.062 |
+| flaky | 100m.bin | 0.221 | 0.263 | +19 % | 8 → 9 | 17 → 19 | 10.162 | — |
+| stall | 100m.bin | 0.202 | 0.220 | +9 % | 9 → 8 | 16 → 15 | 8.080 | 8.081 |
+| no-validators | 100m.bin | 0.201 | 0.195 | -3 % | 9 → 8 | 15.5 → 2 | 0.074 | 0.079 |
+| no-length | 100m.bin | 0.220 | 0.196 | -11 % | 10 → 9 | 12 → 2 | 0.079 | 0.083 |
+| no-range | 100m.bin | 0.184 | 0.174 | -5 % | 1 → 1 | 2 → 2 | 0.078 | 0.101 |
+| lying-ranges | 100m.bin | 0.183 | 0.181 | -1 % | 1 → 1 | 2 → 2 | 0.070 | 0.082 |
+| changing-file | 100m.bin | 0.324 | 0.191 | -41 % | 9 → 1 | 28 → 2 | 0.077 | 0.084 |
+| expiring-url | 10m.bin | 0.059 | 0.054 | -9 % | 8 → 1 | 9 → 2 | 0.010 | 0.014 |
+| bangla-filename | bangla-star-only.bin | 0.039 | 0.041 | +6 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | bangla.bin | 0.040 | 0.035 | -12 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | latin1.bin | 0.038 | 0.039 | +1 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | plain.bin | 0.038 | 0.037 | -3 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | raw-utf8.bin | 0.039 | 0.040 | +3 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | traversal.bin | 0.040 | 0.037 | -7 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+
+- **per-conn-throttle, slow-drip:** the fast first climb (8 → 16 within
+  ~200 ms) and finer pieces on slow links. Gopeed (16 from the start) was
+  0.38 s / 0.30 s in the Phase 1 run.
+- **100 MiB without faults, changing-file, expiring-url, small files:** one
+  request (no probe) and, below 100 ms of work, one connection; a fresh
+  download commits its journal once.
+- **clean 1 GiB:** time-based checkpoints (see below). Still behind wget,
+  which neither syncs nor needs more than one connection here.
+- **high-latency:** unchanged until `vayu-net`'s one-request `start` is
+  merged; the engine side is in (one connection, two requests instead of
+  nine).
+- **global-throttle:** the fast climb now tries 16 for a moment before
+  coming back down (peak 8 → 15); time unchanged.
+- **flaky (+19 %), stall (+9 %):** a 100 MiB file now streams on one
+  connection, so each injected reset (labserver: ~1 per 50 MiB) costs a new
+  request for the rest. The fixes above (a replacement without backoff, a
+  silent connection released at 20 ms, and any reset after ≥ 256 KiB of
+  progress taken up at once) brought them from +34 % / +42 % in the first
+  measurement to this; with a warm daemon the medians are equal (flaky
+  0.185 s both, stall 0.182 vs 0.174 s over 12 runs).
+
+What the numbers came from:
+
+- **Where a small file's time goes.** `strace` of the daemon during a 1 MiB
+  download (23 ms from the CLI's view, daemon already running): 19 ms were
+  `fsync`/`fdatasync` — the data (5.4 ms), the journal (empty checkpoint,
+  final checkpoint, finish intent: 0.6–1.4 ms each plus 1.3 ms for its
+  directory), the state database (record on add and on completion, then the
+  WAL checkpoint of `StateStore::sync`: 1.4–3.1 ms), the part file's and the
+  final file's directories. The engine now skips the two journal commits it
+  does not need. More connections were not the cost: pinned to one
+  connection, `expiring-url` took 0.065 s and `no-validators` 0.213 s, the
+  same as with eight; the rest is daemon start-up (≈ 25 ms) and the store's
+  syncs.
+- **The solo rule.** `solo_min_eta` 0 / 100 / 300 ms (time-based
+  checkpoints, 2 × 4 runs): `no-validators` 100 MiB 0.212–0.225 s split at
+  once, 0.181–0.186 s alone at 100 and 300 ms; `expiring-url`,
+  `per-conn-throttle` and `clean` unchanged. Hence 100 ms.
+- **Flush cost on a disk-bound machine.** `strace` of a 1 GiB `clean`
+  download (2.03 s): nine data `fdatasync`s of 58, 62, 62, 62, 84, 91, 118,
+  194 and 254 ms — about 1 s during which the store's writer thread could not
+  write. `checkpoint_bytes` 64 MiB / 256 MiB / off (2 × 4 runs): 1.77 /
+  1.56–1.64 / 1.39–1.43 s.
+- **Fewer write regions.** Pinned counts, time-based checkpoints, 2 × 3
+  runs, wget alongside: 1 connection 1.02–1.06 s (wget 0.93–0.99), 2:
+  1.40–1.73, 4: 1.49–1.65, 8: 1.52–1.59; CPU 1.0 s at one connection, 2.0–2.7
+  s at more. A daemon log showed one connection alone at 0.7 GB/s and eight
+  together at 0.8–0.9 GB/s, the seven new ones waiting 50–200 ms for their
+  first byte (labserver generating far content; curl sees 48 ms there while
+  a transfer runs, 0.4 ms idle). In-process (`examples/throughput.rs`,
+  writer thread into the page cache) 1 and 8 connections cost the same
+  (1.45 GiB/s; 1.06 vs 1.27 CPU s per GB), so the extra CPU is in the
+  network and storage layers. See *Known limitations*.
+
+### Engine data path
 
 `examples/throughput.rs` pushes data through the engine in-process from a
 zero-copy pattern source, with fixed connection counts, and reports
@@ -455,9 +620,22 @@ remove it (see proposals).
 
 ## Contract proposals
 
-Applied in amendment 2 and used here: `Checkpoint::finishing` (the finish
-intent) and `StateStore::sync` (called after saving a completed record,
-before removing its journal entry).
+Applied in amendment 3 and used here: `RangeSource::start` (a fresh
+download's first connection). Applied in amendment 2: `Checkpoint::finishing`
+(the finish intent) and `StateStore::sync` (called after saving a completed
+record, before removing its journal entry).
+
+Open: **`Storage::flush` should not hold up later writes** (a `vayu-store`
+change; the trait text could say so). The journal only needs the writes
+that resolved before `flush` was called to be durable, yet the store syncs
+on its single writer thread, so every flush stops all writing — and, once
+the 16 MiB buffer is full, the network — for the length of the sync
+(58–254 ms per 64 MiB on the disk-bound bench machine). Syncing a second
+handle of the file on another thread (`fdatasync` covers every write
+completed before it starts) while the writer keeps draining, plus
+`sync_file_range(SYNC_FILE_RANGE_WRITE)` after large batches so the final
+sync of a finished file finds little dirty data, would make checkpoints
+nearly free again; the engine then needs no cost-based spacing.
 
 Open: **`Storage::write_vectored_at(offset, Vec<Bytes>)`** (or `write_at`
 taking several buffers): the engine could hand over the received chunks of
@@ -481,8 +659,23 @@ storage contract now also states what the engine relied on: a dropped
   only protection. The crash and property tests therefore only change files
   that carry validators.
 - `mirrors` are stored but not used yet (multi-source is Speed Doctrine #9).
-- The tuner does not re-probe after it settles; a download that settles on
-  one connection stays there even if conditions change.
+- On a link where one connection is already as fast as the machine (loopback,
+  LAN), a download whose first connection would need more than 100 ms alone
+  still gets 8 (it cannot know more will not help without trying), and the
+  tuner cannot come down within a short download. On the bench machine,
+  `clean` 1 GiB pinned to one connection takes 1.02–1.06 s against
+  1.39–1.43 s with the learned count (wget 0.93–0.99 s): eight connections
+  only reach 0.8–0.9 GB/s there, against 0.7 GB/s for one alone, and cost
+  2.5× the CPU (in the network and storage layers: the engine's own data
+  path costs about the same at 1 and 8, 1.06 and 1.27 CPU s per GB).
+  A follow-up could compare the first connection's solo rate with the first
+  window at 8 and, when 8 do not beat 1, fall back to the first connection
+  alone — its `start` response runs to the end of the file, so it could
+  simply keep reading.
+- The first connection's solo decision uses `start`'s time to first byte as
+  a new connection's; labserver's far ranges of a big file take 50–200 ms to
+  their first byte while it generates content (about 0.4 ms near the start),
+  which no client can know beforehand.
 - Checksums are verified by reading the file back after the download.
 - Hedging is not possible in stream mode (no ranges): a stalled single
   stream is only replaced after `stream_idle_timeout`, from zero.

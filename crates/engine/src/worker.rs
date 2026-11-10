@@ -21,7 +21,7 @@ use bytes::BytesMut;
 use futures::StreamExt;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use vayu_core::{OpenRequest, RangeSource, SourceError, Storage};
+use vayu_core::{ByteStream, OpenRequest, RangeSource, SourceError, Storage};
 
 use crate::limiter::RateLimiter;
 use crate::segment::{Claim, Eof, Segment, WorkerId};
@@ -62,6 +62,9 @@ pub(crate) struct Job {
     pub source: Arc<dyn RangeSource>,
     pub storage: Arc<dyn Storage>,
     pub req: OpenRequest,
+    /// A response already started (`RangeSource::start`, from offset 0):
+    /// read it instead of opening `req`.
+    pub first: Option<ByteStream>,
     pub counters: Arc<Counters>,
     pub cancel: CancellationToken,
     pub limiter: Arc<RateLimiter>,
@@ -135,6 +138,7 @@ async fn pump(job: Job) -> Exit {
         source,
         storage,
         req,
+        first,
         counters,
         cancel,
         limiter,
@@ -144,12 +148,18 @@ async fn pump(job: Job) -> Exit {
     } = job;
     let mut pos = req.range.map_or(0, |r| r.start);
     let mut streamed = false;
-    let mut stream = tokio::select! {
-        biased;
-        _ = cancel.cancelled() => return Exit::Cancelled,
-        r = source.open(req) => match r {
-            Ok(s) => s,
-            Err(err) => return Exit::Failed { err, streamed: false },
+    let mut stream = match first {
+        // It may run past this connection's range (to the end of the
+        // file): claims stop at the range's end, and dropping the stream
+        // then aborts the rest.
+        Some(s) => s,
+        None => tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Exit::Cancelled,
+            r = source.open(req) => match r {
+                Ok(s) => s,
+                Err(err) => return Exit::Failed { err, streamed: false },
+            },
         },
     };
     counters

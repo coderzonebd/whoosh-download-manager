@@ -39,6 +39,17 @@
 //!   the last round is not taken. A step down needs alternating windows
 //!   too and is taken when it clearly holds `keep_ratio`, or, after the last
 //!   round, when its estimate does.
+//! - **Fast first climb.** A short download ends before careful windows
+//!   decide anything, yet the commonest reason more connections pay — a
+//!   per-connection limit (a server throttle, a long thin TCP path) — is
+//!   also the easiest to see: doubling the count (almost) doubles the
+//!   throughput. So a download's first climb measures short windows
+//!   (`tune_fast_window`, at least 4 TTFBs, warm-up half that) and takes a
+//!   doubling from one trial window when it delivers at least
+//!   `tune_fast_scaling` (half) of linear scaling beyond 2 standard errors,
+//!   then tries the next doubling at once. The first doubling that scales
+//!   less ends the fast climb; its comparison continues as above, from the
+//!   windows already measured.
 //!
 //! `Throttled` (429/503, refused under load), or connections failing before
 //! their first byte while others work, set a ceiling at the number of
@@ -143,6 +154,9 @@ pub(crate) struct Sample {
 
 #[derive(Debug, Clone)]
 struct Knobs {
+    fast_window: Duration,
+    fast_sample: Duration,
+    fast_scaling: f64,
     gain: f64,
     keep: f64,
     window: Duration,
@@ -169,6 +183,9 @@ pub(crate) struct Tuner {
     /// The accepted count and what it measured.
     best: Option<Stat>,
     climbed: bool,
+    /// The first climb, while every doubling scales (almost) linearly:
+    /// short windows, one trial window per doubling.
+    fast: bool,
     throttled: bool,
     /// Has settled at least once: later climbs are re-probes.
     settled_once: bool,
@@ -283,6 +300,9 @@ impl Tuner {
             max,
             ceiling,
             k: Knobs {
+                fast_window: t.tune_fast_window,
+                fast_sample: t.tune_fast_sample,
+                fast_scaling: t.tune_fast_scaling,
                 gain: t.climb_gain,
                 keep: t.keep_ratio,
                 window: t.tune_window,
@@ -306,6 +326,7 @@ impl Tuner {
             },
             best: None,
             climbed: false,
+            fast: !fixed && t.tune_fast_scaling.is_finite(),
             throttled: false,
             settled_once: false,
             reprobe_every: t.tune_reprobe,
@@ -358,13 +379,24 @@ impl Tuner {
             return;
         }
         let k = self.k.clone();
-        let min_len = k
-            .window
-            .max(scaled(s.ttfb, k.rtt_windows))
-            .min(k.window_max);
-        let warm_min = (k.window / 2)
-            .max(scaled(s.ttfb, k.warm_rtts))
-            .min(k.window_max);
+        let fast = self.fast;
+        let (min_len, warm_min, period) = if fast {
+            let len = k
+                .fast_window
+                .max(scaled(s.ttfb, k.warm_rtts))
+                .min(k.window_max);
+            (len, (len / 2).max(k.fast_sample), k.fast_sample)
+        } else {
+            (
+                k.window
+                    .max(scaled(s.ttfb, k.rtt_windows))
+                    .min(k.window_max),
+                (k.window / 2)
+                    .max(scaled(s.ttfb, k.warm_rtts))
+                    .min(k.window_max),
+                k.sample,
+            )
+        };
         let target = self.target;
         let can_up = self.target < self.cap() && !self.throttled;
         let can_down = self.target > 1;
@@ -402,7 +434,7 @@ impl Tuner {
                     }
                     let ready_at = *ready.get_or_insert(s.now);
                     let l = last.get_or_insert((s.now, s.bytes));
-                    take_sample(l, rates, s.now, s.bytes, k.sample);
+                    take_sample(l, rates, s.now, s.bytes, period);
                     let waited = s.now.duration_since(ready_at);
                     let rising = rates.len() >= 2
                         && rates[rates.len() - 1] > rates[rates.len() - 2] * (1.0 + k.warm_rise);
@@ -416,11 +448,13 @@ impl Tuner {
                     return;
                 }
                 Phase::Window { start, last, rates } => {
-                    take_sample(last, rates, s.now, s.bytes, k.sample);
+                    take_sample(last, rates, s.now, s.bytes, period);
                     let len = s.now.duration_since(start.0);
                     let r = rse(rates);
-                    if len < min_len || rates.len() < 2 || (r > k.target_rse && len < k.window_max)
-                    {
+                    // A fast window needs no target error: its comparison
+                    // allows for it.
+                    let precise = fast || r <= k.target_rse || len >= k.window_max;
+                    if len < min_len || rates.len() < 2 || !precise {
                         return;
                     }
                     let stat = Stat {
@@ -432,8 +466,9 @@ impl Tuner {
                 }
             },
         };
-        // Too little left to measure another step reliably.
-        let next_step = (min_len + warm_min).as_secs_f64() * 2.0;
+        // Too little left to measure another step reliably (a fast climb
+        // decides from one trial window, a careful one needs alternation).
+        let next_step = (min_len + warm_min).as_secs_f64() * if fast { 1.0 } else { 2.0 };
         if (s.work_left as f64) < stat.mean * next_step {
             if self.best.is_none() {
                 self.best = Some(stat);
@@ -457,7 +492,14 @@ impl Tuner {
                     self.settle();
                 }
             }
-            Goal::Trial { dir, base } => self.weigh(dir, base.n, stat.n, vec![base], vec![stat]),
+            Goal::Trial { dir, base } => {
+                if self.fast && dir == Dir::Up && self.scales(base, stat) {
+                    self.accept(dir, stat);
+                    return;
+                }
+                self.fast = false;
+                self.weigh(dir, base.n, stat.n, vec![base], vec![stat]);
+            }
             Goal::Alternate {
                 dir,
                 base_n,
@@ -579,6 +621,15 @@ impl Tuner {
         }
     }
 
+    /// A fast climb's test: `trial` delivers, beyond `tune_z` standard
+    /// errors, at least `tune_fast_scaling` of linear scaling over `base`.
+    fn scales(&self, base: Stat, trial: Stat) -> bool {
+        let ratio = trial.mean / base.mean.max(1.0);
+        let se = ratio * (trial.rse.powi(2) + base.rse.powi(2)).sqrt();
+        let linear = f64::from(trial.n) / f64::from(base.n.max(1));
+        ratio - self.k.z * se >= 1.0 + self.k.fast_scaling * (linear - 1.0)
+    }
+
     /// Start measuring the next count in `dir` against `base`; false when
     /// there is none.
     fn start_trial(&mut self, dir: Dir, base: Stat) -> bool {
@@ -588,6 +639,10 @@ impl Tuner {
         };
         if next == self.target {
             return false;
+        }
+        if dir == Dir::Down {
+            // Steps down are always judged carefully.
+            self.fast = false;
         }
         self.target = next;
         self.state = State::Running {
@@ -648,6 +703,7 @@ impl Tuner {
     fn settle(&mut self) {
         self.state = State::Settled { since: None };
         self.settled_once = true;
+        self.fast = false;
     }
 
     /// The server limited us while `working` connections were accepted.
@@ -932,11 +988,20 @@ mod tests {
 
     #[test]
     fn windows_scale_with_time_to_first_byte() {
-        // 300 ms TTFB: windows of at least 16 × 0.3 = 4.8 s, capped at
-        // 4 s, after a warm-up of at least 4 × 0.3 s.
-        let mut t = tuner(16);
+        // 300 ms TTFB: careful windows of at least 16 × 0.3 = 4.8 s, capped
+        // at 4 s, after a warm-up of at least 4 × 0.3 s.
+        let careful = Tuning {
+            tune_fast_scaling: f64::INFINITY,
+            ..Tuning::default()
+        };
+        let mut t = Tuner::new(&careful, 16, None, None);
         let r = simulate(&mut t, &wifi(|n, _| n as f64 * 3.8e6), 60.0, 1);
         assert!(r.first_change.unwrap() >= 4.0 + 1.2, "{:?}", r.first_change);
+        // A fast climb's windows: 4 × 0.3 = 1.2 s after a warm-up of half.
+        let mut t = tuner(16);
+        let r = simulate(&mut t, &wifi(|n, _| n as f64 * 3.8e6), 60.0, 1);
+        let first = r.first_change.unwrap();
+        assert!((1.2 + 0.6..4.0).contains(&first), "{first}");
         // Loopback-like (no TTFB, no noise): the first step within a second.
         let mut t = tuner(16);
         let mut now = Instant::now();
@@ -1065,7 +1130,17 @@ mod tests {
                     ..Tuning::default()
                 },
             ),
-            ("pooled, 4 %, start 8 (default)", Tuning::default()),
+            (
+                "pooled, 4 %, start 8, no fast climb",
+                Tuning {
+                    tune_fast_scaling: f64::INFINITY,
+                    ..Tuning::default()
+                },
+            ),
+            (
+                "pooled, 4 %, start 8, fast first climb (default)",
+                Tuning::default(),
+            ),
         ];
         for (name, f) in models {
             for (label, tuning) in &configs {

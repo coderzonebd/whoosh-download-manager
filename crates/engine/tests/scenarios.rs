@@ -144,6 +144,47 @@ async fn random_resets_are_retried() {
     assert!(src.opens() > 4);
 }
 
+/// A slow backoff, two connections of 4 MiB at 4 MiB/s, and the second
+/// one reset after 1 MiB; returns how long the download took.
+async fn reset_after(progress: u64) -> Duration {
+    let mut cfg = config();
+    cfg.tuning = Tuning {
+        fixed_connections: Some(2),
+        retry_base: Duration::from_secs(2),
+        ..Tuning::default()
+    };
+    let lab = Lab::new(cfg).await;
+    let data = content(8 * MIB, 30);
+    lab.serve(
+        URL,
+        Arc::new(
+            FaultSource::new(data.clone())
+                .cfg(|c| c.per_conn_bps = Some(4 * MIB))
+                // Request 1 is the start (the whole file), 2 the second half.
+                .script(move |n, _| ReqPlan {
+                    reset_after: (n == 2).then_some(progress),
+                    ..ReqPlan::default()
+                }),
+        ),
+    );
+    let id = lab.add(URL).await;
+    let (_, took) = finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    took
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_reset_after_progress_is_taken_up_at_once() {
+    // 1 MiB delivered: the rest of that half goes on at once (1 s + the
+    // remaining 3 MiB shared out), not after the 1–2 s backoff.
+    let took = reset_after(MIB).await;
+    assert!(took < Duration::from_millis(1400), "took {took:?}");
+    // A reset after 64 KiB is treated as pushback: the backoff holds, and
+    // the half is only taken up when the other connection is free (1 s).
+    let took = reset_after(64 * KIB).await;
+    assert!(took >= Duration::from_millis(1700), "took {took:?}");
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_stalled_connection_is_replaced_quickly() {
     let lab = Lab::new(config()).await;
@@ -324,7 +365,9 @@ async fn a_file_that_keeps_changing_fails_with_remote_changed() {
                     c.per_conn_bps = Some(8 * MIB);
                 })
                 .script(|_, _| ReqPlan {
-                    reset_after: Some(MIB),
+                    // Shorter than any range: no version is fetched by the
+                    // requests made before it changes.
+                    reset_after: Some(256 * KIB),
                     ..ReqPlan::default()
                 }),
         ),
