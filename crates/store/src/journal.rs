@@ -54,8 +54,14 @@ pub struct FileJournal {
     /// Per id: serialises its commits (commits of different ids run in
     /// parallel) and remembers whether this process has synced its entry.
     ids: Mutex<HashMap<String, Arc<Mutex<IdState>>>>,
+    /// Directories whose entries changed when `open` created the journal
+    /// directory; synced by the first durable commit, not at open, so a
+    /// daemon's cold start does no fsync for them.
+    pending_dirs: Arc<Mutex<Vec<PathBuf>>>,
     #[cfg(test)]
     dir_syncs: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    synced_dirs: Mutex<Vec<PathBuf>>,
 }
 
 #[derive(Debug, Default)]
@@ -67,20 +73,23 @@ struct IdState {
 }
 
 impl FileJournal {
-    /// Keep journals in `dir`, creating it (owner-only on Unix) if missing
-    /// and fsyncing the directories whose entries that changed. Journal
-    /// files are created owner-only too: checkpoints hold the final URL,
-    /// which may carry tokens.
+    /// Keep journals in `dir`, creating it (owner-only on Unix) if missing.
+    /// The directory entries that creating it changed are fsynced by the
+    /// first commit, before any commit resolves; `open` itself does no
+    /// fsync. Journal files are created owner-only too: checkpoints hold
+    /// the final URL, which may carry tokens.
     pub fn open(dir: impl Into<PathBuf>) -> io::Result<Self> {
         let dir = dir.into();
         let changed = sys::create_dirs(&dir, sys::DirMode::Private)?;
-        sys::sync_dirs(&changed)?;
         Ok(Self {
             dir,
             sync: true,
             ids: Mutex::default(),
+            pending_dirs: Arc::new(Mutex::new(changed)),
             #[cfg(test)]
             dir_syncs: Default::default(),
+            #[cfg(test)]
+            synced_dirs: Mutex::default(),
         })
     }
 
@@ -126,17 +135,21 @@ impl Journal for FileJournal {
                 ));
             }
             let (dir, sync, state) = (self.dir.clone(), self.sync, self.state_for(id));
-            let synced_dir = blocking::run(move || {
+            let pending = self.pending_dirs.clone();
+            let synced = blocking::run(move || {
                 let mut state = lock(&state);
-                commit_blocking(&path, &dir, sync, &payload, &mut state)
+                commit_blocking(&path, &dir, sync, &payload, &mut state, &pending)
             })
             .await?;
             #[cfg(test)]
-            if synced_dir {
-                self.dir_syncs
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            {
+                if synced.contains(&self.dir) {
+                    self.dir_syncs
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                lock(&self.synced_dirs).extend(synced.iter().cloned());
             }
-            let _ = synced_dir;
+            let _ = synced;
             Ok(())
         })
     }
@@ -201,14 +214,15 @@ fn read_bounded(mut file: std::fs::File, path: &Path) -> io::Result<Option<Vec<u
     Ok(Some(bytes))
 }
 
-/// Returns whether it fsynced the directory.
+/// Returns the directories it fsynced.
 fn commit_blocking(
     path: &Path,
     dir: &Path,
     sync: bool,
     payload: &[u8],
     state: &mut IdState,
-) -> io::Result<bool> {
+    pending: &Mutex<Vec<PathBuf>>,
+) -> io::Result<Vec<PathBuf>> {
     let open = |create: bool| {
         let mut o = sys::private_file_options();
         o.read(true).write(true).create_new(create);
@@ -230,17 +244,28 @@ fn commit_blocking(
     let (offset, slot) = format::plan(&current, payload);
     sys::write_all_at(&file, &slot, offset).map_err(sys::map_err)?;
     if !sync {
-        return Ok(false);
+        return Ok(Vec::new());
     }
-    file.sync_data().map_err(sys::map_err)?;
-    // A commit is durable only once the file's directory entry is. Sync it
-    // on this process's first commit of the id, whatever the file holds.
+    // A commit is durable only once the file's directory entry is (and the
+    // entries of directories `open` created). Sync the directory, after the
+    // data, on this process's first commit of the id, whatever the file
+    // holds.
+    let parents = std::mem::take(&mut *lock(pending));
+    let mut dirs = Vec::new();
     if !state.dir_synced {
-        sys::sync_dir(dir)?;
-        state.dir_synced = true;
-        return Ok(true);
+        dirs.push(dir.to_path_buf());
     }
-    Ok(false)
+    for d in &parents {
+        if !dirs.contains(d) {
+            dirs.push(d.clone());
+        }
+    }
+    if let Err(e) = sys::sync_data_and_dirs(&file, &dirs) {
+        lock(pending).extend(parents);
+        return Err(sys::map_err(e));
+    }
+    state.dir_synced = true;
+    Ok(dirs)
 }
 
 /// The journal file name for `id`; see the [module docs](self).
@@ -736,6 +761,30 @@ mod tests {
         restarted.remove(&id).await.unwrap();
         restarted.commit(&id, &cp(5, 1)).await.unwrap();
         assert_eq!(restarted.dir_syncs.load(Relaxed), 2);
+    }
+
+    /// `open` syncs nothing (a daemon's cold start); the first commit syncs
+    /// the entries `open` created, with the journal's own directory, before
+    /// it resolves; later commits sync no directory.
+    #[tokio::test]
+    async fn new_directories_are_synced_by_the_first_commit_not_by_open() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().to_path_buf();
+        let j = FileJournal::open(root.join("a/b")).unwrap();
+        assert!(lock(&j.synced_dirs).is_empty());
+        j.commit(&"x".to_string(), &cp(1, 1)).await.unwrap();
+        let mut synced = lock(&j.synced_dirs).clone();
+        synced.sort();
+        assert_eq!(synced, vec![root.clone(), root.join("a"), root.join("a/b")]);
+        j.commit(&"x".to_string(), &cp(2, 1)).await.unwrap();
+        // Another id: only its own entry's directory.
+        j.commit(&"y".to_string(), &cp(3, 1)).await.unwrap();
+        assert_eq!(lock(&j.synced_dirs).len(), 4);
+        assert_eq!(lock(&j.synced_dirs)[3], root.join("a/b"));
+        // Reopened (a restart): nothing created, nothing pending.
+        let again = FileJournal::open(root.join("a/b")).unwrap();
+        again.commit(&"x".to_string(), &cp(4, 1)).await.unwrap();
+        assert_eq!(*lock(&again.synced_dirs), vec![root.join("a/b")]);
     }
 
     #[cfg(unix)]

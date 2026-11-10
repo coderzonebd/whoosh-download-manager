@@ -26,6 +26,8 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+#[cfg(test)]
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use futures::future::BoxFuture;
@@ -74,6 +76,18 @@ const MAX_BATCH: usize = 256;
 pub struct SqliteStateStore {
     path: PathBuf,
     tx: mpsc::Sender<Request>,
+    #[cfg(test)]
+    stats: Arc<SyncStats>,
+}
+
+/// Test counters: how each `sync` was served.
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct SyncStats {
+    skipped: std::sync::atomic::AtomicUsize,
+    wal: std::sync::atomic::AtomicUsize,
+    full: std::sync::atomic::AtomicUsize,
+    dirs: Mutex<Vec<PathBuf>>,
 }
 
 #[derive(Debug)]
@@ -134,19 +148,34 @@ impl SqliteStateStore {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = oneshot::channel();
         let p = path.clone();
+        #[cfg(test)]
+        let stats = Arc::new(SyncStats::default());
+        #[cfg(test)]
+        let thread_stats = stats.clone();
         std::thread::Builder::new()
             .name("vayu-store-sqlite".into())
             .spawn(move || match open_db(&p) {
-                Ok(conn) => {
+                Ok(opened) => {
                     let _ = ready_tx.send(Ok(()));
-                    serve(conn, rx);
+                    let durability = Durability::new(&p, &opened);
+                    #[cfg(test)]
+                    let durability = Durability {
+                        stats: thread_stats,
+                        ..durability
+                    };
+                    serve(opened.conn, rx, durability);
                 }
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));
                 }
             })?;
         ready_rx.await.map_err(|_| closed_error())??;
-        Ok(Self { path, tx })
+        Ok(Self {
+            path,
+            tx,
+            #[cfg(test)]
+            stats,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -270,7 +299,7 @@ const SECRET_CHECKPOINT: Duration = if cfg!(test) {
 
 type Reply = (oneshot::Sender<io::Result<Output>>, io::Result<Output>);
 
-fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
+fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>, mut durability: Durability) {
     // When the WAL started holding data written since the last TRUNCATE.
     let mut dirty_since: Option<Instant> = None;
     loop {
@@ -315,24 +344,22 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
         let wrote = batch.iter().any(|r| r.op.writes());
         let deleted = batch.iter().any(|r| matches!(r.op, Op::DeleteDownloads(_)));
         let replies = run_batch(&mut conn, batch);
-        if wrote && dirty_since.is_none() {
-            dirty_since = Some(Instant::now());
+        if wrote {
+            durability.dirty = true;
+            if dirty_since.is_none() {
+                dirty_since = Some(Instant::now());
+            }
         }
         // A removed download's cookies leave the WAL before `delete`
         // resolves; anything else within SECRET_CHECKPOINT, even while
-        // writes keep coming. `sync` needs the same checkpoint.
-        let mut synced = None;
-        if !syncs.is_empty()
-            || deleted
-            || dirty_since.is_some_and(|t| t.elapsed() >= SECRET_CHECKPOINT)
-        {
-            let r = truncate_wal(&conn);
-            match &r {
+        // writes keep coming.
+        if deleted || dirty_since.is_some_and(|t| t.elapsed() >= SECRET_CHECKPOINT) {
+            match truncate_wal(&conn) {
                 Ok(()) => dirty_since = None,
                 Err(e) => tracing::warn!(error = %e, "WAL checkpoint failed"),
             }
-            synced = Some(r);
         }
+        let synced = (!syncs.is_empty()).then(|| durability.sync(&conn));
         for (reply, out) in replies {
             let _ = reply.send(out);
         }
@@ -340,7 +367,7 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
             let out = match &synced {
                 Some(Ok(())) => Ok(Output::Unit),
                 Some(Err(e)) => Err(io::Error::new(e.kind(), e.to_string())),
-                None => unreachable!("a sync always checkpoints"),
+                None => unreachable!("syncs were present"),
             };
             let _ = r.reply.send(out);
         }
@@ -356,6 +383,129 @@ fn serve(mut conn: Connection, rx: mpsc::Receiver<Request>) {
             let _ = req.reply.send(r);
             return;
         }
+    }
+}
+
+/// What `sync` must still do to make every committed write durable.
+struct Durability {
+    db: PathBuf,
+    /// A write committed since the last successful `sync`.
+    dirty: bool,
+    /// The database was initialised without syncs (it was brand new): its
+    /// main file must be synced once, so the first `sync` checkpoints.
+    full: bool,
+    /// Directory entries not yet synced: those the database's creation
+    /// changed; the WAL's is added whenever the WAL file is a new one.
+    dirs: Vec<PathBuf>,
+    /// The WAL file (device, inode) whose directory entry is synced.
+    wal_id: Option<(u64, u64)>,
+    #[cfg(test)]
+    stats: Arc<SyncStats>,
+}
+
+impl Durability {
+    fn new(db: &Path, opened: &Opened) -> Self {
+        Self {
+            db: db.to_path_buf(),
+            // Unknown: a previous process may have committed and died
+            // before syncing.
+            dirty: true,
+            full: opened.fresh,
+            dirs: opened.pending_dirs.clone(),
+            wal_id: None,
+            #[cfg(test)]
+            stats: Arc::default(),
+        }
+    }
+
+    /// Make every committed transaction durable against power loss.
+    ///
+    /// - Nothing committed since the last sync: nothing to do.
+    /// - Otherwise one `fdatasync` of the WAL: under `synchronous=NORMAL`
+    ///   every committed transaction is in the WAL, and SQLite recovers
+    ///   committed frames from it after a crash. A checkpoint (the earlier
+    ///   way) cost a database fsync too, and the truncated WAL then had to
+    ///   be re-synced by the next write.
+    /// - The directory entries of the database and of the WAL are synced
+    ///   after it, once per process and again if the WAL file is replaced.
+    /// - A brand-new database (initialised without syncs) or a missing WAL:
+    ///   a full `TRUNCATE` checkpoint instead, which syncs both files.
+    fn sync(&mut self, conn: &Connection) -> io::Result<()> {
+        if !self.dirty {
+            #[cfg(test)]
+            self.stats
+                .skipped
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return Ok(());
+        }
+        let dir = sys::parent_or_cwd(&self.db);
+        let wal = if self.full {
+            None
+        } else {
+            let mut o = std::fs::File::options();
+            o.write(true);
+            match sys::open_nofollow(&mut o, &with_suffix(&self.db, "-wal")) {
+                Ok(f) => Some(f),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+                Err(e) => return Err(e),
+            }
+        };
+        let mut dirs = std::mem::take(&mut self.dirs);
+        match wal {
+            Some(wal) => {
+                let id = file_id(&wal);
+                if (id.is_none() || id != self.wal_id) && !dirs.contains(&dir) {
+                    dirs.push(dir);
+                }
+                if let Err(e) = sys::sync_data_and_dirs(&wal, &dirs) {
+                    self.dirs = dirs;
+                    return Err(sys::map_err(e));
+                }
+                self.wal_id = id;
+                #[cfg(test)]
+                self.stats
+                    .wal
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            None => {
+                if !dirs.contains(&dir) {
+                    dirs.push(dir);
+                }
+                let r = truncate_wal(conn).and_then(|()| sys::sync_dirs(&dirs));
+                if let Err(e) = r {
+                    self.dirs = dirs;
+                    return Err(e);
+                }
+                self.full = false;
+                #[cfg(test)]
+                self.stats
+                    .full
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        #[cfg(test)]
+        lock_stats(&self.stats.dirs).extend(dirs);
+        self.dirty = false;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn lock_stats<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// (device, inode) on Unix, to tell a replaced WAL file from the same one.
+fn file_id(f: &std::fs::File) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        f.metadata().ok().map(|m| (m.dev(), m.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = f;
+        None
     }
 }
 
@@ -535,7 +685,15 @@ impl From<io::Error> for OpenError {
     }
 }
 
-fn open_db(path: &Path) -> io::Result<Connection> {
+/// An open database and what its first `sync` must still make durable.
+struct Opened {
+    conn: Connection,
+    /// Initialised just now without syncs.
+    fresh: bool,
+    pending_dirs: Vec<PathBuf>,
+}
+
+fn open_db(path: &Path) -> io::Result<Opened> {
     match try_open(path) {
         Ok(c) => Ok(c),
         Err(OpenError::Other(e)) => Err(e),
@@ -555,8 +713,8 @@ fn open_db(path: &Path) -> io::Result<Connection> {
     }
 }
 
-fn try_open(path: &Path) -> Result<Connection, OpenError> {
-    prepare_files(path)?;
+fn try_open(path: &Path) -> Result<Opened, OpenError> {
+    let prepared = prepare_files(path)?;
     let mut conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -565,6 +723,15 @@ fn try_open(path: &Path) -> Result<Connection, OpenError> {
             | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;
     conn.busy_timeout(Duration::from_secs(5))?;
+    if prepared.fresh {
+        // A brand-new database holds nothing yet, so set it up without a
+        // single sync: switching an empty file to WAL otherwise runs a
+        // rollback-journal transaction with four fsyncs, and the first WAL
+        // write two more. A crash meanwhile leaves an empty or schema-less
+        // file that the next start sets up again. The first `sync` makes
+        // all of it durable (see `Durability`).
+        conn.execute_batch("PRAGMA synchronous = OFF")?;
+    }
     let mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
     if !mode.eq_ignore_ascii_case("wal") {
         return Err(io::Error::other(format!(
@@ -573,12 +740,21 @@ fn try_open(path: &Path) -> Result<Connection, OpenError> {
         .into());
     }
     // secure_delete: deleted cookies are overwritten, not left in free pages.
-    conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA secure_delete = ON;")?;
-    quick_check(&conn)?;
+    conn.execute_batch("PRAGMA secure_delete = ON;")?;
+    if !prepared.fresh {
+        quick_check(&conn)?;
+    }
     migrate(&mut conn)?;
-    // SQLite has created -wal and -shm by now; make sure of their mode.
-    prepare_files(path)?;
-    Ok(conn)
+    conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+    // SQLite has created -wal and -shm by now; check their mode. Metadata
+    // only: closing a second descriptor of the database file would drop
+    // SQLite's POSIX locks on it.
+    check_files(path)?;
+    Ok(Opened {
+        conn,
+        fresh: prepared.fresh,
+        pending_dirs: prepared.pending_dirs,
+    })
 }
 
 fn quick_check(conn: &Connection) -> Result<(), OpenError> {
@@ -623,25 +799,45 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     s.into()
 }
 
-/// Create the parent directory and an owner-only database file before
-/// SQLite touches it (fsyncing the directory entries that creates), refuse
-/// symbolic links for the database, `-wal` and `-shm`, and narrow any of
-/// them that others can read to 0600.
-fn prepare_files(path: &Path) -> io::Result<()> {
+struct Prepared {
+    /// The database file is new (or empty): nothing in it to lose.
+    fresh: bool,
+    /// Directory entries this changed, synced by the first `sync`.
+    pending_dirs: Vec<PathBuf>,
+}
+
+/// Before SQLite touches it: create the parent directory and an owner-only
+/// database file, refuse symbolic links for the database, `-wal` and
+/// `-shm`, and narrow any of them that others can read to 0600. Nothing is
+/// fsynced here: the directory entries this creates matter only once there
+/// is something durable to keep, so the first `sync` syncs them.
+fn prepare_files(path: &Path) -> io::Result<Prepared> {
     let dir = sys::parent_or_cwd(path);
-    let mut changed = sys::create_dirs(&dir, sys::DirMode::Private)?;
+    let mut pending_dirs = sys::create_dirs(&dir, sys::DirMode::Private)?;
     let mut opts = sys::private_file_options();
     opts.read(true).write(true).create_new(true);
-    match sys::open_nofollow(&mut opts, path) {
-        Ok(_) => changed.push(dir),
+    let fresh = match sys::open_nofollow(&mut opts, path) {
+        Ok(_) => {
+            pending_dirs.push(dir);
+            true
+        }
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
             let mut opts = std::fs::File::options();
             opts.read(true).write(true);
-            sys::open_nofollow(&mut opts, path)?;
+            sys::open_nofollow(&mut opts, path)?.metadata()?.len() == 0
         }
         Err(e) => return Err(e),
-    }
-    sys::sync_dirs(&changed)?;
+    };
+    check_files(path)?;
+    Ok(Prepared {
+        fresh,
+        pending_dirs,
+    })
+}
+
+/// Refuse symbolic links for the database, `-wal` and `-shm`, and narrow
+/// any of them that others can read to 0600. Opens nothing.
+fn check_files(path: &Path) -> io::Result<()> {
     for p in [
         path.to_path_buf(),
         with_suffix(path, "-wal"),
@@ -830,5 +1026,78 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(std::fs::read(&second).unwrap(), b"db2");
         assert_eq!(std::fs::read(&first).unwrap(), b"db");
+    }
+
+    fn stat(s: &SqliteStateStore) -> (usize, usize, usize) {
+        use std::sync::atomic::Ordering::Relaxed;
+        (
+            s.stats.skipped.load(Relaxed),
+            s.stats.wal.load(Relaxed),
+            s.stats.full.load(Relaxed),
+        )
+    }
+
+    /// `sync` does nothing when nothing was committed since the last one,
+    /// syncs only the WAL otherwise, and checkpoints only for a database it
+    /// set up without syncs.
+    #[tokio::test]
+    async fn sync_does_the_least_that_is_durable() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("data/state.db");
+        let s = SqliteStateStore::open(&path).await.unwrap();
+        // Brand new: the first sync checkpoints, with the new directories.
+        s.save_download(&with_cookie("a", None)).await.unwrap();
+        s.sync().await.unwrap();
+        assert_eq!(stat(&s), (0, 0, 1));
+        let mut dirs = lock_stats(&s.stats.dirs).clone();
+        dirs.sort();
+        assert_eq!(dirs, vec![d.path().to_path_buf(), d.path().join("data")]);
+        s.sync().await.unwrap();
+        assert_eq!(stat(&s), (1, 0, 1), "nothing changed: skipped");
+        s.save_download(&with_cookie("b", None)).await.unwrap();
+        s.sync().await.unwrap();
+        assert_eq!(stat(&s), (1, 1, 1), "then only the WAL");
+        // A read is not a change.
+        s.load_downloads().await.unwrap();
+        s.sync().await.unwrap();
+        assert_eq!(stat(&s), (2, 1, 1));
+        s.close().await.unwrap();
+
+        // Reopened (not fresh): the first sync syncs the WAL and, once per
+        // process, its directory; later ones only the WAL.
+        let s = SqliteStateStore::open(&path).await.unwrap();
+        s.sync().await.unwrap();
+        assert_eq!(stat(&s), (0, 1, 0), "unknown after a restart: synced");
+        assert_eq!(*lock_stats(&s.stats.dirs), vec![d.path().join("data")]);
+        s.save_download(&with_cookie("c", None)).await.unwrap();
+        s.sync().await.unwrap();
+        assert_eq!(stat(&s), (0, 2, 0));
+        assert_eq!(lock_stats(&s.stats.dirs).len(), 1, "directory synced once");
+        assert_eq!(s.load_downloads().await.unwrap().len(), 3);
+    }
+
+    /// A fresh database is set up without syncs, but ends in the same state
+    /// as any other: WAL mode, `synchronous=NORMAL`, current schema.
+    #[test]
+    fn fresh_and_existing_databases_open_the_same_way() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("state.db");
+        for fresh in [true, false] {
+            let opened = open_db(&path).unwrap();
+            assert_eq!(opened.fresh, fresh);
+            let c = &opened.conn;
+            let mode: String = c
+                .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+                .unwrap();
+            let sync: i64 = c.query_row("PRAGMA synchronous", [], |r| r.get(0)).unwrap();
+            let version: i64 = c
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(mode, "wal");
+            assert_eq!(sync, 1, "NORMAL");
+            assert_eq!(version as usize, SCHEMA_VERSION);
+        }
+        // No rollback journal was ever left behind.
+        assert!(!with_suffix(&path, "-journal").exists());
     }
 }

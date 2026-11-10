@@ -127,7 +127,8 @@ C toolchain (see [Testing](#testing)).
     everything else out of the page cache. It is off by default: it
     didn't change speed here, and a checksum check after the download
     would then read the file from disk.
-  - The first successful flush after the file was created also `fsync`s the
+  - The first successful flush after the file was created also `fsync`s,
+    after the data, the
     directory entries that creation changed: the file's directory, and the
     parent of every directory `open` had to create.
   - Without that, POSIX allows a power cut to lose the part file's entry
@@ -137,13 +138,19 @@ C toolchain (see [Testing](#testing)).
   where the part file belongs can't redirect writes, or a truncation, to
   its target. Links in parent directories are followed as usual.
 - **`finish`** runs these steps:
-  1. Flush.
+  1. Write out the buffer and `fdatasync` it: the data must be durable
+     before the move can be.
   2. Close the file.
   3. Create the destination directory if it is missing.
   4. Move the file without replacing anything at the destination.
   5. `fsync` both directories, and the parent of every directory step 3
      created. A failure here is logged, not returned: the file is already
      in place.
+
+  If no flush came before `finish`, the part file's own directory entry is
+  never synced on its own. Once moved, only the final name matters, and
+  step 5 covers the new entries (one sync fewer). If the move fails, those
+  entries stay pending for the next flush.
 
   The move uses:
 
@@ -206,7 +213,13 @@ C toolchain (see [Testing](#testing)).
   - It also `fsync`s the directory on each process's first commit of an id.
     That doesn't depend on what the file holds: an earlier process may have
     written a complete slot and died before syncing the entry.
-  - `FileJournal::open` fsyncs the entries of any directories it creates.
+  - **`FileJournal::open` syncs nothing.** The entries of directories it
+    creates are fsynced by the first commit, before that commit resolves.
+    So a daemon's cold start pays nothing for them.
+  - Directories are synced after the data, never side by side with it. On
+    ext4 the data sync's journal commit already carries the new entry, so
+    the directory sync costs at most a cache flush. Side by side they cost
+    two commits: 1.85 ms in order against 3.3 ms side by side, measured.
 - **Bounded.** A checkpoint is at most 4 MiB of JSON, about 120,000
   ranges; a larger commit is `InvalidInput`.
   - With that limit, slots never start past 16 MiB, so no journal exceeds
@@ -244,21 +257,48 @@ C toolchain (see [Testing](#testing)).
   cut. `sync` makes every resolved save durable against power loss.
   - It goes through the same queue as saves, so everything queued before it
     is committed first.
-  - Then it runs `PRAGMA wal_checkpoint(TRUNCATE)`. SQLite fsyncs the WAL,
-    copies it into `state.db`, fsyncs `state.db`, and empties the WAL.
-  - Syncs that arrive together share one checkpoint.
-  - If another connection (a second process) blocks the checkpoint, `sync`
-    fails with `ResourceBusy` rather than claiming durability.
-  - Cost: median 4.4 ms on the NVMe below (2.8–31 ms). A bare WAL fsync
-    would be about 2 ms, but the checkpoint also clears the completed
-    download's cookie out of the WAL. The engine calls it once per
-    completed download.
+  - **Nothing committed since the last `sync`:** nothing to do, no syscall.
+    After a restart the first `sync` always does the work, since the
+    previous process may have died between a commit and its sync.
+  - **Otherwise, one `fdatasync` of `state.db-wal`.** Every committed
+    transaction is in the WAL, and SQLite recovers committed frames from
+    it after a crash. Checkpoints keep the main file consistent on their
+    own: SQLite syncs the WAL before one and the database after it.
+    - The WAL's and the database's directory entries are synced after it:
+      once per process, and again if the WAL file is a new one (another
+      inode).
+  - **A brand-new database, or a missing WAL:** a full
+    `PRAGMA wal_checkpoint(TRUNCATE)` instead, which syncs both files. A
+    database that never existed was set up without syncs (see cold start
+    below). If another connection (a second process) blocks that
+    checkpoint, `sync` fails with `ResourceBusy` rather than claim
+    durability.
+  - Syncs that arrive together share the work.
+  - **Cost:** about 1.4 ms, one `fdatasync`. The TRUNCATE checkpoint used
+    until 4e58064 cost 4.4 ms (median), and it truncated the WAL, so the
+    next write re-synced the WAL header (another 2.8–3.7 ms, at the start
+    of the next download).
+- **Cold start.** A new `state.db` holds nothing yet, so it is set up
+  without a single sync (`synchronous=OFF` for the WAL switch and the
+  schema, then `NORMAL`).
+  - Otherwise, switching an empty file to WAL runs a rollback-journal
+    transaction with four fsyncs, and the first WAL write two more.
+  - A crash in that window leaves an empty or schema-less file, which the
+    next start sets up again.
+  - The directory entries for creating `state.db` and its directory are
+    synced by the first `sync`, not at open.
+  - `quick_check` is skipped for a file just created.
+  - A daemon starting with an empty data directory now does no fsync
+    before it is ready (strace: 10 before, 0 after). Its store phase went
+    from about 11.7 ms to 0.8 ms (median of 7).
 - **Cleared cookies leave the WAL too.** `secure_delete` covers only the
   main database; old page images stay in `-wal` until a checkpoint. The
   store runs `PRAGMA wal_checkpoint(TRUNCATE)`:
   - before `delete_downloads` resolves;
   - within 30 s of any other write, even while writes keep coming (at most
     one such checkpoint per 30 s).
+  - A completed download's cookie therefore leaves the WAL within 30 s;
+    `sync` no longer truncates it.
 - **Tables.** `downloads(id PK, added_at, json)`, `kv(key PK, json)` and
   `host_profiles(host PK, json)`.
 - **One thread, fed by a channel.** It runs whatever is queued (up to 256
@@ -273,8 +313,11 @@ C toolchain (see [Testing](#testing)).
     `-wal` and `-shm` files the same mode.
   - An existing database, `-wal` or `-shm` that others can read is
     narrowed to 0600, with a warning.
-  - Creating the database or its directory fsyncs the directory entries
-    that changed.
+  - The directory entries that creating the database or its directory
+    changed are fsynced by the first `sync`.
+  - After SQLite has opened `state.db`, the store never opens it again.
+    It checks the files by metadata only, because closing a second
+    descriptor of the database would drop SQLite's POSIX locks on it.
 - **No symbolic links.** A link in place of `state.db`, `-wal` or `-shm` is
   refused (`InvalidInput`), and SQLite opens the database with
   `SQLITE_OPEN_NOFOLLOW`.
@@ -364,6 +407,9 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
     paused and the syncer free, it doesn't resolve.
   - Waiting flushes share a sync and all resolve.
   - `finish`, and `remove` (that is, closing), wait for an in-flight sync.
+  - `finish` with no flush before it syncs the new entries (including
+    created directories) after the move. When the move fails, they stay
+    pending for the next flush.
   - A panic injected inside the syncer's sync step, or after it, fails the
     storage stickily. No call hangs: `flush`, `write_at` and `finish` all
     fail, `finish` moves nothing, and `open` and `remove` of the path go
@@ -389,6 +435,9 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
 - Worst-case growth with 4 MiB checkpoints stays under the 32 MiB bound.
   An oversized checkpoint is refused.
 - The directory is fsynced once per process per id, again after `remove`.
+- `FileJournal::open` syncs nothing. The first commit syncs the entries
+  of the directories `open` created, with the journal's own directory.
+  Later commits, and a restarted journal, sync only what they must.
 - `Checkpoint::finishing` (amendment 2) round-trips. Every third test
   checkpoint carries it, so the torn-write tests and the bit-flip and
   real-file proptests cover it too. A slot written by the previous format, without
@@ -418,11 +467,22 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
 - Symlinked `state.db` or `-wal`: refused, and the target is untouched.
 - `filename_locked` round-trips; a row written without it reads as `false`.
 - `sync`: a save that has resolved, and one queued in the same burst, are
-  in `state.db` alone afterwards (checked by opening a copy without the
-  WAL), and the WAL is empty.
+  in what survives a power cut: a copy of `state.db` and `-wal`, opened
+  without `-shm`.
   - Several concurrent syncs succeed.
-  - A reader in another connection that blocks the checkpoint makes `sync`
-    fail with `ResourceBusy`; after the reader ends, `sync` succeeds.
+  - A reader in another connection doesn't block it.
+  - A reader blocking a brand-new database's one full checkpoint makes
+    `sync` fail with `ResourceBusy`; after the reader ends, it succeeds and
+    the rows are in `state.db` alone.
+- `sync` does the least that is durable (test counters):
+  - a fresh database: one full checkpoint, plus the new directories;
+  - then nothing when nothing changed (a read is not a change);
+  - otherwise the WAL only.
+  - After a reopen, the first sync is a WAL sync plus the directory, once
+    per process.
+- A fresh and an existing database end up the same: WAL mode,
+  `synchronous=NORMAL`, current schema. No rollback journal is left
+  behind.
 
 **Other targets.** The file and journal code (no SQLite) can be checked
 for Windows and macOS from Linux:
@@ -527,6 +587,39 @@ device in the way.
   That is not a demonstrated win. Re-measure on an idle machine before
   adding it.
 
+### Fixed costs of a small download (2026-11-11)
+
+The engine traced 19 of the 23 ms of a 1 MiB download as fsyncs. Setup
+for these measurements:
+- A daemon started under `strace -f -T` (attaching is forbidden here),
+  warmed by one download, then three 1 MiB downloads of labserver
+  `clean/1m.bin`.
+- Each window runs from one download's start to the next, so it includes
+  the work after the CLI sees "completed": `state.sync`, the journal
+  removal.
+- Release builds of `phase1/engine` 5462a10, with the store before and
+  after this change.
+
+| Per download (steady state) | Before | After |
+|---|---|---|
+| WAL header re-sync at the first record save | 2.8–3.7 ms | — |
+| Part file: data, then its directory (first flush) | 3.2–3.7 + 1.2–1.4 ms | same |
+| Journal: data, then its directory (first commit) | 1.3 + 0.01–1.2 ms | same |
+| `finish`: data (clean), move, directory | 0.05 + 1.2 ms | same |
+| `state.sync` | WAL 1.3 + `state.db` 1.3–2.3 ms, plus 2 truncates | WAL 1.4–2.6 ms |
+| **Syncs, total** | **9, 12.8–15.3 ms** | **7–8, 10.5–11.9 ms** |
+
+Without strace, warm daemon, 1 MiB downloads (20 each, before and after
+alternating in rounds of 10):
+- `elapsedMs` median **13 → 11 ms** (p10 12 → 10, p90 16 → 14).
+- Cold start into an empty data directory: the daemon's `store_ms`
+  median **11.7 → 0.8 ms**, `startup_ms` **12.6 → 1.6 ms**. Syncs before
+  "ready": 10 → 0.
+
+Tried and not kept: syncing a new file's data and its directory side by
+side. On ext4 that costs two journal commits instead of one: 4 KiB
+1.85 → 3.3 ms, 1 MiB 4.1 → 5.9 ms. Directories are synced after the data.
+
 ### Flush without stalls (`download_bench`)
 
 Measured 2026-11-11 on the same machine and disk. The SSD's write cache
@@ -603,7 +696,7 @@ database.
 | `open`, including `quick_check` | 21–23 ms | 19–33 ms |
 | `save_download`, 10,000 issued at once (batched) | 23 µs each, 43,000/s | — |
 | `save_download`, one at a time, each awaited | 1.5 ms | — |
-| `sync` after a save (measured later, load ~6.5) | 4.4 ms | 2.8–31 ms |
+| `sync` after a save (measured later, load ~6.5) | 4.4 ms (since 2026-11-11: about 1.4 ms, one WAL `fdatasync`) | 2.8–31 ms |
 
 - One-at-a-time saves cost 1.5 ms because of two cross-thread wakeups on
   the loaded machine, not syncing. strace counted 14 `fsync`s over about

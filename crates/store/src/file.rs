@@ -755,12 +755,28 @@ impl Writer {
         // second handle may be open during the rename.
         self.syncer.wait_idle();
         self.checked()?;
-        sync_file(self.file()?, &self.shared)?;
+        // The data must be durable before the move can be. The part file's
+        // own directory entry need not be: once moved, only the final name
+        // matters, and the directory syncs after the move cover the new
+        // entries (a finish with no flush before it saves one sync).
+        let pending = self.shared.take_pending_dirs();
+        if let Err(e) = self.file()?.sync_data() {
+            self.shared.add_pending_dirs(pending);
+            return Err(self.shared.fail(sys::map_err(e)));
+        }
         let to_dir = sys::parent_or_cwd(to);
-        let mut dirs = sys::create_dirs(&to_dir, sys::DirMode::Default)?;
+        let created = match sys::create_dirs(&to_dir, sys::DirMode::Default) {
+            Ok(c) => c,
+            Err(e) => {
+                self.shared.add_pending_dirs(pending);
+                return Err(e);
+            }
+        };
         // Closed before the move: Windows cannot rename an open file.
         self.file = None;
         if let Err(e) = sys::rename_noreplace(&self.path, to) {
+            // Still in progress, its entry not yet synced.
+            self.shared.add_pending_dirs(pending);
             // Still in progress: keep it usable so the engine can try
             // another name.
             let mut opts = File::options();
@@ -772,11 +788,17 @@ impl Writer {
             return Err(e);
         }
         self.shared.finished.store(true, Ordering::Release);
-        dirs.push(to_dir);
-        let from_dir = sys::parent_or_cwd(&self.path);
-        if !dirs.contains(&from_dir) {
-            dirs.push(from_dir);
+        let mut dirs = pending;
+        for d in created
+            .into_iter()
+            .chain([to_dir, sys::parent_or_cwd(&self.path)])
+        {
+            if !dirs.contains(&d) {
+                dirs.push(d);
+            }
         }
+        #[cfg(test)]
+        lock(&self.shared.synced_dirs).extend(dirs.iter().cloned());
         if let Err(e) = sys::sync_dirs(&dirs) {
             // The move happened; failing now would make the engine pick
             // another name for a file that is already in place.
@@ -848,11 +870,10 @@ impl Writer {
 /// `fdatasync`, then (the first time) the directory entries that creating
 /// the file changed. Any failure is sticky.
 fn sync_file(file: &File, shared: &Shared) -> io::Result<()> {
-    file.sync_data().map_err(|e| shared.fail(sys::map_err(e)))?;
+    // The first time, then the directories whose entries creating the
+    // file changed.
     let dirs = shared.take_pending_dirs();
-    if let Err(e) = sys::sync_dirs(&dirs) {
-        return Err(shared.fail(e));
-    }
+    sys::sync_data_and_dirs(file, &dirs).map_err(|e| shared.fail(sys::map_err(e)))?;
     #[cfg(test)]
     lock(&shared.synced_dirs).extend(dirs);
     Ok(())
@@ -1639,5 +1660,33 @@ mod tests {
             within("remove", p.remove_path(&path)).await.unwrap();
             assert!(!path.exists());
         }
+    }
+
+    /// `finish` with no flush before it: the part file's entry is never
+    /// synced on its own; the syncs after the move cover the new entries.
+    /// A failed move keeps them pending for the next flush.
+    #[tokio::test]
+    async fn finish_without_a_flush_syncs_the_entries_after_the_move() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().to_path_buf();
+        let p = provider(1 << 20);
+        let s = p.open_storage(&root.join("a/b/f.vayu-part")).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
+        s.finish(&root.join("a/b/f")).await.unwrap();
+        let mut synced = lock(&s.shared.synced_dirs).clone();
+        synced.sort();
+        assert_eq!(synced, vec![root.clone(), root.join("a"), root.join("a/b")]);
+        assert_eq!(std::fs::read(root.join("a/b/f")).unwrap(), b"x");
+
+        // A taken name: nothing synced yet, still pending, then flushed.
+        std::fs::create_dir(root.join("c")).unwrap();
+        std::fs::write(root.join("c/taken"), b"other").unwrap();
+        let t = p.open_storage(&root.join("c/g.vayu-part")).await.unwrap();
+        t.write_at(0, Bytes::from_static(b"y")).await.unwrap();
+        let e = t.finish(&root.join("c/taken")).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
+        assert!(lock(&t.shared.synced_dirs).is_empty());
+        t.flush().await.unwrap();
+        assert_eq!(*lock(&t.shared.synced_dirs), vec![root.join("c")]);
     }
 }

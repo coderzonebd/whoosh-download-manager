@@ -371,43 +371,78 @@ fn rows_in_main_file_alone(path: &Path) -> i64 {
         .unwrap()
 }
 
+fn rows_after_power_loss(path: &Path) -> i64 {
+    // What survives a power cut once synced: the database and its WAL (the
+    // shared-memory index is rebuilt from the WAL).
+    let d = tempfile::tempdir().unwrap();
+    let copy = d.path().join("image.db");
+    std::fs::copy(path, &copy).unwrap();
+    let wal = PathBuf::from(format!("{}-wal", path.display()));
+    if wal.exists() {
+        std::fs::copy(&wal, format!("{}-wal", copy.display())).unwrap();
+    }
+    let c = rusqlite::Connection::open(&copy).unwrap();
+    c.query_row("SELECT count(*) FROM downloads", [], |r| r.get(0))
+        .unwrap()
+}
+
 /// `sync` (contract amendment 2): every save that resolved, and any queued
-/// in the same burst, is in the main database file, fsynced, with nothing
-/// left only in the WAL.
+/// in the same burst, is in the files that survive a power cut: the
+/// database and its WAL, with the WAL fdatasynced.
 #[tokio::test]
-async fn sync_moves_every_resolved_save_into_the_database_file() {
+async fn sync_covers_every_resolved_save() {
     let d = tempfile::tempdir().unwrap();
     let path = d.path().join("state.db");
     let s = SqliteStateStore::open(&path).await.unwrap();
     s.sync().await.unwrap(); // nothing to do is fine
     s.save_download(&record(1)).await.unwrap();
-    assert_eq!(rows_in_main_file_alone(&path), 0, "still only in the WAL");
     let r2 = record(2);
     let (saved, synced) = futures::join!(s.save_download(&r2), s.sync());
     saved.unwrap();
     synced.unwrap();
-    assert_eq!(rows_in_main_file_alone(&path), 2);
-    let wal = PathBuf::from(format!("{}-wal", path.display()));
-    assert_eq!(std::fs::metadata(&wal).map_or(0, |m| m.len()), 0);
-    // Several syncs at once share a checkpoint and all succeed.
+    assert_eq!(rows_after_power_loss(&path), 2);
+    s.save_download(&record(3)).await.unwrap();
+    s.sync().await.unwrap();
+    assert_eq!(rows_after_power_loss(&path), 3);
+    // Several syncs at once all succeed.
     let rs = join_all((0..5).map(|_| s.sync())).await;
     assert!(rs.iter().all(Result::is_ok));
 }
 
-/// A checkpoint blocked by another connection is an error, never a false
-/// "durable".
+/// Syncing the WAL needs no checkpoint, so a reader in another connection
+/// no longer stands in its way.
 #[tokio::test]
-async fn sync_fails_when_another_connection_blocks_the_checkpoint() {
+async fn a_reader_does_not_block_sync() {
     let d = tempfile::tempdir().unwrap();
     let path = d.path().join("state.db");
     let s = SqliteStateStore::open(&path).await.unwrap();
     s.save_download(&record(1)).await.unwrap();
+    s.sync().await.unwrap(); // the fresh database's one full checkpoint
     let reader = rusqlite::Connection::open(&path).unwrap();
     reader.execute_batch("BEGIN").unwrap();
     let n: i64 = reader
         .query_row("SELECT count(*) FROM downloads", [], |r| r.get(0))
         .unwrap();
     assert_eq!(n, 1);
+    s.save_download(&record(2)).await.unwrap();
+    s.sync().await.unwrap();
+    assert_eq!(rows_after_power_loss(&path), 2);
+    reader.execute_batch("COMMIT").unwrap();
+}
+
+/// The one checkpoint a fresh database needs can still be blocked by
+/// another connection: then `sync` fails rather than claim durability.
+#[tokio::test]
+async fn a_blocked_first_checkpoint_fails_sync() {
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("state.db");
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    s.save_download(&record(1)).await.unwrap();
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader.execute_batch("BEGIN").unwrap();
+    let _: i64 = reader
+        .query_row("SELECT count(*) FROM downloads", [], |r| r.get(0))
+        .unwrap();
     s.save_download(&record(2)).await.unwrap();
     let e = s.sync().await.unwrap_err();
     assert_eq!(e.kind(), io::ErrorKind::ResourceBusy, "{e}");
