@@ -159,6 +159,7 @@ struct Times {
 async fn run_store(a: &Args, path: &std::path::Path, data: Bytes) -> Times {
     let p = FileStorageProvider::new(StorageOptions {
         buffer_bytes: a.buffer,
+        ..StorageOptions::default()
     });
     let s = p.open(path).await.unwrap();
     let t0 = Instant::now();

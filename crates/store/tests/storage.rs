@@ -226,6 +226,7 @@ async fn matches_the_reference_under_concurrent_random_writes() {
     };
     let p = FileStorageProvider::new(StorageOptions {
         buffer_bytes: 256 << 10,
+        ..StorageOptions::default()
     });
     let s = p.open(&d.path().join("f.vayu-part")).await.unwrap();
     let mem = MemStorageProvider::default();
