@@ -111,6 +111,23 @@ pub(crate) fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<us
     Ok(done)
 }
 
+// ------------------------------------------------------------ page cache
+
+/// Linux: `posix_fadvise(POSIX_FADV_DONTNEED)` over the whole file: the
+/// kernel drops the file's clean pages from the page cache (and starts
+/// writeback of any dirty ones without waiting; data is never lost). Best
+/// effort; a no-op elsewhere.
+pub(crate) fn drop_cache(file: &File) {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let _ = rustix::fs::fadvise(file, 0, None, rustix::fs::Advice::DontNeed);
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        let _ = file;
+    }
+}
+
 // ------------------------------------------------------------ preallocation
 
 /// How [`preallocate`] reserved the space.

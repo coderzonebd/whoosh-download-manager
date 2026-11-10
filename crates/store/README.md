@@ -54,7 +54,8 @@ C toolchain (see [Testing](#testing)).
     chunks were accepted, so the later write wins.
 - **Ordering.** `read_at`, `flush`, `preallocate` and `finish` go through
   the same queue as writes. So `read_at` sees every write that resolved
-  before it was called, as the contract requires.
+  before it was called, as the contract requires, and a `flush` is handed
+  on only after every write queued before it has been written.
 - **Errors that lose data are sticky.** This is the `Storage` contract's
   error model (ADR 0005, amendment 1). After a failed buffered write or a
   failed fsync, every later `write_at`, `read_at`, `flush`, `preallocate` and
@@ -85,8 +86,29 @@ C toolchain (see [Testing](#testing)).
   | Windows | `SetFileInformationByHandle(FileAllocationInfo)`, then `SetEndOfFile` | `ERROR_INVALID_FUNCTION`/`NOT_SUPPORTED`/`INVALID_PARAMETER`: `set_len` |
   | Other | — | `set_len` |
 
-- **`flush`** writes out the buffer, then calls `fdatasync` (`sync_data`;
-  `FlushFileBuffers` on Windows).
+- **`flush` never stops the writer.** A second thread per file, the
+  syncer, does the `fdatasync` (`sync_data`; `FlushFileBuffers` on
+  Windows).
+  - When the writer reaches a `flush` in its queue, everything queued before
+    it is already written. It hands the flush to the syncer and goes on
+    writing newer data.
+  - The `fdatasync` starts after that hand-over, so it covers every write
+    the flush must cover; that newer data may get synced too is harmless.
+  - Before the syncer, a slow disk's `fdatasync` (60–350 ms per 64 MiB
+    here) stopped every writer for its whole length. See
+    [the benchmark](#flush-without-stalls-download_bench).
+  - Flushes that wait for the syncer share one `fdatasync`.
+  - Errors are recorded as sticky before any reply goes out, so cancelling
+    a flush still never loses one.
+  - The syncer holds the file (a shared handle) only while a flush is in
+    flight. `finish` and closing wait until it holds nothing: in-flight
+    errors count, and Windows can't rename a file with a second handle
+    open.
+  - Opt in to `StorageOptions::drop_cache_after_flush` (Linux) to drop the
+    file's clean pages after each flush, so a big download doesn't push
+    everything else out of the page cache. It is off by default: it
+    didn't change speed here, and a checksum check after the download
+    would then read the file from disk.
   - The first successful flush after the file was created also `fsync`s the
     directory entries that creation changed: the file's directory, and the
     parent of every directory `open` had to create.
@@ -317,6 +339,14 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
   256 KiB buffer, checked byte for byte against
   `vayu_core::testing::MemStorage`.
 - Runs under `futures::executor::block_on` with no tokio runtime.
+- **The syncer** (a paused-`fdatasync` test hook):
+  - A stuck `fdatasync` doesn't hold up later writes: 1 MiB goes through a
+    64 KiB buffer while it waits.
+  - A flush never overtakes the writes queued before it: with the writer
+    paused and the syncer free, it doesn't resolve.
+  - Waiting flushes share a sync and all resolve.
+  - `finish`, and `remove` (that is, closing), wait for an in-flight sync.
+  - Dropping the cache after flushes keeps the data byte for byte.
 
 **Journal** (`src/journal.rs`, `tests/journal_kill.rs`):
 - Every byte offset of a slot write is truncated, for small checkpoints
@@ -402,6 +432,14 @@ cargo run --release -p vayu-store --example state_bench -- --dir <dir>
   parallel, with and without fsync.
 - **`state_bench`.** Save throughput (one at a time, and 10,000 at once),
   open time including `quick_check`, and `load_downloads` of 10,000.
+- **`download_bench`.** A download as the engine writes it, with
+  checkpoints.
+  - 8 tasks each write their part of a preallocated 1 GiB file front to
+    back, in 256 KiB chunks, as fast as the store takes them.
+  - A checkpoint task calls `flush` every 64 MiB (or `--flush-ms`), and a
+    last `flush` ends the run.
+  - Reports total time, every flush's latency, and the longest any single
+    `write_at` waited.
 
 ### Results (2026-11-10)
 
@@ -466,6 +504,56 @@ device in the way.
   p ≈ 0.06 on a sign test, and it sits inside the reclaim noise above.
   That is not a demonstrated win. Re-measure on an idle machine before
   adding it.
+
+### Flush without stalls (`download_bench`)
+
+Measured 2026-11-11 on the same machine and disk. The SSD's write cache
+was largely drained, so it sustained about 0.2–0.5 GB/s. The load average
+was 7–13 from other sessions. The runs below are five pairs, with the
+before and after binaries alternating and 12 s of rest before each run.
+The setup is 1 GiB, 8 segments, 256 KiB chunks and a flush every 64 MiB,
+which is the engine's old cadence and the stress case.
+
+| | Total (median) | Flushes per run | Flush latency | Longest `write_at` wait |
+|---|---|---|---|---|
+| Before: `fdatasync` on the writer thread | 3.68–5.53 s (**4.07 s**) | 12 | p50 225 ms (128–359 ms) | 241–345 ms |
+| After: syncer thread | 2.27–6.89 s (**2.93 s**) | 3–7 | p50 420–900 ms (50–1,088 ms) | 38–140 ms |
+
+- **After was faster in 4 of 5 pairs.** The fifth after-run is an outlier
+  (6.8 CPU-s in direct reclaim while the load jumped to 13).
+- **The writers no longer wait for the disk's `fdatasync`.** The longest
+  `write_at` wait is what remains: the buffer filling while the disk is
+  busy.
+- **A single flush now takes longer,** because its `fdatasync` shares the
+  disk with the data that keeps flowing. It costs the download nothing,
+  though. (The benchmark's checkpoint task waits for each flush, so fewer
+  of them fit in a run.)
+  - The engine currently spaces checkpoints by their cost, assuming a
+    flush stalls the download. With this store that assumption no longer
+    holds, and the spacing would make checkpoints needlessly rare.
+- **Tried and not kept: early writeback.** That is `posix_fadvise(DONTNEED)`
+  after every 8 or 32 MiB, on the syncer thread. It is the same
+  start-writeback-without-waiting path as `sync_file_range(WRITE)`. It
+  made flushes 1–3 s long and total time no better (3.3–4.4 s against
+  1.05–3.7 s for the syncer alone in the same rounds).
+- **Cache dropping after each flush** gave 2.9–3.6 s in the same rounds:
+  no speed difference. It is kept as an option for memory pressure.
+
+**End to end: `vayu get` of labserver `clean/1g.bin`** (HTTP/1.1 on
+loopback) into a directory on the same NVMe.
+- The daemon and CLI are release builds of `phase1/engine` 1aac228, with
+  the old store ("before") and with this one ("after").
+- Each run had a fresh data directory and 10 s of rest, and the binaries
+  alternated over five pairs.
+- The engine was the same in both, with its cost-spaced checkpoints.
+
+| | `elapsedMs` | Median | Daemon CPU (median) |
+|---|---|---|---|
+| Before | 3509, 4354, 5642, 4318, 4498 | 4354 | 4.9 s |
+| After | 3168, 4359, 4519, 3454, 3360 | **3454** (−21 %) | 4.9 s |
+
+After was faster in 4 pairs and tied in 1. Even end to end, the disk's
+0.2–0.35 GB/s was the limit.
 
 **Journal commit latency.** A checkpoint is 867 bytes (16 ranges). It runs
 through `spawn_blocking`, and a no-fsync commit also re-reads the 8 KiB
