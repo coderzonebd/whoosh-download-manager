@@ -404,6 +404,25 @@ pub struct Settings {
     pub language: String,
     /// "system", "light", "dark".
     pub theme: String,
+    /// How finished downloads are made durable; absent means `powerSafe`.
+    #[serde(default)]
+    pub durability: Durability,
+}
+
+/// What a finished (and a checkpointed) download survives.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Durability {
+    /// Data is forced to disk before a file is finished or its progress is
+    /// journalled: a power cut never leaves a finished file with missing
+    /// bytes. The default (load-shedding is common where vayu is used).
+    #[default]
+    PowerSafe,
+    /// Data is handed to the operating system but not forced to disk: a
+    /// killed or crashed vayu loses nothing, a power cut can damage files
+    /// finished in the last few seconds. Faster on small files and fast
+    /// links, like wget, aria2 and IDM.
+    ProcessSafe,
 }
 
 // ---------------------------------------------------------------- events

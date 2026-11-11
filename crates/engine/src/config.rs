@@ -33,6 +33,7 @@ impl EngineConfig {
                 speed_limit_bps: None,
                 language: "en".into(),
                 theme: "system".into(),
+                durability: Default::default(),
             },
             tuning: Tuning::default(),
             capabilities: vec!["http".into(), "https".into(), "preconnect".into()],

@@ -50,6 +50,21 @@ pub trait Storage: Send + Sync {
     /// (the storage stays usable for that retry). After a successful finish
     /// the storage is unusable: writes fail.
     fn finish<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>>;
+
+    /// Like [`Storage::flush`], but only hands every resolved write to the
+    /// operating system, without forcing it to disk: the bytes survive a
+    /// killed process, not a power cut. Used instead of `flush` under
+    /// `Durability::ProcessSafe`. The default flushes, which is stronger.
+    fn write_out(&self) -> BoxFuture<'_, io::Result<()>> {
+        self.flush()
+    }
+
+    /// Like [`Storage::finish`], but without forcing the data to disk before
+    /// the move (`Durability::ProcessSafe`); the same no-overwrite rule
+    /// applies. The default is `finish`, which is stronger.
+    fn finish_unsynced<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
+        self.finish(final_path)
+    }
 }
 
 /// Opens in-progress files.
