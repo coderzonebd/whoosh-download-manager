@@ -165,6 +165,24 @@ C toolchain (see [Testing](#testing)).
   - A taken name returns `AlreadyExists`. The in-progress file is reopened,
     so the engine can call `finish` again with another name.
   - After a successful `finish`, every call fails.
+- **Process-safe mode** (`Durability::ProcessSafe`, ADR 0005). Two calls
+  skip the fsyncs. Their data survives a killed process, not a power cut;
+  power-safe stays the engine's default.
+  - **`write_out`** is `flush` without the fsync. It returns once every
+    write that resolved before it has been handed to the OS (`pwrite`
+    returned), so another process reading the file sees it. It goes
+    through the same queue as writes and never involves the syncer.
+    - Write errors are sticky and reported exactly as by `flush`, and
+      cancelling it loses none.
+    - New directory entries stay pending for the next real `flush`.
+  - **`finish_unsynced`** is `finish` without the data `fdatasync` before
+    the move and without the directory syncs after it.
+    - Everything else is the same: it waits for an in-flight flush, uses
+      the same no-replace move, returns `AlreadyExists` for a taken name
+      (leaving the storage usable), and fails on an earlier sticky error.
+    - After it, every call fails.
+  - What remains in their cost is writing the store's own buffer (up to
+    16 MiB) into the page cache. See [the numbers](#what-power-cut-safety-costs-finish_bench).
 - **The provider** hands out one storage per path.
   - Opening a path that is open and usable returns the same storage, like
     the in-memory double.
@@ -390,6 +408,17 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
   - `finish`, then a reopen is a new file.
   - `remove`, then a reopen is a new file.
   - In both cases, old handles never reach the new file.
+  - A second scenario covers the process-safe calls: `write_out` then
+    reads; `finish_unsynced` against a taken name (`AlreadyExists`, still
+    usable), then to a free one; writes fail afterwards.
+- Process-safe calls on the file store, using a sync counter:
+  - `write_out` waits for the writes before it, makes them visible in the
+    file, and syncs no data and no directory (the entries stay pending
+    until the next `flush`).
+  - On `/dev/full`, `write_out` reports `StorageFull` stickily, even after
+    a cancelled call.
+  - `finish_unsynced` never overwrites, syncs nothing, and waits for an
+    in-flight sync.
 - `file_len` counts writes not yet written out, and waits for a draining
   storage. It returns `None` when missing, and `InvalidInput` for
   directories and symbolic links.
@@ -445,12 +474,23 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
 - A planted `<id>.journal` symlink fails `commit` and `load`, and its
   target is untouched.
 - **SIGKILL.** A child process resumes from the journal and commits in a
-  loop. It is killed with SIGKILL at a random 0–30 ms after it starts, by
-  default 100 times. After every kill:
+  loop. It is killed with SIGKILL, by default 100 times, at one of two
+  points:
+  - Three kills in four come a random 0–30 ms after the child's first
+    acknowledged commit. They land anywhere in the commit loop however
+    slowly a loaded machine starts the child.
+  - The rest come 0–30 ms after it starts, so kills during start-up, load
+    and a run's first commit stay covered.
+
+  After every kill:
   - The journal loads.
   - The loaded checkpoint is exactly the last acknowledged one or the one
     in flight.
   - The next child resumes from it.
+
+  The non-vacuity check holds at any load: every late-armed child
+  committed, so the checkpoint on disk must have grown at least that many
+  times. Three copies passed at once next to eight CPU burners.
 
 **State** (`tests/state.rs`):
 - A full round trip across reopen.
@@ -514,6 +554,9 @@ cargo run --release -p vayu-store --example state_bench -- --dir <dir>
   parallel, with and without fsync.
 - **`state_bench`.** Save throughput (one at a time, and 10,000 at once),
   open time including `quick_check`, and `load_downloads` of 10,000.
+- **`finish_bench`.** For 1 MiB and 100 MiB, it compares `finish` with
+  `finish_unsynced`, and `flush` with `write_out`. Each call is timed
+  after the data was written, with the modes alternating round by round.
 - **`download_bench`.** A download as the engine writes it, with
   checkpoints.
   - 8 tasks each write their part of a preallocated 1 GiB file front to
@@ -586,6 +629,21 @@ device in the way.
   p ≈ 0.06 on a sign test, and it sits inside the reclaim noise above.
   That is not a demonstrated win. Re-measure on an idle machine before
   adding it.
+
+### What power-cut safety costs (`finish_bench`)
+
+Measured 2026-11-11 on ext4/NVMe at load average 8–9 from other sessions.
+Each figure is the median of 7 per call per run, from two runs.
+
+| | Power-safe | Process-safe |
+|---|---|---|
+| 1 MiB, end of download | `finish` 8.4–11.7 ms | `finish_unsynced` 0.26–1.4 ms |
+| 1 MiB, checkpoint | `flush` 4.5–10.1 ms | `write_out` 0.25–1.2 ms |
+| 100 MiB, end of download | `finish` 100–127 ms | `finish_unsynced` 6.3–16.3 ms |
+| 100 MiB, checkpoint | `flush` 100–106 ms | `write_out` 3.1–14.5 ms |
+
+What the process-safe calls still pay is writing the store's buffer into
+the page cache. The power-safe calls pay the disk writing the whole file.
 
 ### Fixed costs of a small download (2026-11-11)
 
