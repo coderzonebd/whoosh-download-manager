@@ -3,14 +3,20 @@
 //!
 //! 1. **Correct:** every run byte-exact; no corrupt files; no wrong names.
 //! 3. **Never slower:** no competitor significantly faster (two-sided
-//!    Mann-Whitney U, p < 0.01, competitor's median lower).
+//!    Mann-Whitney U, p < 0.01, competitor's median lower), on the time
+//!    **to durability** (`durable_s`: until the harness's fsync of the
+//!    finished file and its directory returns).
 //! 4. **Fastest where the engine matters:** in the engine scenarios, the
-//!    client's median is the best or within 5 % of the best.
+//!    client's median time to durability is the best or within 5 % of the
+//!    best.
 //! 5. **Lean:** median CPU per GiB at or below every multi-connection
 //!    competitor's.
 //!
 //! Rules 2 (1,000 hard kills: `vayu-bench hardkill`) and 6 (real CDNs:
 //! real-internet mode) are not judged from a labserver run set.
+//!
+//! Run sets recorded before `durable_s` existed fall back to the time to
+//! the file appearing (`done_s`), and the gate says so in its caveats.
 //!
 //! Statistics use successful runs only and need at least
 //! [`MIN_FOR_TEST`] of them on each side; competitors with fewer cannot be
@@ -108,7 +114,12 @@ impl Gate {
 #[derive(Debug, Clone, Default)]
 struct Cell {
     runs: usize,
+    /// Byte-exact runs.
+    ok: usize,
+    /// Times to durability of the successful runs (rules 3 and 4).
     ok_times: Vec<f64>,
+    /// How many of `ok_times` fell back to the time to the file appearing.
+    durable_fallbacks: usize,
     /// CPU seconds per GiB of the successful runs that have CPU data.
     cpu_per_gib: Vec<f64>,
     max_conns: u64,
@@ -131,8 +142,10 @@ impl Cell {
                 *c.outcomes.entry(r.outcome.label()).or_default() += 1;
                 continue;
             }
-            if let Some(t) = r.time_s() {
+            c.ok += 1;
+            if let Some((t, fallback)) = r.durable_time() {
                 c.ok_times.push(t);
+                c.durable_fallbacks += usize::from(fallback);
             }
             if let (Some(u), Some(s), Some(size)) = (r.cpu_user_s, r.cpu_sys_s, r.size)
                 && size > 0
@@ -201,6 +214,7 @@ pub fn evaluate(meta: &Meta, runs: &[RunRecord], client: &str) -> Option<Gate> {
 
     let mut rows = Vec::new();
     let mut thin = Vec::new();
+    let mut fallbacks = 0usize;
     for (scenario, file) in order {
         let mut by_client: BTreeMap<&str, Vec<&RunRecord>> = BTreeMap::new();
         for r in runs
@@ -220,6 +234,11 @@ pub fn evaluate(meta: &Meta, runs: &[RunRecord], client: &str) -> Option<Gate> {
             .filter(|(c, _)| **c != client && tool_of(c) != my_tool)
             .map(|(c, v)| (*c, Cell::of(v)))
             .collect();
+        fallbacks += mine.durable_fallbacks
+            + others
+                .iter()
+                .map(|(_, c)| c.durable_fallbacks)
+                .sum::<usize>();
         rows.push(Row {
             correct: rule_correct(&mine),
             never_slower: rule_never_slower(&mine, &others),
@@ -231,6 +250,13 @@ pub fn evaluate(meta: &Meta, runs: &[RunRecord], client: &str) -> Option<Gate> {
     }
 
     let mut caveats = Vec::new();
+    if fallbacks > 0 {
+        caveats.push(format!(
+            "{fallbacks} successful run(s) have no time to durability (`durable_s`; run sets \
+             recorded before it existed, or a failed sync): rules 3 and 4 used their time to \
+             the file appearing instead"
+        ));
+    }
     let busy = runs.iter().filter(|r| r.machine_busy).count();
     match &meta.guard {
         None => {
@@ -268,7 +294,7 @@ pub fn evaluate(meta: &Meta, runs: &[RunRecord], client: &str) -> Option<Gate> {
 }
 
 fn rule_correct(mine: &Cell) -> Verdict {
-    let ok = mine.ok_times.len();
+    let ok = mine.ok;
     let bad: Vec<String> = mine
         .outcomes
         .iter()
@@ -494,6 +520,7 @@ mod tests {
                 }))
                 .unwrap();
                 r.done_s = Some(t0 + f64::from(i) * step);
+                r.durable_s = Some(t0 + f64::from(i) * step + 0.001);
                 if client == "vayu" {
                     r.resident = Some(ResidentUsage::default());
                 }
@@ -530,7 +557,7 @@ mod tests {
         let g = evaluate(&m, &all, "vayu").unwrap();
         let r = &g.rows[0];
         match &r.never_slower {
-            Verdict::Fail(d) => assert!(d.contains("wget 0.103 s vs 0.303 s (p<0.001)"), "{d}"),
+            Verdict::Fail(d) => assert!(d.contains("wget 0.104 s vs 0.304 s (p<0.001)"), "{d}"),
             v => panic!("{v:?}"),
         }
         assert!(
@@ -571,6 +598,45 @@ mod tests {
             matches!(&g.rows[0].fastest, Verdict::Fail(d) if d.contains("+18.9 %")),
             "{:?}",
             g.rows[0]
+        );
+    }
+
+    #[test]
+    fn rules_3_and_4_judge_time_to_durability() {
+        // wget's file appears first, but its sync is slow: to durability,
+        // vayu (which synced before reporting done) is the faster one.
+        let m = meta(&["slow-drip"]);
+        let mut all = runs("vayu", "slow-drip", 0.30, 0.001, 0.01, 8);
+        let mut w = runs("wget", "slow-drip", 0.10, 0.001, 0.01, 1);
+        for r in &mut w {
+            r.durable_s = r.done_s.map(|d| d + 0.40);
+        }
+        all.extend(w);
+        let g = evaluate(&m, &all, "vayu").unwrap();
+        let r = &g.rows[0];
+        assert!(
+            matches!(&r.never_slower, Verdict::Pass(d) if d.contains("no competitor has a lower median")),
+            "{r:?}"
+        );
+        assert!(
+            matches!(&r.fastest, Verdict::Pass(d) if d.starts_with("best")),
+            "{r:?}"
+        );
+        assert!(g.valid_pass(), "{:?}", g.caveats);
+
+        // The same data without durable times (an older run set): judged on
+        // the time to the file appearing, and flagged.
+        for r in &mut all {
+            r.durable_s = None;
+        }
+        let g = evaluate(&m, &all, "vayu").unwrap();
+        assert!(!g.rows[0].never_slower.passed(), "{:?}", g.rows[0]);
+        assert!(
+            g.caveats
+                .iter()
+                .any(|c| c.contains("14 successful run(s) have no time to durability")),
+            "{:?}",
+            g.caveats
         );
     }
 

@@ -50,6 +50,8 @@ Each run is one client downloading one file from one scenario, cold:
 | Field (`runs.jsonl`) | Meaning |
 |---|---|
 | `done_s` | Client start → download complete. **The speed metric.** How "complete" is detected depends on the client (`completion`): `exit` — the process exits as soon as the file is done (curl, wget, aria2c, aria2-next); `final-file` — the client downloads into a partial file, renames it when done and then lingers (MDM's CLI reports on a 0.5 s tick; Surge's `--exit-when-done` first checks after 4 s), so done = the download directory holds the full-size file and none of the client's control/partial files (polled every 5 ms), after which the harness stops it; `api` — Gopeed's REST API reports the task done (polled every 10 ms, counted from the server's start). |
+| `durable_s` | Client start → the finished file is on disk. As soon as completion is detected (process exit; for lingering and API clients, before the harness stops them; before a resident daemon's window closes) the harness opens the output file, `fsync`s it (`File::sync_all`), and `fsync`s its directory and the download directory (Unix), and counts until that returns. MASTER-PLAN §8 rule 3 times every client **to durability**: vayu (power-safe by default) syncs before it reports done, so its extra sync costs almost nothing; clients that leave the bytes in the page cache pay for the write-back here. Shown as *durable* in the report; the gate's rules 3 and 4 use it. |
+| `sync_s`, `sync_error` | The harness's sync on its own (start to return), and why it failed or was skipped (no output file, I/O error). |
 | `wall_s` | Client start → process exit (or the harness stopping a lingering client). Shown as *exit* in the report. |
 | `last_byte_s` | Client start → labserver hands the last body byte to a connection. Informational only: on loopback the kernel buffers megabytes per connection, so the server finishes before the client does, and earlier still for clients with many connections. |
 | `throughput_mib_s` | File size / `done_s`, successful runs only. |
@@ -173,16 +175,20 @@ Per (scenario, file) it evaluates the amended gate's rules for that client
 | Rule | PASS when |
 |---|---|
 | 1 correct | every run byte-exact, and no wrong `Content-Disposition` name |
-| 3 never slower | no competitor with ≥ 3 correct runs has a lower median *and* a two-sided Mann-Whitney U p < 0.01 against the client |
-| 4 fastest (per-conn-throttle, slow-drip, flaky, stall, high-latency, rate-limited only) | the client's median is the best, or ≤ 5 % above the best competitor's |
+| 3 never slower | no competitor with ≥ 3 correct runs has a lower median time to durability (`durable_s`) *and* a two-sided Mann-Whitney U p < 0.01 against the client |
+| 4 fastest (per-conn-throttle, slow-drip, flaky, stall, high-latency, rate-limited only) | the client's median time to durability is the best, or ≤ 5 % above the best competitor's |
 | 5 lean | median CPU-s per GiB (successful runs) ≤ that of every competitor that used ≥ 2 connections in that block |
 
 Overall PASS needs every row to pass. Rules 2 (`vayu-bench hardkill`) and 6
 (real CDNs) are not judged from a labserver run set. The section lists
 caveats that make a pass "not valid as a gate result": busy runs, fewer
-than 7 runs per cell, a run set without the guard, or `vayu` runs without a
+than 7 runs per cell, a run set without the guard, `vayu` runs without a
 resident daemon (run sets recorded before the resident mode existed, where
-`vayu` meant today's `vayu-cold`).
+`vayu` meant today's `vayu-cold`), or runs without `durable_s`.
+
+Run sets recorded before `durable_s` existed still render: wherever a
+durable time is missing, the report shows the time to the file appearing
+instead, marked †, and the gate judges rules 3 and 4 on it with a caveat.
 
 ## Fetching competitors
 

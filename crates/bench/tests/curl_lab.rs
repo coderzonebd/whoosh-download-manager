@@ -102,6 +102,14 @@ fn curl_against_labserver() {
             assert!(r["machine_busy"].is_boolean());
         }
         assert!(r.get("resident").is_none(), "curl has no resident helper");
+        // The harness synced the finished file: time to durability.
+        let durable = r["durable_s"].as_f64().unwrap();
+        let sync = r["sync_s"].as_f64().unwrap();
+        assert!(
+            durable >= r["done_s"].as_f64().unwrap() && sync >= 0.0,
+            "{r}"
+        );
+        assert!(r.get("sync_error").is_none(), "{r}");
     }
     let reps: Vec<u64> = runs.iter().map(|r| r["rep"].as_u64().unwrap()).collect();
     assert_ne!(reps, [0, 1, 2, 0, 1, 2], "order is shuffled");
