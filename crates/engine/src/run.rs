@@ -24,7 +24,9 @@ use vayu_core::{
     ByteRange, ByteStream, Checkpoint, DownloadRecord, Finishing, HostProfile, OpenRequest,
     RangeSet, RangeSource, RemoteMeta, SourceError, Storage, Validators,
 };
-use vayu_proto::{Checksum, DownloadId, DownloadState, ErrorInfo, RequestContext, SegmentInfo};
+use vayu_proto::{
+    Checksum, DownloadId, DownloadState, Durability, ErrorInfo, RequestContext, SegmentInfo,
+};
 
 use crate::checksum;
 use crate::config::Tuning;
@@ -231,6 +233,7 @@ pub(crate) async fn supervise(
                 generation,
                 Outcome::Failed(error_info("internal", format!("internal error: {what}"))),
                 Vec::new(),
+                Durability::PowerSafe,
             )
             .await;
     }
@@ -267,7 +270,7 @@ async fn run(inner: Arc<Inner>, spec: RunSpec, mut stop: watch::Receiver<Option<
     };
     d.save_profile().await;
     inner
-        .run_ended(&id, generation, outcome, d.segment_infos())
+        .run_ended(&id, generation, outcome, d.segment_infos(), d.durability)
         .await;
 }
 
@@ -297,6 +300,10 @@ struct Driver {
     /// Recognised as already finished (a crash after `Storage::finish`):
     /// the final name and size.
     adopted: Option<(String, u64)>,
+    /// `Settings::durability` when the run began: `ProcessSafe` hands
+    /// bytes to the operating system (`Storage::write_out`,
+    /// `finish_unsynced`) instead of forcing them to disk.
+    durability: Durability,
     /// The journal had an entry for this download when the run began.
     journalled: bool,
     /// What the journal claims (the last commit that succeeded).
@@ -380,6 +387,7 @@ impl Driver {
             name_fixed: name_locked,
             connections,
             adopted: None,
+            durability: inner.durability(),
             journalled: false,
             durable: RangeSet::new(),
             ckpt_done: None,
@@ -1037,7 +1045,7 @@ impl Driver {
             let committed = if flushed {
                 commit.await
             } else {
-                let (f, c) = futures::join!(storage.flush(), commit);
+                let (f, c) = futures::join!(persist(&*storage, self.durability), commit);
                 if let Err(e) = f {
                     return io_failed(e);
                 }
@@ -1047,7 +1055,11 @@ impl Driver {
             if let Err(e) = committed {
                 return io_failed(e);
             }
-            match storage.finish(&path).await {
+            let moved = match self.durability {
+                Durability::PowerSafe => storage.finish(&path).await,
+                Durability::ProcessSafe => storage.finish_unsynced(&path).await,
+            };
+            match moved {
                 Ok(()) => {
                     chosen = Some(candidate);
                     break;
@@ -2183,8 +2195,9 @@ impl Driver {
         self.flushed_upto = self.written_total();
         let journal = self.inner.deps.journal.clone();
         let id = self.id.clone();
+        let durability = self.durability;
         self.ckpt = Some(Box::pin(async move {
-            storage.flush().await?;
+            persist(&*storage, durability).await?;
             journal.commit(&id, &cp).await
         }));
     }
@@ -2194,7 +2207,9 @@ impl Driver {
     /// own, so the disk writes alongside the network instead of all at the
     /// end, when `finish` must flush before the rename.
     fn writeback(&mut self) {
-        if self.ckpt.is_some() {
+        // Process-safe: nothing is forced to disk at the end either, so
+        // there is nothing to spread out.
+        if self.ckpt.is_some() || self.durability == Durability::ProcessSafe {
             return;
         }
         let written = self.written_total();
@@ -2228,7 +2243,7 @@ impl Driver {
             done: self.snapshot_done(),
             finishing: None,
         };
-        storage.flush().await?;
+        persist(&*storage, self.durability).await?;
         self.committed_any = true;
         self.inner.deps.journal.commit(&self.id, &cp).await?;
         self.durable = cp.done.clone();
@@ -2244,6 +2259,17 @@ impl Driver {
             .downloaded
             .store(self.written_total(), Ordering::Relaxed);
         *self.live.segments.lock().unwrap_or_else(|e| e.into_inner()) = infos;
+    }
+}
+
+/// Make every resolved write as durable as `durability` promises before
+/// the journal may claim it: forced to disk (`flush`), or handed to the
+/// operating system (`write_out`: survives a killed process, not a power
+/// cut).
+fn persist(storage: &dyn Storage, durability: Durability) -> BoxFuture<'_, io::Result<()>> {
+    match durability {
+        Durability::PowerSafe => storage.flush(),
+        Durability::ProcessSafe => storage.write_out(),
     }
 }
 
