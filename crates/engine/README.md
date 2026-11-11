@@ -514,6 +514,42 @@ per-request script (TTFB, rate, stall, reset, failure).
 
 ## Benchmarks
 
+### Durability modes (2026-11-11, resident daemon, labserver on loopback)
+
+The gate now times every client to durability (the bench syncs other
+clients' output). Same harness as below, this engine (1aadffb) with
+`vayu-store`'s `write_out` / `finish_unsynced` (0630a52, overlaid for the
+measurement only), 6 runs per cell (engine scenarios 5), load 2–3 (this
+machine ran slower than in round 3's table). `+sync`: the file and its
+directory `fsync`ed after the client exits, inside the timing. Median s:
+
+| scenario | file | vayu PowerSafe | wget+sync | curl+sync | vayu ProcessSafe | wget | curl |
+|---|---|---:|---:|---:|---:|---:|---:|
+| clean | 1m | 0.024 | **0.008** | 0.015 | 0.012 | **0.004** | 0.009 |
+| clean | 10m | 0.047 | **0.021** | 0.026 | 0.029 | **0.010** | 0.016 |
+| high-latency | 10m | 0.566 | **0.543** | 0.576 | 0.550 | **0.524** | 0.534 |
+| no-range | 100m | 0.195 | **0.154** | 0.173 | 0.117 | **0.091** | 0.092 |
+| no-length | 100m | 0.192 | **0.156** | 0.167 | 0.155 | **0.086** | 0.103 |
+| lying-ranges | 100m | 0.162 | **0.145** | 0.157 | 0.119 | **0.083** | 0.091 |
+| no-validators | 100m | 0.180 | **0.145** | 0.156 | 0.146 | **0.084** | 0.096 |
+| changing-file | 100m | 0.284 | 0.176 | **0.156** | 0.227 | **0.110** | 0.124 |
+| redirect-chain | 100m | 0.185 | **0.172** | fails | 0.145 | **0.095** | fails |
+
+Engine scenarios, vayu PowerSafe / ProcessSafe: per-conn-throttle 0.373 /
+0.340, slow-drip 0.336 / 0.291, flaky 0.184 / 0.142, stall 0.175 / 0.161,
+global-throttle 0.542 / 0.519, rate-limited 0.600 / 0.533.
+
+A ProcessSafe 100 MiB download, traced, syncs nothing of the data; what is
+left on its finish path is the journal's own sync of the finish intent
+(2.6 ms) and two `fsync`s of the journal directory for the new journal file
+(1.4 ms each) — now the slowest step beside `write_out`, so a
+`Journal::commit` that only hands the entry to the operating system under
+`ProcessSafe` would remove ~5 ms (see *Contract proposals*). The rest of the
+gap to wget on single streams is the transfer itself (one connection here
+~0.8 GB/s against wget's ~1.2 GB/s: HTTP client, the gather copy, the
+store's writer thread), and on small files the CLI, the local API and the
+state store.
+
 ### Round 3 (2026-11-11, resident daemon, labserver on loopback)
 
 The amended Phase 1 gate measures a resident daemon. Here: per run a fresh
@@ -747,17 +783,16 @@ Applied in `vayu-store` (a2c1e0c): **`Storage::flush` no longer holds up
 later writes** (it syncs on a thread of its own), which the engine's
 writeback during transfers relies on.
 
-Open, for the owner: **a durability policy.** Today a finished file's bytes
-are synced before the rename (the engine flushes; the store's `finish`
-syncs too), so a completed download survives a power cut, not just a
-killed process. That sync is the rest of the gap to wget on single-stream
-and small files (wget and curl never sync): 1 MiB 12 ms vs 3 ms, 100 MiB
-0.13 s vs 0.08 s, high-latency +16 ms. Against SIGKILL — what the gate's
-crash test checks — no sync is needed at all (the page cache survives the
-process). A "process-crash" mode (no sync before the rename; journal claims
-still only follow a flush) would be a `Storage`/`StorageProvider` contract
-change (`finish` without a sync) plus an engine setting; the default is the
-owner's call.
+Applied (c03a1cd, the owner's option A): **`Settings::durability`**,
+`Storage::write_out`, `Storage::finish_unsynced`; power-cut safety stays
+the default.
+
+Open: **`Journal::commit` under `ProcessSafe`.** The journal always syncs a
+commit (and, for a new entry, its directory twice). Under `ProcessSafe` the
+engine needs a commit only to reach the operating system — the same
+guarantee `write_out` gives the data — so a `Journal::commit_unsynced` (or a
+durability argument) would take ~5 ms off every ProcessSafe finish, where
+the intent's commit is now the slowest step.
 
 Open, for `vayu-store` (no contract change): a download that finishes
 before its first checkpoint still pays, on its critical path, a directory
