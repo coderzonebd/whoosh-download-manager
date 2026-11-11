@@ -76,6 +76,14 @@ twice in a block is skipped for the rest of it.
   rename a partial file when done but then linger (MDM, Surge), the moment
   the complete file appears, after which the harness stops them; Gopeed's
   REST API reporting done. **exit** (process exit) is shown next to it.
+- **durable** = client start → the finished file is on disk: right after
+  completion is detected, the harness fsyncs the output file and its
+  directory and counts until that returns (*sync ms* is that sync alone).
+  The Phase 1 gate times every client to durability (MASTER-PLAN §8 rule
+  3): vayu syncs before it reports done (power-safe by default, for
+  load-shedding), others leave the bytes in the page cache, so this is the
+  like-for-like comparison. Older run sets without it show *time* instead,
+  marked †.
 - **Loopback has no per-connection bottleneck and no round-trip time.** In
   the unthrottled scenarios (clean, no-range, lying-ranges, no-length,
   no-validators, changing-file, redirect-chain, the gated ones) one

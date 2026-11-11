@@ -274,6 +274,18 @@ pub struct RunRecord {
     /// for API clients. **The speed metric.**
     #[serde(default)]
     pub done_s: Option<f64>,
+    /// Client spawn to the finished file being on disk: once completion is
+    /// detected the harness fsyncs the output file and its directory, and
+    /// this counts until that returns (MASTER-PLAN §8 rule 3: time to
+    /// durability). A client that already synced pays almost nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub durable_s: Option<f64>,
+    /// How long the harness's own sync took.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_s: Option<f64>,
+    /// Why the sync failed or was skipped (no output file, I/O error).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_error: Option<String>,
     /// Client spawn to process exit (for lingering clients that the harness
     /// stopped once done: to that stop).
     pub wall_s: Option<f64>,
@@ -352,6 +364,9 @@ impl RunRecord {
             load1: sys::loadavg().map(|l| l[0]),
             outcome: Outcome::Error,
             done_s: None,
+            durable_s: None,
+            sync_s: None,
+            sync_error: None,
             wall_s: None,
             last_byte_s: None,
             completion: None,
@@ -392,6 +407,16 @@ impl RunRecord {
     /// records without it: process wall time).
     pub fn time_s(&self) -> Option<f64> {
         self.done_s.or(self.wall_s)
+    }
+
+    /// Time to durability for statistics, and whether it is a fallback to
+    /// [`RunRecord::time_s`] (run sets recorded before `durable_s`
+    /// existed, or a failed sync).
+    pub fn durable_time(&self) -> Option<(f64, bool)> {
+        match self.durable_s {
+            Some(d) => Some((d, false)),
+            None => self.time_s().map(|t| (t, true)),
+        }
     }
 
     /// The key that identifies a planned run (for `--resume`).
@@ -1120,14 +1145,32 @@ fn run_one_inner(
     let mut running = measure::start(&ctx.opts.shim_exe, &inv, &base)?;
     let completion = a.completion();
     rec.completion = Some(completion);
-    let (measured, done_unix_us, timed_out, api_note) = match (&inv.api, completion) {
-        (Some(script), _) => drive_api(&mut running, script, t.timeout),
-        (None, Completion::FinalFile) => wait_final_file(&mut running, a, &out, t.size, t.timeout),
+    // The sync runs the moment completion is detected, before the harness
+    // stops a lingering client or closes a resident daemon's window.
+    let sync = || sync_output(a, &root, &out);
+    let w = match (&inv.api, completion) {
+        (Some(script), _) => drive_api(&mut running, script, t.timeout, &sync),
+        (None, Completion::FinalFile) => {
+            wait_final_file(&mut running, a, &out, t.size, t.timeout, &sync)
+        }
         (None, _) => match running.wait(t.timeout) {
-            Some(m) => (m, None, false, None),
-            None => (running.stop(Duration::from_secs(3)), None, true, None),
+            Some(m) => Waited {
+                synced: Some(sync()),
+                ..Waited::new(m)
+            },
+            None => Waited {
+                timed_out: true,
+                ..Waited::new(running.stop(Duration::from_secs(3)))
+            },
         },
     };
+    let Waited {
+        measured,
+        done_unix_us,
+        timed_out,
+        note: api_note,
+        synced,
+    } = w;
     drop(running);
     let usage = resident.as_mut().map(ResidentProc::close_window);
     if let Some(r) = resident.take() {
@@ -1158,6 +1201,17 @@ fn run_one_inner(
     };
     if !timed_out {
         rec.done_s = Some(done_us as f64 / 1e6);
+    }
+    if let Some(s) = synced {
+        rec.sync_s = Some(s.end_unix_us.saturating_sub(s.start_unix_us) as f64 / 1e6);
+        match s.error {
+            None if !timed_out => {
+                rec.durable_s =
+                    Some(s.end_unix_us.saturating_sub(measured.spawn_unix_us) as f64 / 1e6);
+            }
+            None => {}
+            Some(e) => rec.sync_error = Some(e),
+        }
     }
     if let Some(e) = &measured.spawn_error {
         rec.note = Some(e.clone());
@@ -1353,22 +1407,112 @@ fn wait_final_file(
     out: &Path,
     size: Option<u64>,
     timeout: Duration,
-) -> (Measured, Option<u64>, bool, Option<String>) {
+    sync: &dyn Fn() -> Synced,
+) -> Waited {
     let deadline = running.started + timeout;
     loop {
         if let Some(m) = running.wait(Duration::from_millis(5)) {
-            return (m, None, false, None);
+            // Exited before the poll saw the file: it may still be there.
+            return Waited {
+                synced: Some(sync()),
+                ..Waited::new(m)
+            };
         }
         if final_file_ready(a, out, size) {
             let done = unix_us();
+            let synced = sync();
             let m = running.stop(Duration::from_secs(5));
             // `completion: final-file` in the record says it was stopped.
-            return (m, Some(done), false, None);
+            return Waited {
+                done_unix_us: Some(done),
+                synced: Some(synced),
+                ..Waited::new(m)
+            };
         }
         if Instant::now() > deadline {
-            return (running.stop(Duration::from_secs(3)), None, true, None);
+            return Waited {
+                timed_out: true,
+                ..Waited::new(running.stop(Duration::from_secs(3)))
+            };
         }
     }
+}
+
+/// How waiting for a client ended.
+struct Waited {
+    measured: Measured,
+    /// When completion was detected, if not at process exit.
+    done_unix_us: Option<u64>,
+    timed_out: bool,
+    note: Option<String>,
+    /// The harness's sync of the output, run right after completion.
+    synced: Option<Synced>,
+}
+
+impl Waited {
+    fn new(measured: Measured) -> Self {
+        Self {
+            measured,
+            done_unix_us: None,
+            timed_out: false,
+            note: None,
+            synced: None,
+        }
+    }
+}
+
+/// The harness forcing a finished download to disk.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Synced {
+    pub start_unix_us: u64,
+    pub end_unix_us: u64,
+    pub error: Option<String>,
+}
+
+/// fsyncs the downloaded file and the directories holding it (its own and
+/// the download directory), the way a power-safe client does before it
+/// reports done: data, size and the directory entry all reach the disk.
+/// Directories are synced on Unix only (Windows has no directory fsync in
+/// std; NTFS journals the entry).
+pub fn sync_output(a: &dyn Adapter, root: &Path, out: &Path) -> Synced {
+    let start_unix_us = unix_us();
+    let (chosen, _, _) = find_output(a, root, out);
+    let error = match chosen {
+        None => Some("no output file to sync".to_owned()),
+        Some(file) => sync_file_and_dirs(&file, out)
+            .err()
+            .map(|e| format!("{e:#}")),
+    };
+    Synced {
+        start_unix_us,
+        end_unix_us: unix_us(),
+        error,
+    }
+}
+
+fn sync_file_and_dirs(file: &Path, out: &Path) -> Result<()> {
+    // fsync needs write access on Windows (FlushFileBuffers); on Unix a
+    // read-only descriptor flushes the inode's dirty pages just the same.
+    let f = std::fs::OpenOptions::new()
+        .read(true)
+        .write(cfg!(windows))
+        .open(file)
+        .with_context(|| format!("open {}", file.display()))?;
+    f.sync_all()
+        .with_context(|| format!("fsync {}", file.display()))?;
+    #[cfg(unix)]
+    {
+        let mut dirs = vec![file.parent().unwrap_or(out).to_owned()];
+        if !dirs.contains(&out.to_owned()) {
+            dirs.push(out.to_owned());
+        }
+        for d in dirs {
+            std::fs::File::open(&d)
+                .and_then(|h| h.sync_all())
+                .with_context(|| format!("fsync directory {}", d.display()))?;
+        }
+    }
+    Ok(())
 }
 
 /// Drives an API client: waits for its server, submits the download, polls
@@ -1378,7 +1522,8 @@ fn drive_api(
     running: &mut measure::Running,
     script: &ApiScript,
     timeout: Duration,
-) -> (Measured, Option<u64>, bool, Option<String>) {
+    sync: &dyn Fn() -> Synced,
+) -> Waited {
     let deadline = running.started + timeout;
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(5)))
@@ -1386,24 +1531,19 @@ fn drive_api(
         .build()
         .into();
     let ApiScript::Gopeed { base, body } = script;
-    let fail = |running: &mut measure::Running, note: String, timed_out: bool| {
-        (
-            running.stop(Duration::from_secs(5)),
-            None,
-            timed_out,
-            Some(note),
-        )
+    let fail = |running: &mut measure::Running, note: String, timed_out: bool| Waited {
+        timed_out,
+        note: Some(note),
+        ..Waited::new(running.stop(Duration::from_secs(5)))
     };
 
     // 1. Wait for the server.
     loop {
         if let Some(m) = running.poll() {
-            return (
-                m,
-                None,
-                false,
-                Some("API server exited before it was ready".into()),
-            );
+            return Waited {
+                note: Some("API server exited before it was ready".into()),
+                ..Waited::new(m)
+            };
         }
         if agent
             .get(&format!("{base}/api/v1/info"))
@@ -1433,12 +1573,10 @@ fn drive_api(
     // 3. Poll.
     loop {
         if let Some(m) = running.poll() {
-            return (
-                m,
-                None,
-                false,
-                Some("API server exited during the download".into()),
-            );
+            return Waited {
+                note: Some("API server exited during the download".into()),
+                ..Waited::new(m)
+            };
         }
         if let Ok(mut r) = agent.get(&format!("{base}/api/v1/tasks/{id}")).call()
             && let Ok(v) = r.body_mut().read_json::<serde_json::Value>()
@@ -1446,13 +1584,22 @@ fn drive_api(
             match v["data"]["status"].as_str() {
                 Some("done") => {
                     let done = unix_us();
+                    let synced = sync();
                     let m = running.stop(Duration::from_secs(5));
-                    return (m, Some(done), false, None);
+                    return Waited {
+                        done_unix_us: Some(done),
+                        synced: Some(synced),
+                        ..Waited::new(m)
+                    };
                 }
                 Some("error") => {
                     let done = unix_us();
                     let m = running.stop(Duration::from_secs(5));
-                    return (m, Some(done), false, Some("task reported error".into()));
+                    return Waited {
+                        done_unix_us: Some(done),
+                        note: Some("task reported error".into()),
+                        ..Waited::new(m)
+                    };
                 }
                 _ => {}
             }
@@ -1789,6 +1936,43 @@ mod tests {
         }
         let d = IdleGuard::default();
         assert!(d.max_load.unwrap() >= 0.5 && !d.wait);
+    }
+
+    #[test]
+    fn sync_forces_the_output_to_disk() {
+        let base = std::env::temp_dir().join(format!("vayu-bench-sync-{}", std::process::id()));
+        let (root, out, _) = run_dirs(&base).unwrap();
+        let a = adapter::Aria2::aria2c();
+        let s = sync_output(&a, &root, &out);
+        assert_eq!(s.error.as_deref(), Some("no output file to sync"));
+        std::fs::write(out.join("f.bin"), vec![7u8; 1 << 20]).unwrap();
+        std::fs::write(out.join("f.bin.aria2"), b"control").unwrap();
+        let s = sync_output(&a, &root, &out);
+        assert_eq!(s.error, None, "the download itself, not the control file");
+        assert!(s.end_unix_us >= s.start_unix_us);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn durable_time_falls_back_and_says_so() {
+        let mut r = RunRecord::new(0, "curl", "clean", "1m.bin", 0);
+        assert_eq!(r.durable_time(), None);
+        r.wall_s = Some(0.5);
+        r.done_s = Some(0.4);
+        assert_eq!(
+            r.durable_time(),
+            Some((0.4, true)),
+            "older records: time to file"
+        );
+        r.durable_s = Some(0.45);
+        assert_eq!(r.durable_time(), Some((0.45, false)));
+        // Old records (no durable fields) still parse.
+        let mut v = serde_json::to_value(&r).unwrap();
+        let o = v.as_object_mut().unwrap();
+        o.remove("durable_s");
+        o.remove("sync_s");
+        let old: RunRecord = serde_json::from_value(v).unwrap();
+        assert_eq!(old.durable_s, None);
     }
 
     #[test]
