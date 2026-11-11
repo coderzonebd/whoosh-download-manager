@@ -285,6 +285,21 @@ wait for them (they are advisory until the run ends: a restart re-queues it
 and the journal holds the progress), and `add` starts the run while its
 record is saved. A run's final record is saved, and awaited, in `run_ended`.
 
+**Durability modes (`Settings::durability`, read when a download
+starts).** `PowerSafe` (the default) is everything above: bytes are forced
+to disk (`Storage::flush`) before the journal claims them, a finished file's
+data before its rename (`Storage::finish`), and the completed record is
+synced (`StateStore::sync`) before its journal entry goes, so a power cut
+never leaves a completed download with missing bytes. `ProcessSafe` hands
+bytes to the operating system instead (`Storage::write_out`, then
+`Storage::finish_unsynced`), skips that last sync (a saved record survives a
+killed process) and the writeback flushes during a transfer (nothing is
+forced to disk at the end either). It keeps both guarantees against a
+killed or crashed vayu — the journal never claims a byte not yet handed to
+the operating system, and a kill between the rename and the record update
+never leads to a duplicate — but gives up the power cut: files finished, or
+progress journalled, in the last seconds before one may be damaged.
+
 **Resume (#9).** Probe fresh; validators conflicting with the journal →
 restart (as #6). Otherwise every journalled range's last `tail_verify_len`
 (64 KiB) is re-fetched (in parallel) and byte-compared with `read_at`. A
@@ -466,11 +481,11 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | `tests/service.rs` (20) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/contract.rs` (5) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic) |
-| `tests/finish.rs` (10) | the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact (after the rename without downloading again; before it, fetching what the intent — committed alongside the flush — does not claim); also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) |
+| `tests/finish.rs` (11) | in both durability modes (a power cut for `PowerSafe`, a killed process for `ProcessSafe`), the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact (after the rename without downloading again; before it, fetching what the intent — committed alongside the flush — does not claim); also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry; `ProcessSafe` skips that sync. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) |
 | `tests/start.rs` (17) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models: careful 0.75 s / 0.50 s at 8, the fast climb 0.50 s / 0.38 s, the jump from the first connection's solo rate 0.40 s / 0.27 s (16 at once); a shared 20 MB/s limit does not jump; a server capped at 2 refuses one wave of the jump, not all of it |
 | `tests/checkpoints.rs` (4) | a 400 ms flush spaces checkpoints 8 s apart (4–6 commits in 32 s instead of 14–18); a fresh download without a checksum commits only its finish intent, with a checksum one checkpoint before verifying; a fast 64 MiB transfer is flushed (and committed) every 16 MiB as it goes, a single stream flushed but journalled only at its finish |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off, `start` in one request or two): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
-| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight, every unflushed write lost via `CrashFs`), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
+| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Half the cases are `PowerSafe` and every kill a power cut (every write not flushed is lost); half `ProcessSafe` and every kill a killed process (`CrashFs` keeps what `write_out` handed to the operating system, loses the rest); a power cut is not modelled for `ProcessSafe`, which gives it up. After every kill the journal's claims are checked directly against what survived (so tail verification cannot hide a violation: skipping `write_out` before commits, or the flush before checkpoints, fails within ~80 cases). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
 model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999,
@@ -482,7 +497,10 @@ property test over 5,100 schedules, all passing; after the speed round
 (half the cases starting in one request) seeds 80000–82999 and 90000–92999
 (6,000 cases) and 4,000 more schedules, all passing; after round 3 seeds
 100000–102999 and 110000–112999 (6,000 cases) and 4,000 schedules, all
-passing. Run
+passing; with the durability modes (half the cases `ProcessSafe` under
+killed-process semantics, every kill followed by the direct check of the
+journal's claims) seeds 120000–122999 and 130000–132999 (6,000 cases) and
+4,000 schedules, all passing. Run
 them with the built test binaries, e.g.
 `VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
 The real gate (1,000 hard kills of the daemon process with `vayu-store` on
@@ -768,6 +786,10 @@ storage contract now also states what the engine relied on: a dropped
 
 ## Known limitations
 
+- `Durability::ProcessSafe` does not survive a power cut (by design): files
+  finished, and progress journalled, in the seconds before one can be
+  damaged, and tail verification on resume is then the only check. The
+  crash model tests it against killed processes only.
 - Host profiles are keyed by host and port, so in a resident daemon every
   labserver scenario (one server, many paths) shares one profile: a count
   learned on per-conn-throttle (16) is where global-throttle then starts,

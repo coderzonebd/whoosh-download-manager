@@ -1,7 +1,12 @@
-//! The crash model: kill the engine at random instants, lose every write
-//! that was not flushed, start a new engine on the same journal, state and
-//! storage, and check the download still finishes with exactly the right
-//! bytes. `VAYU_CRASH_CASES` sets the number of cases (default 300).
+//! The crash model: kill the engine at random instants, start a new engine
+//! on the same journal, state and storage, and check the download still
+//! finishes with exactly the right bytes, as exactly one file. Half the
+//! cases run `Durability::PowerSafe` and every kill is a power cut (every
+//! write not flushed is lost); the other half run `ProcessSafe` and every
+//! kill is a killed process (every write not yet handed to the operating
+//! system is lost; what `write_out` handed over survives). A power cut is
+//! not modelled for `ProcessSafe`: it gives that up by design.
+//! `VAYU_CRASH_CASES` sets the number of cases (default 300).
 
 mod common;
 
@@ -12,8 +17,8 @@ use common::*;
 use vayu_core::SourceError;
 use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
 use vayu_engine::{Engine, EngineConfig, EngineDeps, Tuning};
-use vayu_proto::DownloadState;
 use vayu_proto::service::Service;
+use vayu_proto::{DownloadState, Durability};
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -52,6 +57,9 @@ struct Case {
     deps: EngineDeps,
     fs: Arc<CrashFs>,
     cfg: EngineConfig,
+    /// `Durability::ProcessSafe`, with kills that keep what the operating
+    /// system holds.
+    process_safe: bool,
 }
 
 fn setup(seed: u64) -> Case {
@@ -105,8 +113,12 @@ fn setup(seed: u64) -> Case {
         journal: Arc::new(MemJournal::default()),
         state: Arc::new(MemStateStore::default()),
     };
+    let process_safe = fastrand::Rng::with_seed(seed ^ 0x00d0_ab1e).bool();
     let mut cfg = config();
     cfg.rng_seed = Some(seed);
+    if process_safe {
+        cfg.default_settings.durability = Durability::ProcessSafe;
+    }
     cfg.tuning = Tuning {
         // Commit often so kills land around commits.
         checkpoint_interval: Duration::from_millis(r.u64(100..2000)),
@@ -120,6 +132,7 @@ fn setup(seed: u64) -> Case {
         deps,
         fs,
         cfg,
+        process_safe,
     }
 }
 
@@ -149,7 +162,14 @@ fn run_case(seed: u64) {
             }
         });
         drop(rt); // hard kill: every task dropped where it stood
-        case.fs.crash();
+        if case.process_safe {
+            case.fs.kill();
+        } else {
+            case.fs.crash();
+        }
+        if let Some(id) = &id {
+            claims_survived(&case, id, seed);
+        }
     }
     let id = id.unwrap();
     runtime().block_on(async {
@@ -207,6 +227,42 @@ fn run_case(seed: u64) {
             );
         }
     });
+}
+
+/// The journal never claims a byte the kill took: every range it claims
+/// holds exactly that version's bytes in what survived (unless the part
+/// file was already renamed into place).
+fn claims_survived(case: &Case, id: &str, seed: u64) {
+    let Some(cp) = runtime()
+        .block_on(case.deps.journal.load(&id.to_string()))
+        .unwrap()
+    else {
+        return;
+    };
+    let part = std::path::Path::new(DIR).join("data.bin.vayu-part");
+    let Some(file) = case.fs.contents(&part) else {
+        return;
+    };
+    let version = match cp.meta.etag.as_deref() {
+        Some(e) => {
+            e.trim_matches('"')
+                .trim_start_matches('v')
+                .parse::<usize>()
+                .unwrap()
+                - 1
+        }
+        None => 0,
+    };
+    let want = &case.versions[version];
+    for r in cp.done.ranges() {
+        let (s, e) = (r.start as usize, r.end as usize);
+        assert!(
+            file.len() >= e && file[s..e] == want[s..e],
+            "seed {seed}: the journal claims {s}..{e} of version {version}, \
+             which the kill did not leave on {}",
+            if case.process_safe { "the OS" } else { "disk" }
+        );
+    }
 }
 
 #[test]

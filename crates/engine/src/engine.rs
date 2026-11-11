@@ -15,10 +15,10 @@ use tokio::time::{Instant, MissedTickBehavior};
 use vayu_core::{DownloadRecord, Journal, SourceFactory, StateStore, StorageProvider};
 use vayu_proto::service::{Notification, Service, ServiceError, ServiceResult};
 use vayu_proto::{
-    AddParams, AddResult, DownloadDetail, DownloadId, DownloadState, DownloadSummary, ErrorInfo,
-    IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent,
-    ProgressItem, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, Settings, StateEvent,
-    Stats,
+    AddParams, AddResult, DownloadDetail, DownloadId, DownloadState, DownloadSummary, Durability,
+    ErrorInfo, IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult,
+    ProgressEvent, ProgressItem, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo,
+    Settings, StateEvent, Stats,
 };
 
 use crate::bus::Bus;
@@ -267,6 +267,11 @@ impl Inner {
         lock(&self.st).downloads.get(id).map(|e| e.record.clone())
     }
 
+    /// `Settings::durability`, read when a download starts.
+    pub(crate) fn durability(&self) -> Durability {
+        lock(&self.st).settings.durability
+    }
+
     pub(crate) fn max_connections(&self) -> u16 {
         self.max_conns
             .load(Ordering::Relaxed)
@@ -407,12 +412,15 @@ impl Inner {
     }
 
     /// A run ended: apply its outcome, persist, notify, start what's next.
+    /// `durability`: what the run promised (`Settings::durability` when it
+    /// started).
     pub(crate) async fn run_ended(
         self: &Arc<Self>,
         id: &str,
         generation: u64,
         outcome: Outcome,
         segments: Vec<SegmentInfo>,
+        durability: Durability,
     ) {
         let event = {
             let mut st = lock(&self.st);
@@ -490,14 +498,22 @@ impl Inner {
         self.bus.emit(Notification::DownloadState(state));
         let saved = self.save(id).await;
         if completed {
-            // Only once the completed record is durable (saved, then synced
-            // against power loss): until then the journal's finish intent is
-            // what lets a restart recognise the file. A failed save or sync
-            // keeps the entry; it is harmless next to a completed record.
+            // Only once the completed record is durable (saved, then, unless
+            // the download was process-safe only, synced against power
+            // loss): until then the journal's finish intent is what lets a
+            // restart recognise the file. A failed save or sync keeps the
+            // entry; it is harmless next to a completed record.
             let id = id.to_string();
+            let sync = || async {
+                match durability {
+                    Durability::PowerSafe => self.deps.state.sync().await,
+                    // A saved record survives a killed process.
+                    Durability::ProcessSafe => Ok(()),
+                }
+            };
             if !saved {
                 tracing::warn!(id, "completed record not saved; keeping its journal entry");
-            } else if let Err(e) = self.deps.state.sync().await {
+            } else if let Err(e) = sync().await {
                 tracing::warn!(id, "state sync failed, keeping the journal entry: {e}");
             } else if let Err(e) = self.deps.journal.remove(&id).await {
                 tracing::warn!(id, "journal remove failed: {e}");
