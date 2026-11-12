@@ -127,6 +127,9 @@ pub(crate) struct Inner {
     /// Serialises `StateStore` writes so the last write is always the
     /// latest record (and a removed record is never written back).
     save_lock: tokio::sync::Mutex<()>,
+    /// Downloads with a `save_soon` queued that has not read the record
+    /// yet: it will save whatever is newest, so another is not needed.
+    queued_saves: Mutex<HashSet<DownloadId>>,
     max_conns: AtomicU32,
     shutting_down: AtomicBool,
     closed: AtomicBool,
@@ -226,6 +229,7 @@ impl Engine {
             config,
             bus: Bus::default(),
             save_lock: tokio::sync::Mutex::new(()),
+            queued_saves: Mutex::new(HashSet::new()),
             shutting_down: AtomicBool::new(false),
             closed: AtomicBool::new(false),
         });
@@ -322,6 +326,11 @@ impl Inner {
     /// Returns whether it was saved.
     async fn save(&self, id: &str) -> bool {
         let _g = self.save_lock.lock().await;
+        self.save_locked(id).await
+    }
+
+    /// `save` with `save_lock` held.
+    async fn save_locked(&self, id: &str) -> bool {
         let Some(r) = self.record(id) else {
             return false;
         };
@@ -340,10 +349,18 @@ impl Inner {
     /// holds the progress — so the run does not wait on the store. Every
     /// save writes the newest record, so the order they land in does not
     /// matter; the run's final record is saved and awaited in `run_ended`.
+    /// Changes that come while a save is queued (a run's first state
+    /// changes come in a burst) ride along with it.
     fn save_soon(self: &Arc<Self>, id: &str) {
+        if !lock(&self.queued_saves).insert(id.to_string()) {
+            return;
+        }
         let (inner, id) = (self.clone(), id.to_string());
         tokio::spawn(async move {
-            inner.save(&id).await;
+            let _g = inner.save_lock.lock().await;
+            // Before the record is read: a change after this queues anew.
+            lock(&inner.queued_saves).remove(&id);
+            inner.save_locked(&id).await;
         });
     }
 
