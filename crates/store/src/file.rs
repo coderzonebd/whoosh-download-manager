@@ -8,6 +8,21 @@
 //! permits back. Every other operation (`read_at`, `flush`, `preallocate`,
 //! `finish`) goes through the same queue, so it sees every write that
 //! resolved before it was called.
+//!
+//! **Inline writes.** Normally `write_at` writes the chunk itself, on the
+//! calling thread, instead of queueing it (see
+//! [`StorageOptions::write_inline`]). The chunk was usually received a
+//! moment ago on that same thread, so copying it into the page cache there
+//! reads it from the CPU cache; the writer thread, a millisecond later on
+//! another core, reads it from memory, and that copy was most of what the
+//! store cost (a 1 GiB, 16-connection download: about 1 CPU-second on the
+//! writer thread). The caller's buffer is also released at once, so the
+//! engine reuses it instead of allocating a fresh one. At most one runtime
+//! thread per file is inside such a write; the next waits for it
+//! asynchronously. A write that overlaps a still-queued one queues behind
+//! it. A write that turns out slow (the kernel throttling writers because
+//! the disk is behind) sends the storage's writes to the writer thread for
+//! a while, so the runtime is not held up by the disk.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -15,6 +30,7 @@ use std::io::{self, IoSlice};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -38,6 +54,14 @@ pub struct StorageOptions {
     /// and anything that reads the file afterwards (a checksum check)
     /// reads it from disk. Ignored on other platforms.
     pub drop_cache_after_flush: bool,
+    /// `write_at` writes the chunk itself (one positional write on the
+    /// calling thread, before it resolves) unless it overlaps a queued write
+    /// or an inline write was slow lately; then it queues as usual. A
+    /// failed inline write is reported by that `write_at`. On by default:
+    /// it saves the writer thread's copy of the data from memory (see the
+    /// [module docs](self)). Off: every write goes through the writer
+    /// thread, and `write_at` never does file I/O itself.
+    pub write_inline: bool,
 }
 
 impl Default for StorageOptions {
@@ -45,9 +69,22 @@ impl Default for StorageOptions {
         Self {
             buffer_bytes: 16 << 20,
             drop_cache_after_flush: false,
+            write_inline: true,
         }
     }
 }
+
+/// An inline write slower than this (plus [`SLOW_INLINE_PER_BYTE`] per byte)
+/// means the kernel made the writer wait: back to the writer thread.
+const SLOW_INLINE: Duration = Duration::from_millis(4);
+/// 4 ns per byte: slower than 250 MB/s into the page cache.
+const SLOW_INLINE_PER_BYTE: u32 = 4;
+/// After a slow inline write the storage leaves writes to the writer
+/// thread for a while: this long after an isolated one, twice as long
+/// after each slow write in a row (the disk stays behind), up to
+/// [`INLINE_BACKOFF_MAX`]; every fast inline write halves it again.
+const INLINE_BACKOFF_MIN: Duration = Duration::from_millis(50);
+const INLINE_BACKOFF_MAX: Duration = Duration::from_secs(2);
 
 /// Opens [`FileStorage`]s, one per path.
 ///
@@ -340,6 +377,18 @@ impl PendingWrite {
 struct Shared {
     buffer: Semaphore,
     cap: u32,
+    /// [`StorageOptions::write_inline`].
+    inline: bool,
+    /// Held for an inline write, so at most one runtime thread per file is
+    /// ever inside a write (the kernel may make it wait, holding the file's
+    /// lock: a second one would wait too). The next one waits for it
+    /// asynchronously. Also taken by `finish` and the writer's exit to stop
+    /// inline writes. See [`Gate`].
+    gate: tokio::sync::Mutex<Gate>,
+    /// Byte ranges of writes queued and not yet written (one entry per
+    /// write). An inline write overlapping one of them would overtake it,
+    /// so it queues behind it instead.
+    queued: Mutex<Vec<(u64, u64)>>,
     /// The first write or fsync error, as (kind, message); never cleared.
     error: Mutex<Option<(io::ErrorKind, String)>>,
     finished: AtomicBool,
@@ -360,9 +409,97 @@ struct Shared {
     /// Test counter: `fdatasync`s of the file (flushes and `finish`).
     #[cfg(test)]
     data_syncs: std::sync::atomic::AtomicUsize,
+    /// Test hook: count the next inline write as slow.
+    #[cfg(test)]
+    slow_inline: AtomicBool,
+}
+
+/// What an inline write needs, under the lock that `finish` and the
+/// writer's exit take to stop inline writes.
+#[derive(Debug, Default)]
+struct Gate {
+    /// The writer's file while inline writes may use it: `None` once
+    /// `finish` has started (until a failed move reopens it) and once the
+    /// writer has stopped, so no inline write reaches the file after either.
+    file: Option<Arc<File>>,
+    /// No inline writes before this (a recent inline write was slow).
+    backoff_until: Option<Instant>,
+    /// The next back-off, if the next inline write is slow too.
+    backoff: Duration,
 }
 
 impl Shared {
+    /// Writes `data` at `offset` on the calling thread if that keeps every
+    /// guarantee of the queued path; `None` means queue it instead.
+    ///
+    /// Waits (asynchronously) for an inline write to this file in progress,
+    /// then writes inline unless a queued write overlaps this one (it would
+    /// be overtaken: overlapping writes land in the order they were
+    /// accepted), the storage is not usable, or an inline write was slow
+    /// lately. Writes to disjoint ranges have no order to keep: the writer
+    /// thread may write a batch at the same time.
+    async fn write_inline(&self, offset: u64, data: &[u8]) -> Option<io::Result<()>> {
+        let mut gate = self.gate.lock().await;
+        if gate.backoff_until.is_some_and(|t| Instant::now() < t) {
+            return None;
+        }
+        let file = gate.file.clone()?;
+        let end = offset + data.len() as u64;
+        if lock(&self.queued)
+            .iter()
+            .any(|&(s, e)| s < end && offset < e)
+            || !self.usable()
+        {
+            return None;
+        }
+        let started = Instant::now();
+        let r = sys::write_all_at(&file, data, offset);
+        let allowed =
+            SLOW_INLINE + Duration::from_nanos(data.len() as u64 * u64::from(SLOW_INLINE_PER_BYTE));
+        #[cfg(test)]
+        let allowed = if self.slow_inline.swap(false, Ordering::Relaxed) {
+            Duration::ZERO
+        } else {
+            allowed
+        };
+        let took = started.elapsed();
+        if took > allowed {
+            let backoff = gate.backoff;
+            gate.backoff_until = Some(Instant::now() + backoff);
+            gate.backoff = (backoff * 2).min(INLINE_BACKOFF_MAX);
+            tracing::debug!(
+                ?took,
+                len = data.len(),
+                ?backoff,
+                "slow inline write; writer thread for a while"
+            );
+        } else {
+            gate.backoff = (gate.backoff / 2).max(INLINE_BACKOFF_MIN);
+        }
+        // Recorded before the gate is released and before the caller hears
+        // of it, like the writer thread's errors.
+        Some(r.map_err(|e| self.fail(sys::map_err(e))))
+    }
+
+    /// Stops inline writes (they queue from now on) and waits for one in
+    /// progress. Writer thread only (it blocks).
+    fn close_gate(&self) {
+        self.gate.blocking_lock().file = None;
+    }
+
+    /// Forgets queued writes' ranges once they are written (or dropped).
+    fn unqueue(&self, ranges: impl IntoIterator<Item = (u64, u64)>) {
+        if !self.inline {
+            return;
+        }
+        let mut q = lock(&self.queued);
+        for r in ranges {
+            if let Some(i) = q.iter().position(|&x| x == r) {
+                q.swap_remove(i);
+            }
+        }
+    }
+
     fn check(&self) -> io::Result<()> {
         if self.finished.load(Ordering::Acquire) {
             return Err(finished_error());
@@ -460,9 +597,17 @@ impl FileStorage {
         let cap = opts
             .buffer_bytes
             .clamp(4096, (u32::MAX as usize).min(Semaphore::MAX_PERMITS)) as u32;
+        let file = Arc::new(file);
         let shared = Arc::new(Shared {
             buffer: Semaphore::new(cap as usize),
             cap,
+            inline: opts.write_inline,
+            gate: tokio::sync::Mutex::new(Gate {
+                file: Some(file.clone()),
+                backoff_until: None,
+                backoff: INLINE_BACKOFF_MIN,
+            }),
+            queued: Mutex::default(),
             error: Mutex::new(None),
             finished: AtomicBool::new(false),
             closed: watch::Sender::new(false),
@@ -477,10 +622,12 @@ impl FileStorage {
             synced_dirs: Mutex::default(),
             #[cfg(test)]
             data_syncs: Default::default(),
+            #[cfg(test)]
+            slow_inline: AtomicBool::new(false),
         });
         let (tx, rx) = mpsc::channel();
         let writer = Writer {
-            file: Some(Arc::new(file)),
+            file: Some(file),
             path: path.clone(),
             syncer: Syncer::start(shared.clone(), &path, opts)?,
             shared: shared.clone(),
@@ -556,6 +703,11 @@ impl Storage for FileStorage {
                     "write past the largest possible offset",
                 ));
             }
+            if self.shared.inline
+                && let Some(r) = self.shared.write_inline(offset, &data).await
+            {
+                return r;
+            }
             // A chunk larger than the whole buffer takes all of it, so it is
             // admitted once the buffer is empty instead of never.
             let permits = u32::try_from(data.len())
@@ -567,6 +719,11 @@ impl Storage for FileStorage {
                 .await
                 .map_err(|_| self.shared.error().unwrap_or_else(finished_error))?
                 .forget();
+            let range = (offset, offset + data.len() as u64);
+            if self.shared.inline {
+                // Before it is sent, so no inline write can overtake it.
+                lock(&self.shared.queued).push(range);
+            }
             let queued = self.shared.check().and_then(|()| {
                 self.send(Cmd::Write(PendingWrite {
                     offset,
@@ -576,6 +733,7 @@ impl Storage for FileStorage {
             });
             if queued.is_err() {
                 self.shared.buffer.add_permits(permits as usize);
+                self.shared.unqueue([range]);
             }
             queued
         })
@@ -660,6 +818,7 @@ struct ClosedOnDrop(Arc<Shared>);
 
 impl Drop for ClosedOnDrop {
     fn drop(&mut self) {
+        self.0.close_gate();
         self.0.buffer.close();
         self.0.closed.send_replace(true);
     }
@@ -703,8 +862,9 @@ impl Writer {
             self.write_batch();
         }
         self.write_batch();
-        // Wait for in-flight syncs, then close the file, before the storage
-        // is announced closed.
+        // No inline write after this one, then wait for in-flight syncs,
+        // then close the file, before the storage is announced closed.
+        self.shared.close_gate();
         self.syncer.shutdown();
         self.file = None;
     }
@@ -797,6 +957,20 @@ impl Writer {
     /// this but the data sync before the move and the directory syncs after
     /// it.
     fn finish(&mut self, to: &Path, sync: bool) -> io::Result<()> {
+        // No inline write from here on: one already done is covered by the
+        // sync below; a later one queues behind this finish (and fails, or
+        // is written if the move fails and the file stays in progress).
+        self.shared.close_gate();
+        let r = self.finish_gated(to, sync);
+        if r.is_err() {
+            // Still in progress (or failed for good, and then inline writes
+            // refuse anyway): inline writes may resume.
+            self.shared.gate.blocking_lock().file.clone_from(&self.file);
+        }
+        r
+    }
+
+    fn finish_gated(&mut self, to: &Path, sync: bool) -> io::Result<()> {
         // In-flight syncs first: their errors count, and on Windows no
         // second handle may be open during the rename.
         self.syncer.wait_idle();
@@ -916,6 +1090,10 @@ impl Writer {
             }
         }
         self.shared.buffer.add_permits(total - released);
+        // Written, or dropped by a dead storage: inline writes over these
+        // bytes may go now.
+        self.shared
+            .unqueue(batch.iter().map(|w| (w.offset, w.end())));
         // Reuse the allocation.
         self.batch = batch;
         self.batch.clear();
@@ -1180,11 +1358,18 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    /// Every write through the writer thread: these tests hold it to see
+    /// what is queued.
     fn provider(buffer: usize) -> FileStorageProvider {
         FileStorageProvider::new(StorageOptions {
             buffer_bytes: buffer,
+            write_inline: false,
             ..StorageOptions::default()
         })
+    }
+
+    fn inline_provider() -> FileStorageProvider {
+        FileStorageProvider::new(StorageOptions::default())
     }
 
     #[tokio::test]
@@ -1651,6 +1836,7 @@ mod tests {
         let p = FileStorageProvider::new(StorageOptions {
             buffer_bytes: 256 << 10,
             drop_cache_after_flush: true,
+            ..StorageOptions::default()
         });
         let s = p.open_storage(&d.path().join("f.vayu-part")).await.unwrap();
         s.preallocate(4 << 20).await.unwrap();
@@ -1871,5 +2057,94 @@ mod tests {
         flush.await.unwrap().unwrap();
         fin.await.unwrap().unwrap();
         assert_eq!(std::fs::read(d.path().join("f")).unwrap(), b"data");
+    }
+
+    /// With nothing queued, `write_at` writes the chunk itself: it is in the
+    /// file when the call resolves, even with the writer thread held.
+    #[tokio::test]
+    async fn an_inline_write_is_in_the_file_when_write_at_resolves() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f");
+        let s = inline_provider().open_storage(&path).await.unwrap();
+        s.pause(true);
+        s.write_at(3, Bytes::from_static(b"abc")).await.unwrap();
+        assert_eq!(s.buffered(), 0);
+        assert_eq!(std::fs::read(&path).unwrap(), b"\0\0\0abc");
+        s.pause(false);
+        s.flush().await.unwrap();
+    }
+
+    /// After a slow inline write, writes go to the writer thread for a
+    /// while. Once inline writes resume, one overlapping a still-queued
+    /// write queues behind it (acceptance order), and a disjoint one goes
+    /// inline at once.
+    #[tokio::test]
+    async fn an_inline_write_never_overtakes_an_overlapping_queued_one() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f");
+        let s = inline_provider().open_storage(&path).await.unwrap();
+        s.shared.slow_inline.store(true, Ordering::Relaxed);
+        s.write_at(20, Bytes::from_static(b"zz")).await.unwrap();
+        s.pause(true);
+        s.write_at(0, Bytes::from_static(b"aaaa")).await.unwrap();
+        assert_eq!(s.buffered(), 4, "queued during the back-off");
+        tokio::time::sleep(INLINE_BACKOFF_MIN + Duration::from_millis(30)).await;
+        s.write_at(2, Bytes::from_static(b"bbbb")).await.unwrap();
+        assert_eq!(s.buffered(), 8, "overlaps the queued write");
+        s.write_at(10, Bytes::from_static(b"cc")).await.unwrap();
+        assert_eq!(s.buffered(), 8, "disjoint: inline");
+        assert_eq!(&std::fs::read(&path).unwrap()[10..12], b"cc");
+        s.pause(false);
+        s.flush().await.unwrap();
+        assert_eq!(
+            &std::fs::read(&path).unwrap()[..22],
+            b"aabbbb\0\0\0\0cc\0\0\0\0\0\0\0\0zz"
+        );
+    }
+
+    /// `finish` stops inline writes for good; a move that fails (a taken
+    /// name) leaves the storage in progress and inline writes resume.
+    #[tokio::test]
+    async fn finish_stops_inline_writes_unless_the_move_fails() {
+        let d = tempfile::tempdir().unwrap();
+        let part = d.path().join("f.vayu-part");
+        let taken = d.path().join("taken");
+        std::fs::write(&taken, b"keep").unwrap();
+        let s = inline_provider().open_storage(&part).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"one")).await.unwrap();
+        let e = s.finish(&taken).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
+        assert!(s.shared.gate.lock().await.file.is_some());
+        s.pause(true);
+        s.write_at(3, Bytes::from_static(b"two")).await.unwrap();
+        assert_eq!(s.buffered(), 0, "inline again");
+        s.pause(false);
+        let done = d.path().join("done");
+        s.finish(&done).await.unwrap();
+        assert!(s.shared.gate.lock().await.file.is_none());
+        assert!(s.write_at(6, Bytes::from_static(b"x")).await.is_err());
+        assert_eq!(std::fs::read(&done).unwrap(), b"onetwo");
+        assert_eq!(std::fs::read(&taken).unwrap(), b"keep");
+    }
+
+    /// A failed inline write is reported by `write_at` itself, and sticks.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn an_inline_write_error_is_reported_at_once_and_sticks() {
+        let s = inline_provider()
+            .open_storage(Path::new("/dev/full"))
+            .await
+            .unwrap();
+        let e = s
+            .write_at(0, Bytes::from_static(b"data"))
+            .await
+            .unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+        assert_eq!(
+            s.flush().await.unwrap_err().kind(),
+            io::ErrorKind::StorageFull
+        );
+        let e = s.write_at(4, Bytes::from_static(b"x")).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::StorageFull);
     }
 }
