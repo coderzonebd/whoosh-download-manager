@@ -324,7 +324,7 @@ impl Inner {
 
     /// Persist the current record of `id` (no-op if it was removed).
     /// Returns whether it was saved.
-    async fn save(&self, id: &str) -> bool {
+    pub(crate) async fn save(&self, id: &str) -> bool {
         let _g = self.save_lock.lock().await;
         self.save_locked(id).await
     }

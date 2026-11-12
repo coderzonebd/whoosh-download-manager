@@ -74,18 +74,23 @@ struct IdState {
 
 impl FileJournal {
     /// Keep journals in `dir`, creating it (owner-only on Unix) if missing.
-    /// The directory entries that creating it changed are fsynced by the
-    /// first commit, before any commit resolves; `open` itself does no
-    /// fsync. Journal files are created owner-only too: checkpoints hold
-    /// the final URL, which may carry tokens.
+    /// The directory entries that creating it changed are fsynced on a
+    /// thread of its own, started here: `open` does not wait for it (a
+    /// daemon's cold start), and neither, usually, does the first commit (a
+    /// download's, between its last byte and `completed`). No commit
+    /// resolves before they are synced: one that comes first waits for the
+    /// thread, or syncs them itself. Journal files are created owner-only
+    /// too: checkpoints hold the final URL, which may carry tokens.
     pub fn open(dir: impl Into<PathBuf>) -> io::Result<Self> {
         let dir = dir.into();
         let changed = sys::create_dirs(&dir, sys::DirMode::Private)?;
+        let pending_dirs = Arc::new(Mutex::new(changed));
+        sync_in_background(&pending_dirs);
         Ok(Self {
             dir,
             sync: true,
             ids: Mutex::default(),
-            pending_dirs: Arc::new(Mutex::new(changed)),
+            pending_dirs,
             #[cfg(test)]
             dir_syncs: Default::default(),
             #[cfg(test)]
@@ -212,6 +217,28 @@ fn read_bounded(mut file: std::fs::File, path: &Path) -> io::Result<Option<Vec<u
         .take(format::MAX_FILE)
         .read_to_end(&mut bytes)?;
     Ok(Some(bytes))
+}
+
+/// Sync `pending` (directory entries `open` created) on a new thread,
+/// holding the lock throughout, so a commit waits for it; what fails stays
+/// pending for the next commit. If no thread can be started, the first
+/// commit syncs them.
+fn sync_in_background(pending: &Arc<Mutex<Vec<PathBuf>>>) {
+    if lock(pending).is_empty() {
+        return;
+    }
+    let pending = pending.clone();
+    let spawned = std::thread::Builder::new()
+        .name("vayu-journal-dirs".into())
+        .spawn(move || {
+            let mut dirs = lock(&pending);
+            if sys::sync_dirs(&dirs).is_ok() {
+                dirs.clear();
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::debug!(error = %e, "no thread to sync the journal's new directories; the first commit will");
+    }
 }
 
 /// Returns the directories it fsynced.
@@ -763,26 +790,42 @@ mod tests {
         assert_eq!(restarted.dir_syncs.load(Relaxed), 2);
     }
 
-    /// `open` syncs nothing (a daemon's cold start); the first commit syncs
-    /// the entries `open` created, with the journal's own directory, before
-    /// it resolves; later commits sync no directory.
+    /// `open` syncs the entries it created on a thread of its own, without
+    /// waiting (a daemon's cold start); no commit resolves before they are
+    /// synced (it waits for that thread, or syncs them itself); later
+    /// commits sync only the journal's own directory, once per id.
     #[tokio::test]
-    async fn new_directories_are_synced_by_the_first_commit_not_by_open() {
+    async fn new_directories_are_synced_in_the_background_before_any_commit() {
         let d = tempfile::tempdir().unwrap();
         let root = d.path().to_path_buf();
+        let parents = [root.clone(), root.join("a")];
+        // Without any commit, the thread syncs them.
         let j = FileJournal::open(root.join("a/b")).unwrap();
-        assert!(lock(&j.synced_dirs).is_empty());
+        let t = std::time::Instant::now();
+        while !lock(&j.pending_dirs).is_empty() {
+            assert!(t.elapsed() < std::time::Duration::from_secs(10));
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
         j.commit(&"x".to_string(), &cp(1, 1)).await.unwrap();
-        let mut synced = lock(&j.synced_dirs).clone();
-        synced.sort();
-        assert_eq!(synced, vec![root.clone(), root.join("a"), root.join("a/b")]);
+        assert_eq!(*lock(&j.synced_dirs), vec![root.join("a/b")]);
+        // A commit right after `open`: the entries are synced (by the thread
+        // or by the commit) by the time it resolves.
+        let fresh = d.path().join("c/d");
+        let k = FileJournal::open(&fresh).unwrap();
+        k.commit(&"x".to_string(), &cp(1, 1)).await.unwrap();
+        assert!(lock(&k.pending_dirs).is_empty());
+        assert!(lock(&k.synced_dirs).contains(&fresh));
+        // Later commits: only a new id's entry.
         j.commit(&"x".to_string(), &cp(2, 1)).await.unwrap();
-        // Another id: only its own entry's directory.
         j.commit(&"y".to_string(), &cp(3, 1)).await.unwrap();
-        assert_eq!(lock(&j.synced_dirs).len(), 4);
-        assert_eq!(lock(&j.synced_dirs)[3], root.join("a/b"));
+        assert_eq!(
+            *lock(&j.synced_dirs),
+            vec![root.join("a/b"), root.join("a/b")]
+        );
+        assert!(lock(&j.synced_dirs).iter().all(|p| !parents.contains(p)));
         // Reopened (a restart): nothing created, nothing pending.
         let again = FileJournal::open(root.join("a/b")).unwrap();
+        assert!(lock(&again.pending_dirs).is_empty());
         again.commit(&"x".to_string(), &cp(4, 1)).await.unwrap();
         assert_eq!(*lock(&again.synced_dirs), vec![root.join("a/b")]);
     }

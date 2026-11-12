@@ -135,8 +135,9 @@ async fn a_fresh_download_commits_only_its_finish_intent() {
     let id = lab.add(URL).await;
     finish(&lab.engine, &id, LONG).await;
     assert_same(&lab.file("data.bin").unwrap(), &data);
-    // No empty checkpoint before the first byte (nothing to retract), no
-    // final checkpoint before the intent (which claims every byte anyway).
+    // One commit, when the transfer starts: it carries the finish intent,
+    // so finishing commits nothing more. No final checkpoint before the
+    // move (the intent's file at its length is what a restart looks for).
     assert_eq!(lab.journal.commits(), 1);
 }
 
@@ -159,7 +160,9 @@ async fn a_checksum_is_verified_after_a_checkpoint() {
         .id;
     finish(&lab.engine, &id, LONG).await;
     assert_same(&lab.file("data.bin").unwrap(), &data);
-    assert_eq!(lab.journal.commits(), 2);
+    // The early checkpoint (with the intent), the one claiming every byte
+    // before the long read (it withdraws the intent), the intent again.
+    assert_eq!(lab.journal.commits(), 3);
 }
 
 /// A fast download (64 MiB at 256 MiB/s per connection, one connection)

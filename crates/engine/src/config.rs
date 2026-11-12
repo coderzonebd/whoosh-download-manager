@@ -197,6 +197,13 @@ pub struct Tuning {
     /// before the rename has little left to do.
     pub writeback_bytes: u64,
     pub writeback_check: Duration,
+    /// Also flush (no commit) once `writeback_interval` has passed since
+    /// the last flush started and at least `writeback_min_bytes` are new:
+    /// a download slower than `writeback_bytes` per interval (one link
+    /// throttled to 10 MB/s takes 1.6 s for 16 MiB) would otherwise leave
+    /// everything to the flush between its last byte and `completed`.
+    pub writeback_interval: Duration,
+    pub writeback_min_bytes: u64,
     /// The download record (progress) is saved this often while running.
     pub record_interval: Duration,
     /// Retry backoff: `min(retry_cap, retry_base × 2^(n−1))` with jitter in
@@ -273,6 +280,8 @@ impl Default for Tuning {
             checkpoint_interval_max: Duration::from_secs(30),
             writeback_bytes: 16 * MIB,
             writeback_check: Duration::from_millis(10),
+            writeback_interval: Duration::from_millis(100),
+            writeback_min_bytes: MIB,
             record_interval: Duration::from_secs(3),
             retry_base: Duration::from_millis(50),
             retry_cap: Duration::from_secs(30),

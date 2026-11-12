@@ -306,11 +306,25 @@ flushes (and, when resumable, commits) every `writeback_bytes` (16 MiB) of
 new data whenever no flush is in flight, checked every `writeback_check`
 (10 ms), single-stream downloads included: the disk writes alongside the
 network, and the flush `finish` needs before the rename has little left
-(100 MiB on loopback: ~7 ms instead of 40–60 ms). A download that finishes
-before its first checkpoint touches the journal once: a fresh one has no
-entry until then (nothing claims anything, so there is no empty checkpoint
-to commit and no part file to discard and reopen), and a completed transfer
-without a checksum to verify goes straight to finishing. The journal
+(100 MiB on loopback: ~7 ms instead of 40–60 ms). A slower download is also
+flushed (no commit) every `writeback_interval` (100 ms) once at least
+`writeback_min_bytes` (1 MiB) are new, so one throttled to 10–30 MB/s does
+not leave 10 MiB to the sync after its last byte.
+
+**The early checkpoint.** When a transfer starts (ranged or stream), the
+engine flushes the part file and commits a checkpoint side by side, in the
+background: the commit claims only what the journal already claimed
+(nothing, for a fresh download), so it need not wait for the flush. It is
+the journal entry's first commit — the record is saved first, so a restart
+that finds the entry finds the file name the part file has — and it carries
+the finish intent (below) when the size is known and the final name is free
+at that moment. Its syncs (the new journal file and its directory entry, the
+part file's directory entry: the store syncs only the directory when nothing
+was written yet) run while the network is busy, so between the last byte and
+`completed` only the last bytes' `fdatasync`, the move and its directory
+sync remain. The last bytes' flush starts as soon as they are written, while
+any checkpoint still in flight lands. A completed transfer without a
+checksum to verify goes straight to finishing. The journal
 records only the contiguous prefix
 of each range whose writes resolved before the snapshot. Preallocation when
 the size is known. Records are saved on every state change and every
@@ -353,13 +367,15 @@ existing `<name>.vayu-part` holds (say, a removed download that kept its
 files) is never moved along into the finished file.
 
 **Finishing is crash-consistent, in every mode.** Before every rename
-attempt, `finish` commits an *intent* to the journal naming the file it is
-about to create (`Checkpoint::finishing { name, len }`: `name`, then
-`name (1)`, … on `AlreadyExists`). The first intent is committed while the
-data is flushed — the two syncs overlap — so it claims only what the
-journal already claimed (nothing, for a download that finishes before its
-first checkpoint); later ones follow that flush and claim every byte. The
-rename waits for both. The journal entry is removed only after the
+attempt, the journal holds an *intent* naming the file it is about to create
+(`Checkpoint::finishing { name, len }`: `name`, then `name (1)`, … on
+`AlreadyExists`). For the first name it is usually the early checkpoint's,
+committed when the transfer started (only if that name was free then) and
+still the journal's last word: no later checkpoint withdrew it; then
+`finish` commits nothing. Otherwise `finish` commits it while the data is
+flushed — the two syncs overlap — so it claims only what the journal already
+claimed; later ones follow that flush and claim every byte. The rename waits
+for the intent and the data. The journal entry is removed only after the
 completed record is saved *and* `StateStore::sync` made it durable (after
 the completion is announced); a failed save or sync keeps the entry
 (harmless next to a completed record). So whenever the process dies, or the
@@ -488,6 +504,7 @@ and ends every subscription.
 | `checkpoint_interval`, `checkpoint_bytes` | 2 s, off | flush + commit cadence (time; an optional byte trigger) |
 | `checkpoint_share`, `checkpoint_interval_max` | 0.05, 30 s | a checkpoint that took `d` is next due no sooner than `d / 0.05`, at most 30 s |
 | `writeback_bytes`, `writeback_check` | 16 MiB, 10 ms | while transferring, flush (and commit) every 16 MiB of new data when no flush is in flight |
+| `writeback_interval`, `writeback_min_bytes` | 100 ms, 1 MiB | also flush (no commit) 100 ms after the last flush started if at least 1 MiB is new: a slow download's last sync stays small |
 | `record_interval` | 3 s | record saves while running |
 | `retry_base`, `retry_cap` | 50 ms, 30 s | backoff |
 | `error_budget` | 10 | failure rounds without progress before `failed` |
