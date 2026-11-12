@@ -1,6 +1,6 @@
 {
   "name": "@vayu/extension",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "vayu browser extension (Pro mode: hands browser downloads to the vayu daemon)",
   "license": "GPL-3.0-or-later",

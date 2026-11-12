@@ -4872,7 +4872,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vayu-bench"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4892,7 +4892,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "clap",
  "futures",
@@ -4906,7 +4906,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
@@ -4917,7 +4917,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-daemon"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "bytes",
  "clap",
@@ -4945,7 +4945,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-desktop"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4956,7 +4956,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-engine"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "bytes",
  "fastrand",
@@ -4979,7 +4979,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-labserver"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5011,7 +5011,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-net"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -5043,7 +5043,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-nmhost"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "futures",
  "serde",
@@ -5057,7 +5057,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-proto"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "futures",
  "getrandom 0.3.4",
@@ -5071,7 +5071,7 @@ dependencies = [
 
 [[package]]
 name = "vayu-store"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "bytes",
  "crc32c",
