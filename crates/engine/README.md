@@ -306,11 +306,30 @@ flushes (and, when resumable, commits) every `writeback_bytes` (16 MiB) of
 new data whenever no flush is in flight, checked every `writeback_check`
 (10 ms), single-stream downloads included: the disk writes alongside the
 network, and the flush `finish` needs before the rename has little left
-(100 MiB on loopback: ~7 ms instead of 40–60 ms). A download that finishes
-before its first checkpoint touches the journal once: a fresh one has no
-entry until then (nothing claims anything, so there is no empty checkpoint
-to commit and no part file to discard and reopen), and a completed transfer
-without a checksum to verify goes straight to finishing. The journal
+(100 MiB on loopback: ~7 ms instead of 40–60 ms). A slower download is also
+flushed (no commit) every `writeback_interval` (100 ms) once at least
+`writeback_min_bytes` (1 MiB) are new, so one throttled to 10–30 MB/s does
+not leave 10 MiB to the sync after its last byte.
+
+**The early checkpoint.** When a transfer starts (ranged or stream), the
+engine flushes the part file and then commits a checkpoint, in the
+background. The commit claims only what the journal already claimed
+(nothing, for a fresh download). It is the journal entry's first commit —
+the record is saved first (alongside the flush), so a restart that finds the
+entry finds the file name the part file has — and it carries the finish
+intent (below) when the size is known and the final name is free at that
+moment. It waits for the flush so the part file's directory entry is durable
+before any intent is: a part file missing after a power cut then always
+means it was moved (or deleted by someone else), never a lost entry next to
+a surviving intent that would let a restart adopt a file that appeared under
+that name (no measurable cost: 1 MiB 25 vs 24 ms, 10 MiB 35 vs 34 ms against
+committing beside the flush). Its syncs (the part file's directory entry:
+the store syncs only the directory when nothing was written yet; the new
+journal file and its directory entry) run while the network is busy, so
+between the last byte and `completed` only the last bytes' `fdatasync`, the
+move and its directory sync remain. The last bytes' flush starts as soon as they are written, while
+any checkpoint still in flight lands. A completed transfer without a
+checksum to verify goes straight to finishing. The journal
 records only the contiguous prefix
 of each range whose writes resolved before the snapshot. Preallocation when
 the size is known. Records are saved on every state change and every
@@ -353,13 +372,15 @@ existing `<name>.vayu-part` holds (say, a removed download that kept its
 files) is never moved along into the finished file.
 
 **Finishing is crash-consistent, in every mode.** Before every rename
-attempt, `finish` commits an *intent* to the journal naming the file it is
-about to create (`Checkpoint::finishing { name, len }`: `name`, then
-`name (1)`, … on `AlreadyExists`). The first intent is committed while the
-data is flushed — the two syncs overlap — so it claims only what the
-journal already claimed (nothing, for a download that finishes before its
-first checkpoint); later ones follow that flush and claim every byte. The
-rename waits for both. The journal entry is removed only after the
+attempt, the journal holds an *intent* naming the file it is about to create
+(`Checkpoint::finishing { name, len }`: `name`, then `name (1)`, … on
+`AlreadyExists`). For the first name it is usually the early checkpoint's,
+committed when the transfer started (only if that name was free then) and
+still the journal's last word: no later checkpoint withdrew it; then
+`finish` commits nothing. Otherwise `finish` commits it while the data is
+flushed — the two syncs overlap — so it claims only what the journal already
+claimed; later ones follow that flush and claim every byte. The rename waits
+for the intent and the data. The journal entry is removed only after the
 completed record is saved *and* `StateStore::sync` made it durable (after
 the completion is announced); a failed save or sync keeps the entry
 (harmless next to a completed record). So whenever the process dies, or the
@@ -488,6 +509,7 @@ and ends every subscription.
 | `checkpoint_interval`, `checkpoint_bytes` | 2 s, off | flush + commit cadence (time; an optional byte trigger) |
 | `checkpoint_share`, `checkpoint_interval_max` | 0.05, 30 s | a checkpoint that took `d` is next due no sooner than `d / 0.05`, at most 30 s |
 | `writeback_bytes`, `writeback_check` | 16 MiB, 10 ms | while transferring, flush (and commit) every 16 MiB of new data when no flush is in flight |
+| `writeback_interval`, `writeback_min_bytes` | 100 ms, 1 MiB | also flush (no commit) 100 ms after the last flush started if at least 1 MiB is new: a slow download's last sync stays small |
 | `record_interval` | 3 s | record saves while running |
 | `retry_base`, `retry_cap` | 50 ms, 30 s | backoff |
 | `error_budget` | 10 | failure rounds without progress before `failed` |
@@ -517,11 +539,11 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | `tests/service.rs` (20) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/contract.rs` (5) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic) |
-| `tests/finish.rs` (11) | in both durability modes (a power cut for `PowerSafe`, a killed process for `ProcessSafe`), the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact (after the rename without downloading again; before it, fetching what the intent — committed alongside the flush — does not claim); also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry; `ProcessSafe` skips that sync. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) |
+| `tests/finish.rs` (14) | in both durability modes (a power cut for `PowerSafe`, a killed process for `ProcessSafe`), the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact (after the rename without downloading again; before it, fetching what the intent — committed alongside the flush — does not claim); also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry; `ProcessSafe` skips that sync. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) ; the early intent's name taken by another file of the same length while the transfer runs (`AlreadyExists`, an intent for `name (1)` committed before that move, killed right after it: adopted, the other file untouched), an intent withdrawn by a later checkpoint and a name taken before the transfer started (part file gone, a file of the same length in place: never adopted, downloaded again; the first fails if checkpoints keep the intent) |
 | `tests/start.rs` (18) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models: careful 0.75 s / 0.50 s at 8, the fast climb 0.50 s / 0.38 s, the jump from the first connection's solo rate 0.40 s / 0.27 s (16 at once); a shared 20 MB/s limit does not jump; a link the first connection fills alone (64 MiB/s shared) drops back to one connection after the first window, never tries 16, and records 1 as the host's best count (peak 16 without the rule); a server capped at 2 refuses one wave of the jump, not all of it |
 | `tests/checkpoints.rs` (4) | a 400 ms flush spaces checkpoints 8 s apart (4–6 commits in 32 s instead of 14–18); a fresh download without a checksum commits only its finish intent, with a checksum one checkpoint before verifying; a fast 64 MiB transfer is flushed (and committed) every 16 MiB as it goes, a single stream flushed but journalled only at its finish |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off, `start` in one request or two): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
-| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Half the cases are `PowerSafe` and every kill a power cut (every write not flushed is lost); half `ProcessSafe` and every kill a killed process (`CrashFs` keeps what `write_out` handed to the operating system, loses the rest); a power cut is not modelled for `ProcessSafe`, which gives it up. After every kill the journal's claims are checked directly against what survived (so tail verification cannot hide a violation: skipping `write_out` before commits, or the flush before checkpoints, fails within ~80 cases). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
+| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Half the cases are `PowerSafe` and every kill a power cut (every write not flushed is lost); half `ProcessSafe` and every kill a killed process (`CrashFs` keeps what `write_out` handed to the operating system, loses the rest); a power cut is not modelled for `ProcessSafe`, which gives it up. After every kill the journal's claims are checked directly against what survived (so tail verification cannot hide a violation: skipping `write_out` before commits, or the flush before checkpoints, fails within ~80 cases). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. A power cut also removes a part file whose directory entry was never synced (`CrashFs` tracks it: a flush syncs it). In a quarter of the cases another program puts a file of the download's length under its name at a random moment of a random round: it must stay untouched, and the record must name the download's own file (`name (1)`). `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
 model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999,
@@ -549,6 +571,60 @@ version changes after N bytes served, link expiry after N bytes, and a
 per-request script (TTFB, rate, stall, reset, failure).
 
 ## Benchmarks
+
+### End-of-download sync chain (2026-11-13, gate run 2's failing rows)
+
+Gate run 2 failed 1 MiB and 10 MiB rows against wget on time to
+durability. A trace of a 1 MiB download (base a213c53) showed, between the
+last byte and `completed`: the part file's `fdatasync` and its first-flush
+directory sync, beside the intent's commit creating the journal file
+(`fdatasync`, journal directory, and in a fresh daemon the data directory),
+then the move's `fdatasync` and directory sync, about 12 ms. Changes (1ed8264):
+the early checkpoint carrying the intent, the last bytes' flush overlapping
+it, the 100 ms writeback, and in `vayu-store` a flush that skips the
+`fdatasync` when nothing was written and journal directories synced in the
+background at open. After the last byte, 1 MiB now waits for the part's data
+sync and the new journal file's sync chain side by side, then the move
+(7.5–12 ms on this machine, mostly the journal chain).
+
+Time to durability, median ms (interleaved harness, resident daemon, fresh
+data directory per run, 20 runs; vayu-bench 10 runs per side for the
+`vs wget` columns, which ran back to back on a machine with other load):
+
+| Row | base | new | wget (vayu-bench) | new vs wget, p |
+|---|---:|---:|---:|---:|
+| clean 1 MiB | 28 | 25 | 19.4 (new 23.2) | 0.0008 |
+| bangla.bin 1 MiB | 25.8 | 23.3 | 19.6 | 0.026 |
+| plain.bin 1 MiB | 25.8 | 25.4 | 19.4 | 0.017 |
+| clean 10 MiB | 46 | 35 | 43.2 (new 33.7) | 0.014 (new faster) |
+| referer-required 10 MiB | 42.4 | 32.4 | 43.6 | 0.24 (new faster) |
+| per-conn-throttle 10 MiB | 405 | 332 | gopeed 380 | — |
+| conn-cap-reset 10 MiB | 1024 | 1012 | mdm 1037 | — |
+
+- The early intent alone (same build without it): 1 MiB 28 → 25 ms
+  (p = 0.001), 10 MiB 40 → 36 ms (p = 0.023), 25 interleaved runs.
+- per-conn-throttle: base runs are multimodal (0.34 / 0.37 / 0.40 s; the
+  gate's own vayu runs spread 0.339–0.444 s), the new build's sit at
+  0.33 s. With debug logging the last byte arrives at the same ~312 ms in
+  both, and the part that reproduces is the end chain: 14–18 ms → 6–10 ms.
+  The cause of base's slower modes is not pinned down.
+- conn-cap-reset still shows the occasional ~2 s run in both builds (base
+  3 of 10, new 1 of 10; the gate had 2 of 7): a reset-handling issue, not
+  the sync chain.
+- Other engine scenarios, 8 interleaved runs, base → new: slow-drip 307 →
+  295 ms, flaky 163 → 160, stall 160 → 149, rate-limited 559 → 506,
+  global-throttle 573 → 523, no-range 100 MiB 140 → 122; high-latency 595 →
+  606 (p = 0.083) in one round and 551 → 536 in the next (10 runs).
+- 1 MiB stays behind wget plus the harness's sync. That gap is two device
+  round trips for a new journal file per download (its data and its
+  directory entry) and the daemon's request path (2.4–4 ms from `add` to the
+  last byte). A journal that does not create a file per download would
+  close most of it.
+- Verified on 5ee5a98: engine and store tests, crash model 6,000 cases
+  (seeds 200000–205999, with the foreign same-length file and lost part
+  file entries) and 4,000 proptests, daemon tests, `vayu-bench hardkill
+  --kills 250` (seed 20261113): 468 downloads, 0 corrupt, 0 leftovers,
+  0 unfinished.
 
 ### Phase 1 gate round (2026-11-12, resident daemon, labserver on loopback)
 

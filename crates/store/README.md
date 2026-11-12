@@ -166,6 +166,12 @@ C toolchain (see [Testing](#testing)).
     after the data, the
     directory entries that creation changed: the file's directory, and the
     parent of every directory `open` had to create.
+  - A flush with nothing written since the last data sync skips the
+    `fdatasync`. So a flush right after creating the file syncs only those
+    directory entries, while the data is still on its way (the engine does
+    this when a transfer starts), and the flush after the last byte is a
+    data sync alone. A file the storage did not create counts as unsynced
+    at first: an earlier process may have left writes in it.
   - Without that, POSIX allows a power cut to lose the part file's entry
     after the journal has recorded its ranges as done.
 - **No symbolic links.** The part file is opened with `O_NOFOLLOW` (on
@@ -266,9 +272,12 @@ C toolchain (see [Testing](#testing)).
   - It also `fsync`s the directory on each process's first commit of an id.
     That doesn't depend on what the file holds: an earlier process may have
     written a complete slot and died before syncing the entry.
-  - **`FileJournal::open` syncs nothing.** The entries of directories it
-    creates are fsynced by the first commit, before that commit resolves.
-    So a daemon's cold start pays nothing for them.
+  - **`FileJournal::open` waits for no sync.** The entries of directories
+    it creates are fsynced on a thread it starts, so neither a daemon's cold
+    start nor, usually, the first commit (a download's) waits for them. No
+    commit resolves before they are synced: one that comes first waits for
+    that thread, or syncs them itself; what failed is retried by the next
+    commit.
   - Directories are synced after the data, never side by side with it. On
     ext4 the data sync's journal commit already carries the new entry, so
     the directory sync costs at most a cache flush. Side by side they cost

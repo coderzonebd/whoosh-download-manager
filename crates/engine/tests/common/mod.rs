@@ -515,8 +515,9 @@ impl FaultSource {
 
 /// Storage that keeps a volatile and a durable copy of every file: writes
 /// go to the volatile copy, `flush` copies it to the durable one, and
-/// [`CrashFs::crash`] throws away everything not flushed. Every operation
-/// yields once, so a kill can land between any two of them.
+/// [`CrashFs::crash`] throws away everything not flushed — a file created
+/// and never flushed too (its directory entry was never synced). Every
+/// operation yields once, so a kill can land between any two of them.
 pub struct CrashFs {
     files: Arc<Mutex<HashMap<PathBuf, Arc<CrashFile>>>>,
     finished: Arc<Mutex<HashMap<PathBuf, Bytes>>>,
@@ -576,6 +577,9 @@ pub struct CrashFile {
     truncate: bool,
     hooks: Arc<FinishHooks>,
     done: std::sync::atomic::AtomicBool,
+    /// Its directory entry is on disk: it existed before it was opened, or
+    /// a flush synced it. A power cut removes a file without one.
+    entry: std::sync::atomic::AtomicBool,
     /// What the process wrote (lost when it is killed).
     volatile: Mutex<Vec<u8>>,
     /// What the operating system holds (`write_out`, `flush`): survives a
@@ -588,9 +592,12 @@ pub struct CrashFile {
 }
 
 impl CrashFs {
-    /// Power cut: every unflushed write is lost.
+    /// Power cut: every unflushed write is lost, and every file whose
+    /// directory entry was never synced.
     pub fn crash(&self) {
-        for f in lock(&self.files).values() {
+        let mut files = lock(&self.files);
+        files.retain(|_, f| f.entry.load(std::sync::atomic::Ordering::Relaxed));
+        for f in files.values() {
             let d = lock(&f.durable).clone();
             *lock(&f.os) = d.clone();
             *lock(&f.volatile) = d;
@@ -670,6 +677,7 @@ impl Storage for CrashFile {
             let v = lock(&self.volatile).clone();
             *lock(&self.os) = v.clone();
             *lock(&self.durable) = v;
+            self.entry.store(true, std::sync::atomic::Ordering::Relaxed);
             tokio::task::yield_now().await;
             Ok(())
         })
@@ -741,12 +749,14 @@ impl StorageProvider for CrashFs {
             let f = lock(&self.files)
                 .entry(path.to_path_buf())
                 .or_insert_with(|| {
+                    let entry = existing.is_some();
                     let init = existing.unwrap_or_default();
                     Arc::new(CrashFile {
                         path: path.to_path_buf(),
                         truncate: self.truncate,
                         hooks: self.hooks.clone(),
                         done: std::sync::atomic::AtomicBool::new(false),
+                        entry: std::sync::atomic::AtomicBool::new(entry),
                         volatile: Mutex::new(init.clone()),
                         os: Mutex::new(init.clone()),
                         durable: Mutex::new(init),

@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
@@ -315,6 +315,8 @@ struct Driver {
     ckpt_done: Option<RangeSet>,
     /// Bytes written when the last flush started.
     flushed_upto: u64,
+    /// When the last flush started.
+    flush_started: Instant,
     solo: Option<Solo>,
     /// The first connection's rate alone (past its first burst), bytes/s.
     solo_rate: Option<f64>,
@@ -360,6 +362,9 @@ struct Driver {
     ckpt_started: Instant,
     /// This run committed to the journal.
     committed_any: bool,
+    /// The intent the early checkpoint carries (`start_early_checkpoint`),
+    /// and whether it is durable. Any later commit withdraws it.
+    early_intent: Option<(Finishing, Arc<AtomicBool>)>,
     last_record: Instant,
     last_tick: Instant,
     last_segments: Instant,
@@ -399,6 +404,7 @@ impl Driver {
             durable: RangeSet::new(),
             ckpt_done: None,
             flushed_upto: 0,
+            flush_started: now,
             solo: None,
             solo_rate: None,
             old_version: false,
@@ -437,6 +443,7 @@ impl Driver {
             ckpt_cost: Duration::ZERO,
             ckpt_started: now,
             committed_any: false,
+            early_intent: None,
             last_record: now,
             last_tick: now,
             last_segments: now,
@@ -790,6 +797,7 @@ impl Driver {
                     finishing: None,
                 };
                 self.committed_any = true;
+                self.early_intent = None;
                 self.inner
                     .deps
                     .journal
@@ -834,6 +842,7 @@ impl Driver {
                 finishing: None,
             };
             self.committed_any = true;
+            self.early_intent = None;
             self.inner
                 .deps
                 .journal
@@ -1015,6 +1024,19 @@ impl Driver {
             Ok(s) => s,
             Err(o) => return o,
         };
+        // A checkpoint still in flight (a stream ends without waiting for
+        // one) lands first: a commit of it landing after the intent would
+        // overwrite the intent.
+        if let Err(e) = self.land_ckpt_flushing().await {
+            return io_failed(e);
+        }
+        // The early checkpoint's intent, if it is durable and still the
+        // journal's last word.
+        let early = self
+            .early_intent
+            .take()
+            .filter(|(_, landed)| landed.load(Ordering::Acquire))
+            .map(|(f, _)| f);
         let len = self.size.unwrap_or(0);
         let mut flushed = false;
         let mut chosen = None;
@@ -1051,10 +1073,13 @@ impl Driver {
                     len,
                 }),
             };
-            let commit = self.inner.deps.journal.commit(&self.id, &intent);
-            let committed = if flushed {
-                commit.await
+            let committed = if n == 0 && early.as_ref() == intent.finishing.as_ref() {
+                // Durable already; `Storage::finish` syncs the data itself.
+                Ok(())
+            } else if flushed {
+                self.inner.deps.journal.commit(&self.id, &intent).await
             } else {
+                let commit = self.inner.deps.journal.commit(&self.id, &intent);
                 let (f, c) = futures::join!(persist(&*storage, self.durability), commit);
                 if let Err(e) = f {
                     return io_failed(e);
@@ -1221,6 +1246,7 @@ impl Driver {
             self.plan();
         }
         self.committable = true;
+        self.start_early_checkpoint();
         let now = Instant::now();
         self.last_commit = now;
         self.committed = self.done.len();
@@ -1251,11 +1277,7 @@ impl Driver {
             }
         }
         self.solo = None;
-        if let Some(c) = self.ckpt.take() {
-            let r = c.await;
-            self.ckpt_landed(r.is_ok());
-            r.map_err(io_failed)?;
-        }
+        self.land_ckpt_flushing().await.map_err(io_failed)?;
         self.halt().await;
         // Finishing flushes and commits a checkpoint claiming every byte
         // right away; only a checksum to verify first (a long read) is
@@ -1282,6 +1304,7 @@ impl Driver {
                 }
                 None => self.spawn(Work::Own(seg.clone())),
             }
+            self.start_early_checkpoint();
             let now = Instant::now();
             let mut tick = tokio::time::interval_at(now + self.t.tick, self.t.tick);
             tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -2287,8 +2310,10 @@ impl Driver {
         self.last_commit = Instant::now();
         self.ckpt_started = self.last_commit;
         self.committed_any = true;
+        self.early_intent = None;
         self.ckpt_done = Some(cp.done.clone());
         self.flushed_upto = self.written_total();
+        self.flush_started = self.last_commit;
         let journal = self.inner.deps.journal.clone();
         let id = self.id.clone();
         let durability = self.durability;
@@ -2298,10 +2323,105 @@ impl Driver {
         }));
     }
 
+    /// When a transfer starts, in the background: flush the part file, then
+    /// commit a checkpoint that claims only what the journal already did.
+    /// It carries the finish intent (see [`Self::finish`]) when the size is
+    /// known and the final name is free now, so finishing needs no commit
+    /// of its own: on a short download the part file's and the new journal
+    /// file's directory entries and the intent become durable while the
+    /// network is still busy, and only the last bytes' sync, the move and
+    /// its directory sync remain between the last byte and `completed`.
+    ///
+    /// The commit waits for the flush: with the part file's entry durable
+    /// first, a part file missing after a power cut can only mean it was
+    /// moved (or deleted by someone else), never that its entry was lost
+    /// while the intent survived, which would let a restart adopt a file
+    /// that appeared under that name. The record's save and the name check
+    /// run alongside the flush.
+    fn start_early_checkpoint(&mut self) {
+        if self.ckpt.is_some() {
+            return;
+        }
+        let Some(storage) = self.storage.clone() else {
+            return;
+        };
+        let cp = Checkpoint {
+            meta: self.meta.clone(),
+            done: self.durable.clone(),
+            finishing: None,
+        };
+        let intent = self.size.and_then(|len| {
+            let path = names::inside(&self.directory, &self.filename)?;
+            let f = Finishing {
+                name: self.filename.clone(),
+                len,
+            };
+            Some((f, path))
+        });
+        let landed = Arc::new(AtomicBool::new(false));
+        self.early_intent = intent.as_ref().map(|(f, _)| (f.clone(), landed.clone()));
+        self.ckpt_started = Instant::now();
+        self.flush_started = self.ckpt_started;
+        self.flushed_upto = self.written_total();
+        self.committed_any = true;
+        self.ckpt_done = Some(cp.done.clone());
+        let inner = self.inner.clone();
+        let id = self.id.clone();
+        let durability = self.durability;
+        self.ckpt = Some(Box::pin(async move {
+            let prepare = async {
+                // The record's file name first: a restart that finds a
+                // journal entry keeps the record's name (the part file's)
+                // instead of resolving it again. Not saved: no entry yet.
+                if !inner.save(&id).await {
+                    return None;
+                }
+                let mut cp = cp;
+                if let Some((f, path)) = intent {
+                    // Only a free name: a file there now is someone else's,
+                    // and a restart must never take it for ours.
+                    if matches!(inner.deps.storage.file_len(&path).await, Ok(None)) {
+                        cp.finishing = Some(f);
+                    }
+                }
+                Some(cp)
+            };
+            let (flushed, cp) = futures::join!(persist(&*storage, durability), prepare);
+            flushed?;
+            if let Some(cp) = cp {
+                let with_intent = cp.finishing.is_some();
+                inner.deps.journal.commit(&id, &cp).await?;
+                landed.store(with_intent, Ordering::Release);
+            }
+            Ok(())
+        }));
+    }
+
+    /// Land the checkpoint in flight (`Ok` if none). Power-safe, the bytes
+    /// written meanwhile are flushed alongside it, so the last bytes' sync
+    /// overlaps the commit instead of following it.
+    async fn land_ckpt_flushing(&mut self) -> io::Result<()> {
+        let Some(c) = self.ckpt.take() else {
+            return Ok(());
+        };
+        let storage = self.storage.clone();
+        let durability = self.durability;
+        let flush = async move {
+            match storage {
+                Some(s) if durability == Durability::PowerSafe => s.flush().await,
+                _ => Ok(()),
+            }
+        };
+        let (r, f) = futures::join!(c, flush);
+        self.ckpt_landed(r.is_ok());
+        r.and(f)
+    }
+
     /// While a transfer runs, flush every `writeback_bytes` of new data
-    /// (and, when resumable, commit): the store syncs on a thread of its
-    /// own, so the disk writes alongside the network instead of all at the
-    /// end, when `finish` must flush before the rename.
+    /// (and, when resumable, commit), or every `writeback_interval` when
+    /// slower: the store syncs on a thread of its own, so the disk writes
+    /// alongside the network instead of all at the end, when `finish` must
+    /// flush before the rename.
     fn writeback(&mut self) {
         // Process-safe: nothing is forced to disk at the end either, so
         // there is nothing to spread out.
@@ -2309,13 +2429,17 @@ impl Driver {
             return;
         }
         let written = self.written_total();
-        if written.saturating_sub(self.flushed_upto) < self.t.writeback_bytes {
-            return;
-        }
-        if self.committable && self.ranged {
+        let new = written.saturating_sub(self.flushed_upto);
+        let timely = new >= self.t.writeback_min_bytes
+            && self.flush_started.elapsed() >= self.t.writeback_interval;
+        if new >= self.t.writeback_bytes && self.committable && self.ranged {
             self.start_checkpoint();
-        } else if let Some(storage) = self.storage.clone() {
+        } else if (new >= self.t.writeback_bytes || timely)
+            && let Some(storage) = self.storage.clone()
+        {
             self.flushed_upto = written;
+            self.flush_started = Instant::now();
+            self.ckpt_started = self.flush_started;
             self.ckpt_done = None;
             self.ckpt = Some(Box::pin(async move { storage.flush().await }));
         }
@@ -2341,6 +2465,7 @@ impl Driver {
         };
         persist(&*storage, self.durability).await?;
         self.committed_any = true;
+        self.early_intent = None;
         self.inner.deps.journal.commit(&self.id, &cp).await?;
         self.durable = cp.done.clone();
         self.committed = cp.done.len();

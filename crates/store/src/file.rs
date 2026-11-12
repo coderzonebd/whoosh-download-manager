@@ -396,6 +396,13 @@ struct Shared {
     /// Directories whose entries changed when the file (or its directory)
     /// was created; fsynced by the next successful flush.
     pending_dirs: Mutex<Vec<PathBuf>>,
+    /// A write may have reached the file since the last data sync. Set
+    /// before every write; the syncer clears it just before its
+    /// `fdatasync` and skips the `fdatasync` when it was clear. A flush of
+    /// a file nothing was written to since (one right after creating it,
+    /// to sync its directory entry while the data still arrives) syncs
+    /// only the directories.
+    unsynced: AtomicBool,
     #[cfg(test)]
     paused: (Mutex<bool>, std::sync::Condvar),
     #[cfg(test)]
@@ -453,6 +460,7 @@ impl Shared {
             return None;
         }
         let started = Instant::now();
+        self.unsynced.store(true, Ordering::Release);
         let r = sys::write_all_at(&file, data, offset);
         let allowed =
             SLOW_INLINE + Duration::from_nanos(data.len() as u64 * u64::from(SLOW_INLINE_PER_BYTE));
@@ -611,6 +619,9 @@ impl FileStorage {
             error: Mutex::new(None),
             finished: AtomicBool::new(false),
             closed: watch::Sender::new(false),
+            // A file this storage did not create may hold writes of an
+            // earlier process that were never synced.
+            unsynced: AtomicBool::new(new_dirs.is_empty()),
             pending_dirs: Mutex::new(new_dirs),
             #[cfg(test)]
             paused: Default::default(),
@@ -1053,6 +1064,7 @@ impl Writer {
             _ => None,
         };
         if let Some(file) = file {
+            self.shared.unsynced.store(true, Ordering::Release);
             let mut order: Vec<usize> = (0..batch.len()).collect();
             order.sort_by_key(|&i| batch[i].offset);
             let overlapping = order
@@ -1100,17 +1112,29 @@ impl Writer {
     }
 }
 
-/// `fdatasync`, then (the first time) the directory entries that creating
-/// the file changed. Any failure is sticky.
+/// `fdatasync` (unless nothing was written since the last one), then (the
+/// first time) the directory entries that creating the file changed. Any
+/// failure is sticky.
 fn sync_file(file: &File, shared: &Shared) -> io::Result<()> {
+    // Cleared before the sync: a write racing with it marks it again, for
+    // the next flush (this one covers only writes that resolved before it
+    // was called, and those marked it before they resolved).
+    let data = shared.unsynced.swap(false, Ordering::AcqRel);
     #[cfg(test)]
-    shared
-        .data_syncs
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if data {
+        shared
+            .data_syncs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     // The first time, then the directories whose entries creating the
     // file changed.
     let dirs = shared.take_pending_dirs();
-    sys::sync_data_and_dirs(file, &dirs).map_err(|e| shared.fail(sys::map_err(e)))?;
+    let r = if data {
+        sys::sync_data_and_dirs(file, &dirs)
+    } else {
+        sys::sync_dirs(&dirs)
+    };
+    r.map_err(|e| shared.fail(sys::map_err(e)))?;
     #[cfg(test)]
     lock(&shared.synced_dirs).extend(dirs);
     Ok(())
@@ -1510,6 +1534,32 @@ mod tests {
             .unwrap();
         again.flush().await.unwrap();
         assert!(lock(&again.shared.synced_dirs).is_empty());
+    }
+
+    /// A flush with nothing written since the last data sync (one right
+    /// after creating the file, to sync its directory entry early) syncs
+    /// the new directory entries but not the data; a write makes the next
+    /// flush sync the data again. A file the storage did not create is
+    /// synced on its first flush: an earlier process may have left writes
+    /// unsynced.
+    #[tokio::test]
+    async fn a_flush_with_nothing_written_syncs_no_data() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f.vayu-part");
+        let s = provider(1 << 20).open_storage(&path).await.unwrap();
+        s.flush().await.unwrap();
+        assert_eq!(s.shared.data_syncs.load(Relaxed), 0);
+        assert_eq!(*lock(&s.shared.synced_dirs), vec![d.path().to_path_buf()]);
+        s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
+        s.flush().await.unwrap();
+        assert_eq!(s.shared.data_syncs.load(Relaxed), 1);
+        s.flush().await.unwrap();
+        assert_eq!(s.shared.data_syncs.load(Relaxed), 1);
+        drop(s);
+        let again = provider(1 << 20).open_storage(&path).await.unwrap();
+        again.flush().await.unwrap();
+        assert_eq!(again.shared.data_syncs.load(Relaxed), 1);
     }
 
     /// When the writer thread ends (here: `finish` succeeds) while a
