@@ -45,6 +45,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Releases are cut from pub
+        # ADR 0006: a release tag must point at a commit on pub.
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/pub...$GITHUB_SHA" --jq .status)
+          case "$status" in
+            identical|behind) echo "$GITHUB_REF_NAME is on pub" ;;
+            *) echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on pub (compare: $status). Tag the release merge commit on pub."; exit 1 ;;
+          esac
       - name: Tag and manifest versions agree
         id: version
         run: |

@@ -1,3 +1,5 @@
+<!-- PRs go into `dev`. `pub` only takes release PRs from `dev` (see CONTRIBUTING.md). -->
+
 ## What and why
 
 <!-- What changes, and the problem it solves. Link the issue if there is one. -->

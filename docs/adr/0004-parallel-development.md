@@ -1,6 +1,6 @@
 # ADR 0004 — How parallel work branches and merges
 
-- Status: accepted
+- Status: accepted; branch model superseded by [ADR 0006](0006-dev-and-pub-branches.md) (2026-11-13). Ownership and build-budget rules still apply.
 - Date: 2026-11-10
 
 ## Context

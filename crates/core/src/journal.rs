@@ -18,11 +18,14 @@ pub struct Checkpoint {
     pub meta: RemoteMeta,
     /// Ranges whose bytes were flushed to storage before this checkpoint.
     pub done: RangeSet,
-    /// Set by the engine just before it moves the finished file into place
-    /// (`Storage::finish`): the file it is about to create and its exact
-    /// length. After a crash between that move and the record update, a
-    /// part file that is gone and a file of this name and length mean the
-    /// download already finished. Absent in every other checkpoint.
+    /// Set by the engine before it moves the finished file into place
+    /// (`Storage::finish`): the file it will create (a name that was free
+    /// when the intent was written) and its exact length. Written just
+    /// before the move, or earlier (when the transfer starts) so that
+    /// finishing needs no commit of its own; a later checkpoint without it
+    /// withdraws it. After a crash between that move and the record update,
+    /// a part file that is gone and a file of this name and length mean the
+    /// download already finished.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finishing: Option<Finishing>,
 }
