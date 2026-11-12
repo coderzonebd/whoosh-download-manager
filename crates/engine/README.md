@@ -82,19 +82,25 @@ more pieces than that: a server that caps connections refuses one wave
 as they start.
 
 **Back to one when the others add nothing.** #1's solo rate is also the
-yardstick for the first window the starting count (8) is measured in:
-when the eight together deliver less than `1 + solo_collapse_gain` (1.25×)
-what #1 did alone, the link is one connection wide (a fast server close by,
-a shared bottleneck) and the download drops to one connection at once
-(the slowest seven are cancelled; their ranges are fetched one after
-another). That is a trial, judged from one fast window: kept when one
-connection holds `keep_ratio` (97 %) of the eight, minus noise of at most
-`solo_collapse_slack` (7 %); otherwise the solo look flattered #1, and the
-count goes back to eight and climbs as usual. On labserver's clean 1 GiB
-the eight-to-sixteen climb delivered ~740 MiB/s at 2.6 CPU-s/GiB in the
-Phase 1 gate run, one connection more than that at less than half the CPU.
-Without this rule the careful steps down (8 → 4 → 2 → 1, alternating
-windows) only end long after a gigabyte on a fast link is done.
+yardstick for the first window the starting count (8) is measured in (the
+better of its rate since its first look and since its headers, so one look
+caught in a dip does not count): when the eight together deliver less than
+`1 + solo_collapse_gain` (1.25×) what #1 did alone, the link is one
+connection wide (a fast server close by, a shared bottleneck) and the
+download drops to one connection at once (the slowest seven are cancelled;
+their ranges are fetched one after another). That is a trial, judged from
+one fast window: kept when one connection holds `keep_ratio` (97 %) of the
+eight, minus noise of at most `solo_collapse_slack` (7 %). Far short (under
+half) means the solo look flattered #1: back to eight, climbing as usual.
+In between, the window at one may only have caught the link slowing (a
+disk that starts throttling writes), so eight and one are compared in
+alternating windows, which cancel drift. On labserver's clean 1 GiB the
+first window at eight delivered 1.03–1.16 GB/s against 1.18–1.63 GB/s for
+#1 alone, and one connection then measured 1.4–1.9× the eight (10 traced
+runs, all dropped to one); without the rule the download climbed to a
+trial of 16 and stayed at 8–16 (2.3 CPU-s/GiB against 1.1–1.3): the
+careful steps down (8 → 4 → 2 → 1, alternating windows) end long after a
+gigabyte on a fast link is done.
 
 **Plan.** A ranged download (server honours ranges, size known) starts with
 the journalled gaps (everything, for a new download) cut into one range per
@@ -164,13 +170,15 @@ throughput swings ±30 % second to second:
   plus margin), yet the commonest reason more connections pay — each one is
   limited on its own (a server throttle, a long thin path) — is the easiest
   to see: doubling the count about doubles the throughput. So a download's
-  first climb uses short windows (`tune_fast_window` 100 ms, at least 4
-  TTFBs; warm-up half that; samples every `tune_fast_sample` 50 ms) and
+  first climb uses short windows (`tune_fast_window` 50 ms, at least 4
+  TTFBs; warm-up half that; samples every `tune_fast_sample` 25 ms, on a
+  25 ms `tick`) and
   takes a doubling from one trial window when it delivers at least
   `tune_fast_scaling` (half) of linear scaling beyond 2 standard errors
   (≥ 1.5× for 2×), then tries the next at once. The first doubling that
   scales less ends the fast climb and is judged carefully from there (as
-  below). Steps down are always careful. On the paused-clock model of
+  below). Steps down are always careful, except the drop to the first
+  connection alone (*Back to one*, above). On the paused-clock model of
   labserver's per-conn-throttle and slow-drip (10 MiB, 2 and 3.2 MB/s per
   connection) it reaches 16 connections and finishes in 0.50 s / 0.38 s
   instead of 0.74 s / 0.50 s at 8; on the 180 s link models below it
@@ -461,13 +469,13 @@ and ends every subscription.
 | `min_split` | 1 MiB | smaller = better tail balance, more requests |
 | `min_split_floor`, `min_split_time` | 256 KiB, 100 ms | on slow links pieces may shrink to what the median connection fetches in max(100 ms, 4 TTFB), not below 256 KiB |
 | `split_align` | 64 KiB | split points round down to this |
-| `tick` | 50 ms | sampling/hedge/tuner cadence (refills are immediate) |
+| `tick` | 25 ms | sampling/hedge/tuner cadence (refills are immediate) |
 | `tune_window`, `tune_window_max` | 200 ms, 4 s | shortest and longest measurement window |
 | `tune_rtt_windows` | 16 | a window spans at least this many median TTFBs |
 | `tune_sample`, `tune_target_rse` | 100 ms, 0.02 | windows grow until their samples' RSE is this low |
 | `tune_warm_rtts`, `tune_warm_rise` | 4, 0.10 | warm-up: at least 4 TTFBs, longer while rising > 10 % per sample |
 | `tune_z`, `tune_rounds` | 2.0, 4 | confidence (standard errors) a step needs; most trial windows of an alternating comparison |
-| `tune_fast_window`, `tune_fast_sample`, `tune_fast_scaling` | 100 ms, 50 ms, 0.5 | fast first climb: short windows; a doubling delivering ≥ half of linear scaling (beyond 2 SE) is taken from one window (`INFINITY` turns it off) |
+| `tune_fast_window`, `tune_fast_sample`, `tune_fast_scaling` | 50 ms, 25 ms, 0.5 | fast first climb: short windows; a doubling delivering ≥ half of linear scaling (beyond 2 SE) is taken from one window (`INFINITY` turns it off) |
 | `tune_reprobe` | 30 s | re-probe one step, alternately up and down, after settling (doubling up to 5 min) |
 | `climb_gain` / `keep_ratio` | 0.04 / 0.97 | a doubling's gain must clearly reach 4 %; a halving must keep 97 % |
 | `ewma_tau` | 400 ms | speed smoothing |
@@ -541,6 +549,80 @@ version changes after N bytes served, link expiry after N bytes, and a
 per-request script (TTFB, rate, stall, reset, failure).
 
 ## Benchmarks
+
+### Phase 1 gate round (2026-11-12, resident daemon, labserver on loopback)
+
+The gate (`docs/bench/data/2026-11-12-pop-os-phase1-gate`) left clean
+1 GiB (1.39 s against wget's 0.912 s to durability; 17 connections, 2.60
+CPU-s/GiB), changing-file (0.265 s against 0.191 s) and the CPU of short
+files. Same harness as the rounds below (fresh daemon state per run, the
+daemon ready before the clock, `vayu --no-start get` timed), now with time
+**to durability** (the output file and its directory `fsync`ed inside the
+timing, for every client) and CPU (the CLI's rusage plus the daemon's
+utime + stime until it goes quiet, as the gate counts it). *Base* is
+`phase1/engine` a4b86bb, *new* this branch (9dbf657); clients interleaved
+in random order, 9 runs each, labserver reset before every run. The
+machine was shared with other sessions' benchmarks: the 1 GiB runs pause
+4 s between runs (without the pause the disk fell behind after two runs
+and every client took 2.5–3.5 s), and the engine scenarios ran on tmpfs
+(the disk's IO pressure reached 40 %). Median seconds to durability, p of
+a two-sided Mann-Whitney U test, CPU-s/GiB:
+
+| scenario | file | base | new | p | wget | base CPU | new CPU |
+|---|---|---:|---:|---:|---:|---:|---:|
+| clean (disk) | 1g | 1.244 | **0.856** | 0.008 | 0.897 | 2.32 | **1.06** |
+| changing-file (disk) | 100m | 0.221 | **0.170** | 0.16 | 0.203 | 2.41 | 1.39 |
+| redirect-chain (disk) | 100m | 0.166 | 0.178 | 0.06 | 0.192 | 1.29 | 1.60 |
+| per-conn-throttle | 10m | 0.322 | 0.321 | 0.48 | 5.202 | 6.82 | 6.81 |
+| slow-drip | 10m | 0.291 | 0.296 | 0.66 | 4.094 | 7.83 | 7.84 |
+| flaky | 100m | 0.149 | 0.161 | 0.48 | 10.188 | 1.80 | 1.90 |
+| stall | 100m | 0.165 | 0.159 | 0.38 | 8.091 | 1.81 | 1.90 |
+| high-latency | 10m | 0.524 | 0.524 | 0.48 | 0.520 | 2.64 | 2.60 |
+| rate-limited | 10m | 0.576 | 0.494 | 1.00 | 2.056 | 6.72 | 7.84 |
+| global-throttle | 10m | 0.512 | 0.512 | 1.00 | 0.482 | 7.80 | 6.84 |
+| clean | 10m | 0.028 | 0.034 | 0.19 | 0.017 | 2.63 | 3.75 |
+| cookie-required | 10m | 0.035 | 0.034 | 0.72 | — | 3.76 | 3.74 |
+
+- **clean 1 GiB.** New against wget: p = 1.0 (not slower; a second set of
+  14 runs each: 0.906 against 0.866 s with the 50 ms tick, p = 0.008,
+  which the 25 ms tick closed). CPU 1.06 CPU-s/GiB, under aria2c-tuned's
+  1.66 in the gate. What it does is in *Back to one* above; the first
+  window at eight now ends 110–240 ms after the split.
+- **changing-file.** Base restarted from zero in 5 of 9 runs; new kept the
+  old version in 3 and restarted once (an old-version connection gone
+  before the change reached the steal). New is faster than wget here
+  (p = 0.04): the runs that never split are one connection anyway.
+- **Rows that moved by noise:** redirect-chain (base / 50 ms tick / 25 ms
+  tick in a separate 12-run set: 0.175 / 0.166 / 0.163 s, 1.42 / 1.49 /
+  1.49 CPU-s/GiB), rate-limited (6.73 / 6.84 / 6.32 CPU-s/GiB), clean 10m
+  (the daemon's CPU is counted in 10 ms ticks: one tick is ~1 CPU-s/GiB on
+  a 10 MiB file; cookie-required, the same download with a header, did not
+  move).
+- **Short files (rule 5).** A 1 MiB download costs the daemon ~4 ms (of
+  which ~1.5 ms is the data) and the CLI ~2–3 ms (process start ~1 ms);
+  the rest scales with bytes. One connection, 100 MiB to disk, per thread
+  (schedstat): the runtime's worker 71 ms, the store's writer 64 ms, its
+  syncer 13 ms — ~1.5 CPU-s/GiB against wget's ~0.8, nearly all in
+  `vayu-net`'s read path and `vayu-store`'s write path. The gate's 10 MiB
+  rows count the daemon in 10 ms ticks (vayu on cookie-required: 36, 46,
+  46, 46, 47, 56, 56 ms); in a quiet harness run the same download counted
+  12 ms. The engine's share here is small: back-to-back record saves of one
+  download now ride on one queued save (one or two fewer SQLite writes per
+  download, a fraction of a millisecond). Not measurable at 9 runs.
+- **Worker threads.** `DEFAULT_WORKER_THREADS = 1` (crates/daemon) does not
+  cap this: on 100 MiB (tmpfs, 10 runs) one connection took 0.129 s with
+  one worker and 0.129 s with two, two connections 0.115 / 0.130 s, at
+  more CPU with two workers; one connection cannot be read on two threads,
+  and one connection is what a fast link now gets. Left at 1.
+- **Write gathering.** Writing chunks of 64 KiB and more directly (no copy
+  into the 256 KiB gather buffer; one connection delivers 64 KiB chunks)
+  was not faster (0.119 s gathered, 0.137 s direct, 0.134 s from 16 KiB;
+  12 runs, noisy): the per-write cost of the store's queue offsets the
+  copy. Kept at 256 KiB.
+- **Verified on 9dbf657:** `vayu-bench hardkill --kills 100` (seed
+  20261113): 234 downloads, 0 corrupt, 0 leftovers, 0 unfinished (also on
+  7eaf9ca: 165 downloads, 0 corrupt); the crash model, 6,000 cases (seeds
+  180000–182999, 190000–192999), and 4,000 proptest schedules.
 
 ### Durability modes (2026-11-11, resident daemon, labserver on loopback)
 

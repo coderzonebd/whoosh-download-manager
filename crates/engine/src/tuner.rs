@@ -51,6 +51,15 @@
 //!   less ends the fast climb; its comparison continues as above, from the
 //!   windows already measured.
 //!
+//! - **Back to one.** A fresh download's first connection measured its rate
+//!   alone before the others started (`solo_rate`). When the first window
+//!   at the starting count is under `1 + solo_collapse_gain` times that,
+//!   the others add nothing, and the count drops to one at once, judged
+//!   from one fast window against that first window: kept within
+//!   `solo_collapse_slack` of `keep_ratio`; far short (under half) goes back
+//!   and climbs as usual; anything between is settled in alternating
+//!   windows (the link may have drifted meanwhile).
+//!
 //! `Throttled` (429/503, refused under load), or connections failing before
 //! their first byte while others work, set a ceiling at the number of
 //! accepted connections and settle. Learning pauses while a global speed
