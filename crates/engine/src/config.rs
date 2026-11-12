@@ -77,6 +77,15 @@ pub struct Tuning {
     /// once instead of climbing there.
     pub solo_window: u64,
     pub limited_connections: u16,
+    /// When the first window measured at the starting count (all
+    /// connections streaming) delivers less than `1 + solo_collapse_gain`
+    /// times what the first connection did alone, the others add nothing
+    /// (a fast link, a shared bottleneck): the download drops to one
+    /// connection at once, judged from one fast window — kept when it
+    /// holds `keep_ratio` of the starting count (within noise, at most
+    /// `solo_collapse_slack` below), else the count goes back up.
+    pub solo_collapse_gain: f64,
+    pub solo_collapse_slack: f64,
     /// Never split a range into pieces smaller than this; on a slow link,
     /// down to `min_split_floor`, as long as a piece still takes at least
     /// `max(min_split_time, 4 × median TTFB)` at the median connection's
@@ -224,6 +233,8 @@ impl Default for Tuning {
             solo_silence: Duration::from_millis(20),
             solo_window: 16 * 1024,
             limited_connections: 16,
+            solo_collapse_gain: 0.25,
+            solo_collapse_slack: 0.07,
             min_split: MIB,
             min_split_floor: 256 * 1024,
             min_split_time: Duration::from_millis(100),

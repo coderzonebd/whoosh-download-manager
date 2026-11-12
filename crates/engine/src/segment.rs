@@ -305,6 +305,24 @@ impl Segment {
         }
     }
 
+    /// Move the end of an owned segment out to `to` (the range after it lost
+    /// its connection, and this owner's request reaches that far). Only
+    /// while the owner has bytes left to claim, so it reads on instead of
+    /// stopping; never for hedged or open-ended segments.
+    pub(crate) fn extend(&self, to: u64) -> bool {
+        let mut s = self.lock();
+        if s.owner.is_none()
+            || s.challenger.is_some()
+            || s.open_ended
+            || s.claimed >= s.end
+            || to <= s.end
+        {
+            return false;
+        }
+        s.end = to;
+        true
+    }
+
     /// Split off the unclaimed tail for another connection. The current
     /// owner keeps `keep_frac` of the remaining bytes (both pieces at least
     /// `min`); the split point is rounded to `align` — down, else up — when

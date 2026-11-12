@@ -355,6 +355,43 @@ async fn responses_in_flight_finish_their_version() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_change_in_the_endgame_finishes_the_version_already_streaming() {
+    // The first wave of requests covers the whole file before it changes;
+    // the requests that would split the last ranges find the new version.
+    // The connections still on the old one finish it (the split-off pieces
+    // go back to them): no restart from zero, nothing fetched twice.
+    let lab = Lab::new(config()).await;
+    let v1 = content(64 * MIB, 27);
+    let v2 = content(64 * MIB, 28);
+    let src = lab.serve(
+        URL,
+        Arc::new(
+            FaultSource::with_versions(vec![v1.clone(), v2])
+                .cfg(|c| {
+                    c.native_start = true;
+                    c.change_after = Some(5 * MIB);
+                    c.ttfb = Duration::from_millis(1);
+                })
+                // Every other range is fast: its connection finishes early
+                // and splits a slow one's rest off for a new request.
+                .script(|_, req| ReqPlan {
+                    rate: Some(match req.range {
+                        Some(r) if (r.start / (8 * MIB)) % 2 == 1 => 16 * MIB,
+                        _ => 4 * MIB,
+                    }),
+                    ..ReqPlan::default()
+                }),
+        ),
+    );
+    let id = lab.add(URL).await;
+    finish(&lab.engine, &id, LONG).await;
+    assert_eq!(src.version(), 1, "the file did change");
+    assert!(src.requests() > 8, "requests {}", src.requests());
+    assert_same(&lab.file("data.bin").unwrap(), &v1);
+    assert!(src.served() <= 65 * MIB, "served {}", src.served());
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_file_that_keeps_changing_fails_with_remote_changed() {
     let lab = Lab::new(config()).await;
     let vs: Vec<_> = (0..4).map(|i| content(16 * MIB, 20 + i)).collect();

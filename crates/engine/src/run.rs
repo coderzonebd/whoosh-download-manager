@@ -186,6 +186,8 @@ struct Wk {
     last_bytes: u64,
     ewma: Option<f64>,
     ttfb_seen: bool,
+    /// Where its request ends: its stream can deliver up to here.
+    req_end: u64,
 }
 
 impl Wk {
@@ -315,6 +317,10 @@ struct Driver {
     solo: Option<Solo>,
     /// The first connection's rate alone (past its first burst), bytes/s.
     solo_rate: Option<f64>,
+    /// The file changed on the server while connections were still
+    /// streaming the version this run started on: they finish it, and no
+    /// new request is made (it would get the new version).
+    old_version: bool,
     category_auto: bool,
     checksum: Option<Checksum>,
     source: Option<Arc<dyn RangeSource>>,
@@ -394,6 +400,7 @@ impl Driver {
             flushed_upto: 0,
             solo: None,
             solo_rate: None,
+            old_version: false,
             category_auto,
             checksum: record.checksum.clone(),
             source: None,
@@ -477,8 +484,7 @@ impl Driver {
             let plan = match self.prepare(meta.clone(), force_stream).await {
                 Ok(p) => p,
                 Err(Abort::Remote) => {
-                    first = None;
-                    meta = self.restart_after_change().await?;
+                    (meta, first) = self.restart_after_change().await?;
                     continue;
                 }
                 Err(Abort::NoRanges) => {
@@ -495,7 +501,7 @@ impl Driver {
             };
             match r {
                 Ok(()) => break,
-                Err(Abort::Remote) => meta = self.restart_after_change().await?,
+                Err(Abort::Remote) => (meta, first) = self.restart_after_change().await?,
                 Err(Abort::NoRanges) => {
                     self.halt().await;
                     force_stream = true;
@@ -847,7 +853,10 @@ impl Driver {
         Ok(())
     }
 
-    async fn restart_after_change(&mut self) -> Result<RemoteMeta, Outcome> {
+    /// Start over on the new version: everything written is dropped, and
+    /// the new version's description and its body from offset 0 come in
+    /// one request (`start`), as for a fresh download.
+    async fn restart_after_change(&mut self) -> Result<(RemoteMeta, Option<First>), Outcome> {
         self.halt().await;
         if self.restarts >= self.t.max_remote_restarts {
             return Err(Outcome::Failed(error_info(
@@ -859,10 +868,10 @@ impl Driver {
         self.restarts += 1;
         tracing::info!(id = %self.id, "remote file changed; restarting from zero");
         self.state(DownloadState::Probing).await;
-        let meta = self.probe().await?;
+        let (meta, first) = self.start().await?;
         self.meta = meta.clone();
         self.discard().await?;
-        Ok(meta)
+        Ok((meta, Some(first)))
     }
 
     // ------------------------------------------------------ verification
@@ -1187,6 +1196,7 @@ impl Driver {
     /// (`solo_check`); otherwise the first plan is one range per connection.
     async fn transfer_ranged(&mut self, done: RangeSet, first: Option<First>) -> Result<(), Abort> {
         let size = self.size.unwrap_or(0);
+        self.old_version = false;
         self.done = done;
         self.segs = self
             .done
@@ -1469,6 +1479,9 @@ impl Driver {
     /// their work off as they start), never below the minimum: halve the
     /// largest remaining range until there are enough.
     fn plan(&mut self) {
+        if self.old_version {
+            return;
+        }
         let target = usize::from(self.target().min(self.t.initial_connections.max(1)));
         while self.segs.len() < target {
             let Some(big) = self
@@ -1580,11 +1593,13 @@ impl Driver {
             // burst: the server paces this connection (any path carries
             // more). Every connection will be limited alike, so start many
             // at once.
-            if rate * solo.ttfb.max(1e-3) < self.t.solo_window as f64
-                && let Some(t) = self.tuner.as_mut()
-            {
-                tracing::debug!(id = %self.id, rate, ttfb = solo.ttfb, "first connection limited on its own");
-                t.limited_per_connection(self.t.limited_connections, rate);
+            if let Some(t) = self.tuner.as_mut() {
+                if rate * solo.ttfb.max(1e-3) < self.t.solo_window as f64 {
+                    tracing::debug!(id = %self.id, rate, ttfb = solo.ttfb, "first connection limited on its own");
+                    t.limited_per_connection(self.t.limited_connections, rate);
+                } else {
+                    t.solo_rate(rate);
+                }
             }
         }
         tracing::debug!(id = %self.id, "first range split for the others");
@@ -1625,6 +1640,10 @@ impl Driver {
 
     /// `solo`: only ranges nobody owns (the first connection runs alone).
     fn pick(&mut self, now: Instant, solo: bool) -> Option<Work> {
+        // A new request would get the new version.
+        if self.old_version {
+            return None;
+        }
         // 1. Ownerless ranges (a connection failed or was cancelled).
         if let Some(seg) = self
             .segs
@@ -1819,6 +1838,7 @@ impl Driver {
                 last_bytes: 0,
                 ewma: None,
                 ttfb_seen: false,
+                req_end: end,
             },
         );
         Some(wid)
@@ -1836,20 +1856,44 @@ impl Driver {
         let Some(w) = self.workers.remove(&wid) else {
             return Ok(());
         };
-        tracing::debug!(id = %self.id, wid, ?exit, "connection closed");
-        self.recv_total += w.counters.bytes.load(Ordering::Relaxed) - w.last_bytes;
+        let bytes = w.counters.bytes.load(Ordering::Relaxed);
+        let chunks = w.counters.chunks.load(Ordering::Relaxed);
+        tracing::debug!(id = %self.id, wid, ?exit, bytes, chunks, "connection closed");
+        self.recv_total += bytes - w.last_bytes;
         self.note_ttfb(&w);
         w.seg.release(wid);
         let alone = self
             .solo
             .as_ref()
             .is_some_and(|s| Arc::ptr_eq(&s.seg, &w.seg));
+        let r = self.exited(exit, alone, &w);
+        if r.is_ok() && self.old_version {
+            self.mend()?;
+        }
+        r
+    }
+
+    fn exited(&mut self, exit: Exit, alone: bool, w: &Wk) -> Result<(), Abort> {
         match exit {
             Exit::Finished => {
                 self.replacements += 1;
                 Ok(())
             }
             Exit::Lost | Exit::Cancelled => Ok(()),
+            // A new request found the file changed (validators are checked
+            // before the first byte). Connections already streaming the
+            // old version may still finish it: no restart from zero.
+            Exit::Failed {
+                err: SourceError::RemoteChanged,
+                streamed: false,
+            } if self.ranged => {
+                if !self.old_version {
+                    tracing::info!(id = %self.id, "remote file changed; finishing the version already streaming");
+                    self.old_version = true;
+                    self.solo = None;
+                }
+                Ok(())
+            }
             Exit::Failed { err, streamed } => {
                 // A reset after real progress is not the server pushing
                 // back: the range is taken up again at once instead of
@@ -1869,6 +1913,44 @@ impl Driver {
             }
             Exit::Storage(e) => Err(io_failed(e).into()),
         }
+    }
+
+    /// While finishing the old version, a range nobody fetches can only be
+    /// taken over by the old-version connection just before it, when its
+    /// request reaches far enough: that connection then reads on into it
+    /// (a range split off for a new request that found the new version is
+    /// handed back to the connection it was split from). Anything else
+    /// restarts the download from zero, on the new version.
+    fn mend(&mut self) -> Result<(), Abort> {
+        let mut orphans: Vec<Arc<Segment>> = self
+            .segs
+            .iter()
+            .filter(|s| {
+                let n = s.snapshot();
+                n.owner.is_none() && !n.complete()
+            })
+            .cloned()
+            .collect();
+        orphans.sort_by_key(|s| s.start);
+        for seg in orphans {
+            let n = seg.snapshot();
+            let untouched = n.written == n.start && n.claimed == n.start;
+            let taken = untouched
+                && self.workers.iter().any(|(wid, w)| {
+                    if w.cancelling || w.req_end < n.end {
+                        return false;
+                    }
+                    let p = w.seg.snapshot();
+                    p.owner == Some(*wid) && p.end == n.start && w.seg.extend(n.end)
+                });
+            if !taken {
+                tracing::info!(id = %self.id, start = n.start, end = n.end, "no connection left on the old version for a range; restarting");
+                return Err(Abort::Remote);
+            }
+            tracing::debug!(id = %self.id, start = n.start, end = n.end, "range handed back to the connection before it");
+            self.segs.retain(|s| !Arc::ptr_eq(s, &seg));
+        }
+        Ok(())
     }
 
     fn note_ttfb(&mut self, w: &Wk) {
@@ -2050,6 +2132,10 @@ impl Driver {
     }
 
     fn tune(&mut self, now: Instant) {
+        // Finishing the old version: no connection can be added or cut.
+        if self.old_version {
+            return;
+        }
         let streaming = self.streaming_owners();
         let work_left: u64 = self.segs.iter().map(|s| s.snapshot().remaining()).sum();
         let max = self.inner.max_connections();
@@ -2129,6 +2215,11 @@ impl Driver {
             if n.challenger == Some(*wid) {
                 give_up.push(*wid);
             } else if n.owner == Some(*wid) && n.challenger.is_none() {
+                if self.old_version {
+                    // Nothing else can fetch the old version.
+                    tracing::info!(id = %self.id, "a connection on the old version stalled; restarting");
+                    return Err(Abort::Remote);
+                }
                 if n.hedges < self.t.max_hedges_per_range {
                     if !gated && room > 0 {
                         room -= 1;

@@ -169,6 +169,8 @@ struct Knobs {
     z: f64,
     rounds: u32,
     reprobe: Duration,
+    collapse_gain: f64,
+    collapse_slack: f64,
 }
 
 #[derive(Debug)]
@@ -189,6 +191,11 @@ pub(crate) struct Tuner {
     /// A jump from the first connection's solo rate is being measured
     /// (from this count).
     jump_from: Option<u16>,
+    /// What a fresh download's first connection delivered alone (bytes/s),
+    /// until the first window at the starting count is compared with it.
+    solo: Option<f64>,
+    /// The drop to one connection that `solo` suggested is being measured.
+    collapsing: bool,
     throttled: bool,
     /// Has settled at least once: later climbs are re-probes.
     settled_once: bool,
@@ -318,6 +325,8 @@ impl Tuner {
                 z: t.tune_z,
                 rounds: t.tune_rounds.max(1),
                 reprobe: t.tune_reprobe,
+                collapse_gain: t.solo_collapse_gain,
+                collapse_slack: t.solo_collapse_slack,
             },
             state: if fixed {
                 State::Settled { since: None }
@@ -331,6 +340,8 @@ impl Tuner {
             climbed: false,
             fast: !fixed && t.tune_fast_scaling.is_finite(),
             jump_from: None,
+            solo: None,
+            collapsing: false,
             throttled: false,
             settled_once: false,
             reprobe_every: t.tune_reprobe,
@@ -357,6 +368,7 @@ impl Tuner {
         if n <= self.target || rate <= 0.0 {
             return;
         }
+        self.solo = None;
         self.jump_from = Some(self.target);
         self.target = n;
         self.state = State::Running {
@@ -370,6 +382,23 @@ impl Tuner {
             },
             phase: Phase::warm(),
         };
+    }
+
+    /// A fresh download's first connection, alone, delivered `rate`
+    /// bytes/s (past its first burst) before the others started. If the
+    /// first window at the starting count is not clearly faster, they add
+    /// nothing, and the download drops to one connection (see `decide`).
+    pub(crate) fn solo_rate(&mut self, rate: f64) {
+        let first_base = matches!(
+            self.state,
+            State::Running {
+                goal: Goal::Base { reprobe: None },
+                ..
+            }
+        );
+        if !self.fixed && first_base && self.best.is_none() && rate.is_finite() && rate > 0.0 {
+            self.solo = Some(rate);
+        }
     }
 
     /// The number of owning connections to run now.
@@ -517,6 +546,24 @@ impl Tuner {
         match goal {
             Goal::Base { reprobe } => {
                 self.best = Some(stat);
+                if let Some(solo) = self.solo.take()
+                    && reprobe.is_none()
+                    && stat.n > 1
+                    && stat.mean < solo * (1.0 + self.k.collapse_gain)
+                {
+                    // All of them deliver about what the first connection
+                    // did alone: try it alone again, from one fast window.
+                    self.collapsing = true;
+                    self.target = 1;
+                    self.state = State::Running {
+                        goal: Goal::Trial {
+                            dir: Dir::Down,
+                            base: stat,
+                        },
+                        phase: Phase::warm(),
+                    };
+                    return;
+                }
                 let started = match reprobe {
                     Some(dir) => self.start_trial(dir, stat),
                     // First: up, or (already at the cap) down.
@@ -527,6 +574,24 @@ impl Tuner {
                 }
             }
             Goal::Trial { dir, base } => {
+                if std::mem::take(&mut self.collapsing) {
+                    let ratio = stat.mean / base.mean.max(1.0);
+                    let se = ratio * (stat.rse.powi(2) + base.rse.powi(2)).sqrt();
+                    let slack = (self.k.z * se).min(self.k.collapse_slack);
+                    if ratio + slack >= self.k.keep {
+                        // One connection does as well: stay there.
+                        self.accept(Dir::Down, stat);
+                    } else {
+                        // The solo rate flattered it: back to the starting
+                        // count, and climb from there as usual.
+                        self.target = base.n;
+                        self.best = Some(base);
+                        if !self.start_trial(Dir::Up, base) {
+                            self.settle();
+                        }
+                    }
+                    return;
+                }
                 if self.jump_from.take().is_some() {
                     // The jump from the first connection's solo rate.
                     let linear = f64::from(stat.n) / f64::from(base.n.max(1));
@@ -761,6 +826,8 @@ impl Tuner {
         self.settled_once = true;
         self.fast = false;
         self.jump_from = None;
+        self.solo = None;
+        self.collapsing = false;
     }
 
     /// The server limited us while `working` connections were accepted.
@@ -915,6 +982,53 @@ mod tests {
         assert_eq!(t.target(), 32);
         t.on_throttle(5, false);
         assert_eq!(t.target(), 5);
+    }
+
+    #[test]
+    fn the_first_connection_alone_was_as_fast_so_it_goes_on_alone() {
+        // A link the first connection filled on its own: eight deliver no
+        // more (or a little less), so it is tried alone again and kept.
+        for one in [100e6, 98e6] {
+            let mut t = tuner(16);
+            t.solo_rate(100e6);
+            let path = run(&mut t, |n| if n == 1 { one } else { 100e6 });
+            assert_eq!(path, vec![8, 1], "one connection at {one}");
+            assert!(t.settled());
+            assert_eq!(t.best(), 1);
+        }
+    }
+
+    #[test]
+    fn a_solo_rate_that_flattered_the_first_connection_is_corrected() {
+        // Every connection is limited to 2 MB/s, but the first one's short
+        // look alone read 15 MB/s: eight deliver about that, so one is
+        // tried alone, falls far short, and the climb goes on from eight
+        // (straight to the trial of 16, against eight's window).
+        let mut t = tuner(16);
+        t.solo_rate(15e6);
+        let path = run(&mut t, |n| n as f64 * 2e6);
+        assert_eq!(path, vec![8, 1, 16]);
+        assert_eq!(t.best(), 16);
+        // One that loses more than the noise allows is not kept either;
+        // the careful steps down then stop at two.
+        let mut t = tuner(16);
+        t.solo_rate(100e6);
+        let path = run(&mut t, |n| if n == 1 { 85e6 } else { 100e6 });
+        assert_eq!(path[..3], [8, 1, 16]);
+        assert_eq!(t.target(), 2, "{path:?}");
+    }
+
+    #[test]
+    fn connections_that_beat_the_solo_rate_stay() {
+        let mut t = tuner(16);
+        t.solo_rate(2e6);
+        assert_eq!(run(&mut t, |n| n as f64 * 2e6), vec![8, 16]);
+        // Only a fresh download's first window is compared with it.
+        let mut t = tuner(16);
+        t.solo_rate(2e6);
+        t.on_throttle(4, false);
+        t.solo_rate(1e9);
+        assert_eq!(run(&mut t, |_| 1e6), vec![4]);
     }
 
     #[test]

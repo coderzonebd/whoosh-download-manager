@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use common::*;
-use vayu_core::SourceError;
+use vayu_core::{SourceError, StateStore};
 use vayu_proto::service::Service;
 use vayu_proto::{AddParams, DownloadState, IdsParams};
 
@@ -429,6 +429,35 @@ async fn a_shared_limit_does_not_jump() {
     assert!(src.peak() <= 8, "peak {} before any climb", src.peak());
     finish(&lab.engine, &id, LONG).await;
     assert_same(&lab.file("data.bin").unwrap(), &data);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_link_the_first_connection_fills_drops_back_to_it() {
+    // 64 MiB/s for everyone (a fast server close by): the first connection
+    // alone already gets it all. The others join, deliver nothing more in
+    // their first window, and the download goes on with one connection
+    // instead of trying 16.
+    let lab = Lab::new(config()).await;
+    let data = content(64 * MIB, 119);
+    let src = lab.serve(
+        URL,
+        native(data.clone(), |c| {
+            c.global_bps = Some(64 * MIB);
+            c.ttfb = ms(1);
+        }),
+    );
+    let id = lab.add(URL).await;
+    let (_, took) = finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    assert!(took < Duration::from_millis(1100), "took {took:?}");
+    assert!(src.peak() <= 8, "peak {}", src.peak());
+    let p = lab
+        .state
+        .host_profile("lab.test:443")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(p.best_connections, Some(1), "{p:?}");
 }
 
 #[tokio::test(start_paused = true)]
