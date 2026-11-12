@@ -58,7 +58,12 @@
 //!   from one fast window against that first window: kept within
 //!   `solo_collapse_slack` of `keep_ratio`; far short (under half) goes back
 //!   and climbs as usual; anything between is settled in alternating
-//!   windows (the link may have drifted meanwhile).
+//!   windows (the link may have drifted meanwhile). A first window under
+//!   half the solo rate means that look caught a burst the server allows
+//!   before its limit, not a rate: it is dropped, and tuning goes on in
+//!   careful windows from the starting count, so a short download cuts no
+//!   connection mid-range (each cut wastes what it has in flight, which a
+//!   shared limit charges to everyone).
 //!
 //! `Throttled` (429/503, refused under load), or connections failing before
 //! their first byte while others work, set a ceiling at the number of
@@ -81,6 +86,11 @@ const REPROBE_MAX: Duration = Duration::from_secs(300);
 /// base/trial pair of windows; smaller ones need alternating windows,
 /// because drift between two windows can fake them.
 const OBVIOUS_GAIN: f64 = 0.25;
+
+/// A fresh download's first window, at the starting count, under this share
+/// of the first connection's rate alone: that look caught a burst, not a
+/// rate (see `decide`).
+const FLATTERED: f64 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Dir {
@@ -568,20 +578,42 @@ impl Tuner {
                 if let Some(solo) = self.solo.take()
                     && reprobe.is_none()
                     && stat.n > 1
-                    && stat.mean < solo * (1.0 + self.k.collapse_gain)
                 {
-                    // All of them deliver about what the first connection
-                    // did alone: try it alone again, from one fast window.
-                    self.collapsing = true;
-                    self.target = 1;
-                    self.state = State::Running {
-                        goal: Goal::Trial {
-                            dir: Dir::Down,
-                            base: stat,
-                        },
-                        phase: Phase::warm(),
-                    };
-                    return;
+                    if stat.mean < solo * FLATTERED {
+                        // All of them together delivered less than half of
+                        // what the first one did alone: that look caught the
+                        // burst a server allows before its limit, not a
+                        // rate, so it is no yardstick. Tune from here in
+                        // careful windows: a short download settles before
+                        // any step, so nothing is cut (a connection cut
+                        // mid-range wastes what it has in flight, and under
+                        // a shared limit fewer connections gain nothing).
+                        tracing::debug!(
+                            n = stat.n,
+                            "the first connection's look alone was a burst"
+                        );
+                        self.fast = false;
+                        self.state = State::Running {
+                            goal: Goal::Base { reprobe: None },
+                            phase: Phase::warm(),
+                        };
+                        return;
+                    }
+                    if stat.mean < solo * (1.0 + self.k.collapse_gain) {
+                        // All of them deliver about what the first
+                        // connection did alone: try it alone again, from
+                        // one fast window.
+                        self.collapsing = true;
+                        self.target = 1;
+                        self.state = State::Running {
+                            goal: Goal::Trial {
+                                dir: Dir::Down,
+                                base: stat,
+                            },
+                            phase: Phase::warm(),
+                        };
+                        return;
+                    }
                 }
                 let started = match reprobe {
                     Some(dir) => self.start_trial(dir, stat),
@@ -1083,6 +1115,43 @@ mod tests {
         }
         assert_eq!(seen.first(), Some(&8));
         assert_eq!(t.target(), 1, "{seen:?}");
+    }
+
+    #[test]
+    fn a_burst_seen_alone_is_no_yardstick() {
+        // A shared 20 MB/s limit that lets each client burst first: the
+        // first connection's look alone read 100 MB/s, eight deliver 20.
+        // A 10 MiB download keeps its eight to the end (cutting any wastes
+        // what it has in flight, and one would be no faster).
+        let mut t = tuner(16);
+        t.solo_rate(100e6);
+        let mut now = Instant::now();
+        let mut left = 10u64 << 20;
+        let mut seen = vec![t.target()];
+        let step = Duration::from_millis(10);
+        while left > 0 {
+            now += step;
+            left = left.saturating_sub((20e6 * step.as_secs_f64()) as u64);
+            t.tick(Sample {
+                now,
+                bytes: (10u64 << 20) - left,
+                streaming: t.target(),
+                work_left: left,
+                limited: false,
+                ttfb: None,
+            });
+            if *seen.last().unwrap() != t.target() {
+                seen.push(t.target());
+            }
+        }
+        assert_eq!(seen, vec![8]);
+        assert!(t.settled());
+        // A long one is tuned the careful way and comes down.
+        let mut t = tuner(16);
+        t.solo_rate(100e6);
+        let path = run(&mut t, |_| 20e6);
+        assert_eq!(path.first(), Some(&8));
+        assert!(*path.last().unwrap() <= 2, "{path:?}");
     }
 
     #[test]

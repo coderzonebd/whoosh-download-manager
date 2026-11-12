@@ -92,6 +92,17 @@ their ranges are fetched one after another). That is a trial, judged from
 one fast window: kept when one connection holds `keep_ratio` (97 %) of the
 eight, minus noise of at most `solo_collapse_slack` (7 %). Far short (under
 half) means the solo look flattered #1: back to eight, climbing as usual.
+A first window under *half* #1's solo rate is not compared at all: eight
+connections delivering less than half of what one did alone means #1's look
+caught a burst the server allows before its limit (labserver's
+global-throttle lets 50 ms of its 20 MB/s through at once, and #1 read
+100–150 MB/s in it). The solo rate is dropped and tuning goes on from eight
+in careful windows, so a short download settles before any step and no
+connection is cut mid-range: each cut throws away what that connection has
+in flight, which under a shared limit everyone pays for (seven cut at once
+cost a 10 MiB download 25–35 ms of the server's 20 MB/s; the drop to one was
+also judged against a single window, and one in six runs went back to eight
+and on to 16).
 In between, the window at one may only have caught the link slowing (a
 disk that starts throttling writes), so eight and one are compared in
 alternating windows, which cancel drift. On labserver's clean 1 GiB the
@@ -533,7 +544,7 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 
 | Suite | What |
 |---|---|
-| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, +8 % per doubling climbs (≥ 2/3 of seeds to 16, never below 4), a shared one spends ≤ 10 % of the time above the start and comes down over 10 min, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander; the solo-rate rule: eight that deliver what the first connection did alone drop to one (also at 98 %), a flattering solo look is corrected (back to eight, then 16 on a per-connection limit; at 85 % for one, not kept), connections that beat the solo rate stay, and only a fresh download's first window is compared with it |
+| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, +8 % per doubling climbs (≥ 2/3 of seeds to 16, never below 4), a shared one spends ≤ 10 % of the time above the start and comes down over 10 min, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander; the solo-rate rule: eight that deliver what the first connection did alone drop to one (also at 98 %), a flattering solo look is corrected (back to eight, then 16 on a per-connection limit; at 85 % for one, not kept), connections that beat the solo rate stay, a solo look five times what eight deliver (a burst) is no yardstick: a 10 MiB download keeps its eight to the end, a long one comes down in careful windows, and only a fresh download's first window is compared with it |
 | `tests/scenarios.rs` (31) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses / changes in the endgame (the connections on the old version finish it, the split-off pieces handed back: exactly the old version, nothing served twice; fails with the old-version path disabled), slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, a reset after real progress taken up at once (one after 64 KiB waits out the backoff), and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
 | `tests/coalesce.rs` (5) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), a source that goes silent mid-buffer has its gathered bytes written by the timer, gathered bytes survive a hedge takeover and a pause |
 | `tests/service.rs` (20) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
