@@ -13,9 +13,10 @@ use futures::future::BoxFuture;
 /// Errors are plain [`io::Error`]s; the engine maps
 /// [`io::ErrorKind::StorageFull`] to the `disk_full` download error.
 ///
-/// Error model: `write_at` resolves when data is *accepted*, so an error
-/// writing it out surfaces on a later call (`write_at`, `flush` or
-/// `finish`). Write and fsync errors are sticky: once one is reported, every
+/// Error model: `write_at` resolves when data is *accepted* (an
+/// implementation may also write it out before resolving), so an error
+/// writing it out surfaces on that call or a later one (`write_at`, `flush`
+/// or `finish`). Write and fsync errors are sticky: once one is reported, every
 /// later `flush` and `finish` fails too, until the file is removed and
 /// opened again. A failed `flush` means every write since the last
 /// successful flush may be lost. A future dropped before it resolves (a
