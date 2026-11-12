@@ -159,15 +159,24 @@ async fn remove_deletes_and_ignores_missing() {
 }
 
 /// `/dev/full` fails every write with ENOSPC: the error must reach the
-/// engine as `StorageFull` from the next call after the write was buffered,
-/// and stay: a retried flush or finish never succeeds after lost data.
+/// engine as `StorageFull` and stay: a retried flush or finish never
+/// succeeds after lost data. A queued write reports it from the next call;
+/// an inline write (written before `write_at` resolves) from `write_at`
+/// itself.
 #[cfg(target_os = "linux")]
-#[tokio::test]
-async fn disk_full_surfaces_as_storage_full_and_stays() {
-    let p = provider();
+async fn disk_full_surfaces_as_storage_full_and_stays(inline: bool) {
+    let p = FileStorageProvider::new(StorageOptions {
+        write_inline: inline,
+        ..StorageOptions::default()
+    });
     let full = Path::new("/dev/full");
     let s = p.open(full).await.unwrap();
-    s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+    let first = s.write_at(0, Bytes::from_static(b"data")).await;
+    if inline {
+        assert_eq!(first.unwrap_err().kind(), io::ErrorKind::StorageFull);
+    } else {
+        first.unwrap();
+    }
     for _ in 0..2 {
         let e = s.flush().await.unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
@@ -179,10 +188,24 @@ async fn disk_full_surfaces_as_storage_full_and_stays() {
     // Opening the path again (after freeing space, say) starts afresh.
     let again = p.open(full).await.unwrap();
     assert!(!same(&s, &again));
-    again
-        .write_at(0, Bytes::from_static(b"more"))
-        .await
-        .unwrap();
+    let more = again.write_at(0, Bytes::from_static(b"more")).await;
+    if inline {
+        assert_eq!(more.unwrap_err().kind(), io::ErrorKind::StorageFull);
+    } else {
+        more.unwrap();
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn disk_full_surfaces_as_storage_full_and_stays_queued() {
+    disk_full_surfaces_as_storage_full_and_stays(false).await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn disk_full_surfaces_as_storage_full_and_stays_inline() {
+    disk_full_surfaces_as_storage_full_and_stays(true).await;
 }
 
 /// The engine's assumption: once `remove(path)` has resolved, nothing

@@ -24,10 +24,14 @@ let journal: Arc<dyn Journal> = Arc::new(FileJournal::open(data_dir.join("journa
 let state: Arc<dyn StateStore> = Arc::new(SqliteStateStore::open(data_dir.join("state.db")).await?);
 ```
 
-Everything runs on any executor. Blocking work runs in one of three places:
+Everything runs on any executor. Blocking work runs in one of four places:
 - the per-file writer thread;
 - the SQLite thread;
-- tokio's blocking pool. Outside a tokio runtime, that work runs inline instead.
+- tokio's blocking pool. Outside a tokio runtime, that work runs inline instead;
+- the caller's thread, for an inline write (the default): one `pwrite` into
+  the page cache per `write_at`, at most one at a time per file. When the
+  disk falls behind, writes go back to the writer thread (see
+  [Inline writes](#filestorage)).
 
 Cargo feature `sqlite` (on by default) builds `SqliteStateStore`. Turn it
 off only to cross-check the file and journal code for a target that has no
@@ -44,6 +48,37 @@ C toolchain (see [Testing](#testing)).
   backpressure.
   - A chunk larger than the whole buffer takes the whole buffer. It is
     admitted once the buffer is empty, never refused.
+- **Inline writes** (`StorageOptions::write_inline`, on by default).
+  Normally `write_at` does not queue at all. It writes the chunk itself
+  with one `pwrite` on the calling runtime thread, and resolves after that.
+  - **Why.** The chunk was received a moment ago on that thread, so the copy
+    into the page cache reads it from the CPU cache. The writer thread,
+    a millisecond or more later on another core, reads it from memory. On
+    a 1 GiB, 16-connection download that cold copy was about 1 CPU-second,
+    more than 40% of the daemon's CPU. The caller's buffer is also released
+    at once, so the engine reuses its gather buffer instead of allocating a
+    fresh one; that removes most page faults.
+  - **At most one runtime thread per file is inside such a write.** The
+    next `write_at` waits for it asynchronously. Several threads would only
+    queue on the kernel's per-file lock, and the kernel can hold that lock
+    while it throttles a writer.
+  - **Order.** A write that overlaps a still-queued write queues behind it,
+    so overlapping writes still land in the order they were accepted.
+    Writes to disjoint ranges have no order to keep: the writer thread may
+    write a batch at the same time.
+  - **A slow write hands over to the writer thread.** Slow means more than
+    4 ms plus 4 ns per byte (slower than 250 MB/s): the kernel throttling
+    writers because the disk is behind. Writes then go to the writer
+    thread for 50 ms, doubling with each slow write in a row up to 2 s, and
+    halving again with each fast one. So a disk that cannot keep up costs
+    the runtime at most one stalled write per 2 s per file.
+  - **Errors.** A failed inline write is reported by that `write_at`, and
+    is sticky like any other write error.
+  - **`finish` and closing stop inline writes first.** They wait for one in
+    progress, so a later write queues behind the `finish` and never reaches
+    the moved file.
+  - With the option off, every write goes through the writer thread as
+    below, and `write_at` never does file I/O itself.
 - **Coalescing.** The writer drains up to a quarter of the buffer at a
   time. It sorts that batch by offset and writes each run of adjacent
   chunks with one `pwritev`. On Linux that is up to 1024 slices per call,
@@ -419,6 +454,21 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
     a cancelled call.
   - `finish_unsynced` never overwrites, syncs nothing, and waits for an
     in-flight sync.
+- **Inline writes:**
+  - An inline write is in the file when `write_at` resolves, even with the
+    writer thread held.
+  - After a slow inline write (a test hook), writes queue. Once inline
+    writes resume, one overlapping a still-queued write queues behind it,
+    and a disjoint one goes inline at once. The final bytes follow
+    acceptance order.
+  - `finish` stops inline writes for good. A failed move (taken name)
+    resumes them, and the finished file holds the writes from both sides.
+  - On `/dev/full` an inline write fails in `write_at` itself with
+    `StorageFull`, and every later call fails too. The disk-full contract
+    test runs both with and without inline writes.
+  - The unit tests that hold the writer thread to see what is queued run
+    with inline writes off. The contract tests in `tests/storage.rs`
+    (16 concurrent writers, removal, reuse) run with the default, on.
 - `file_len` counts writes not yet written out, and waits for a draining
   storage. It returns `None` when missing, and `InvalidInput` for
   directories and symbolic links.
@@ -557,6 +607,16 @@ cargo run --release -p vayu-store --example state_bench -- --dir <dir>
 - **`finish_bench`.** For 1 MiB and 100 MiB, it compares `finish` with
   `finish_unsynced`, and `flush` with `write_out`. Each call is timed
   after the data was written, with the modes alternating round by round.
+- **`cpu_bench`.** CPU per GiB of the engine's write path, split by thread.
+  - `--conns` tasks receive their share of a preallocated file as
+    `--chunk-kib` body chunks, at `--rate-mibs` in total. Each gathers
+    them into 256 KiB buffers, a copy, as the engine's worker does, and
+    writes each with one `write_at`. A checkpoint `flush` runs every 2 s,
+    and `finish` ends the run.
+  - `--store false` runs the same with no storage calls, as the baseline.
+    `--inline false` sends every write through the writer thread.
+  - Reports wall time, process CPU per GiB, page faults and context
+    switches per GiB, and CPU per GiB and bytes written per thread kind.
 - **`download_bench`.** A download as the engine writes it, with
   checkpoints.
   - 8 tasks each write their part of a preallocated 1 GiB file front to
@@ -644,6 +704,78 @@ Each figure is the median of 7 per call per run, from two runs.
 
 What the process-safe calls still pay is writing the store's buffer into
 the page cache. The power-safe calls pay the disk writing the whole file.
+
+### CPU per byte on the write path (2026-11-12)
+
+The Phase 1 gate (rule 5, CPU per GiB) failed on clean 1 GiB (2.60
+CPU-s/GiB against aria2c-tuned 1.66), no-range (1.87 against mdm 1.66) and
+lying-ranges (2.01 against mdm 1.71).
+
+**Where the CPU went.** We ran `vayu get` against labserver with the daemon
+resident, sampling each daemon thread's CPU from `/proc`. On the 1 GiB,
+16-connection download the daemon used 2.1–2.8 CPU-s:
+
+| Thread | CPU-s | Notes |
+|---|---|---|
+| Store writer | 0.97–1.30 | 927–972 `pwritev` calls of about 1.1 MiB each, about 230 context switches |
+| Store syncer | 0.07–0.17 | `fdatasync` writeback; power-safe, so it stays |
+| Runtime (net and engine) | 1.1–1.35 | |
+
+- Wakeups and syscall counts were not the cost. The copy into the page
+  cache was: about 1 GB/s on the writer, against 0.23–0.5 CPU-s/GiB for
+  `dd` on the same disk.
+- The writer copies each chunk a millisecond or more after it arrived,
+  on another core. By then loopback TCP and the server have pushed it out
+  of the 6 MiB L3, so the copy reads from memory.
+- Holding the engine's 256 KiB gather buffers also made the engine
+  allocate fresh ones: 30k–90k page faults per GiB.
+
+**Ruled out:**
+- **glibc trim and mmap tunables:** `GLIBC_TUNABLES` changed nothing in
+  the daemon.
+- **`O_DIRECT`:** copying into an aligned buffer cost 0.40–0.45 s of user
+  CPU, and the direct writes another 0.22–0.34 s of system CPU. Buffered
+  writes cost 0.31–0.92, so direct I/O is no clear win.
+- **Reclaim and compaction:** vmstat showed none during a download.
+- **Non-blocking buffered writes:** ext4 returns `EOPNOTSUPP` for
+  `RWF_NOWAIT` on buffered writes.
+- **Write size:** 64 KiB up to 4 MiB costs the same per byte.
+
+**Fix: inline writes** (see [Design](#filestorage)). We compared the
+previous store (base) with inline writes (new), both on a4b86bb, running
+`vayu get` against labserver with interleaved pairs and a quiet machine
+(load average 0.7–2.1). Daemon CPU (net, engine and store) is per run,
+measured from `/proc` in 10 ms ticks.
+
+| Scenario | Connections | Base, CPU-s/GiB | New, CPU-s/GiB | Time (base → new, median) |
+|---|---:|---:|---:|---|
+| clean 1 GiB, all 11 pairs | 16 | 1.96 | 1.41 (−28%) | the new build was faster in 8 of 11 pairs; median paired difference −173 ms |
+| clean 1 GiB, pairs where the disk kept up | 16 | 2.17–2.40 | 1.18–1.25 (about −45%) | 1.25–2.0 s → 1.12–1.45 s |
+| redirect-chain 100 MiB | 8 | 1.84 | 0.92 (−50%) | 298 → 298 ms |
+| no-range 100 MiB | 1 | 1.02 | 0.92 | 325 → 294 ms |
+| lying-ranges 100 MiB | 1 | 1.02 | 0.92 | 300 → 289 ms |
+| per-conn-throttle 10 MiB | 16 | 5.1 | 4.1 | 397 → 374 ms |
+| slow-drip 10 MiB | 16 | 5.1 | 5.1 | 336 → 345 ms |
+
+- **clean 1 GiB.** Times are bimodal in both builds: about 1.1–1.6 s when
+  the disk keeps up, and about 2.6 s when the kernel throttles writers.
+  When it throttles, inline writes back off to the writer thread for
+  40–55% of the bytes, and CPU drops less: 1.75–1.96 → 1.46–1.62.
+- **The 100 MiB rows** are a few 10 ms ticks per run. In an earlier,
+  noisier session the no-range pairs measured 0.21 → 0.11 CPU-s (median
+  of 5).
+
+`cpu_bench`, 256 MiB at 800 MiB/s paced (store only, no network
+traffic, so the cache effect is smaller), 4 interleaved pairs:
+
+| Connections | Writer thread only, CPU-s/GiB | Inline, CPU-s/GiB | Page faults per GiB |
+|---:|---:|---:|---|
+| 1 | 0.73–1.35 | 0.56–0.69 | 45k–59k → 400 |
+| 16 | 1.03–1.48 | 1.06–1.24 | 33k–95k → 4.3k |
+
+Crash safety on the new build: `vayu-bench hardkill --kills 100` ran
+100 kills over 94 rounds. All 282 downloads were verified, with 0
+corrupt, 0 leftovers and 0 unfinished. `journal_kill` passes too.
 
 ### Fixed costs of a small download (2026-11-11)
 
@@ -783,3 +915,9 @@ database.
   and out-of-order-sector tests on the format, not by pulling a plug.
 - **Disk full on a real filesystem.** `/dev/full` exercises the error path;
   a small loop-mounted filesystem would need root.
+- **Inline writes against a slow disk.** The hand-over to the writer
+  thread was seen working on this machine's NVMe, under other sessions'
+  disk load: 40–55% of a throttled 1 GiB download went through the writer
+  thread. It has not been run against a USB stick or a network share,
+  where it matters most. The thresholds (4 ms plus 4 ns/B; back-off 50 ms
+  to 2 s) come from this machine.

@@ -5,7 +5,7 @@
 //! cargo run --release -p vayu-store --example download_bench -- \
 //!     [--dir DIR] [--size-gib 1] [--segments 8] [--chunk-kib 256] \
 //!     [--flush-mib 64] [--flush-ms 0] [--buffer-mib 16] [--runs 3] \
-//!     [--drop-cache true|false]
+//!     [--drop-cache true|false] [--inline true|false]
 //! ```
 //!
 //! `--segments` tasks each write their share of a preallocated file front to
@@ -38,6 +38,7 @@ struct Args {
     flush_every: Duration,
     buffer: usize,
     drop_cache: bool,
+    inline: bool,
     runs: usize,
 }
 
@@ -51,6 +52,7 @@ fn parse() -> Args {
         flush_every: Duration::ZERO,
         buffer: 16 << 20,
         drop_cache: StorageOptions::default().drop_cache_after_flush,
+        inline: StorageOptions::default().write_inline,
         runs: 3,
     };
     let mut it = std::env::args().skip(1);
@@ -66,6 +68,7 @@ fn parse() -> Args {
             "--buffer-mib" => a.buffer = v.parse::<usize>().unwrap() << 20,
             "--runs" => a.runs = v.parse().unwrap(),
             "--drop-cache" => a.drop_cache = v.parse().unwrap(),
+            "--inline" => a.inline = v.parse().unwrap(),
             other => panic!("unknown argument {other}"),
         }
     }
@@ -98,6 +101,7 @@ async fn run(a: &Args, path: &std::path::Path, data: Bytes) -> Run {
     let p = FileStorageProvider::new(StorageOptions {
         buffer_bytes: a.buffer,
         drop_cache_after_flush: a.drop_cache,
+        write_inline: a.inline,
     });
     let s = p.open(path).await.unwrap();
     s.preallocate(a.size).await.unwrap();
