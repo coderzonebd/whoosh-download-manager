@@ -5,12 +5,17 @@
 //! write not flushed is lost); the other half run `ProcessSafe` and every
 //! kill is a killed process (every write not yet handed to the operating
 //! system is lost; what `write_out` handed over survives). A power cut is
-//! not modelled for `ProcessSafe`: it gives that up by design.
+//! not modelled for `ProcessSafe`: it gives that up by design. A power cut
+//! also removes a part file whose directory entry was never synced. In a
+//! quarter of the cases another program puts a file of the same length
+//! under the download's name at a random moment: it must be left alone and
+//! never taken for the download's own (it finishes under `name (1)`).
 //! `VAYU_CRASH_CASES` sets the number of cases (default 300).
 
 mod common;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use common::*;
@@ -60,7 +65,21 @@ struct Case {
     /// `Durability::ProcessSafe`, with kills that keep what the operating
     /// system holds.
     process_safe: bool,
+    foreign: Option<Foreign>,
 }
+
+/// Another program's file of the download's length, put under the
+/// download's name in round `round` (`round == kills`: the final run),
+/// `after` into it; unless that name is taken by then.
+struct Foreign {
+    bytes: bytes::Bytes,
+    round: usize,
+    after: Duration,
+}
+
+const NOT_YET: u8 = 0;
+const PLACED: u8 = 1;
+const NAME_TAKEN: u8 = 2;
 
 fn setup(seed: u64) -> Case {
     let mut r = fastrand::Rng::with_seed(seed);
@@ -127,13 +146,42 @@ fn setup(seed: u64) -> Case {
         min_split: [256 * KIB, MIB][r.usize(0..2)],
         ..Tuning::default()
     };
+    let mut f = fastrand::Rng::with_seed(seed ^ 0xf07e_1647);
+    let foreign = (!empty && f.u8(0..4) == 0).then(|| Foreign {
+        bytes: content(versions[0].len() as u64, seed * 3 + 3),
+        round: f.usize(0..6),
+        after: Duration::from_micros(f.u64(0..2_500_000)),
+    });
     Case {
         versions,
         deps,
         fs,
         cfg,
         process_safe,
+        foreign,
     }
+}
+
+/// Put the foreign file in place `after` from now, unless the name is
+/// taken by then (by the download's own file).
+fn place_foreign(case: &Case, after: Duration, state: &Arc<AtomicU8>) {
+    let Some(foreign) = &case.foreign else {
+        return;
+    };
+    let (fs, bytes, state) = (case.fs.clone(), foreign.bytes.clone(), state.clone());
+    tokio::spawn(async move {
+        tokio::time::sleep(after).await;
+        let path = std::path::Path::new(DIR).join("data.bin");
+        if state.load(Ordering::Relaxed) != NOT_YET {
+            return;
+        }
+        if fs.finished().contains_key(&path) {
+            state.store(NAME_TAKEN, Ordering::Relaxed);
+        } else {
+            fs.put_finished(&path, bytes);
+            state.store(PLACED, Ordering::Relaxed);
+        }
+    });
 }
 
 fn run_case(seed: u64) {
@@ -143,8 +191,18 @@ fn run_case(seed: u64) {
     let case = setup(seed);
     let mut r = fastrand::Rng::with_seed(seed ^ 0xdead_beef);
     let kills = r.usize(1..=5);
+    let foreign = Arc::new(AtomicU8::new(NOT_YET));
+    // Its round, or the first one after (a round can end before `after`).
+    let foreign_after = |round: usize| -> Option<Duration> {
+        let f = case.foreign.as_ref()?;
+        match round.cmp(&f.round.min(kills)) {
+            std::cmp::Ordering::Less => None,
+            std::cmp::Ordering::Equal => Some(f.after),
+            std::cmp::Ordering::Greater => Some(Duration::ZERO),
+        }
+    };
     let mut id: Option<String> = None;
-    for _ in 0..kills {
+    for round in 0..kills {
         let rt = runtime();
         let run_for = Duration::from_micros(r.u64(1..2_500_000));
         let spins = r.usize(0..50);
@@ -154,6 +212,9 @@ fn run_case(seed: u64) {
                 .unwrap();
             if id.is_none() {
                 id = Some(engine.add(add_params(URL)).await.unwrap().id);
+            }
+            if let Some(after) = foreign_after(round) {
+                place_foreign(&case, after, &foreign);
             }
             tokio::time::sleep(run_for).await;
             // Land the kill between two arbitrary await points.
@@ -176,6 +237,9 @@ fn run_case(seed: u64) {
         let engine = Engine::start(case.deps.clone(), case.cfg.clone())
             .await
             .unwrap();
+        if let Some(after) = foreign_after(kills) {
+            place_foreign(&case, after, &foreign);
+        }
         let d = wait_for(
             &engine,
             &id,
@@ -189,10 +253,25 @@ fn run_case(seed: u64) {
             "seed {seed}: {:?}",
             d.summary.error
         );
-        let files = case.fs.finished();
+        let mut files = case.fs.finished();
+        if foreign.load(Ordering::Relaxed) == PLACED {
+            let theirs = files
+                .remove(&std::path::Path::new(DIR).join("data.bin"))
+                .unwrap_or_else(|| panic!("seed {seed}: the other program's file is gone"));
+            assert!(
+                theirs == case.foreign.as_ref().unwrap().bytes,
+                "seed {seed}: the other program's file was changed"
+            );
+        }
         // Exactly one: a crash between `finish` and the journal update is
         // recognised (`file_len`), not downloaded again into `name (1)`.
         assert_eq!(files.len(), 1, "seed {seed}: {:?}", files.keys());
+        let ours = files.keys().next().unwrap().clone();
+        assert_eq!(
+            ours,
+            std::path::Path::new(DIR).join(&d.summary.filename),
+            "seed {seed}: the record names another file than the download's"
+        );
         for (path, got) in files {
             if !case.versions.contains(&got) {
                 for (i, v) in case.versions.iter().enumerate() {

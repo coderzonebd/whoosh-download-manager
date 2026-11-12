@@ -18,7 +18,8 @@ use bytes::Bytes;
 use common::*;
 use sha2::{Digest, Sha256};
 use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
-use vayu_engine::{Engine, EngineConfig, EngineDeps};
+use vayu_core::{Checkpoint, Finishing, StorageProvider};
+use vayu_engine::{Engine, EngineConfig, EngineDeps, Tuning};
 use vayu_proto::service::Service;
 use vayu_proto::{AddParams, Checksum, DownloadState, Durability};
 
@@ -139,10 +140,14 @@ fn kill_at(w: &World, kill: Kill, params: AddParams) -> String {
 
 /// Start a new engine on the same state and let the download complete.
 fn restart(w: &World, id: &str) -> (String, u64) {
+    restart_with(w, id, w.cfg())
+}
+
+fn restart_with(w: &World, id: &str, cfg: EngineConfig) -> (String, u64) {
     let opens = w.src.opens();
     let rt = runtime();
     let name = rt.block_on(async {
-        let engine = Engine::start(w.deps.clone(), w.cfg()).await.unwrap();
+        let engine = Engine::start(w.deps.clone(), cfg).await.unwrap();
         let (d, _) = finish(&engine, id, LONG).await;
         assert!(
             w.deps
@@ -480,4 +485,151 @@ fn process_safe_skips_the_power_loss_sync() {
             .unwrap()
             .is_none()
     );
+}
+
+/// Wait until the journal's checkpoint for `id` satisfies `f`.
+async fn journal_until(w: &World, id: &str, f: impl Fn(&Checkpoint) -> bool) -> Checkpoint {
+    let t0 = tokio::time::Instant::now();
+    loop {
+        if let Some(cp) = w.deps.journal.load(&id.to_string()).await.unwrap()
+            && f(&cp)
+        {
+            return cp;
+        }
+        assert!(t0.elapsed() < LONG, "the journal never got there");
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+}
+
+/// The part file is gone (deleted by someone else) and another program's
+/// file of the download's length holds its name.
+fn plant_same_length(w: &World, seed: u64) -> Bytes {
+    runtime()
+        .block_on(w.fs.remove(&final_path("data.bin.vayu-part")))
+        .unwrap();
+    let foreign = content(w.data.len() as u64, seed);
+    w.fs.put_finished(&final_path("data.bin"), foreign.clone());
+    foreign
+}
+
+#[test]
+fn a_name_taken_after_the_early_intent_moves_on_to_the_next_name() {
+    // The early checkpoint's intent names "data.bin"; while the transfer
+    // runs another program puts a file of the same length there. `finish`
+    // gets `AlreadyExists`, commits an intent for "data (1).bin" before
+    // moving there, and leaves the other file alone. Killed right after
+    // that move, the restart adopts "data (1).bin": nothing downloaded
+    // again, no duplicate.
+    for durability in [Durability::PowerSafe, Durability::ProcessSafe] {
+        for kill in [false, true] {
+            let w = world_in(Mode::Ranged, durability);
+            let foreign = content(w.data.len() as u64, 11);
+            if kill {
+                w.fs.hooks.after_rename.store(true, Ordering::Relaxed);
+            }
+            let id = runtime().block_on(async {
+                let engine = Engine::start(w.deps.clone(), w.cfg()).await.unwrap();
+                let id = engine.add(add_params(URL)).await.unwrap().id;
+                journal_until(&w, &id, |cp| {
+                    cp.finishing.as_ref().is_some_and(|f| f.name == "data.bin")
+                })
+                .await;
+                w.fs.put_finished(&final_path("data.bin"), foreign.clone());
+                if kill {
+                    while !w.fs.hooks.hit() {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                } else {
+                    let (d, _) = finish(&engine, &id, LONG).await;
+                    assert_eq!(d.summary.filename, "data (1).bin");
+                }
+                id
+            });
+            if kill {
+                w.lose_unsaved();
+                w.fs.hooks.clear();
+                let cp = runtime()
+                    .block_on(w.deps.journal.load(&id.to_string()))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    cp.finishing,
+                    Some(Finishing {
+                        name: "data (1).bin".into(),
+                        len: w.data.len() as u64,
+                    }),
+                    "{durability:?}: moved before the new name's intent was committed"
+                );
+                let (name, reopened) = restart(&w, &id);
+                assert_eq!(name, "data (1).bin", "{durability:?}");
+                assert_eq!(reopened, 0, "{durability:?}");
+            }
+            let files = w.fs.finished();
+            assert_eq!(files.len(), 2, "{durability:?} {kill}: {:?}", files.keys());
+            assert_same(&files[&final_path("data.bin")], &foreign);
+            assert_same(&files[&final_path("data (1).bin")], &w.data);
+        }
+    }
+}
+
+#[test]
+fn a_withdrawn_intent_never_adopts_a_file_of_the_same_length() {
+    // A later checkpoint (claiming bytes, no intent) withdrew the early
+    // intent; then the process dies, the part file is gone and a file of
+    // the same length holds the name. The restart must not take it for the
+    // download's own: it downloads again, into "data (1).bin".
+    for durability in [Durability::PowerSafe, Durability::ProcessSafe] {
+        let w = world_in(Mode::Ranged, durability);
+        let mut cfg = w.cfg();
+        cfg.tuning = Tuning {
+            fixed_connections: Some(1),
+            checkpoint_interval: Duration::from_millis(50),
+            ..Tuning::default()
+        };
+        let id = runtime().block_on(async {
+            let engine = Engine::start(w.deps.clone(), cfg.clone()).await.unwrap();
+            let id = engine.add(add_params(URL)).await.unwrap().id;
+            journal_until(&w, &id, |cp| {
+                cp.finishing.as_ref().is_some_and(|f| f.name == "data.bin")
+            })
+            .await;
+            journal_until(&w, &id, |cp| cp.finishing.is_none() && !cp.done.is_empty()).await;
+            id
+        });
+        w.lose_unsaved();
+        let foreign = plant_same_length(&w, 12);
+        let (name, reopened) = restart_with(&w, &id, cfg);
+        assert_eq!(name, "data (1).bin", "{durability:?}");
+        assert!(reopened > 0, "{durability:?}");
+        let files = w.fs.finished();
+        assert_eq!(files.len(), 2, "{durability:?}: {:?}", files.keys());
+        assert_same(&files[&final_path("data.bin")], &foreign);
+        assert_same(&files[&final_path("data (1).bin")], &w.data);
+    }
+}
+
+#[test]
+fn a_name_taken_when_the_transfer_starts_is_never_an_intent() {
+    // "data.bin" exists before the download starts: the early checkpoint
+    // carries no intent. Killed mid-transfer with the part file gone and a
+    // file of the same length in place, the restart downloads again.
+    let w = world(Mode::Ranged);
+    let before = content(w.data.len() as u64, 13);
+    w.fs.put_finished(&final_path("data.bin"), before.clone());
+    let id = runtime().block_on(async {
+        let engine = Engine::start(w.deps.clone(), w.cfg()).await.unwrap();
+        let id = engine.add(add_params(URL)).await.unwrap().id;
+        let cp = journal_until(&w, &id, |_| true).await;
+        assert_eq!(cp.finishing, None);
+        id
+    });
+    w.lose_unsaved();
+    let foreign = plant_same_length(&w, 14);
+    let (name, reopened) = restart(&w, &id);
+    assert_eq!(name, "data (1).bin");
+    assert!(reopened > 0);
+    let files = w.fs.finished();
+    assert_eq!(files.len(), 2, "{:?}", files.keys());
+    assert_same(&files[&final_path("data.bin")], &foreign);
+    assert_same(&files[&final_path("data (1).bin")], &w.data);
 }

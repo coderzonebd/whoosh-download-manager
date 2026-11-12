@@ -2323,15 +2323,21 @@ impl Driver {
         }));
     }
 
-    /// When a transfer starts, in the background: flush the part file and
-    /// commit a checkpoint side by side. The commit claims only what the
-    /// journal already did, so it need not wait for the flush. It also
-    /// carries the finish intent (see [`Self::finish`]) when the size is
+    /// When a transfer starts, in the background: flush the part file, then
+    /// commit a checkpoint that claims only what the journal already did.
+    /// It carries the finish intent (see [`Self::finish`]) when the size is
     /// known and the final name is free now, so finishing needs no commit
-    /// of its own: on a short download the intent, the new journal file's
-    /// and the part file's directory entries become durable while the
+    /// of its own: on a short download the part file's and the new journal
+    /// file's directory entries and the intent become durable while the
     /// network is still busy, and only the last bytes' sync, the move and
     /// its directory sync remain between the last byte and `completed`.
+    ///
+    /// The commit waits for the flush: with the part file's entry durable
+    /// first, a part file missing after a power cut can only mean it was
+    /// moved (or deleted by someone else), never that its entry was lost
+    /// while the intent survived, which would let a restart adopt a file
+    /// that appeared under that name. The record's save and the name check
+    /// run alongside the flush.
     fn start_early_checkpoint(&mut self) {
         if self.ckpt.is_some() {
             return;
@@ -2363,12 +2369,12 @@ impl Driver {
         let id = self.id.clone();
         let durability = self.durability;
         self.ckpt = Some(Box::pin(async move {
-            let commit = async {
+            let prepare = async {
                 // The record's file name first: a restart that finds a
                 // journal entry keeps the record's name (the part file's)
                 // instead of resolving it again. Not saved: no entry yet.
                 if !inner.save(&id).await {
-                    return Ok(());
+                    return None;
                 }
                 let mut cp = cp;
                 if let Some((f, path)) = intent {
@@ -2378,13 +2384,16 @@ impl Driver {
                         cp.finishing = Some(f);
                     }
                 }
+                Some(cp)
+            };
+            let (flushed, cp) = futures::join!(persist(&*storage, durability), prepare);
+            flushed?;
+            if let Some(cp) = cp {
                 let with_intent = cp.finishing.is_some();
                 inner.deps.journal.commit(&id, &cp).await?;
                 landed.store(with_intent, Ordering::Release);
-                Ok(())
-            };
-            let (f, c) = futures::join!(persist(&*storage, durability), commit);
-            f.and(c)
+            }
+            Ok(())
         }));
     }
 
