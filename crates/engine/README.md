@@ -583,6 +583,84 @@ per-request script (TTFB, rate, stall, reset, failure).
 
 ## Benchmarks
 
+### Gate run 3's failing rows (2026-11-13, 1bcd317)
+
+Gate run 3 (dev 8550bf1) failed global-throttle and five 1 MiB
+bangla-filename rows against wget on time to durability.
+
+**global-throttle.** The first connection's look alone read 100–150 MB/s
+(labserver's bucket lets 50 ms of its 20 MB/s through at once), the eight
+then delivered 20 MB/s, and *Back to one* cancelled seven of them mid-range.
+labserver had already reserved each one's next 64 KiB chunk, so the shared
+20 MB/s lost 25–35 ms (server-side transfer 502–510 ms against wget's 475
+for the same bytes sent), and one in six runs judged one connection short
+from a single window, went back to eight and on to 16 (the gate's peak 16).
+Now a first window under half the solo rate drops the solo rate: the eight
+finish their ranges (8 requests, server-side 478–479 ms). Interleaved, 15
+runs: 0.522 → 0.500 s, wget 0.498 (p = 0.25); 8 runs: 0.526 → 0.501
+(p = 0.041). Unchanged within noise (8 runs, all p > 0.4): per-conn-throttle
+0.333 / 0.333, conn-cap-2 1.071 → 1.057, conn-cap-reset 1.082 → 1.019,
+rate-limited 0.515 → 0.513, flaky 0.168 → 0.163, stall 0.162 → 0.154,
+slow-drip 0.298 → 0.296, high-latency 0.557 → 0.552, clean 10 MiB 0.036 /
+0.037, clean 1 GiB 1.207 → 1.130 (load ~4.6).
+
+**1 MiB.** In the gate, vayu's last byte left labserver as early as wget's
+(6.6–7.5 ms against 4.6–8.0) and its first byte was no later; the loss is
+the 12.5–15 ms from the last byte to exit (wget: 1.6–4). That is the
+power-safe chain: the part file's directory entry, the finish intent
+(which must follow it), the data `fdatasync`, then the move's directory
+sync, each an ext4 journal commit. Two changes in `vayu-store` shorten it:
+the journal file is created and its entry synced when the fresh download's
+`load` misses (the intent is then one `fdatasync`), and the data sync no
+longer queues behind the entry's sync. 30 interleaved runs, plain.bin, to
+durability: base 26.4 ms, tuner-only build 26.0, new 25.6 (tighter: IQR
+24.0–26.4 against 23.5–29.1), wget 19.4 (this harness adds ~6 ms to every
+client).
+
+The floor, measured on the bare filesystem (Python, 50 interleaved runs,
+from the first data write to durable including the harness's own sync):
+wget's pattern (write, exit, harness `fsync` of file and directory) 5.1 ms;
+the shortest power-safe chain with no intent (`fdatasync`, rename,
+directory sync, then the harness's `fsync`s, which still cost two device
+cache flushes on an already durable file) 7.1 ms; with the intent as
+committed now about 9 ms. So the intent costs 2–3 ms and power safety by
+rename about 2 ms more than wget's unsynced write plus the harness's sync.
+Closing the 1 MiB rows needs a finish without a separate intent commit
+(for example the part file's name kept as a hard link until the completed
+record is durable, recognised by identity on restart): a contract change,
+not made here.
+
+`vayu-bench run --scenarios bangla-filename,global-throttle,per-conn-throttle,conn-cap-reset,rate-limited --clients vayu,wget,curl,mdm,gopeed,aria2-next-tuned --wait-for-idle`
+on 1bcd317 (7 runs, labserver on loopback, a machine shared with other
+work), median time to durability:
+
+| Row | vayu | best rival | gate rows 1, 3, 4, 5 |
+|---|---:|---:|---|
+| global-throttle | 498.6 ms | curl 513.4, wget 539.3 | PASS (vayu fastest) |
+| per-conn-throttle | 331.5 ms | gopeed 383.3 | PASS |
+| rate-limited | 509.5 ms | mdm 516.7 | PASS |
+| conn-cap-reset | 1067.9 ms | mdm 1043.7 (p = 0.456) | PASS |
+| bangla.bin | 22.3 ms | wget 19.7 (p = 0.128) | PASS |
+| plain.bin | 22.3 ms | wget 19.6 (p = 0.053) | PASS |
+| latin1.bin | 22.9 ms | wget 19.7 (p = 0.128) | PASS |
+| bangla-star-only.bin | 23.4 ms | wget 19.4 (p = 0.002) | FAIL |
+| raw-utf8.bin | 22.4 ms | wget 19.1 (p < 0.001) | FAIL |
+| traversal.bin | 23.0 ms | wget 19.1 (p < 0.001) | FAIL |
+
+Two of the seven global-throttle runs had 16 connections and 18 requests
+(522 ms against 494–499): consecutive runs share labserver's bucket, a run
+that starts within 50 ms of the last one gets no burst, the first
+connection then reads 20 MB/s, which at loopback's 0.5 ms TTFB is under 16
+KiB per round trip, and the per-connection jump to 16 fires (judged a
+shared limit right after, with nothing cut). wget's runs split the same
+way (495–498 ms with the burst, 539–545 without); vayu's no-burst runs
+took 521–523.
+
+Verified on 1bcd317: engine, store and daemon tests; clippy `-D warnings`
+and fmt; crash model 6,000 cases (seeds 310000–315999) and 4,000
+proptests; `vayu-bench hardkill --kills 250` (seed 20261114): 597
+downloads, 0 corrupt, 0 leftovers, 0 unfinished.
+
 ### End-of-download sync chain (2026-11-13, gate run 2's failing rows)
 
 Gate run 2 failed 1 MiB and 10 MiB rows against wget on time to
