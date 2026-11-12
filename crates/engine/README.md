@@ -619,6 +619,24 @@ a two-sided Mann-Whitney U test, CPU-s/GiB:
   was not faster (0.119 s gathered, 0.137 s direct, 0.134 s from 16 KiB;
   12 runs, noisy): the per-write cost of the store's queue offsets the
   copy. Kept at 256 KiB.
+- **Write gathering, again, with the store's inline writes** (5b4d08d: the
+  `pwrite` on the calling thread) and `vayu-net`'s 256 KiB read buffer
+  (7508665), merged as 2a0e763. Chunks now average 100 KiB on clean 1 GiB,
+  330–470 KiB on flaky/stall/redirect-chain, 16–33 KiB on the paced
+  scenarios. Gather (256 KiB) against every chunk straight to `write_at`
+  (`write_coalesce = 0`) and against chunks of at least 48 KiB straight,
+  smaller ones gathered (64 KiB in one round: loopback reads come in just
+  under 64 KiB, so that one gathered most of them anyway), to durability,
+  interleaved, four rounds of 12–18 runs. On an idle machine (30 runs per
+  row, pooled): clean 1 GiB 0.840 / 0.829 / 0.836 s at 0.79 / 0.80 / 0.78
+  CPU-s/GiB (p ≥ 0.30), cookie-required, high-latency, no-range,
+  redirect-chain, flaky, stall, slow-drip and global-throttle within
+  noise; direct costs CPU on paced servers (per-conn-throttle 6.82 → 7.92,
+  p = 0.001), the hybrid on rate-limited (7.11 → 7.89, p = 0.003: its
+  chunks mix sizes, so the gather is flushed early and writes multiply).
+  Only the two rounds with other work on the machine showed direct ahead
+  on clean 1 GiB (CPU 1.11 → 0.89, p = 0.02 over 24 runs). Not kept: the
+  gather stays at 256 KiB.
 - **Verified on 9dbf657:** `vayu-bench hardkill --kills 100` (seed
   20261113): 234 downloads, 0 corrupt, 0 leftovers, 0 unfinished (also on
   7eaf9ca: 165 downloads, 0 corrupt); the crash model, 6,000 cases (seeds
