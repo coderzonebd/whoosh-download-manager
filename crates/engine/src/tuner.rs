@@ -581,14 +581,22 @@ impl Tuner {
                     if ratio + slack >= self.k.keep {
                         // One connection does as well: stay there.
                         self.accept(Dir::Down, stat);
-                    } else {
-                        // The solo rate flattered it: back to the starting
+                    } else if ratio < 0.5 {
+                        // Far short: the solo look flattered it (a limit
+                        // per connection after all). Back to the starting
                         // count, and climb from there as usual.
                         self.target = base.n;
                         self.best = Some(base);
                         if !self.start_trial(Dir::Up, base) {
                             self.settle();
                         }
+                    } else {
+                        // Somewhat short, measured later than the others:
+                        // the link may have drifted (a disk that starts
+                        // throttling writes). Settle it the careful way,
+                        // with the starting count measured again around it.
+                        self.fast = false;
+                        self.alternate(Dir::Down, base.n, 1, vec![base], vec![stat]);
                     }
                     return;
                 }
@@ -1009,13 +1017,48 @@ mod tests {
         let path = run(&mut t, |n| n as f64 * 2e6);
         assert_eq!(path, vec![8, 1, 16]);
         assert_eq!(t.best(), 16);
-        // One that loses more than the noise allows is not kept either;
-        // the careful steps down then stop at two.
+        // One that loses more than the noise allows is not kept either:
+        // that is settled in alternating windows (it may be drift), which
+        // go back to eight and stay there.
         let mut t = tuner(16);
         t.solo_rate(100e6);
         let path = run(&mut t, |n| if n == 1 { 85e6 } else { 100e6 });
-        assert_eq!(path[..3], [8, 1, 16]);
-        assert_eq!(t.target(), 2, "{path:?}");
+        assert_eq!(path, vec![8, 1, 8]);
+        assert!(t.settled());
+    }
+
+    #[test]
+    fn a_drop_to_one_measured_while_the_link_slows_is_judged_again() {
+        // The link slows by 3 % per window (a disk that starts throttling
+        // writes): one connection, measured after the eight, looks 6 %
+        // short. Measured again around it, the eight have slowed too, and
+        // one connection is kept.
+        let mut t = tuner(16);
+        t.solo_rate(100e6);
+        let mut now = Instant::now();
+        let mut bytes = 0u64;
+        let mut seen = vec![t.target()];
+        let start = now;
+        let step = Duration::from_millis(50);
+        for _ in 0..200 {
+            now += step;
+            let windows = now.duration_since(start).as_secs_f64() / 0.15;
+            let rate = 100e6 * 0.97f64.powf(windows);
+            bytes += (rate * step.as_secs_f64()) as u64;
+            t.tick(Sample {
+                now,
+                bytes,
+                streaming: t.target(),
+                work_left: u64::MAX / 2,
+                limited: false,
+                ttfb: None,
+            });
+            if *seen.last().unwrap() != t.target() {
+                seen.push(t.target());
+            }
+        }
+        assert_eq!(seen.first(), Some(&8));
+        assert_eq!(t.target(), 1, "{seen:?}");
     }
 
     #[test]

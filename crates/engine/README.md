@@ -81,6 +81,21 @@ more pieces than that: a server that caps connections refuses one wave
 (and sets the ceiling), and later connections take their work by splitting
 as they start.
 
+**Back to one when the others add nothing.** #1's solo rate is also the
+yardstick for the first window the starting count (8) is measured in:
+when the eight together deliver less than `1 + solo_collapse_gain` (1.25×)
+what #1 did alone, the link is one connection wide (a fast server close by,
+a shared bottleneck) and the download drops to one connection at once
+(the slowest seven are cancelled; their ranges are fetched one after
+another). That is a trial, judged from one fast window: kept when one
+connection holds `keep_ratio` (97 %) of the eight, minus noise of at most
+`solo_collapse_slack` (7 %); otherwise the solo look flattered #1, and the
+count goes back to eight and climbs as usual. On labserver's clean 1 GiB
+the eight-to-sixteen climb delivered ~740 MiB/s at 2.6 CPU-s/GiB in the
+Phase 1 gate run, one connection more than that at less than half the CPU.
+Without this rule the careful steps down (8 → 4 → 2 → 1, alternating
+windows) only end long after a gigabyte on a fast link is done.
+
 **Plan.** A ranged download (server honours ranges, size known) starts with
 the journalled gaps (everything, for a new download) cut into one range per
 connection, never below `min_split` (1 MiB). Each connection owns a
@@ -227,15 +242,27 @@ length differs from the probed size is a different version
 without ranges, so a response silent for `stream_idle_timeout` (20 s) is
 dropped and the download starts again from zero, as a failure round.
 
-**Remote changed (#6) — never mix versions.** `RemoteChanged` from any
-request (or validators that conflict with the journal on resume, or a tail
-mismatch without validators): stop every connection, probe afresh, commit an
-empty checkpoint for the new version, recreate the in-progress file, and
-start from zero — **once** (`max_remote_restarts`). If it changes again, fail
-with `remote_changed`; no file is produced. Responses already in flight when
-the file changes finish their version: a download completes with exactly one
-version, the old or the new, never a mix (Gopeed and tuned aria2c produced
-mixed files here in the Phase 0 baseline).
+**Remote changed (#6) — never mix versions.** A new request that finds the
+file changed (`RemoteChanged` before its first byte: validators are checked
+first) while other connections still stream the version the download
+started on does not restart anything: those connections finish their
+version. No new request is made from then on (it would get the new one); a
+range that was split off for the failed request goes back to the connection
+it was split from, which reads on into it (its request reaches that far).
+On labserver's changing-file the change only reaches the requests that
+split the last ranges, after the first wave covered the whole file: 0.13 s
+instead of 0.46 s on one traced run, where the restart had thrown away 90 %
+of the file. When that is not possible — an old-version connection breaks
+or stalls, a range has nobody to finish it, the change came through any
+other path (validators that conflict with the journal on resume, a tail
+mismatch without validators, stream mode) — stop every connection, ask for
+the new version with one `start` request (description and body from offset
+0, as a fresh download), commit an empty checkpoint for it, recreate the
+in-progress file, and start from zero — **once** (`max_remote_restarts`). If
+it changes again, fail with `remote_changed`; no file is produced. A
+download completes with exactly one version, the old or the new, never a
+mix (Gopeed and tuned aria2c produced mixed files here in the Phase 0
+baseline).
 
 **Expired links (#7).** `LinkExpired` stops the download in
 `needs_refresh` (error `link_expired`) after committing progress.
@@ -430,6 +457,7 @@ and ends every subscription.
 | `fixed_connections` | none | pin every download's count, no learning (`AddParams::connections` pins one) |
 | `solo_ttfb_factor`, `solo_min_eta`, `solo_check`, `solo_silence` | 2, 100 ms, 5 ms, 20 ms | a fresh download's first connection runs alone while it would finish within max(2 × start's TTFB, 100 ms), checked every 5 ms; silence of max(20 ms, 4 × that TTFB) ends it |
 | `solo_window`, `limited_connections` | 16 KiB, 16 | first connection under 16 KiB per round trip → jump to 16 at once (a trial against its solo rate) |
+| `solo_collapse_gain`, `solo_collapse_slack` | 0.25, 0.07 | the first window at the starting count under 1.25× the first connection's solo rate → one connection, kept when it holds `keep_ratio` within at most 7 % noise |
 | `min_split` | 1 MiB | smaller = better tail balance, more requests |
 | `min_split_floor`, `min_split_time` | 256 KiB, 100 ms | on slow links pieces may shrink to what the median connection fetches in max(100 ms, 4 TTFB), not below 256 KiB |
 | `split_align` | 64 KiB | split points round down to this |
@@ -475,14 +503,14 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 
 | Suite | What |
 |---|---|
-| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, +8 % per doubling climbs (≥ 2/3 of seeds to 16, never below 4), a shared one spends ≤ 10 % of the time above the start and comes down over 10 min, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander |
-| `tests/scenarios.rs` (30) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses, slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, a reset after real progress taken up at once (one after 64 KiB waits out the backoff), and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
+| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, +8 % per doubling climbs (≥ 2/3 of seeds to 16, never below 4), a shared one spends ≤ 10 % of the time above the start and comes down over 10 min, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander; the solo-rate rule: eight that deliver what the first connection did alone drop to one (also at 98 %), a flattering solo look is corrected (back to eight, then 16 on a per-connection limit; at 85 % for one, not kept), connections that beat the solo rate stay, and only a fresh download's first window is compared with it |
+| `tests/scenarios.rs` (31) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses / changes in the endgame (the connections on the old version finish it, the split-off pieces handed back: exactly the old version, nothing served twice; fails with the old-version path disabled), slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, a reset after real progress taken up at once (one after 64 KiB waits out the backoff), and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
 | `tests/coalesce.rs` (5) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), a source that goes silent mid-buffer has its gathered bytes written by the timer, gathered bytes survive a hedge takeover and a pause |
 | `tests/service.rs` (20) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
 | `tests/contract.rs` (5) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic) |
 | `tests/finish.rs` (11) | in both durability modes (a power cut for `PowerSafe`, a killed process for `ProcessSafe`), the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact (after the rename without downloading again; before it, fetching what the intent — committed alongside the flush — does not claim); also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry; `ProcessSafe` skips that sync. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) |
-| `tests/start.rs` (17) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models: careful 0.75 s / 0.50 s at 8, the fast climb 0.50 s / 0.38 s, the jump from the first connection's solo rate 0.40 s / 0.27 s (16 at once); a shared 20 MB/s limit does not jump; a server capped at 2 refuses one wave of the jump, not all of it |
+| `tests/start.rs` (18) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models: careful 0.75 s / 0.50 s at 8, the fast climb 0.50 s / 0.38 s, the jump from the first connection's solo rate 0.40 s / 0.27 s (16 at once); a shared 20 MB/s limit does not jump; a link the first connection fills alone (64 MiB/s shared) drops back to one connection after the first window, never tries 16, and records 1 as the host's best count (peak 16 without the rule); a server capped at 2 refuses one wave of the jump, not all of it |
 | `tests/checkpoints.rs` (4) | a 400 ms flush spaces checkpoints 8 s apart (4–6 commits in 32 s instead of 14–18); a fresh download without a checksum commits only its finish intent, with a checksum one checkpoint before verifying; a fast 64 MiB transfer is flushed (and committed) every 16 MiB as it goes, a single stream flushed but journalled only at its finish |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off, `start` in one request or two): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
 | `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Half the cases are `PowerSafe` and every kill a power cut (every write not flushed is lost); half `ProcessSafe` and every kill a killed process (`CrashFs` keeps what `write_out` handed to the operating system, loses the rest); a power cut is not modelled for `ProcessSafe`, which gives it up. After every kill the journal's claims are checked directly against what survived (so tail verification cannot hide a violation: skipping `write_out` before commits, or the flush before checkpoints, fails within ~80 cases). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
