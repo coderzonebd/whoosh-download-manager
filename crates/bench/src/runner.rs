@@ -184,9 +184,9 @@ pub fn default_matrix() -> Vec<MatrixEntry> {
                 "raw-utf8.bin",
                 "traversal.bin",
             ],
-            Some(3),
+            None,
             30,
-            "1 MiB files; a naming-correctness check, deterministic, so 3 runs",
+            "1 MiB files; a naming-correctness check, also judged by the gate, so the full run count",
         ),
     ]
 }

@@ -63,7 +63,7 @@ laptop and the full matrix with nine clients and 7 runs (1,359 runs) took
 | clean | 1 GiB | the ceiling: big enough that transfer, not process start, dominates |
 | per-conn-throttle, global-throttle, conn-cap-2, rate-limited, conn-cap-reset, high-latency, slow-drip, expiring-url, cookie-required, referer-required | 10 MiB | throttled to 2-20 MB/s or gated: 10 MiB takes 0.5-5 s for one connection |
 | flaky, stall, no-range, lying-ranges, no-length, no-validators, changing-file, redirect-chain | 100 MiB | faults are per MiB (resets ~1/50 MiB, stalls ~1/100 MiB) or kick in after 32 MiB (changing file), so the file must be large enough to hit them |
-| bangla-filename | six 1 MiB files | a naming test; deterministic, so 3 runs |
+| bangla-filename | six 1 MiB files | a naming test, also judged by the gate: full run count |
 
 7 runs per client × scenario × file (3 for the names), shuffled per block.
 Per-run timeouts are 60-120 s (30 s for the names); a client that times out
