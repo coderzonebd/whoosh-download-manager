@@ -567,6 +567,57 @@ per-request script (TTFB, rate, stall, reset, failure).
 
 ## Benchmarks
 
+### End-of-download sync chain (2026-11-13, gate run 2's failing rows)
+
+Gate run 2 failed 1 MiB and 10 MiB rows against wget on time to
+durability. A trace of a 1 MiB download (base a213c53) showed, between the
+last byte and `completed`: the part file's `fdatasync` and its first-flush
+directory sync, beside the intent's commit creating the journal file
+(`fdatasync`, journal directory, and in a fresh daemon the data directory),
+then the move's `fdatasync` and directory sync, about 12 ms. Changes (1ed8264):
+the early checkpoint carrying the intent, the last bytes' flush overlapping
+it, the 100 ms writeback, and in `vayu-store` a flush that skips the
+`fdatasync` when nothing was written and journal directories synced in the
+background at open. After the last byte, 1 MiB now waits for the part's data
+sync and the new journal file's sync chain side by side, then the move
+(7.5–12 ms on this machine, mostly the journal chain).
+
+Time to durability, median ms (interleaved harness, resident daemon, fresh
+data directory per run, 20 runs; vayu-bench 10 runs per side for the
+`vs wget` columns, which ran back to back on a machine with other load):
+
+| Row | base | new | wget (vayu-bench) | new vs wget, p |
+|---|---:|---:|---:|---:|
+| clean 1 MiB | 28 | 25 | 19.4 (new 23.2) | 0.0008 |
+| bangla.bin 1 MiB | 25.8 | 23.3 | 19.6 | 0.026 |
+| plain.bin 1 MiB | 25.8 | 25.4 | 19.4 | 0.017 |
+| clean 10 MiB | 46 | 35 | 43.2 (new 33.7) | 0.014 (new faster) |
+| referer-required 10 MiB | 42.4 | 32.4 | 43.6 | 0.24 (new faster) |
+| per-conn-throttle 10 MiB | 405 | 332 | gopeed 380 | — |
+| conn-cap-reset 10 MiB | 1024 | 1012 | mdm 1037 | — |
+
+- The early intent alone (same build without it): 1 MiB 28 → 25 ms
+  (p = 0.001), 10 MiB 40 → 36 ms (p = 0.023), 25 interleaved runs.
+- per-conn-throttle: base runs are multimodal (0.34 / 0.37 / 0.40 s; the
+  gate's own vayu runs spread 0.339–0.444 s), the new build's sit at
+  0.33 s. With debug logging the last byte arrives at the same ~312 ms in
+  both, and the part that reproduces is the end chain: 14–18 ms → 6–10 ms.
+  The cause of base's slower modes is not pinned down.
+- conn-cap-reset still shows the occasional ~2 s run in both builds (base
+  3 of 10, new 1 of 10; the gate had 2 of 7): a reset-handling issue, not
+  the sync chain.
+- Other engine scenarios, 8 interleaved runs, base → new: slow-drip 307 →
+  295 ms, flaky 163 → 160, stall 160 → 149, rate-limited 559 → 506,
+  global-throttle 573 → 523, no-range 100 MiB 140 → 122; high-latency 595 →
+  606 (p = 0.083) in one round and 551 → 536 in the next (10 runs).
+- 1 MiB stays behind wget plus the harness's sync. That gap is two device
+  round trips for a new journal file per download (its data and its
+  directory entry) and the daemon's request path (2.4–4 ms from `add` to the
+  last byte). A journal that does not create a file per download would
+  close most of it.
+- Verified: engine and store tests, crash model 6,000 cases and 4,000
+  proptests, daemon tests, hardkill 250 kills (see the hand-over note).
+
 ### Phase 1 gate round (2026-11-12, resident daemon, labserver on loopback)
 
 The gate (`docs/bench/data/2026-11-12-pop-os-phase1-gate`) left clean
