@@ -67,9 +67,13 @@ pub struct FileJournal {
 #[derive(Debug, Default)]
 struct IdState {
     /// The directory has been fsynced since this process first committed
-    /// the id. Not derived from the file's contents: a slot can be complete
-    /// in the page cache while its directory entry never reached the disk.
+    /// (or prepared) the id. Not derived from the file's contents: a slot
+    /// can be complete in the page cache while its directory entry never
+    /// reached the disk.
     dir_synced: bool,
+    /// `remove` ran: a preparation still queued must not bring the file
+    /// back.
+    gone: bool,
 }
 
 impl FileJournal {
@@ -163,13 +167,19 @@ impl Journal for FileJournal {
         Box::pin(async move {
             let path = self.path_for(id)?;
             let state = self.state_for(id);
+            let (dir, sync, pending) = (self.dir.clone(), self.sync, self.pending_dirs.clone());
             blocking::run(move || {
                 let _held = lock(&state);
                 let mut opts = std::fs::File::options();
                 opts.read(true);
                 let file = match sys::open_nofollow(&mut opts, &path) {
                     Ok(f) => f,
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                        if sync {
+                            prepare_in_background(path, dir, state.clone(), pending);
+                        }
+                        return Ok(None);
+                    }
                     Err(e) => return Err(e),
                 };
                 let Some(bytes) = read_bounded(file, &path)? else {
@@ -190,7 +200,8 @@ impl Journal for FileJournal {
             let path = self.path_for(id)?;
             let state = self.state_for(id);
             blocking::run(move || {
-                let _held = lock(&state);
+                let mut held = lock(&state);
+                held.gone = true;
                 match std::fs::remove_file(&path) {
                     Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
                     r => r,
@@ -239,6 +250,52 @@ fn sync_in_background(pending: &Arc<Mutex<Vec<PathBuf>>>) {
     if let Err(e) = spawned {
         tracing::debug!(error = %e, "no thread to sync the journal's new directories; the first commit will");
     }
+}
+
+/// A fresh download's journal file, made ready for its first commit on a
+/// thread of the blocking pool: created (empty, which loads as no
+/// checkpoint) and its directory entry synced, so that commit, often the
+/// finish intent of a small file on its way to `completed`, is one
+/// `fdatasync` of an existing file. It holds the id's lock throughout: a
+/// commit that comes first waits for it (or, if this never ran, creates
+/// the file and syncs the directory itself).
+fn prepare_in_background(
+    path: PathBuf,
+    dir: PathBuf,
+    state: Arc<Mutex<IdState>>,
+    pending: Arc<Mutex<Vec<PathBuf>>>,
+) {
+    blocking::spawn(move || {
+        let mut state = lock(&state);
+        if state.gone || state.dir_synced {
+            return;
+        }
+        let mut o = sys::private_file_options();
+        o.read(true).write(true).create_new(true);
+        match sys::open_nofollow(&mut o, &path) {
+            Ok(_) => {}
+            // A commit created it already (and synced, or will sync, it).
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return,
+            Err(e) => {
+                tracing::debug!(path = %path.display(), error = %e, "journal file not prepared; the first commit creates it");
+                return;
+            }
+        }
+        let parents = std::mem::take(&mut *lock(&pending));
+        let mut dirs = vec![dir];
+        for d in &parents {
+            if !dirs.contains(d) {
+                dirs.push(d.clone());
+            }
+        }
+        match sys::sync_dirs(&dirs) {
+            Ok(()) => state.dir_synced = true,
+            Err(e) => {
+                lock(&pending).extend(parents);
+                tracing::debug!(error = %e, "journal directory not synced; the first commit syncs it");
+            }
+        }
+    });
 }
 
 /// Returns the directories it fsynced.
@@ -788,6 +845,48 @@ mod tests {
         restarted.remove(&id).await.unwrap();
         restarted.commit(&id, &cp(5, 1)).await.unwrap();
         assert_eq!(restarted.dir_syncs.load(Relaxed), 2);
+    }
+
+    /// A load that finds nothing (a fresh download) prepares the file on the
+    /// blocking pool: created empty (still loads as nothing) with its entry
+    /// synced, so the first commit syncs no directory. A remove before the
+    /// preparation runs keeps the file gone.
+    #[tokio::test]
+    async fn a_fresh_load_prepares_the_file_for_the_first_commit() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let d = tempfile::tempdir().unwrap();
+        let j = FileJournal::open(d.path()).unwrap();
+        let id = "fresh".to_string();
+        assert_eq!(j.load(&id).await.unwrap(), None);
+        let state = j.state_for(&id);
+        let t0 = std::time::Instant::now();
+        while !lock(&state).dir_synced {
+            assert!(t0.elapsed() < std::time::Duration::from_secs(10));
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        let path = j.path_for(&id).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
+        assert_eq!(j.load(&id).await.unwrap(), None);
+        j.commit(&id, &cp(1, 1)).await.unwrap();
+        assert_eq!(j.dir_syncs.load(Relaxed), 0);
+        assert_eq!(j.load(&id).await.unwrap(), Some(cp(1, 1)));
+    }
+
+    #[test]
+    fn a_removed_id_is_not_prepared() {
+        // Outside a runtime the preparation runs inline.
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("x.journal");
+        let removed = Arc::new(Mutex::new(IdState {
+            gone: true,
+            ..IdState::default()
+        }));
+        prepare_in_background(path.clone(), d.path().into(), removed, Arc::default());
+        assert!(!path.exists());
+        let fresh = Arc::new(Mutex::new(IdState::default()));
+        prepare_in_background(path.clone(), d.path().into(), fresh.clone(), Arc::default());
+        assert!(path.exists());
+        assert!(lock(&fresh).dir_synced);
     }
 
     /// `open` syncs the entries it created on a thread of its own, without

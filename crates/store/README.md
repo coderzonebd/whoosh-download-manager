@@ -172,6 +172,14 @@ C toolchain (see [Testing](#testing)).
     this when a transfer starts), and the flush after the last byte is a
     data sync alone. A file the storage did not create counts as unsynced
     at first: an earlier process may have left writes in it.
+  - Such a directory-only flush (nothing written since the last data sync,
+    no sync in flight) runs on a thread of its own, not the syncer: a data
+    flush right after it starts its `fdatasync` at once, while the entries
+    sync, and still resolves only once they are durable. The pending
+    entries are synced under their lock and cleared only after: whoever
+    finds the list empty under the lock knows they are on disk. For a
+    1 MiB download the last bytes' data sync used to queue behind the
+    entry's sync (1.5–3 ms).
   - Without that, POSIX allows a power cut to lose the part file's entry
     after the journal has recorded its ranges as done.
 - **No symbolic links.** The part file is opened with `O_NOFOLLOW` (on
@@ -272,6 +280,14 @@ C toolchain (see [Testing](#testing)).
   - It also `fsync`s the directory on each process's first commit of an id.
     That doesn't depend on what the file holds: an earlier process may have
     written a complete slot and died before syncing the entry.
+  - **A `load` that finds no file prepares one.** A fresh download's
+    `load` misses; the file is then created (empty, which loads as no
+    checkpoint) and its directory synced on the blocking pool, holding the
+    id's lock. So that download's first commit, often the finish intent of
+    a small file on its way to `completed`, is one `fdatasync` of an
+    existing file instead of a create, an `fdatasync` and a directory sync.
+    A commit that comes first waits for it; a `remove` before it runs keeps
+    the file gone.
   - **`FileJournal::open` waits for no sync.** The entries of directories
     it creates are fsynced on a thread it starts, so neither a daemon's cold
     start nor, usually, the first commit (a download's) waits for them. No
@@ -526,6 +542,9 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
 - `FileJournal::open` syncs nothing. The first commit syncs the entries
   of the directories `open` created, with the journal's own directory.
   Later commits, and a restarted journal, sync only what they must.
+- A `load` that finds nothing prepares the file (empty, still loading as
+  nothing, its entry synced), and the first commit then syncs no
+  directory; a removed id is not prepared.
 - `Checkpoint::finishing` (amendment 2) round-trips. Every third test
   checkpoint carries it, so the torn-write tests and the bit-flip and
   real-file proptests cover it too. A slot written by the previous format, without

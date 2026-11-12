@@ -1126,17 +1126,29 @@ fn sync_file(file: &File, shared: &Shared) -> io::Result<()> {
             .data_syncs
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
+    // The data first: on a journaling filesystem its commit carries the
+    // new entries, so the directory syncs after it cost at most a device
+    // cache flush (see `sys::sync_data_and_dirs`).
+    if data {
+        file.sync_data().map_err(|e| shared.fail(sys::map_err(e)))?;
+    }
     // The first time, then the directories whose entries creating the
-    // file changed.
-    let dirs = shared.take_pending_dirs();
-    let r = if data {
-        sys::sync_data_and_dirs(file, &dirs)
-    } else {
-        sys::sync_dirs(&dirs)
-    };
-    r.map_err(|e| shared.fail(sys::map_err(e)))?;
+    // file changed (waiting for a directory-only flush syncing them now).
+    sync_pending_dirs(shared)
+}
+
+/// Sync the directories in `pending_dirs`, holding its lock throughout and
+/// emptying it only once they are durable: whoever finds it empty under
+/// the lock knows every entry it held is on disk.
+fn sync_pending_dirs(shared: &Shared) -> io::Result<()> {
+    let mut dirs = lock(&shared.pending_dirs);
+    if dirs.is_empty() {
+        return Ok(());
+    }
+    sys::sync_dirs(&dirs).map_err(|e| shared.fail(sys::map_err(e)))?;
     #[cfg(test)]
-    lock(&shared.synced_dirs).extend(dirs);
+    lock(&shared.synced_dirs).extend(dirs.iter().cloned());
+    dirs.clear();
     Ok(())
 }
 
@@ -1233,6 +1245,9 @@ impl Syncer {
     }
 
     fn flush(&self, file: Arc<File>, reply: oneshot::Sender<io::Result<()>>) {
+        let Some((file, reply)) = self.flush_dirs_only(file, reply) else {
+            return;
+        };
         let tx = self.tx.as_ref().expect("the syncer runs until shutdown");
         let job = SyncJob {
             file,
@@ -1249,6 +1264,57 @@ impl Syncer {
             let SyncJob { file, reply, .. } = job;
             drop(file);
             let _ = reply.send(Err(e));
+        }
+    }
+
+    /// Nothing was written since the last data sync, and no sync is in
+    /// flight (only the writer thread starts one, and it is here): every
+    /// write is durable, and only directory entries can be pending (a flush
+    /// right after creating the file, to sync its entry while the data
+    /// still arrives). Answered at once, or by a thread of its own: not by
+    /// the syncer, so a data flush right after this one starts its
+    /// `fdatasync` at once, while the entries sync (it still waits for
+    /// them before it resolves: `sync_pending_dirs`). Hands the flush back
+    /// when it is not one, or no thread can be started.
+    fn flush_dirs_only(
+        &self,
+        file: Arc<File>,
+        reply: oneshot::Sender<io::Result<()>>,
+    ) -> Option<(Arc<File>, oneshot::Sender<io::Result<()>>)> {
+        if self.shared.unsynced.load(Ordering::Acquire) || *lock(&self.outstanding.0) > 0 {
+            return Some((file, reply));
+        }
+        if let Ok(dirs) = self.shared.pending_dirs.try_lock()
+            && dirs.is_empty()
+        {
+            drop(dirs);
+            let _ = reply.send(self.shared.error().map_or(Ok(()), Err));
+            return None;
+        }
+        let job = Arc::new(Mutex::new(Some((
+            file,
+            reply,
+            InFlight::new(&self.outstanding),
+        ))));
+        let shared = self.shared.clone();
+        let mine = job.clone();
+        let spawned = std::thread::Builder::new()
+            .name("vayu-store-dirs".into())
+            .spawn(move || {
+                let Some((file, reply, in_flight)) = lock(&mine).take() else {
+                    return;
+                };
+                drop(file);
+                let r = match shared.error() {
+                    Some(e) => Err(e),
+                    None => sync_pending_dirs(&shared),
+                };
+                drop(in_flight);
+                let _ = reply.send(r);
+            });
+        match spawned {
+            Ok(_) => None,
+            Err(_) => lock(&job).take().map(|(file, reply, _)| (file, reply)),
         }
     }
 
@@ -1560,6 +1626,58 @@ mod tests {
         let again = provider(1 << 20).open_storage(&path).await.unwrap();
         again.flush().await.unwrap();
         assert_eq!(again.shared.data_syncs.load(Relaxed), 1);
+    }
+
+    /// A directory-only flush runs beside the syncer: a data flush right
+    /// after it starts its `fdatasync` while the entries are still syncing
+    /// (here: their lock held, as the sync holds it), and resolves only
+    /// once they are synced.
+    #[tokio::test]
+    async fn a_data_flush_overlaps_the_entry_sync_and_waits_for_it() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let d = tempfile::tempdir().unwrap();
+        let s = provider(1 << 20)
+            .open_storage(&d.path().join("f.vayu-part"))
+            .await
+            .unwrap();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let (held, holding) = std::sync::mpsc::channel::<()>();
+        let holder = std::thread::spawn({
+            let shared = s.shared.clone();
+            move || {
+                let _entries = lock(&shared.pending_dirs);
+                held.send(()).unwrap();
+                let _ = released.recv();
+            }
+        });
+        holding.recv().unwrap();
+        let first = tokio::spawn({
+            let s = s.clone();
+            async move { s.flush().await }
+        });
+        // Handed over (directory-only) before anything is written.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
+        let second = tokio::spawn({
+            let s = s.clone();
+            async move { s.flush().await }
+        });
+        let t0 = std::time::Instant::now();
+        while s.shared.data_syncs.load(Relaxed) == 0 {
+            assert!(
+                t0.elapsed() < Duration::from_secs(10),
+                "no data sync started"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!first.is_finished() && !second.is_finished());
+        release.send(()).unwrap();
+        holder.join().unwrap();
+        first.await.unwrap().unwrap();
+        second.await.unwrap().unwrap();
+        assert_eq!(*lock(&s.shared.synced_dirs), vec![d.path().to_path_buf()]);
+        assert_eq!(s.shared.data_syncs.load(Relaxed), 1);
     }
 
     /// When the writer thread ends (here: `finish` succeeds) while a

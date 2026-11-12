@@ -19,3 +19,15 @@ where
         Err(_) => f(),
     }
 }
+
+/// Start `f` on tokio's blocking pool without waiting for it, or run it
+/// inline outside a tokio runtime.
+pub(crate) fn spawn<F>(f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(h) => drop(h.spawn_blocking(f)),
+        Err(_) => f(),
+    }
+}
