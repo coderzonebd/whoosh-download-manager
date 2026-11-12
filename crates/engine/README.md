@@ -620,8 +620,11 @@ data directory per run, 20 runs; vayu-bench 10 runs per side for the
   directory entry) and the daemon's request path (2.4–4 ms from `add` to the
   last byte). A journal that does not create a file per download would
   close most of it.
-- Verified: engine and store tests, crash model 6,000 cases and 4,000
-  proptests, daemon tests, hardkill 250 kills (see the hand-over note).
+- Verified on 5ee5a98: engine and store tests, crash model 6,000 cases
+  (seeds 200000–205999, with the foreign same-length file and lost part
+  file entries) and 4,000 proptests, daemon tests, `vayu-bench hardkill
+  --kills 250` (seed 20261113): 468 downloads, 0 corrupt, 0 leftovers,
+  0 unfinished.
 
 ### Phase 1 gate round (2026-11-12, resident daemon, labserver on loopback)
 
