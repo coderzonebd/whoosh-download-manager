@@ -34,8 +34,14 @@ const H2_CONN_WINDOW: u32 = 32 << 20;
 /// Lets HTTP/2 servers send DATA frames bigger than the 16 KiB default:
 /// fewer frames, less per-frame work on both ends.
 const H2_MAX_FRAME: u32 = 256 << 10;
-/// HTTP/1.1 read buffer ceiling (hyper's adaptive buffer grows to it).
-const H1_MAX_BUF: usize = 1 << 20;
+/// HTTP/1.1 read buffer ceiling (hyper's adaptive buffer grows toward it;
+/// a soft limit: one read may fill whatever capacity the buffer has). Set
+/// to the engine's write size (`write_coalesce`, 256 KiB). Measured against
+/// 1 MiB (README, "Whole-daemon CPU"): page faults -45 %, read-buffer
+/// memory per connection -75 %, vayu-net's own CPU -15-20 % at 8-16
+/// connections with higher throughput; unchanged at one connection, and
+/// whole-daemon CPU unchanged within noise.
+const H1_MAX_BUF: usize = 256 << 10;
 /// UDP socket buffers for QUIC; the default 208 KiB overflows on bursts.
 const UDP_BUF: usize = 4 << 20;
 /// How long a pooled HTTP/1.1 connection may take to become ready.
