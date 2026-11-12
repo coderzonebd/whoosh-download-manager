@@ -1,0 +1,43 @@
+# pub redirect: a PR opened against `pub` from anywhere but `dev` is moved to
+# `dev` straight away, with a comment that says why.
+#
+# GitHub has no setting that stops someone from *opening* a PR against a
+# branch, so this does the next best thing: such a PR never stays a PR into
+# `pub`. (pub-guard.yml and the ruleset still block a merge if this ever
+# fails to run.)
+#
+# Security: `pull_request_target` runs with a write token, so this workflow
+# never checks out or runs code from the PR. It only calls the GitHub API
+# through `gh` with the PR number.
+name: pub redirect
+
+on:
+  pull_request_target:
+    branches: [pub]
+    types: [opened, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  redirect:
+    name: Move PR to dev
+    if: >-
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      github.event.pull_request.head.ref != 'dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Retarget to dev and explain
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR" --base dev
+          gh pr comment "$PR" --body "Thanks for the PR! 👋
+
+          \`pub\` is the release branch and only receives \`dev\`, so this PR now targets **\`dev\`**. Nothing else changed; CI runs again against \`dev\`.
+
+          How changes flow: feature branch → PR into \`dev\` (review + CI) → release PR \`dev\` → \`pub\`. Details in [CONTRIBUTING.md](../blob/dev/CONTRIBUTING.md)."

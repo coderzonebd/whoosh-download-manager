@@ -1,4 +1,4 @@
-# CI: lint, build and test on every PR and on pushes to main / phase branches.
+# CI: lint, build and test on every PR and on pushes to dev and pub.
 #
 # Every third-party action is pinned to a full commit SHA (version in the
 # comment); Dependabot keeps them current (.github/dependabot.yml).
@@ -6,7 +6,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "phase*/**"]
+    branches: [dev, pub]
   pull_request:
   merge_group:
   workflow_dispatch:
@@ -17,9 +17,9 @@ permissions:
 
 concurrency:
   # One run per PR / branch; a new push cancels the superseded run
-  # (except on main, where every commit keeps its own result).
+  # (except on dev and pub, where every commit keeps its own result).
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/pub' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -86,7 +86,7 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # PRs restore the cache but only main / phase branches write it.
+          # PRs restore the cache but only dev / pub pushes write it.
           save-if: ${{ github.event_name == 'push' }}
       - name: cargo fmt
         run: cargo fmt --all --check

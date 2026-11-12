@@ -1,5 +1,16 @@
 # Contributing
 
+## How changes flow
+
+```
+feat/your-change ──PR──▶ dev ──release PR──▶ pub ──tag──▶ vX.Y.Z
+```
+
+- **Open every pull request against `dev`** (the default branch). It needs green CI (`CI OK`) and one approving review.
+- **`pub` is the release branch.** It only receives `dev`, in a release PR opened by a maintainer. A PR into `pub` from any other branch is moved to `dev` automatically.
+- Name branches `feat/…`, `fix/…`, `perf/…`, `docs/…` or `ci/…`. They are deleted after merge.
+- Why: [ADR 0006](docs/adr/0006-dev-and-pub-branches.md).
+
 ## Prerequisites
 
 | Tool | Version | Notes |

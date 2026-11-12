@@ -4,7 +4,7 @@ Every artifact is built by GitHub Actions from a tag; nothing is built on a
 laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 **drafts**: a maintainer reviews them and presses *Publish*.
 
-- CI (every PR and every push to `main` / `phase*/**`): [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+- CI (every PR and every push to `dev` / `pub`): [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 - Release (tags `v*`, or a manual dry run): [`.github/workflows/release.yml`](../.github/workflows/release.yml)
 - Store and package-manager manifests: [`packaging/`](../packaging)
 
@@ -43,8 +43,11 @@ without the development `key` (the job fails if a key is left in).
    - `apps/desktop/package.json` → `version`
    - `apps/extension/package.json` → `version`
 
-   Run `cargo check` so `Cargo.lock` follows, commit, and merge to `main`.
-3. Tag the merge commit and push the tag:
+   Run `cargo check` so `Cargo.lock` follows, and commit on `dev` (via a PR).
+   Then open the **release PR `dev → pub`** and merge it with a merge commit
+   ([ADR 0006](adr/0006-dev-and-pub-branches.md)).
+3. Tag the merge commit on `pub` and push the tag (the release workflow
+   refuses a tag that is not on `pub`):
    ```bash
    git tag -s vX.Y.Z -m "vX.Y.Z"   # -a if you do not sign tags yet
    git push origin vX.Y.Z
@@ -165,9 +168,11 @@ offline.
   optionally *Require actions to be pinned to a full-length commit SHA*
   (every action here already is).
 - *Settings → Environments*: create `release` as described above.
-- *Settings → Rules*: protect `main` and `phase*/**`: require the **CI OK**
-  check (it aggregates the lint, Rust and TypeScript jobs), linear history,
-  no force pushes; protect tags `v*` from deletion and update.
+- *Settings → Rules*: run `scripts/github-setup.sh OWNER/REPO` once. It makes
+  `dev` the default branch and applies `.github/rulesets/*.json`: `dev` needs a
+  reviewed PR with the **CI OK** check; `pub` takes release PRs from `dev` only
+  (**CI OK** + **PR source is dev**), merge commits only; tags `v*` cannot be
+  deleted or moved. No force pushes or deletion on either branch.
 - `.github/CODEOWNERS` is a commented placeholder; fill in real teams, then
   optionally require code-owner review.
 

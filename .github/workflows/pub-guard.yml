@@ -1,0 +1,35 @@
+# pub guard: `pub` is the release branch, and it only ever receives `dev`.
+#
+# Every change lands on `dev` first, through a reviewed pull request. A pull
+# request into `pub` is how a tested `dev` becomes a release, so it must come
+# from this repository's own `dev` branch: a PR into `pub` from any other
+# branch or from a fork fails this check. The `pub` ruleset
+# (.github/rulesets/pub.json) makes this check required, so such a PR cannot
+# be merged. See docs/adr/0006-dev-and-pub-branches.md.
+name: pub guard
+
+on:
+  pull_request:
+    branches: [pub]
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: PR source is dev
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Check where this PR comes from
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" != "$BASE_REPO" ] || [ "$HEAD_REF" != "dev" ]; then
+            echo "::error title=Wrong source branch::Pull requests into pub must come from ${BASE_REPO}:dev, not ${HEAD_REPO}:${HEAD_REF}. Open your PR against dev instead; dev reaches pub in a release PR."
+            exit 1
+          fi
+          echo "Release PR from ${HEAD_REPO}:dev: OK"
