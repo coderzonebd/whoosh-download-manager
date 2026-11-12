@@ -546,6 +546,16 @@ impl Tuner {
         match goal {
             Goal::Base { reprobe } => {
                 self.best = Some(stat);
+                if let Some(solo) = self.solo
+                    && reprobe.is_none()
+                {
+                    tracing::debug!(
+                        n = stat.n,
+                        rate = stat.mean,
+                        solo,
+                        "first window against the first connection alone"
+                    );
+                }
                 if let Some(solo) = self.solo.take()
                     && reprobe.is_none()
                     && stat.n > 1
@@ -576,6 +586,11 @@ impl Tuner {
             Goal::Trial { dir, base } => {
                 if std::mem::take(&mut self.collapsing) {
                     let ratio = stat.mean / base.mean.max(1.0);
+                    tracing::debug!(
+                        ratio,
+                        rse = stat.rse,
+                        "one connection against the first window"
+                    );
                     let se = ratio * (stat.rse.powi(2) + base.rse.powi(2)).sqrt();
                     let slack = (self.k.z * se).min(self.k.collapse_slack);
                     if ratio + slack >= self.k.keep {

@@ -148,8 +148,9 @@ enum SoloEnd {
     /// Gone quiet, cancelled, or no owner to judge.
     Other,
     /// Its time to finish exceeds what another connection is worth; at
-    /// this rate (bytes/s, past the first burst).
-    Eta(f64),
+    /// this rate (bytes/s, past the first burst), and at the second one
+    /// since its headers.
+    Eta(f64, f64),
 }
 
 pub(crate) fn error_info(code: &str, message: impl Into<String>) -> ErrorInfo {
@@ -1561,7 +1562,8 @@ impl Driver {
                             let worth = (self.t.solo_ttfb_factor * solo.ttfb)
                                 .max(self.t.solo_min_eta.as_secs_f64());
                             if eta > worth {
-                                SoloEnd::Eta(rate)
+                                let overall = bytes as f64 / watched.max(1e-6);
+                                SoloEnd::Eta(rate, overall)
                             } else {
                                 SoloEnd::Hold
                             }
@@ -1587,7 +1589,7 @@ impl Driver {
             }
             return;
         }
-        if let SoloEnd::Eta(rate) = end {
+        if let SoloEnd::Eta(rate, overall) = end {
             self.solo_rate = Some(rate);
             // Less than TCP's initial window per round trip, past the first
             // burst: the server paces this connection (any path carries
@@ -1598,7 +1600,10 @@ impl Driver {
                     tracing::debug!(id = %self.id, rate, ttfb = solo.ttfb, "first connection limited on its own");
                     t.limited_per_connection(self.t.limited_connections, rate);
                 } else {
-                    t.solo_rate(rate);
+                    // The yardstick for the others: one short look can
+                    // catch a dip (a busy machine), so the better of it and
+                    // the whole time alone.
+                    t.solo_rate(rate.max(overall));
                 }
             }
         }

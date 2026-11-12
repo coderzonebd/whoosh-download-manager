@@ -833,6 +833,17 @@ now overlapped with the data flush). Early writeback inside the store
 (`sync_file_range(SYNC_FILE_RANGE_WRITE)` after large batches) could replace
 the engine's 16 MiB flushes more cheaply.
 
+Open, for the engine and `vayu-net` (option B of the changing-file item,
+not needed for the gate): when a ranged request with `If-Range` comes back
+`200` with new validators, the source drops that body and reports
+`RemoteChanged`. Handing the body back instead (`RemoteChanged { fresh:
+Option<(RemoteMeta, ByteStream)> }`, or a `RangeSource::open` variant) would
+let a restart that cannot keep the old version adopt the new version's
+first response as its solo connection, saving the restart's `start` round
+trip. Option A (finish the old version, implemented) avoids the restart in
+the common case, so this is worth one round trip on real links only when
+the old version cannot be finished.
+
 Open: **`Storage::write_vectored_at(offset, Vec<Bytes>)`** (or `write_at`
 taking several buffers): the engine could hand over the received chunks of
 a gather as they are and the store issue one `pwritev`, removing the gather
@@ -866,21 +877,23 @@ storage contract now also states what the engine relied on: a dropped
 - `mirrors` are stored but not used yet (multi-source is Speed Doctrine #9).
 - On a link where one connection is already as fast as the machine (loopback,
   LAN), a download whose first connection would need more than 100 ms alone
-  still gets 8 (it cannot know more will not help without trying), and the
-  tuner cannot come down within a short download. On the bench machine,
-  `clean` 1 GiB pinned to one connection takes 1.02–1.06 s against
-  1.39–1.43 s with the learned count (wget 0.93–0.99 s): eight connections
-  only reach 0.8–0.9 GB/s there, against 0.7 GB/s for one alone, and cost
-  2.5× the CPU (in the network and storage layers: the engine's own data
-  path costs about the same at 1 and 8, 1.06 and 1.27 CPU s per GB).
-  A follow-up could compare the first connection's solo rate with the first
-  window at 8 and, when 8 do not beat 1, fall back to the first connection
-  alone — its `start` response runs to the end of the file, so it could
-  simply keep reading.
-- The first connection's solo decision uses `start`'s time to first byte as
-  a new connection's; labserver's far ranges of a big file take 50–200 ms to
-  their first byte while it generates content (about 0.4 ms near the start),
-  which no client can know beforehand.
+  still gets 8 for its first window (~150–300 ms: it cannot know more will
+  not help without trying) before it drops back to one. The seven ranges
+  the drop cancels are then fetched one after another, each with a new
+  request: on loopback that costs well under a millisecond each (labserver
+  answers a range of 1g.bin anywhere in < 1 ms now), on a distant server
+  one time to first byte each — only on a link one connection fills, and
+  only once per download.
+- The drop to one is judged against the first window at 8 (measured just
+  before it) and, when one comes out somewhat short, against eight measured
+  again around it. A link that changes faster than that (a disk that starts
+  throttling writes mid-download) can still send a 1 GiB download back to 8
+  for a while; the re-probe (30 s) or the next download from the host (its
+  profile) corrects it.
+- Finishing the old version after a change keeps the connections that were
+  streaming it and makes no new request: its endgame has no work stealing
+  and no hedges, and a connection that breaks or stalls then restarts the
+  download from zero on the new version.
 - Checksums are verified by reading the file back after the download.
 - Hedging is not possible in stream mode (no ranges): a stalled single
   stream is only replaced after `stream_idle_timeout`, from zero.
