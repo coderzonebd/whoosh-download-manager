@@ -240,6 +240,9 @@ concurrent copies of the whole suite pass at load average 54–65.
 cargo run --release -p vayu-net --example throughput -- --compare
 ```
 
+`tools/daemon-ab.sh` and `tools/ab-summary.py` measure the whole daemon
+(see "Whole-daemon CPU" below).
+
 Options: `--transports h1,h1s,h2,h3 --conns 1,4,16 --file 100m.bin --gb 1
 --runs 5 --threads 4 --cache-mb 256 --compare`, `--scenario <name>` (any
 labserver scenario, e.g. `per-conn-throttle`), `--rate <MB/s>` (adds and
@@ -368,6 +371,58 @@ Kept: **AES-128-GCM offered before AES-256-GCM** (browsers' order; same
 suites): on a fast TLS stream (`clean`, one connection, one thread) the
 median fell from ~1.03 to ~0.90 CPU s/GB in four interleaved rounds; no
 change at 2 MB/s, where decryption is not the main cost.
+
+### Whole-daemon CPU (2026-11-12, Phase 1 gate round)
+
+The gate run (`docs/bench/data/2026-11-12-pop-os-phase1-gate`) fails rule 5
+(CPU per GiB) on no-range, lying-ranges, no-length, no-validators,
+redirect-chain and clean/1g by small margins. `tools/daemon-ab.sh` measures
+what the gate measures (a resident `vayu-daemon` per run, `vayu --no-start
+get`, the CLI's CPU plus the daemon's) with several builds interleaved in
+one run against one labserver; `tools/ab-summary.py` gives medians and
+per-round paired changes. On this shared machine a single run varies by
+±25–45 %, so only paired comparisons over 10+ rounds mean anything.
+
+**Where the daemon's CPU goes** (old build, per-thread `/proc` samples
+every 20 ms; ticks of 10 ms per GiB):
+
+| thread | no-range/1g (1 connection) | clean/1g (engine's connection count) |
+|---|---:|---:|
+| tokio worker: vayu-net + engine | 0.30–0.64 s | 1.0–1.1 s |
+| `vayu-store-writer` (`pwrite`, page-cache drop) | 0.41–0.72 s | 0.9–1.0 s |
+| `vayu-store-sync` (`fdatasync`) | 0.07–0.11 s | 0.07 s |
+
+Almost all of it is **kernel** time; user time is ~0.1 s/GiB for the whole
+daemon. vayu-net alone (`examples/throughput.rs`, one plain HTTP/1.1
+connection, client CPU only) costs **0.15 CPU-s/GiB**, the same as wget
+(0.14) and curl (0.18) reading to `/dev/null`: the kernel's receive copy.
+The rest of the worker's time is the engine (its gather copy of chunks
+under 256 KiB, hand-off to the writer) and page faults, which swing from 2k
+to 23k per GiB with the machine's memory pressure and move the worker's
+system time with them.
+
+**Tried** (vayu-net-only CPU-s/GB at 8 / 16 / 1 connections; whole daemon
+paired against the old build):
+
+| change | net only | whole daemon |
+|---|---|---|
+| hyper read-buffer ceiling 1 MiB → **256 KiB** | 0.93 → 0.79 / 0.93 → 0.83 / 0.15 → 0.17; GB/s 2.1 → 2.5 at 8; page faults −45 % | 10 rounds: no-range/100m −6 % (6/10 lower), no-range/1g −8 % (8/10), clean/1g +3 % (5/10); earlier 12 rounds −4 % / +5 % |
+| ceiling 128 KiB or 64 KiB | lower still at 8 connections | clean/1g **+36 %** (0/6 lower): every chunk then takes the engine's gather copy |
+| fixed 128/256 KiB reads (`read_buf_exact_size`) | like 128/256 KiB ceilings | not pursued |
+| `SO_RCVBUF` capped at 256 KiB / 1 MiB | no change | — |
+| glibc trimming off (`GLIBC_TUNABLES`) | — | −3 % / +4 % (12 rounds) |
+
+Kept: the **256 KiB** ceiling (the engine's write size): page faults and
+read-buffer memory per connection fall (−45 %, −75 %), the one-connection
+rows gain a little, clean/1g is unchanged within noise. No read-path change
+reaches 20 % of the daemon's CPU, because vayu-net's own share is already at
+wget's level. The remaining per-byte cost is the copy and sync chain
+downstream (receive copy, the engine's gather copy, `pwrite`'s copy into the
+page cache, page-cache drop, `fdatasync`); wget does the first and third
+only. Cutting a copy there needs the engine and store (see the hand-over
+notes): e.g. handing chunks to storage without the gather copy (the store
+already batches them into `pwritev`), or buffers recycled from storage back
+to the source.
 
 ## Not covered
 
