@@ -226,6 +226,7 @@ async fn matches_the_reference_under_concurrent_random_writes() {
     };
     let p = FileStorageProvider::new(StorageOptions {
         buffer_bytes: 256 << 10,
+        ..StorageOptions::default()
     });
     let s = p.open(&d.path().join("f.vayu-part")).await.unwrap();
     let mem = MemStorageProvider::default();
@@ -339,6 +340,42 @@ async fn follows_the_contract_like_the_reference() {
     contract_rules(&MemStorageProvider::default(), Path::new("/mem")).await;
     let d = tempfile::tempdir().unwrap();
     contract_rules(&provider(), d.path()).await;
+}
+
+/// The process-safe calls (contract: `Durability::ProcessSafe`), against
+/// the reference (which falls back to `flush`/`finish`) and the real store.
+async fn process_safe_rules(p: &dyn StorageProvider, dir: &Path) {
+    let part = dir.join("y.vayu-part");
+    let s = p.open(&part).await.unwrap();
+    s.write_at(2, Bytes::from_static(b"cd")).await.unwrap();
+    s.write_at(0, Bytes::from_static(b"ab")).await.unwrap();
+    s.write_out().await.unwrap();
+    assert_eq!(s.read_at(0, 10).await.unwrap(), "abcd");
+    assert_eq!(p.file_len(&part).await.unwrap(), Some(4));
+    // A taken name: AlreadyExists, and the storage stays usable.
+    let other = p.open(&dir.join("z.vayu-part")).await.unwrap();
+    other
+        .write_at(0, Bytes::from_static(b"other"))
+        .await
+        .unwrap();
+    other.finish_unsynced(&dir.join("y")).await.unwrap();
+    let e = s.finish_unsynced(&dir.join("y")).await.unwrap_err();
+    assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
+    assert_eq!(p.file_len(&dir.join("y")).await.unwrap(), Some(5));
+    s.write_at(4, Bytes::from_static(b"e")).await.unwrap();
+    s.finish_unsynced(&dir.join("y (1)")).await.unwrap();
+    assert_eq!(p.file_len(&dir.join("y (1)")).await.unwrap(), Some(5));
+    assert_eq!(p.file_len(&part).await.unwrap(), None);
+    assert!(s.write_at(0, Bytes::from_static(b"x")).await.is_err());
+}
+
+#[tokio::test]
+async fn process_safe_calls_follow_the_contract_like_the_reference() {
+    process_safe_rules(&MemStorageProvider::default(), Path::new("/mem")).await;
+    let d = tempfile::tempdir().unwrap();
+    process_safe_rules(&provider(), d.path()).await;
+    assert_eq!(std::fs::read(d.path().join("y")).unwrap(), b"other");
+    assert_eq!(std::fs::read(d.path().join("y (1)")).unwrap(), b"abcde");
 }
 
 #[tokio::test]

@@ -206,7 +206,15 @@ Name + trademark search, license split (§10), monorepo, CI matrix (Win/mac/Linu
 
 ### Phase 1 — Engine (months 1–3)
 Core: H1/H2/H3, TLS, Happy Eyeballs, host profiles, work-stealing scheduler, hedging, learned connection count, preallocation + io_uring/overlapped I/O, journal + tail verification, speed limits, queues, categories/rules, SQLite state. Daemon with WebSocket/REST API. CLI. Unit + property tests + fault-injection tests.
-**Gate:** wins every labserver scenario and three real-world CDN scenarios against all competitors with p < 0.01, lower CPU, and zero corruption across 1,000 simulated hard kills. Public report.
+**Gate** (amended 2026-11-11 by the owner's decision, after the first Phase 1 benchmarks; the original read "wins every labserver scenario and three real-world CDN scenarios against all competitors with p < 0.01, lower CPU, and zero corruption across 1,000 simulated hard kills"). Measured on an idle machine, ≥ 7 runs per cell, Mann-Whitney U, with vayu's daemon **resident** (as a download manager runs; cold one-shot CLI runs are reported alongside but do not gate):
+1. **Correct:** every run byte-exact in every labserver scenario; zero corrupt files; zero wrong file names.
+2. **Crash-proof:** zero corrupt and zero duplicate files across 1,000 SIGKILLs of the real daemon mid-download (`vayu-bench hardkill`).
+3. **Never slower:** in no labserver scenario is any competitor significantly faster than vayu (p < 0.01). Where one connection is optimal (no ranges, small files, loopback single stream) or the server imposes the limit (connection caps, a global throttle), a statistical tie is the honest best. Time is measured **to durability** for every client (owner's decision, 2026-11-11): vayu forces a finished file to disk before it calls it done, so a power cut never damages it (its default `powerSafe` setting; load-shedding is common where it is used); other clients leave the bytes in the page cache, so the bench syncs their output file and directory after they finish and counts that time too. Time to the file appearing is reported alongside.
+4. **Fastest where the engine matters:** in the per-connection-throttle, slow-drip, flaky, stall, high-latency and rate-limited scenarios, vayu's median time is the best of all clients or within 5 % of it.
+5. **Lean:** median CPU per GiB at or below every multi-connection competitor's, per scenario.
+6. **Real world:** three real CDN scenarios, interleaved with aria2c `-x16` and the best other client: no competitor significantly faster, CPU at or below theirs.
+
+Public report.
 
 ### Phase 2 — Desktop + Extension Pro → **v1.0** (months 4–6)
 Tauri desktop (Win/mac/Linux), tray, Classic + Modern layouts, categories/queues/scheduler UI, history. Extension (Chromium + Firefox) Pro mode: capture, cookie/referer forwarding, context menus, media sniffer, predictive preconnect, self-healing links. yt-dlp/ffmpeg integration (desktop build). Signed installers on all channels in §7. Bangla + English + ~10 machine-seeded languages via Weblate. Accessibility pass.

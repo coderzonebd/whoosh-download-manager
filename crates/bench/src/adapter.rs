@@ -147,6 +147,26 @@ pub trait Adapter: Send + Sync + fmt::Debug {
     fn settings(&self) -> String {
         String::new()
     }
+    /// A long-running helper this client needs, the way a download manager
+    /// keeps its daemon resident: started before the measured window and
+    /// stopped after it, neither timed. Its CPU and memory during the run
+    /// are added to the client's (Linux). `None` for most clients.
+    fn resident(&self, _program: &Path, _job: &Job) -> Option<Resident> {
+        None
+    }
+}
+
+/// A resident helper process (see [`Adapter::resident`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Resident {
+    pub program: PathBuf,
+    pub args: Vec<OsString>,
+    pub env: Vec<(OsString, OsString)>,
+    pub cwd: PathBuf,
+    /// Ready once this file holds JSON whose `pid` is the helper's pid.
+    pub ready_file: PathBuf,
+    /// Where its stdout and stderr go.
+    pub log: PathBuf,
 }
 
 /// Environment that confines a client's config and state to `state_dir`.
@@ -681,17 +701,18 @@ wait "$d"
 exit "$rc"
 "#;
 
-/// vayu itself: the engine behind the daemon, driven by the CLI (Unix only:
-/// the wrapper is a POSIX shell script).
+/// vayu, cold one-shot: the daemon starts inside the measured window and
+/// stops at its end (Unix only: the wrapper is a POSIX shell script).
+/// Reported alongside, not gating (MASTER-PLAN §8, Phase 1 gate).
 #[derive(Debug, Default)]
-pub struct Vayu;
+pub struct VayuCold;
 
-impl Adapter for Vayu {
+impl Adapter for VayuCold {
     fn id(&self) -> &str {
-        "vayu"
+        "vayu-cold"
     }
     fn description(&self) -> &str {
-        "vayu (this project): daemon + `vayu get`, learned connection count"
+        "vayu (this project), cold one-shot: daemon start + `vayu get` + daemon stop, all timed"
     }
     fn tool(&self) -> &str {
         "vayu"
@@ -712,17 +733,8 @@ impl Adapter for Vayu {
             program.as_os_str().to_owned(),
             program.with_file_name("vayu-daemon").into_os_string(),
             os(job.url),
-            os("-o"),
-            job.out_dir.as_os_str().to_owned(),
         ];
-        if let Conn::Fixed(n) = job.conn {
-            args.push(os("-c"));
-            args.push(os(n.clamp(1, 64).to_string()));
-        }
-        for (k, v) in job.headers {
-            args.push(os("-H"));
-            args.push(os(format!("{k}: {v}")));
-        }
+        args.extend(vayu_get_args(job));
         inv.args = args;
         inv
     }
@@ -731,10 +743,87 @@ impl Adapter for Vayu {
     }
 }
 
+/// `-o DIR [-c N] [-H "K: V"]...` after the URL, for both vayu adapters.
+fn vayu_get_args(job: &Job) -> Vec<OsString> {
+    let mut args = vec![os("-o"), job.out_dir.as_os_str().to_owned()];
+    if let Conn::Fixed(n) = job.conn {
+        args.push(os("-c"));
+        args.push(os(n.clamp(1, 64).to_string()));
+    }
+    for (k, v) in job.headers {
+        args.push(os("-H"));
+        args.push(os(format!("{k}: {v}")));
+    }
+    args
+}
+
+/// vayu as a download manager runs: `vayu-daemon` is already resident (the
+/// harness starts it with a fresh data directory before the measured
+/// window, waits until it is ready, and stops it afterwards), and the
+/// measured process is `vayu --no-start get`. The daemon's CPU and peak
+/// memory during the run are added to the CLI's. This is the Phase 1 gate's
+/// configuration (MASTER-PLAN §8).
+#[derive(Debug, Default)]
+pub struct Vayu;
+
+impl Vayu {
+    fn data_dir(job: &Job) -> PathBuf {
+        job.state_dir.join("vayu-data")
+    }
+
+    fn env(job: &Job) -> Vec<(OsString, OsString)> {
+        let mut env = isolated_env(job.state_dir);
+        env.push((os("VAYU_DATA_DIR"), Self::data_dir(job).into_os_string()));
+        env
+    }
+}
+
+impl Adapter for Vayu {
+    fn id(&self) -> &str {
+        "vayu"
+    }
+    fn description(&self) -> &str {
+        "vayu (this project), daemon resident: `vayu --no-start get` against a running \
+         vayu-daemon (daemon start/stop not timed; its CPU and memory during the run counted)"
+    }
+    fn tool(&self) -> &str {
+        "vayu"
+    }
+    fn settings(&self) -> String {
+        "resident vayu-daemon --port 0; vayu --no-start get -o <dir> [-c N]".into()
+    }
+    fn invocation(&self, program: &Path, job: &Job) -> Invocation {
+        let mut inv = base_invocation(program, job);
+        inv.env = Self::env(job);
+        let mut args = vec![os("--no-start"), os("get"), os(job.url)];
+        args.extend(vayu_get_args(job));
+        inv.args = args;
+        inv
+    }
+    fn is_control_file(&self, name: &str) -> bool {
+        name.ends_with(".vayu-part")
+    }
+    fn resident(&self, program: &Path, job: &Job) -> Option<Resident> {
+        Some(Resident {
+            program: program.with_file_name(if cfg!(windows) {
+                "vayu-daemon.exe"
+            } else {
+                "vayu-daemon"
+            }),
+            args: vec![os("--port"), os("0")],
+            env: Self::env(job),
+            cwd: job.state_dir.to_owned(),
+            ready_file: Self::data_dir(job).join("runtime.json"),
+            log: job.state_dir.join("vayu-daemon.log"),
+        })
+    }
+}
+
 /// Every adapter the harness knows, in report order.
 pub fn all() -> Vec<Arc<dyn Adapter>> {
     vec![
         Arc::new(Vayu),
+        Arc::new(VayuCold),
         Arc::new(Curl),
         Arc::new(Wget),
         Arc::new(Aria2::aria2c()),
@@ -814,9 +903,9 @@ mod tests {
     }
 
     #[test]
-    fn vayu_runs_daemon_and_cli_under_one_shell() {
+    fn vayu_cold_runs_daemon_and_cli_under_one_shell() {
         let h = cookie();
-        let inv = Vayu.invocation(Path::new("/opt/vayu/vayu"), &job(&h, Conn::Fixed(99)));
+        let inv = VayuCold.invocation(Path::new("/opt/vayu/vayu"), &job(&h, Conn::Fixed(99)));
         assert_eq!(inv.program, Path::new("/bin/sh"));
         let a = strs(&inv);
         assert_eq!(a[0], "-c");
@@ -839,7 +928,63 @@ mod tests {
         assert!(inv.env.iter().any(
             |(k, v)| k == "VAYU_DATA_DIR" && v == Path::new("/run/state/vayu-data").as_os_str()
         ));
-        assert!(Vayu.is_control_file("10m.bin.vayu-part"));
+        assert!(VayuCold.is_control_file("10m.bin.vayu-part"));
+        assert!(
+            VayuCold
+                .resident(Path::new("/opt/vayu/vayu"), &job(&h, Conn::Default))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn vayu_resident_measures_only_the_cli() {
+        let h = cookie();
+        let j = job(&h, Conn::Fixed(8));
+        let prog = Path::new("/opt/vayu/vayu");
+        let inv = Vayu.invocation(prog, &j);
+        assert_eq!(inv.program, prog, "the CLI itself is the measured process");
+        assert_eq!(
+            strs(&inv),
+            [
+                "--no-start",
+                "get",
+                "http://127.0.0.1:1/s/clean/10m.bin?x=1",
+                "-o",
+                "/run/out",
+                "-c",
+                "8",
+                "-H",
+                "Cookie: vayu_session=lab-ok",
+            ]
+        );
+        let data = Path::new("/run/state/vayu-data");
+        let has_data_dir = |env: &[(OsString, OsString)]| {
+            env.iter()
+                .any(|(k, v)| k == "VAYU_DATA_DIR" && v == data.as_os_str())
+        };
+        assert!(has_data_dir(&inv.env));
+        assert_eq!(
+            Vayu.completion(),
+            Completion::Exit,
+            "`vayu get` exits when done"
+        );
+
+        let r = Vayu
+            .resident(prog, &j)
+            .expect("vayu keeps its daemon resident");
+        assert_eq!(r.program, Path::new("/opt/vayu/vayu-daemon"));
+        assert_eq!(r.args, [os("--port"), os("0")]);
+        assert!(
+            has_data_dir(&r.env),
+            "daemon and CLI share the data directory"
+        );
+        assert!(
+            r.env
+                .iter()
+                .any(|(k, v)| k == "HOME" && v == Path::new("/run/state").as_os_str())
+        );
+        assert_eq!(r.ready_file, data.join("runtime.json"));
+        assert!(Curl.resident(prog, &j).is_none());
     }
 
     #[test]

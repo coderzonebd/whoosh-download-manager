@@ -161,6 +161,7 @@ pub fn settings() -> Settings {
         speed_limit_bps: None,
         language: "en".into(),
         theme: "system".into(),
+        durability: Default::default(),
     }
 }
 

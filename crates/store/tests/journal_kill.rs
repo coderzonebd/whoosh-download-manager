@@ -91,8 +91,14 @@ fn survives_sigkill_at_random_moments() {
     };
 
     let mut state = 0u64; // the checkpoint number on disk
-    let (mut in_flight, mut acked_kills) = (0u32, 0u32);
+    let (mut in_flight, mut late) = (0u32, 0u64);
     for i in 0..iters {
+        // Most kills are armed once the child has acknowledged its first
+        // commit, so they land anywhere in the commit loop however slowly a
+        // loaded machine starts the child. One in four is armed right after
+        // START, so kills during start-up, load and a run's first commit
+        // stay covered.
+        let after_first_commit = rand(4) != 0;
         let mut child = Command::new(&exe)
             .args(["--exact", "kill_child", "--ignored", "--nocapture"])
             .args(["--test-threads", "1"])
@@ -113,28 +119,38 @@ fn survives_sigkill_at_random_moments() {
                 }
             }
         });
-        // Wait for the child to be running (it printed START), then kill it
-        // after a random 0–30 ms, so kills land anywhere in the commit loop.
-        let start = loop {
-            match rx.recv_timeout(Duration::from_secs(30)) {
-                // libtest prints `test kill_child ... ` on the same line.
+        // Read up to the line `want` accepts, with a generous timeout: on a
+        // loaded machine a child can take long to start, never forever.
+        let mut wait_for = |what: &str, want: &dyn Fn(&str) -> Option<u64>| loop {
+            match rx.recv_timeout(Duration::from_secs(60)) {
                 Ok(line) => {
-                    if let Some((_, n)) = line.split_once("START ") {
-                        break n.trim().parse::<u64>().unwrap();
+                    if let Some(n) = want(&line) {
+                        break n;
                     }
                 }
                 Err(e) => {
                     let _ = child.kill();
-                    panic!("kill {i}: the child never started ({e})");
+                    panic!("kill {i}: the child never {what} ({e})");
                 }
             }
         };
+        // libtest prints `test kill_child ... ` on the same line as START.
+        let start = wait_for("started", &|l| {
+            l.split_once("START ")
+                .map(|(_, n)| n.trim().parse().unwrap())
+        });
         assert_eq!(start, state, "child resumed from the wrong checkpoint");
+        let mut acked = start;
+        if after_first_commit {
+            acked = wait_for("committed", &|l| {
+                l.strip_prefix("ACK ").map(|n| n.parse().unwrap())
+            });
+            late += 1;
+        }
         std::thread::sleep(Duration::from_micros(rand(30_000)));
         child.kill().unwrap(); // SIGKILL
         child.wait().unwrap();
         reader.join().unwrap();
-        let mut acked = start;
         for line in rx.try_iter() {
             if let Some(n) = line.strip_prefix("ACK ") {
                 acked = n.parse().unwrap();
@@ -155,16 +171,15 @@ fn survives_sigkill_at_random_moments() {
         if n == acked + 1 {
             in_flight += 1;
         }
-        if acked > start {
-            acked_kills += 1;
-        }
         state = n;
     }
     eprintln!(
-        "{iters} kills: {state} checkpoints committed; {in_flight} kills landed after a commit's write but before its acknowledgement"
+        "{iters} kills ({late} armed after a first commit): {state} checkpoints committed; {in_flight} kills landed after a commit's write but before its acknowledgement"
     );
+    // Not vacuous, whatever the machine's load: every late-armed child
+    // committed at least once, and every commit survived its kill.
     assert!(
-        acked_kills > iters / 2,
-        "most children must get to commit before being killed ({acked_kills}/{iters})"
+        state >= late,
+        "{state} checkpoints on disk after {late} children that each committed"
     );
 }

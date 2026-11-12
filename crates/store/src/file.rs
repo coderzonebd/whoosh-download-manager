@@ -31,12 +31,20 @@ pub struct StorageOptions {
     /// between a fast network and a slow disk. Default 16 MiB; clamped to
     /// at least 4 KiB.
     pub buffer_bytes: usize,
+    /// Linux: after each successful `flush`, drop the file's (now clean)
+    /// pages from the page cache (`posix_fadvise(DONTNEED)`), so a large
+    /// download does not push everything else out of memory. Off by
+    /// default: it made no difference to download speed in our benchmark,
+    /// and anything that reads the file afterwards (a checksum check)
+    /// reads it from disk. Ignored on other platforms.
+    pub drop_cache_after_flush: bool,
 }
 
 impl Default for StorageOptions {
     fn default() -> Self {
         Self {
             buffer_bytes: 16 << 20,
+            drop_cache_after_flush: false,
         }
     }
 }
@@ -298,8 +306,12 @@ enum Cmd {
         reply: oneshot::Sender<io::Result<()>>,
     },
     Flush(oneshot::Sender<io::Result<()>>),
+    /// Every write queued before it is handed to the OS (`write_out`).
+    WriteOut(oneshot::Sender<io::Result<()>>),
     Finish {
         to: PathBuf,
+        /// `finish` (true) or `finish_unsynced` (false).
+        sync: bool,
         reply: oneshot::Sender<io::Result<()>>,
     },
     /// The file's length once every queued write is written.
@@ -338,7 +350,16 @@ struct Shared {
     #[cfg(test)]
     paused: (Mutex<bool>, std::sync::Condvar),
     #[cfg(test)]
+    sync_paused: (Mutex<bool>, std::sync::Condvar),
+    /// Test hook: the syncer panics inside (`Sync`) or after (`Bookkeeping`)
+    /// its next fdatasync.
+    #[cfg(test)]
+    sync_panic: Mutex<Option<SyncPanic>>,
+    #[cfg(test)]
     synced_dirs: Mutex<Vec<PathBuf>>,
+    /// Test counter: `fdatasync`s of the file (flushes and `finish`).
+    #[cfg(test)]
+    data_syncs: std::sync::atomic::AtomicUsize,
 }
 
 impl Shared {
@@ -404,7 +425,16 @@ impl Shared {
 
     #[cfg(test)]
     fn wait_unpaused(&self) {
-        let (m, cv) = &self.paused;
+        Self::wait_gate(&self.paused);
+    }
+
+    #[cfg(test)]
+    fn wait_sync_unpaused(&self) {
+        Self::wait_gate(&self.sync_paused);
+    }
+
+    #[cfg(test)]
+    fn wait_gate((m, cv): &(Mutex<bool>, std::sync::Condvar)) {
         let mut p = lock(m);
         while *p {
             p = cv.wait(p).unwrap_or_else(|e| e.into_inner());
@@ -440,12 +470,19 @@ impl FileStorage {
             #[cfg(test)]
             paused: Default::default(),
             #[cfg(test)]
+            sync_paused: Default::default(),
+            #[cfg(test)]
+            sync_panic: Mutex::new(None),
+            #[cfg(test)]
             synced_dirs: Mutex::default(),
+            #[cfg(test)]
+            data_syncs: Default::default(),
         });
         let (tx, rx) = mpsc::channel();
         let writer = Writer {
-            file: Some(file),
+            file: Some(Arc::new(file)),
             path: path.clone(),
+            syncer: Syncer::start(shared.clone(), &path, opts)?,
             shared: shared.clone(),
             batch: Vec::new(),
             max_batch: (cap as usize / 4).max(1),
@@ -480,6 +517,14 @@ impl FileStorage {
     #[cfg(test)]
     fn pause(&self, paused: bool) {
         let (m, cv) = &self.shared.paused;
+        *lock(m) = paused;
+        cv.notify_all();
+    }
+
+    /// Hold (or release) the syncer before its next `fdatasync`.
+    #[cfg(test)]
+    fn pause_sync(&self, paused: bool) {
+        let (m, cv) = &self.shared.sync_paused;
         *lock(m) = paused;
         cv.notify_all();
     }
@@ -555,6 +600,34 @@ impl Storage for FileStorage {
             self.shared.check()?;
             self.call(|reply| Cmd::Finish {
                 to: final_path.to_path_buf(),
+                sync: true,
+                reply,
+            })
+            .await
+        })
+    }
+
+    /// Every write that resolved before the call has been handed to the OS
+    /// (`pwrite` returned): it survives this process being killed, not a
+    /// power cut. No fsync. Write errors are sticky as for `flush`, and are
+    /// recorded before the reply, so cancelling the call loses none.
+    fn write_out(&self) -> BoxFuture<'_, io::Result<()>> {
+        Box::pin(async move {
+            self.shared.check()?;
+            self.call(Cmd::WriteOut).await
+        })
+    }
+
+    /// `finish` without any fsync: the data is not forced to disk before the
+    /// move, and the directories are not synced after it. The move is the
+    /// same no-replace move, a taken name is `AlreadyExists` (the storage
+    /// stays usable), and earlier errors fail it.
+    fn finish_unsynced<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
+        Box::pin(async move {
+            self.shared.check()?;
+            self.call(|reply| Cmd::Finish {
+                to: final_path.to_path_buf(),
+                sync: false,
                 reply,
             })
             .await
@@ -565,9 +638,13 @@ impl Storage for FileStorage {
 /// The writer thread's state.
 struct Writer {
     /// `None` only while `finish` has the file closed for the rename, or
-    /// after a failed rename could not reopen it.
-    file: Option<File>,
+    /// after a failed rename could not reopen it. Shared with the syncer
+    /// only while a job of its is in flight.
+    file: Option<Arc<File>>,
     path: PathBuf,
+    /// Declared before `shared`, so it is dropped (its thread joined) before
+    /// anything else of the writer goes.
+    syncer: Syncer,
     shared: Arc<Shared>,
     batch: Vec<PendingWrite>,
     /// Stop collecting a batch at this many bytes so the network can refill
@@ -589,14 +666,23 @@ impl Drop for ClosedOnDrop {
 }
 
 impl Writer {
-    fn run(mut self, rx: mpsc::Receiver<Cmd>) {
+    fn run(self, rx: mpsc::Receiver<Cmd>) {
+        // Locals drop in reverse order: the writer (its file, and the syncer
+        // and its handle) goes first, even on panic, and only then is the
+        // storage announced closed.
         let _closed = ClosedOnDrop(self.shared.clone());
+        let mut w = self;
+        w.serve(rx);
+    }
+
+    fn serve(&mut self, rx: mpsc::Receiver<Cmd>) {
         'outer: while let Ok(first) = rx.recv() {
-            #[cfg(test)]
-            self.shared.wait_unpaused();
             let mut next = Some(first);
             let mut batch_bytes = 0;
             while let Some(cmd) = next.take() {
+                // Test hook: holds every command, however it was received.
+                #[cfg(test)]
+                self.shared.wait_unpaused();
                 match cmd {
                     Cmd::Write(w) => {
                         batch_bytes += w.data.len();
@@ -617,7 +703,9 @@ impl Writer {
             self.write_batch();
         }
         self.write_batch();
-        // Close the file before announcing it.
+        // Wait for in-flight syncs, then close the file, before the storage
+        // is announced closed.
+        self.syncer.shutdown();
         self.file = None;
     }
 
@@ -636,12 +724,23 @@ impl Writer {
                 let r = self.checked().and_then(|()| self.preallocate(len));
                 let _ = reply.send(r);
             }
-            Cmd::Flush(reply) => {
-                let r = self.checked().and_then(|()| self.flush());
+            Cmd::Flush(reply) => match self.checked().and_then(|()| self.shared_file()) {
+                // Everything queued before this flush is written (the batch
+                // went out above); the syncer makes it durable while this
+                // thread goes on writing newer data.
+                Ok(file) => self.syncer.flush(file, reply),
+                Err(e) => {
+                    let _ = reply.send(Err(e));
+                }
+            },
+            // The batch went out above: every write queued before this one
+            // has been handed to the OS, or has failed (sticky).
+            Cmd::WriteOut(reply) => {
+                let r = self.checked().and_then(|()| self.file().map(drop));
                 let _ = reply.send(r);
             }
-            Cmd::Finish { to, reply } => {
-                let r = self.checked().and_then(|()| self.finish(&to));
+            Cmd::Finish { to, sync, reply } => {
+                let r = self.checked().and_then(|()| self.finish(&to, sync));
                 let done = r.is_ok();
                 let _ = reply.send(r);
                 return done;
@@ -665,7 +764,11 @@ impl Writer {
     }
 
     fn file(&self) -> io::Result<&File> {
-        self.file.as_ref().ok_or_else(finished_error)
+        self.file.as_deref().ok_or_else(finished_error)
+    }
+
+    fn shared_file(&self) -> io::Result<Arc<File>> {
+        self.file.clone().ok_or_else(finished_error)
     }
 
     fn read(&self, offset: u64, len: usize) -> io::Result<Bytes> {
@@ -690,46 +793,67 @@ impl Writer {
         }
     }
 
-    /// `fdatasync`, then (the first time) the directories whose entries
-    /// creating the file changed; any failure is sticky.
-    fn flush(&self) -> io::Result<()> {
-        let f = self.file()?;
-        f.sync_data()
-            .map_err(|e| self.shared.fail(sys::map_err(e)))?;
-        let dirs = self.shared.take_pending_dirs();
-        if let Err(e) = sys::sync_dirs(&dirs) {
-            return Err(self.shared.fail(e));
+    /// `sync`: `finish`; otherwise `finish_unsynced`, which does all of
+    /// this but the data sync before the move and the directory syncs after
+    /// it.
+    fn finish(&mut self, to: &Path, sync: bool) -> io::Result<()> {
+        // In-flight syncs first: their errors count, and on Windows no
+        // second handle may be open during the rename.
+        self.syncer.wait_idle();
+        self.checked()?;
+        // The data must be durable before the move can be. The part file's
+        // own directory entry need not be: once moved, only the final name
+        // matters, and the directory syncs after the move cover the new
+        // entries (a finish with no flush before it saves one sync).
+        let pending = self.shared.take_pending_dirs();
+        if sync {
+            #[cfg(test)]
+            self.shared
+                .data_syncs
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Err(e) = self.file()?.sync_data() {
+                self.shared.add_pending_dirs(pending);
+                return Err(self.shared.fail(sys::map_err(e)));
+            }
         }
-        #[cfg(test)]
-        lock(&self.shared.synced_dirs).extend(dirs);
-        Ok(())
-    }
-
-    fn finish(&mut self, to: &Path) -> io::Result<()> {
-        self.file()?
-            .sync_data()
-            .map_err(|e| self.shared.fail(sys::map_err(e)))?;
         let to_dir = sys::parent_or_cwd(to);
-        let mut dirs = sys::create_dirs(&to_dir, sys::DirMode::Default)?;
+        let created = match sys::create_dirs(&to_dir, sys::DirMode::Default) {
+            Ok(c) => c,
+            Err(e) => {
+                self.shared.add_pending_dirs(pending);
+                return Err(e);
+            }
+        };
         // Closed before the move: Windows cannot rename an open file.
         self.file = None;
         if let Err(e) = sys::rename_noreplace(&self.path, to) {
+            // Still in progress, its entry not yet synced.
+            self.shared.add_pending_dirs(pending);
             // Still in progress: keep it usable so the engine can try
             // another name.
             let mut opts = File::options();
             opts.read(true).write(true);
             match sys::open_nofollow(&mut opts, &self.path) {
-                Ok(f) => self.file = Some(f),
+                Ok(f) => self.file = Some(Arc::new(f)),
                 Err(re) => self.shared.set_error(&re),
             }
             return Err(e);
         }
         self.shared.finished.store(true, Ordering::Release);
-        dirs.push(to_dir);
-        let from_dir = sys::parent_or_cwd(&self.path);
-        if !dirs.contains(&from_dir) {
-            dirs.push(from_dir);
+        if !sync {
+            return Ok(());
         }
+        let mut dirs = pending;
+        for d in created
+            .into_iter()
+            .chain([to_dir, sys::parent_or_cwd(&self.path)])
+        {
+            if !dirs.contains(&d) {
+                dirs.push(d);
+            }
+        }
+        #[cfg(test)]
+        lock(&self.shared.synced_dirs).extend(dirs.iter().cloned());
         if let Err(e) = sys::sync_dirs(&dirs) {
             // The move happened; failing now would make the engine pick
             // another name for a file that is already in place.
@@ -798,6 +922,259 @@ impl Writer {
     }
 }
 
+/// `fdatasync`, then (the first time) the directory entries that creating
+/// the file changed. Any failure is sticky.
+fn sync_file(file: &File, shared: &Shared) -> io::Result<()> {
+    #[cfg(test)]
+    shared
+        .data_syncs
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // The first time, then the directories whose entries creating the
+    // file changed.
+    let dirs = shared.take_pending_dirs();
+    sys::sync_data_and_dirs(file, &dirs).map_err(|e| shared.fail(sys::map_err(e)))?;
+    #[cfg(test)]
+    lock(&shared.synced_dirs).extend(dirs);
+    Ok(())
+}
+
+// ------------------------------------------------------------------ syncer
+
+/// Makes flushes durable off the writer thread, so a slow `fdatasync`
+/// (tens to hundreds of milliseconds on a busy disk) no longer stops the
+/// writer: it hands the flush over once every write queued before it has
+/// been written, and goes on writing newer data. The `fdatasync` starts
+/// after that hand-over, so it covers every write the flush must cover
+/// (and maybe some newer ones, which is harmless).
+///
+/// Flushes that are waiting when the syncer gets to them share one
+/// `fdatasync`. Errors are recorded as sticky before any reply is sent, so
+/// a caller that gave up cannot make one disappear. The syncer only holds
+/// the file (an `Arc` of the writer's handle) while a job is in flight;
+/// `finish` and shutdown wait until it holds nothing.
+struct Syncer {
+    tx: Option<mpsc::Sender<SyncJob>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    /// Flush jobs sent and not yet done.
+    outstanding: Arc<(Mutex<usize>, std::sync::Condvar)>,
+    shared: Arc<Shared>,
+}
+
+/// Fields drop in order: the handle goes before the job stops counting
+/// as in flight, so `wait_idle` returning means no second handle is held.
+struct SyncJob {
+    file: Arc<File>,
+    reply: oneshot::Sender<io::Result<()>>,
+    _in_flight: InFlight,
+}
+
+/// One flush counted as in flight from hand-over until it is dropped:
+/// answered, or lost to a panic or a closed channel. Counting by drop means
+/// no path can leave `wait_idle` waiting forever.
+struct InFlight(Arc<(Mutex<usize>, std::sync::Condvar)>);
+
+impl InFlight {
+    fn new(outstanding: &Arc<(Mutex<usize>, std::sync::Condvar)>) -> Self {
+        *lock(&outstanding.0) += 1;
+        Self(outstanding.clone())
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        let (m, cv) = &*self.0;
+        *lock(m) -= 1;
+        cv.notify_all();
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncPanic {
+    Sync,
+    Bookkeeping,
+}
+
+/// Test hook: consume the injected panic if it is this one.
+#[cfg(test)]
+fn injected(shared: &Shared, at: SyncPanic) -> bool {
+    let mut slot = lock(&shared.sync_panic);
+    if *slot == Some(at) {
+        *slot = None;
+        true
+    } else {
+        false
+    }
+}
+
+fn syncer_panicked() -> io::Error {
+    io::Error::other("the store's syncer thread panicked")
+}
+
+impl Syncer {
+    fn start(shared: Arc<Shared>, path: &Path, opts: &StorageOptions) -> io::Result<Self> {
+        let (tx, rx) = mpsc::channel();
+        let outstanding: Arc<(Mutex<usize>, std::sync::Condvar)> = Arc::default();
+        let drop_cache = opts.drop_cache_after_flush;
+        let thread = std::thread::Builder::new()
+            .name("vayu-store-sync".into())
+            .spawn({
+                let (shared, path) = (shared.clone(), path.to_path_buf());
+                move || sync_loop(&rx, &shared, &path, drop_cache)
+            })?;
+        Ok(Self {
+            tx: Some(tx),
+            thread: Some(thread),
+            outstanding,
+            shared,
+        })
+    }
+
+    fn flush(&self, file: Arc<File>, reply: oneshot::Sender<io::Result<()>>) {
+        let tx = self.tx.as_ref().expect("the syncer runs until shutdown");
+        let job = SyncJob {
+            file,
+            reply,
+            _in_flight: InFlight::new(&self.outstanding),
+        };
+        if let Err(mpsc::SendError(job)) = tx.send(job) {
+            // The syncer thread is gone: nothing can be made durable any
+            // more, so the storage is dead (sticky), not just this flush.
+            let e = self.shared.error().unwrap_or_else(|| {
+                self.shared
+                    .fail(io::Error::other("the store's syncer thread has stopped"))
+            });
+            let SyncJob { file, reply, .. } = job;
+            drop(file);
+            let _ = reply.send(Err(e));
+        }
+    }
+
+    /// Until no flush is in flight (and so no second handle is held).
+    fn wait_idle(&self) {
+        let (m, cv) = &*self.outstanding;
+        let mut n = lock(m);
+        while *n > 0 {
+            n = cv.wait(n).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+
+    fn shutdown(&mut self) {
+        self.tx = None;
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+impl Drop for Syncer {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+/// A panic that ends the syncer thread is recorded as the storage's
+/// sticky error. (Its jobs stop counting as in flight as they are dropped,
+/// so `finish`, `remove` and close never wait for it.)
+struct SyncerExit<'a>(&'a Shared);
+
+impl Drop for SyncerExit<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.set_error(&syncer_panicked());
+        }
+    }
+}
+
+fn sync_loop(rx: &mpsc::Receiver<SyncJob>, shared: &Shared, path: &Path, drop_cache: bool) {
+    let _exit = SyncerExit(shared);
+    while let Ok(first) = rx.recv() {
+        // Every flush waiting now was handed over before this fdatasync
+        // starts, so one covers them all.
+        let mut jobs = vec![first];
+        jobs.extend(rx.try_iter());
+        let file = jobs[0].file.clone();
+        // A panic in here becomes the storage's sticky error, recorded
+        // before the waiting flushes are answered with it.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            shared.wait_sync_unpaused();
+            #[cfg(test)]
+            if injected(shared, SyncPanic::Sync) {
+                panic!("injected syncer panic");
+            }
+            let r = match shared.error() {
+                Some(e) => Err(e),
+                None => sync_file(&sync_handle(&file, path), shared),
+            };
+            if r.is_ok() && drop_cache {
+                sys::drop_cache(&file);
+            }
+            r
+        }))
+        .unwrap_or_else(|_| Err(shared.fail(syncer_panicked())));
+        drop(file);
+        #[cfg(test)]
+        if injected(shared, SyncPanic::Bookkeeping) {
+            panic!("injected syncer panic after the sync");
+        }
+        for SyncJob {
+            file,
+            reply,
+            _in_flight,
+        } in jobs
+        {
+            // Let go of the handle, then stop counting as in flight, then
+            // answer.
+            drop(file);
+            drop(_in_flight);
+            let out = match &result {
+                Ok(()) => Ok(()),
+                Err(e) => Err(io::Error::new(e.kind(), e.to_string())),
+            };
+            let _ = reply.send(out);
+        }
+    }
+}
+
+/// The handle to fsync through. Windows serialises synchronous I/O per
+/// handle, so a `FlushFileBuffers` on the writer's handle would hold up its
+/// `WriteFile`s; a second handle to the same file avoids that, and
+/// `FlushFileBuffers` flushes the file's data whichever handle wrote it.
+/// It is opened per flush, so none is held while idle (a rename in
+/// `finish` needs that), and if it cannot be opened the shared handle is
+/// used: slower, never less durable. Elsewhere the shared handle is used:
+/// `fdatasync` does not serialise with `pwrite` on the same descriptor.
+fn sync_handle(shared: &Arc<File>, path: &Path) -> SyncHandle {
+    #[cfg(windows)]
+    {
+        let mut o = File::options();
+        o.write(true);
+        if let Ok(own) = sys::open_nofollow(&mut o, path) {
+            return SyncHandle::Own(own);
+        }
+    }
+    let _ = path;
+    SyncHandle::Shared(shared.clone())
+}
+
+enum SyncHandle {
+    Shared(Arc<File>),
+    #[cfg(windows)]
+    Own(File),
+}
+
+impl std::ops::Deref for SyncHandle {
+    type Target = File;
+    fn deref(&self) -> &File {
+        match self {
+            SyncHandle::Shared(f) => f,
+            #[cfg(windows)]
+            SyncHandle::Own(f) => f,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -806,6 +1183,7 @@ mod tests {
     fn provider(buffer: usize) -> FileStorageProvider {
         FileStorageProvider::new(StorageOptions {
             buffer_bytes: buffer,
+            ..StorageOptions::default()
         })
     }
 
@@ -1122,5 +1500,376 @@ mod tests {
             let e = s.finish(to).await.unwrap_err();
             assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
         }
+    }
+
+    /// The point of the syncer: while an `fdatasync` is in flight, the
+    /// writer keeps accepting and writing newer data, many times the buffer.
+    #[tokio::test]
+    async fn a_slow_fsync_does_not_hold_up_later_writes() {
+        let d = tempfile::tempdir().unwrap();
+        let p = provider(64 * 1024);
+        let s = p.open_storage(&d.path().join("f")).await.unwrap();
+        s.write_at(0, Bytes::from(vec![1u8; 16384])).await.unwrap();
+        s.pause_sync(true);
+        let flush = s.flush();
+        let mut flush = std::pin::pin!(flush);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), &mut flush)
+                .await
+                .is_err()
+        );
+        // 1 MiB through a 64 KiB buffer while the fsync is stuck.
+        let more = async {
+            for i in 1..=64u64 {
+                s.write_at(i * 16384, Bytes::from(vec![2u8; 16384]))
+                    .await
+                    .unwrap();
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), more)
+            .await
+            .expect("writes waited for the fsync");
+        assert_eq!(s.read_at(0, 65 * 16384).await.unwrap().len(), 65 * 16384);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut flush)
+                .await
+                .is_err(),
+            "flush resolved before its fsync ran"
+        );
+        s.pause_sync(false);
+        flush.await.unwrap();
+    }
+
+    /// A flush covers every write queued before it: its fsync cannot start
+    /// before the writer has written them.
+    #[tokio::test]
+    async fn a_flush_never_overtakes_the_writes_before_it() {
+        let d = tempfile::tempdir().unwrap();
+        let p = provider(1 << 20);
+        let s = p.open_storage(&d.path().join("f")).await.unwrap();
+        s.pause(true);
+        s.write_at(0, Bytes::from_static(b"before")).await.unwrap();
+        let flush = s.flush();
+        let mut flush = std::pin::pin!(flush);
+        // The syncer is free, the writer is not: no fsync may happen yet.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut flush)
+                .await
+                .is_err()
+        );
+        s.pause(false);
+        flush.await.unwrap();
+        assert_eq!(
+            std::fs::read(d.path().join("f")).unwrap(),
+            b"before",
+            "written by the time the flush resolved"
+        );
+    }
+
+    #[tokio::test]
+    async fn waiting_flushes_share_a_sync_and_all_resolve() {
+        let d = tempfile::tempdir().unwrap();
+        let p = provider(1 << 20);
+        let s = p.open_storage(&d.path().join("f")).await.unwrap();
+        s.pause_sync(true);
+        let mut flushes = Vec::new();
+        for i in 0..5u64 {
+            s.write_at(i * 10, Bytes::from_static(b"0123456789"))
+                .await
+                .unwrap();
+            let s = s.clone();
+            flushes.push(tokio::spawn(async move { s.flush().await }));
+        }
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        s.pause_sync(false);
+        for f in flushes {
+            f.await.unwrap().unwrap();
+        }
+        assert_eq!(std::fs::read(d.path().join("f")).unwrap().len(), 50);
+    }
+
+    /// `finish` waits for an in-flight sync (its error would count, and on
+    /// Windows its handle would block the rename).
+    #[tokio::test]
+    async fn finish_waits_for_an_in_flight_sync() {
+        let d = tempfile::tempdir().unwrap();
+        let p = provider(1 << 20);
+        let s = p.open_storage(&d.path().join("f.vayu-part")).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+        s.pause_sync(true);
+        let flush = tokio::spawn({
+            let s = s.clone();
+            async move { s.flush().await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let fin = tokio::spawn({
+            let (s, to) = (s.clone(), d.path().join("f"));
+            async move { s.finish(&to).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!fin.is_finished(), "finish ran during an in-flight sync");
+        s.pause_sync(false);
+        flush.await.unwrap().unwrap();
+        fin.await.unwrap().unwrap();
+        assert_eq!(std::fs::read(d.path().join("f")).unwrap(), b"data");
+    }
+
+    /// The storage is announced closed (so `remove` deletes, a reopen
+    /// proceeds) only after the syncer has let go of the file.
+    #[tokio::test]
+    async fn remove_waits_for_the_syncer_to_let_go() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f.vayu-part");
+        let p = provider(1 << 20);
+        let s = p.open_storage(&path).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
+        s.pause_sync(true);
+        let flush = tokio::spawn({
+            let s = s.clone();
+            async move { s.flush().await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let removing = p.remove_path(&path);
+        let mut removing = std::pin::pin!(removing);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut removing)
+                .await
+                .is_err(),
+            "removed while the syncer held the file"
+        );
+        s.pause_sync(false);
+        removing.await.unwrap();
+        // The removal made the storage fail before its sync ran.
+        assert!(flush.await.unwrap().is_err());
+        assert!(!path.exists());
+    }
+
+    /// Dropping the page cache after flushes changes nothing in the data.
+    #[tokio::test]
+    async fn dropping_the_cache_keeps_the_data() {
+        let d = tempfile::tempdir().unwrap();
+        let p = FileStorageProvider::new(StorageOptions {
+            buffer_bytes: 256 << 10,
+            drop_cache_after_flush: true,
+        });
+        let s = p.open_storage(&d.path().join("f.vayu-part")).await.unwrap();
+        s.preallocate(4 << 20).await.unwrap();
+        let mut want = vec![0u8; 4 << 20];
+        for (i, chunk) in want.chunks_mut(32 << 10).enumerate() {
+            chunk.fill(i as u8);
+        }
+        for (i, chunk) in want.chunks(32 << 10).enumerate().rev() {
+            s.write_at(i as u64 * (32 << 10), Bytes::copy_from_slice(chunk))
+                .await
+                .unwrap();
+            if i % 16 == 0 {
+                s.flush().await.unwrap();
+            }
+        }
+        assert_eq!(s.read_at(0, 4 << 20).await.unwrap(), want);
+        s.finish(&d.path().join("f")).await.unwrap();
+        assert!(std::fs::read(d.path().join("f")).unwrap() == want);
+    }
+
+    /// A panic on the syncer thread, inside its fsync or after it, fails
+    /// the storage (sticky) instead of hanging `finish`, `remove` or `open`.
+    #[tokio::test]
+    async fn a_panicking_syncer_fails_the_storage_instead_of_hanging() {
+        async fn within<T>(what: &str, f: impl std::future::Future<Output = T>) -> T {
+            tokio::time::timeout(Duration::from_secs(10), f)
+                .await
+                .unwrap_or_else(|_| panic!("{what} hung"))
+        }
+        for kind in [SyncPanic::Sync, SyncPanic::Bookkeeping] {
+            let d = tempfile::tempdir().unwrap();
+            let path = d.path().join("f.vayu-part");
+            let p = provider(1 << 20);
+            let s = p.open_storage(&path).await.unwrap();
+            s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+            *lock(&s.shared.sync_panic) = Some(kind);
+            assert!(within("flush", s.flush()).await.is_err(), "{kind:?}");
+            // The panic is recorded, the storage is dead, and nothing waits.
+            within("the sticky error", async {
+                while !s.shared.has_error() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await;
+            for _ in 0..2 {
+                let e = within("flush", s.flush()).await.unwrap_err();
+                assert!(e.to_string().contains("syncer"), "{kind:?}: {e}");
+            }
+            assert!(
+                within("write_at", s.write_at(4, Bytes::from_static(b"x")))
+                    .await
+                    .is_err()
+            );
+            let e = within("finish", s.finish(&d.path().join("f")))
+                .await
+                .unwrap_err();
+            assert!(e.to_string().contains("syncer"), "{kind:?}: {e}");
+            assert!(!d.path().join("f").exists());
+            // A failed storage is not handed out again; open and remove
+            // go through.
+            let fresh = within("open", p.open_storage(&path)).await.unwrap();
+            assert!(!Arc::ptr_eq(&s, &fresh));
+            fresh.write_at(0, Bytes::from_static(b"new")).await.unwrap();
+            within("flush", fresh.flush()).await.unwrap();
+            drop(fresh);
+            within("remove", p.remove_path(&path)).await.unwrap();
+            assert!(!path.exists());
+        }
+    }
+
+    /// `finish` with no flush before it: the part file's entry is never
+    /// synced on its own; the syncs after the move cover the new entries.
+    /// A failed move keeps them pending for the next flush.
+    #[tokio::test]
+    async fn finish_without_a_flush_syncs_the_entries_after_the_move() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().to_path_buf();
+        let p = provider(1 << 20);
+        let s = p.open_storage(&root.join("a/b/f.vayu-part")).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
+        s.finish(&root.join("a/b/f")).await.unwrap();
+        let mut synced = lock(&s.shared.synced_dirs).clone();
+        synced.sort();
+        assert_eq!(synced, vec![root.clone(), root.join("a"), root.join("a/b")]);
+        assert_eq!(std::fs::read(root.join("a/b/f")).unwrap(), b"x");
+
+        // A taken name: nothing synced yet, still pending, then flushed.
+        std::fs::create_dir(root.join("c")).unwrap();
+        std::fs::write(root.join("c/taken"), b"other").unwrap();
+        let t = p.open_storage(&root.join("c/g.vayu-part")).await.unwrap();
+        t.write_at(0, Bytes::from_static(b"y")).await.unwrap();
+        let e = t.finish(&root.join("c/taken")).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
+        assert!(lock(&t.shared.synced_dirs).is_empty());
+        t.flush().await.unwrap();
+        assert_eq!(*lock(&t.shared.synced_dirs), vec![root.join("c")]);
+    }
+
+    fn data_syncs(s: &FileStorage) -> usize {
+        s.shared
+            .data_syncs
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// `write_out` hands every resolved write to the OS (another reader of
+    /// the file sees it) and syncs nothing: no data, no directory. The new
+    /// entries stay pending for the next real flush.
+    #[tokio::test]
+    async fn write_out_hands_writes_to_the_os_without_syncing() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("a/f.vayu-part");
+        let p = provider(1 << 20);
+        let s = p.open_storage(&path).await.unwrap();
+        s.pause(true);
+        s.write_at(3, Bytes::from_static(b"lo")).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"hel")).await.unwrap();
+        let out = s.write_out();
+        let mut out = std::pin::pin!(out);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), &mut out)
+                .await
+                .is_err(),
+            "write_out resolved before the writes before it went out"
+        );
+        s.pause(false);
+        out.await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"hello");
+        assert_eq!(data_syncs(&s), 0);
+        assert!(lock(&s.shared.synced_dirs).is_empty());
+        s.flush().await.unwrap();
+        assert_eq!(data_syncs(&s), 1);
+        assert_eq!(
+            lock(&s.shared.synced_dirs).len(),
+            2,
+            "still pending until now"
+        );
+    }
+
+    /// `write_out` reports write errors like `flush`: sticky, and never lost
+    /// to a cancelled call.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn write_out_reports_write_errors() {
+        let p = provider(1 << 20);
+        let s = p.open_storage(Path::new("/dev/full")).await.unwrap();
+        s.pause(true);
+        s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), s.write_out())
+                .await
+                .is_err()
+        );
+        s.pause(false);
+        for _ in 0..2 {
+            let e = s.write_out().await.unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::StorageFull, "{e}");
+        }
+        let e = s
+            .finish_unsynced(Path::new("/nonexistent/x"))
+            .await
+            .unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+        assert!(s.flush().await.is_err());
+    }
+
+    /// `finish_unsynced`: the same no-replace move (a taken name is
+    /// `AlreadyExists`, nothing replaced, the storage still usable), every
+    /// resolved write in the moved file, and no sync at all.
+    #[tokio::test]
+    async fn finish_unsynced_never_overwrites_and_syncs_nothing() {
+        let d = tempfile::tempdir().unwrap();
+        let part = d.path().join("new/f.vayu-part");
+        let p = provider(1 << 20);
+        let s = p.open_storage(&part).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"mine")).await.unwrap();
+        let taken = d.path().join("new/f");
+        std::fs::write(&taken, b"someone else's").unwrap();
+        let e = s.finish_unsynced(&taken).await.unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&taken).unwrap(), b"someone else's");
+        assert_eq!(std::fs::read(&part).unwrap(), b"mine");
+        s.write_at(4, Bytes::from_static(b"!")).await.unwrap();
+        let free = d.path().join("elsewhere/f (1)");
+        s.finish_unsynced(&free).await.unwrap();
+        assert_eq!(std::fs::read(&free).unwrap(), b"mine!");
+        assert!(!part.exists());
+        assert_eq!(std::fs::read(&taken).unwrap(), b"someone else's");
+        assert_eq!(data_syncs(&s), 0);
+        assert!(lock(&s.shared.synced_dirs).is_empty());
+        // Finished like `finish`: writes fail, the path starts a new file.
+        assert!(s.write_at(0, Bytes::from_static(b"x")).await.is_err());
+        let fresh = p.open_storage(&part).await.unwrap();
+        assert!(!Arc::ptr_eq(&s, &fresh));
+        assert_eq!(fresh.read_at(0, 10).await.unwrap(), "");
+    }
+
+    /// Like `finish`, `finish_unsynced` waits for an in-flight sync: its
+    /// error would count, and on Windows its handle would block the move.
+    #[tokio::test]
+    async fn finish_unsynced_waits_for_an_in_flight_sync() {
+        let d = tempfile::tempdir().unwrap();
+        let p = provider(1 << 20);
+        let s = p.open_storage(&d.path().join("f.vayu-part")).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+        s.pause_sync(true);
+        let flush = tokio::spawn({
+            let s = s.clone();
+            async move { s.flush().await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let fin = tokio::spawn({
+            let (s, to) = (s.clone(), d.path().join("f"));
+            async move { s.finish_unsynced(&to).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!fin.is_finished(), "moved during an in-flight sync");
+        s.pause_sync(false);
+        flush.await.unwrap().unwrap();
+        fin.await.unwrap().unwrap();
+        assert_eq!(std::fs::read(d.path().join("f")).unwrap(), b"data");
     }
 }

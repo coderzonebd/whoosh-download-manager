@@ -13,6 +13,7 @@
 
 pub mod adapter;
 pub mod fetch;
+pub mod gate;
 pub mod hardkill;
 pub mod lab;
 pub mod measure;

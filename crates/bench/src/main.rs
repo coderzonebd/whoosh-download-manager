@@ -33,6 +33,11 @@ enum Cmd {
         /// Write here instead of stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Evaluate the Phase 1 gate (MASTER-PLAN §8, rules 1, 3, 4, 5) for
+        /// this client; `none` to leave the section out. Skipped when the
+        /// client is not in the run set.
+        #[arg(long, default_value = "vayu")]
+        gate: String,
     },
     /// Download pinned competitor builds from their official GitHub releases
     /// (opt-in; never run automatically).
@@ -132,6 +137,28 @@ struct RunArgs {
     urls: Vec<String>,
     #[arg(long)]
     quiet: bool,
+    /// Idle-machine guard: a run counts as busy when the 1-min load average
+    /// is above this (default: half the logical CPUs; the benchmark's own
+    /// previous run keeps the load up for a minute, so keep it above that).
+    #[arg(long)]
+    max_load: Option<f64>,
+    /// Idle-machine guard: busy when the rest of the machine uses more than
+    /// this many CPUs, sampled just before each run (default 1.0).
+    #[arg(long)]
+    max_busy_cpus: Option<f64>,
+    /// Wait for an idle machine before each run instead of only warning.
+    #[arg(long)]
+    wait_for_idle: bool,
+    /// Longest wait for an idle machine per run, seconds; then run anyway
+    /// (the run is marked busy).
+    #[arg(long, default_value_t = 600)]
+    idle_timeout: u64,
+    /// Length of the busy-CPU sample before each run, milliseconds.
+    #[arg(long, default_value_t = 200)]
+    idle_sample_ms: u64,
+    /// Turn the idle-machine guard off.
+    #[arg(long, conflicts_with_all = ["max_load", "max_busy_cpus", "wait_for_idle"])]
+    no_idle_guard: bool,
     #[command(flatten)]
     bins: BinArgs,
 }
@@ -263,10 +290,11 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Run(a) => cmd_run(a, &raw),
         Cmd::Hardkill(a) => cmd_hardkill(a),
-        Cmd::Report { dir, output } => {
+        Cmd::Report { dir, output, gate } => {
             let meta = runner::read_meta(&dir)?;
             let runs = runner::read_runs(&dir)?;
-            let md = report::render(&meta, &runs);
+            let gate = (gate != "none").then_some(gate.as_str());
+            let md = report::render_with_gate(&meta, &runs, gate);
             match output {
                 Some(p) => {
                     std::fs::write(&p, md)?;
@@ -484,6 +512,16 @@ fn cmd_run(a: RunArgs, raw: &[OsString]) -> Result<()> {
             .map(|s| s.to_string_lossy().into_owned())
             .collect(),
         quiet: a.quiet,
+        guard: (!a.no_idle_guard).then(|| {
+            let d = runner::IdleGuard::default();
+            runner::IdleGuard {
+                max_load: a.max_load.or(d.max_load),
+                max_busy_cpus: a.max_busy_cpus.or(d.max_busy_cpus),
+                wait: a.wait_for_idle,
+                wait_timeout_s: a.idle_timeout,
+                sample_ms: a.idle_sample_ms,
+            }
+        }),
     })?;
     eprintln!("wrote {}", dir.display());
     eprintln!("report: vayu-bench report {}", dir.display());

@@ -15,10 +15,10 @@ use tokio::time::{Instant, MissedTickBehavior};
 use vayu_core::{DownloadRecord, Journal, SourceFactory, StateStore, StorageProvider};
 use vayu_proto::service::{Notification, Service, ServiceError, ServiceResult};
 use vayu_proto::{
-    AddParams, AddResult, DownloadDetail, DownloadId, DownloadState, DownloadSummary, ErrorInfo,
-    IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent,
-    ProgressItem, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, Settings, StateEvent,
-    Stats,
+    AddParams, AddResult, DownloadDetail, DownloadId, DownloadState, DownloadSummary, Durability,
+    ErrorInfo, IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult,
+    ProgressEvent, ProgressItem, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo,
+    Settings, StateEvent, Stats,
 };
 
 use crate::bus::Bus;
@@ -267,6 +267,11 @@ impl Inner {
         lock(&self.st).downloads.get(id).map(|e| e.record.clone())
     }
 
+    /// `Settings::durability`, read when a download starts.
+    pub(crate) fn durability(&self) -> Durability {
+        lock(&self.st).settings.durability
+    }
+
     pub(crate) fn max_connections(&self) -> u16 {
         self.max_conns
             .load(Ordering::Relaxed)
@@ -329,9 +334,22 @@ impl Inner {
         }
     }
 
+    /// Save `id` without waiting for it: a running download's record (its
+    /// state, name, size, progress) is advisory until the run ends — a
+    /// restart re-queues it either way, and the journal, not the record,
+    /// holds the progress — so the run does not wait on the store. Every
+    /// save writes the newest record, so the order they land in does not
+    /// matter; the run's final record is saved and awaited in `run_ended`.
+    fn save_soon(self: &Arc<Self>, id: &str) {
+        let (inner, id) = (self.clone(), id.to_string());
+        tokio::spawn(async move {
+            inner.save(&id).await;
+        });
+    }
+
     /// A running download changed state (only its current run may do so).
     pub(crate) async fn set_state(
-        &self,
+        self: &Arc<Self>,
         id: &str,
         generation: u64,
         state: DownloadState,
@@ -356,13 +374,13 @@ impl Inner {
             state,
             error,
         }));
-        self.save(id).await;
+        self.save_soon(id);
         true
     }
 
     /// Change and persist a running download's record.
     pub(crate) async fn update(
-        &self,
+        self: &Arc<Self>,
         id: &str,
         generation: u64,
         f: impl FnOnce(&mut DownloadRecord),
@@ -377,7 +395,7 @@ impl Inner {
             }
             f(&mut e.record);
         }
-        self.save(id).await;
+        self.save_soon(id);
     }
 
     /// Send the current summary of `id` as `event.download.updated`: its
@@ -394,12 +412,15 @@ impl Inner {
     }
 
     /// A run ended: apply its outcome, persist, notify, start what's next.
+    /// `durability`: what the run promised (`Settings::durability` when it
+    /// started).
     pub(crate) async fn run_ended(
         self: &Arc<Self>,
         id: &str,
         generation: u64,
         outcome: Outcome,
         segments: Vec<SegmentInfo>,
+        durability: Durability,
     ) {
         let event = {
             let mut st = lock(&self.st);
@@ -477,14 +498,22 @@ impl Inner {
         self.bus.emit(Notification::DownloadState(state));
         let saved = self.save(id).await;
         if completed {
-            // Only once the completed record is durable (saved, then synced
-            // against power loss): until then the journal's finish intent is
-            // what lets a restart recognise the file. A failed save or sync
-            // keeps the entry; it is harmless next to a completed record.
+            // Only once the completed record is durable (saved, then, unless
+            // the download was process-safe only, synced against power
+            // loss): until then the journal's finish intent is what lets a
+            // restart recognise the file. A failed save or sync keeps the
+            // entry; it is harmless next to a completed record.
             let id = id.to_string();
+            let sync = || async {
+                match durability {
+                    Durability::PowerSafe => self.deps.state.sync().await,
+                    // A saved record survives a killed process.
+                    Durability::ProcessSafe => Ok(()),
+                }
+            };
             if !saved {
                 tracing::warn!(id, "completed record not saved; keeping its journal entry");
-            } else if let Err(e) = self.deps.state.sync().await {
+            } else if let Err(e) = sync().await {
                 tracing::warn!(id, "state sync failed, keeping the journal entry: {e}");
             } else if let Err(e) = self.deps.journal.remove(&id).await {
                 tracing::warn!(id, "journal remove failed: {e}");
@@ -812,12 +841,14 @@ impl Inner {
             st.downloads.insert(id.clone(), entry);
             summary
         };
+        // The run starts while the record is saved; `add` still answers
+        // only once it is.
+        self.bus.emit(Notification::DownloadAdded(summary));
+        self.pump();
         self.save(&id).await;
         if connections.is_some() {
             self.save_connections().await;
         }
-        self.bus.emit(Notification::DownloadAdded(summary));
-        self.pump();
         Ok(AddResult { id })
     }
 

@@ -81,7 +81,10 @@ word `splitmix64(s, o / 8)`. Unless a file sets `seed`, `s` is a hash of the
 file *name*, so `1g.bin` has the same bytes in every scenario. Version `v` of a
 changing file uses seed `mix(s, v)`. Blocks are generated 64 KiB at a time and
 kept in a sharded FIFO cache (`--cache-mb`) as shared buffers, so hot blocks go
-to the socket without copying.
+to the socket without copying. The generator is counter-mode: a block at any
+offset is computed directly (~10 µs per 64 KiB in a release build), with no
+sequential warm-up, so a range 900 MiB into `1g.bin` starts as fast as one at
+offset 0.
 
 To check what a client received, use the library (`VirtualFile::verify`,
 `bytes`, `sha256`), the `.sha256` sidecar, or `/_lab/digest`.
@@ -432,6 +435,30 @@ What this means:
   a GB/s is still above what HTTP/3 downloaders reach on real links; compare
   engines over HTTP/3 with each other, not with the HTTP/1.1 numbers.
 
+### First byte under load
+
+A response that is not throttled is always ready, and hyper keeps writing it
+for as long as the socket accepts data; tokio forces a yield only after 128
+socket writes (up to ~128 MiB). Under load every worker then sits in such a
+poll and nobody polls the I/O driver, so new connections waited 50–500 ms
+for their first byte (the engine's extra ranges on `clean` paid this, so the
+bench measured labserver). Each response now yields to the scheduler every
+256 KiB (`YIELD_EVERY` in `src/body.rs`), which lets the worker poll the
+driver between rounds.
+
+`tests/ttfb.rs` measures it: 8 threads stream `1g.bin` at full speed while
+fresh connections ask for 64 KiB at ~0 and ~900 MiB. Dev laptop, load
+average ~16 (other sessions compiling), medians / p90 of 25 probes:
+
+| Build | Idle | Load, before | Load, after |
+|---|---|---|---|
+| release | 0.8 ms | 6–106 ms / 125–500 ms | 2.6–4.7 ms / 6–17 ms |
+| debug | 7 ms | 470–580 ms / 0.8–2.6 s | 8.6–12.5 ms / 14–24 ms |
+
+What remains under load is the oversubscribed machine (8 hardware threads,
+8 loader threads, 8 server workers and other builds), not deep offsets:
+both offsets behave the same.
+
 ## Not covered
 
 - **Real RTT, jitter and packet loss.** These need `tc netem` on a network
@@ -466,4 +493,6 @@ control API over HTTP/3, `Alt-Svc` on both TCP listeners (and its absence
 when HTTP/3 is off), per-QUIC-connection and global throttles (+10 % / −15 %:
 a debug-build QUIC client on a loaded machine can fall behind the cap),
 connection/stream counting in the stats, and resets and `refuse = "reset"`
-closing the QUIC connection with `0x102`.
+closing the QUIC connection with `0x102`. `tests/ttfb.rs` checks that ranges
+deep in `1g.bin` start as fast as ranges at offset 0, and that neither waits
+behind concurrent full-speed transfers (bounds relative to the idle time).

@@ -576,7 +576,12 @@ pub struct CrashFile {
     truncate: bool,
     hooks: Arc<FinishHooks>,
     done: std::sync::atomic::AtomicBool,
+    /// What the process wrote (lost when it is killed).
     volatile: Mutex<Vec<u8>>,
+    /// What the operating system holds (`write_out`, `flush`): survives a
+    /// killed process, not a power cut.
+    os: Mutex<Vec<u8>>,
+    /// What is on disk (`flush`): survives a power cut.
     durable: Mutex<Vec<u8>>,
     files: Arc<Mutex<HashMap<PathBuf, Arc<CrashFile>>>>,
     finished: Arc<Mutex<HashMap<PathBuf, Bytes>>>,
@@ -587,12 +592,31 @@ impl CrashFs {
     pub fn crash(&self) {
         for f in lock(&self.files).values() {
             let d = lock(&f.durable).clone();
+            *lock(&f.os) = d.clone();
             *lock(&f.volatile) = d;
+        }
+    }
+
+    /// The process is killed: what it had not handed to the operating
+    /// system is lost; what it had survives, flushed or not. (Finished
+    /// files are the operating system's, so they stay too.)
+    pub fn kill(&self) {
+        for f in lock(&self.files).values() {
+            let o = lock(&f.os).clone();
+            *lock(&f.volatile) = o;
         }
     }
 
     pub fn finished(&self) -> HashMap<PathBuf, Bytes> {
         lock(&self.finished).clone()
+    }
+
+    /// What an unfinished file holds now (after `crash` or `kill`: what
+    /// survived).
+    pub fn contents(&self, path: &Path) -> Option<Bytes> {
+        lock(&self.files)
+            .get(path)
+            .map(|f| Bytes::from(lock(&f.volatile).clone()))
     }
 
     /// Put a finished file in place (another program's, or a tampered one).
@@ -609,6 +633,8 @@ impl Storage for CrashFile {
             if self.truncate || (v.len() as u64) < len {
                 v.resize(len as usize, 0);
             }
+            // A system call, after every earlier write (queue order).
+            *lock(&self.os) = v.clone();
             Ok(())
         })
     }
@@ -642,13 +668,37 @@ impl Storage for CrashFile {
         Box::pin(async move {
             tokio::task::yield_now().await;
             let v = lock(&self.volatile).clone();
+            *lock(&self.os) = v.clone();
             *lock(&self.durable) = v;
             tokio::task::yield_now().await;
             Ok(())
         })
     }
 
+    fn write_out(&self) -> BoxFuture<'_, io::Result<()>> {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            let v = lock(&self.volatile).clone();
+            *lock(&self.os) = v;
+            tokio::task::yield_now().await;
+            Ok(())
+        })
+    }
+
+    fn finish_unsynced<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
+        self.rename(final_path, false)
+    }
+
     fn finish<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
+        self.rename(final_path, true)
+    }
+}
+
+impl CrashFile {
+    /// `finish` (`synced`) or `finish_unsynced`: queued writes reach the
+    /// operating system first either way; only a synced finish makes them
+    /// durable. (A power cut after an unsynced finish is not modelled.)
+    fn rename<'a>(&'a self, final_path: &'a Path, synced: bool) -> BoxFuture<'a, io::Result<()>> {
         use std::sync::atomic::Ordering::Relaxed;
         Box::pin(async move {
             tokio::task::yield_now().await;
@@ -661,9 +711,13 @@ impl Storage for CrashFile {
                 if done.contains_key(final_path) {
                     return Err(io::Error::from(io::ErrorKind::AlreadyExists));
                 }
-                // Rename: the part file is gone, the final file is durable.
+                // Rename: the part file is gone, the final file is the
+                // operating system's (and durable, when synced).
                 let v = lock(&self.volatile).clone();
-                *lock(&self.durable) = v.clone();
+                *lock(&self.os) = v.clone();
+                if synced {
+                    *lock(&self.durable) = v.clone();
+                }
                 done.insert(final_path.to_path_buf(), Bytes::from(v));
                 lock(&self.files).remove(&self.path);
                 self.done.store(true, Relaxed);
@@ -694,6 +748,7 @@ impl StorageProvider for CrashFs {
                         hooks: self.hooks.clone(),
                         done: std::sync::atomic::AtomicBool::new(false),
                         volatile: Mutex::new(init.clone()),
+                        os: Mutex::new(init.clone()),
                         durable: Mutex::new(init),
                         files: self.files.clone(),
                         finished: self.finished.clone(),

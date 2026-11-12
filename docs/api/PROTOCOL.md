@@ -81,6 +81,8 @@ extension ──native messaging (stdio)──▶ vayu-nmhost ──WebSocket + 
 | `settings.get` | — | `Settings` |
 | `settings.set` | `Settings` (full object) | `Settings` (as stored) |
 
+`Settings.durability` is `powerSafe` (default: data is forced to disk before a file is finished or its progress journalled, so a power cut never damages a finished file) or `processSafe` (data is handed to the OS without forcing it to disk: faster on small files and fast links, survives a killed vayu but not a power cut).
+
 `request` (`RequestContext`) carries what the browser would have sent: `method`, `headers[]` (`{ name, value }`), `cookie`, `referer`, `userAgent`, `bodyBase64`.
 
 ### Download states

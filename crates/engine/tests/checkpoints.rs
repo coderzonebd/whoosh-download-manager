@@ -6,6 +6,7 @@ mod common;
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -20,15 +21,18 @@ use vayu_proto::{AddParams, Checksum};
 
 const LONG: Duration = Duration::from_secs(600);
 
-/// Storage whose `flush` takes `delay` (a disk that is the bottleneck).
+/// Storage whose `flush` takes `delay` (a disk that is the bottleneck),
+/// counting flushes.
 struct SlowFlush {
     inner: Arc<MemStorageProvider>,
     delay: Duration,
+    flushes: Arc<AtomicUsize>,
 }
 
 struct SlowFile {
     inner: Arc<dyn Storage>,
     delay: Duration,
+    flushes: Arc<AtomicUsize>,
 }
 
 impl Storage for SlowFile {
@@ -43,6 +47,7 @@ impl Storage for SlowFile {
     }
     fn flush(&self) -> BoxFuture<'_, io::Result<()>> {
         Box::pin(async move {
+            self.flushes.fetch_add(1, Ordering::Relaxed);
             tokio::time::sleep(self.delay).await;
             self.inner.flush().await
         })
@@ -59,6 +64,7 @@ impl StorageProvider for SlowFlush {
             Ok(Arc::new(SlowFile {
                 inner,
                 delay: self.delay,
+                flushes: self.flushes.clone(),
             }) as Arc<dyn Storage>)
         })
     }
@@ -87,6 +93,7 @@ async fn commits_with_flush(delay: Duration) -> usize {
             storage: Arc::new(SlowFlush {
                 inner: files.clone(),
                 delay,
+                flushes: Arc::new(AtomicUsize::new(0)),
             }),
             journal: journal.clone(),
             state: Arc::new(MemStateStore::default()),
@@ -153,4 +160,65 @@ async fn a_checksum_is_verified_after_a_checkpoint() {
     finish(&lab.engine, &id, LONG).await;
     assert_same(&lab.file("data.bin").unwrap(), &data);
     assert_eq!(lab.journal.commits(), 2);
+}
+
+/// A fast download (64 MiB at 256 MiB/s per connection, one connection)
+/// behind flushes of 5 ms; returns (flushes, journal commits).
+async fn writeback_counts(ranges: bool) -> (usize, usize) {
+    let sources = Arc::new(MemSourceFactory::default());
+    let files = Arc::new(MemStorageProvider::default());
+    let journal = Arc::new(MemJournal::default());
+    let flushes = Arc::new(AtomicUsize::new(0));
+    let mut cfg = config();
+    cfg.tuning = Tuning {
+        fixed_connections: Some(1),
+        ..Tuning::default()
+    };
+    let engine = Engine::start(
+        EngineDeps {
+            sources: sources.clone(),
+            storage: Arc::new(SlowFlush {
+                inner: files.clone(),
+                delay: Duration::from_millis(5),
+                flushes: flushes.clone(),
+            }),
+            journal: journal.clone(),
+            state: Arc::new(MemStateStore::default()),
+        },
+        cfg,
+    )
+    .await
+    .unwrap();
+    let data = content(64 * MIB, 204);
+    sources.insert(
+        URL,
+        Arc::new(FaultSource::new(data.clone()).cfg(|c| {
+            c.per_conn_bps = Some(256 * MIB);
+            c.chunk = 256 * KIB as usize;
+            c.accepts_ranges = ranges;
+            c.honours_ranges = ranges;
+        })),
+    );
+    let id = engine.add(add_params(URL)).await.unwrap().id;
+    finish(&engine, &id, LONG).await;
+    assert_same(
+        &files.finished(&Path::new(DIR).join("data.bin")).unwrap(),
+        &data,
+    );
+    (flushes.load(Ordering::Relaxed), journal.commits())
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fast_transfer_is_flushed_as_it_goes() {
+    // 64 MiB in 250 ms: no time-based checkpoint is due, but every 16 MiB
+    // of new data is flushed (and committed) while the transfer runs, so
+    // the flush before the rename has little left.
+    let (flushes, commits) = writeback_counts(true).await;
+    assert!(flushes >= 4, "{flushes} flushes");
+    assert!(commits >= 4, "{commits} commits");
+    // A single stream (no ranges) is flushed too, but journals nothing
+    // before its finish intent.
+    let (flushes, commits) = writeback_counts(false).await;
+    assert!(flushes >= 4, "{flushes} flushes");
+    assert_eq!(commits, 1);
 }

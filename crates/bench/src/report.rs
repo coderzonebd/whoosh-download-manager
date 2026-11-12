@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
+use crate::gate::{Gate, Verdict};
 use crate::runner::{Meta, Outcome, RunRecord};
 use crate::stats::{Summary, mann_whitney};
 
@@ -132,6 +133,12 @@ struct ClientRow<'a> {
     walls: Vec<f64>,
     /// Median process exit time.
     exit: Option<f64>,
+    /// Time to durability (successful runs).
+    durable: Option<Summary>,
+    /// Some of `durables` fell back to the time to the file appearing.
+    durable_fallback: bool,
+    /// Median duration of the harness's own sync, ms.
+    sync_ms: Option<f64>,
     thr: Option<f64>,
     ttfb: Option<f64>,
     peak_conn: Option<u64>,
@@ -149,11 +156,19 @@ fn client_row<'a>(client: &'a str, runs: &[&RunRecord]) -> ClientRow<'a> {
     for r in runs.iter().filter(|r| r.outcome != Outcome::Ok) {
         *failures.entry(r.outcome.label()).or_default() += 1;
     }
+    let dur: Vec<(f64, bool)> = ok.iter().filter_map(|r| r.durable_time()).collect();
+    let durables: Vec<f64> = dur.iter().map(|d| d.0).collect();
     ClientRow {
         client,
         total: runs.len(),
         ok: ok.len(),
         wall: Summary::of(&walls),
+        durable: Summary::of(&durables),
+        durable_fallback: dur.iter().any(|d| d.1),
+        sync_ms: med(ok
+            .iter()
+            .filter_map(|r| r.sync_s.map(|s| s * 1000.0))
+            .collect()),
         exit: med(ok.iter().filter_map(|r| r.wall_s).collect()),
         thr: med(ok.iter().filter_map(|r| r.throughput_mib_s).collect()),
         ttfb: med(ok.iter().filter_map(|r| r.ttfb_s).collect()),
@@ -169,6 +184,22 @@ fn client_row<'a>(client: &'a str, runs: &[&RunRecord]) -> ClientRow<'a> {
         failures,
     }
 }
+
+/// Median time to durability, with † when it fell back to the time to the
+/// file appearing.
+fn durable_cell(r: &ClientRow) -> String {
+    opt(r.durable, |w| {
+        format!(
+            "{}{}",
+            secs(w.median),
+            if r.durable_fallback { "†" } else { "" }
+        )
+    })
+}
+
+/// The legend for [`durable_cell`]'s †.
+const FALLBACK_NOTE: &str = "† no time to durability recorded (run set from before \
+    `durable_s` existed, or the sync failed): the time to the file appearing is shown.";
 
 /// Blocks that test file naming rather than speed.
 fn naming_test(key: &(String, String)) -> bool {
@@ -189,13 +220,14 @@ fn headlines(
         o,
         "Fastest client per scenario among those whose every run was correct, by median \
          *time* (start to completion), with the runner-up and the Mann-Whitney U p-value \
-         between the two. Computed from the tables below.\n"
+         between the two; then the fastest by median time *to durability* (the file \
+         synced to disk). Computed from the tables below.\n"
     );
     let _ = writeln!(
         o,
-        "| Scenario | File | Fastest | median s | MiB/s | peak conns | Runner-up | median s | p |"
+        "| Scenario | File | Fastest | median s | MiB/s | peak conns | Runner-up | median s | p | Fastest to durability | durable s |"
     );
-    let _ = writeln!(o, "|---|---|---|---:|---:|---:|---|---:|---:|");
+    let _ = writeln!(o, "|---|---|---|---:|---:|---:|---|---:|---:|---|---:|");
     for key in block_order.iter().filter(|k| !naming_test(k)) {
         let per = &blocks[key];
         let mut rows: Vec<ClientRow> = per
@@ -208,6 +240,11 @@ fn headlines(
                 .map_or(f64::INFINITY, |w| w.median)
                 .total_cmp(&b.wall.map_or(f64::INFINITY, |w| w.median))
         });
+        let best_durable = rows.iter().filter(|r| r.durable.is_some()).min_by(|a, b| {
+            a.durable
+                .map_or(f64::INFINITY, |w| w.median)
+                .total_cmp(&b.durable.map_or(f64::INFINITY, |w| w.median))
+        });
         let (best, second) = (rows.first(), rows.get(1));
         let p = match (best, second) {
             (Some(a), Some(b))
@@ -219,7 +256,7 @@ fn headlines(
         };
         let _ = writeln!(
             o,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
             key.0,
             key.1,
             best.map_or("(none fully correct)".to_owned(), |r| format!(
@@ -231,7 +268,9 @@ fn headlines(
             opt(best.and_then(|r| r.peak_conn), |v| v.to_string()),
             second.map_or("–".to_owned(), |r| r.client.to_owned()),
             opt(second.and_then(|r| r.wall), |w| secs(w.median)),
-            p
+            p,
+            best_durable.map_or("–".to_owned(), |r| format!("**{}**", r.client)),
+            best_durable.map_or("–".to_owned(), durable_cell),
         );
     }
     o.push('\n');
@@ -288,7 +327,85 @@ fn headlines(
 }
 
 /// Renders the whole report.
+fn median_of(v: &[f64]) -> Option<f64> {
+    Summary::of(v).map(|s| s.median)
+}
+
+/// Renders the whole report, with the Phase 1 gate for `vayu` when it is
+/// in the run set.
 pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
+    render_with_gate(meta, runs, Some("vayu"))
+}
+
+/// The gate section (see [`crate::gate`]).
+fn gate_section(o: &mut String, g: &Gate) {
+    let mark = |v: &Verdict| match v {
+        Verdict::Pass(_) => "✅",
+        Verdict::Fail(_) => "❌",
+        Verdict::NotApplicable(_) => "–",
+    };
+    let _ = writeln!(o, "## Phase 1 gate: `{}`\n", g.client);
+    let _ = writeln!(
+        o,
+        "MASTER-PLAN §8 (amended 2026-11-11), judged from this run set: **1** every run \
+         byte-exact, no wrong file name; **3** no competitor significantly faster \
+         (Mann-Whitney U, p < {}); **4** in the engine scenarios ({}), median time the \
+         best or within {:.0} % of it — rules 3 and 4 on the time **to durability** \
+         (*durable*: until the harness's fsync of the finished file returns), as §8 \
+         requires; **5** median CPU per GiB at or below every \
+         multi-connection competitor's. Statistics use successful runs, at least {} per \
+         side. Rules 2 (1,000 hard kills: `vayu-bench hardkill`) and 6 (real CDNs) are not \
+         judged here; other builds of the same tool are not competitors.\n",
+        crate::gate::P_LIMIT,
+        crate::gate::ENGINE_SCENARIOS.join(", "),
+        crate::gate::WITHIN * 100.0,
+        crate::gate::MIN_FOR_TEST
+    );
+    let overall = if !g.passed() {
+        "**FAIL**".to_owned()
+    } else if g.caveats.is_empty() {
+        "**PASS**".to_owned()
+    } else {
+        "**PASS, but not valid as a gate result** (see below)".to_owned()
+    };
+    let failed = g.rows.iter().filter(|r| !r.passed()).count();
+    let _ = writeln!(
+        o,
+        "Overall (rules 1, 3, 4, 5): {overall} — {} of {} rows pass.\n",
+        g.rows.len() - failed,
+        g.rows.len()
+    );
+    for c in &g.caveats {
+        let _ = writeln!(o, "- ⚠️ {}", cell(c));
+    }
+    if !g.caveats.is_empty() {
+        o.push('\n');
+    }
+    let _ = writeln!(
+        o,
+        "| Scenario | File | 1 correct | 3 never slower | 4 fastest | 5 lean | row |"
+    );
+    let _ = writeln!(o, "|---|---|---|---|---|---|---|");
+    for r in &g.rows {
+        let c = |v: &Verdict| format!("{} {}", mark(v), cell(v.detail()));
+        let _ = writeln!(
+            o,
+            "| {} | {} | {} | {} | {} | {} | {} |",
+            r.scenario,
+            r.file,
+            c(&r.correct),
+            c(&r.never_slower),
+            c(&r.fastest),
+            c(&r.lean),
+            if r.passed() { "PASS" } else { "**FAIL**" }
+        );
+    }
+    o.push('\n');
+}
+
+/// Renders the whole report; `gate` names the client whose Phase 1 gate is
+/// evaluated (no section if `None` or absent from the run set).
+pub fn render_with_gate(meta: &Meta, runs: &[RunRecord], gate: Option<&str>) -> String {
     let mut runs = runs.to_vec();
     if meta.internet {
         consensus_regrade(&mut runs);
@@ -339,6 +456,9 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
     );
 
     headlines(&mut o, &blocks, &block_order, &clients_present, &runs);
+    if let Some(g) = gate.and_then(|c| crate::gate::evaluate(meta, &runs, c)) {
+        gate_section(&mut o, &g);
+    }
 
     // ---- method
     let _ = writeln!(o, "## How this was measured\n");
@@ -401,14 +521,19 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
     let _ = writeln!(
         o,
         "- **Metrics:** *time* (the speed metric) = client process start to the download \
-         being complete: process exit for curl, wget, aria2c and aria2-next, which exit as \
-         soon as the file is done; for MDM and Surge, which download into a partial file, \
+         being complete: process exit for curl, wget, aria2c, aria2-next and vayu (`vayu \
+         get` returns when the download is done), which exit as soon as the file is done; \
+         for MDM and Surge, which download into a partial file, \
          rename it when done and then linger (MDM's CLI reports on a 0.5 s tick; Surge's \
          `--exit-when-done` first checks after 4 s), the moment the download directory holds \
          the full-size file and no partial/control file (polled every 5 ms; the harness then \
          stops the process); for Gopeed, its REST API reporting the task done (polled every \
          10 ms; time counts from the server's start). *exit* = start to process exit (or to \
-         that stop). labserver's last-byte timestamp (`last_byte_s` in the raw data) is \
+         that stop). *durable* = start to the finished file being on disk: once completion \
+         is detected (before a lingering client is stopped) the harness fsyncs the output \
+         file and its directory and counts until that returns; *sync ms* is that sync's own \
+         duration, near zero for a client that already synced (vayu, power-safe by \
+         default). labserver's last-byte timestamp (`last_byte_s` in the raw data) is \
          not used for speed: on loopback the kernel buffers megabytes per connection, so the \
          server finishes well before the client, and more so for many-connection clients. \
          *MiB/s* = file size / time; *TTFB* = \
@@ -420,6 +545,71 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
          the file's SHA-256 matches labserver's digest (of either version, for the changing \
          file).",
     );
+    let resident: Vec<&RunRecord> = runs.iter().filter(|r| r.resident.is_some()).collect();
+    if !resident.is_empty() {
+        let mut ids: Vec<&str> = resident.iter().map(|r| r.client.as_str()).collect();
+        ids.sort_by_key(|c| rank(c));
+        ids.dedup();
+        let startup: Vec<f64> = resident
+            .iter()
+            .filter_map(|r| r.resident.as_ref().map(|u| u.startup_s))
+            .collect();
+        let window_only = resident
+            .iter()
+            .all(|r| r.resident.as_ref().is_some_and(|u| u.rss_window_only));
+        let _ = writeln!(
+            o,
+            "- **Resident daemon ({}):** before each run the harness starts the daemon with a \
+             fresh data directory and waits until it is ready (not timed; median start-up {}), \
+             then measures the CLI as the client. The daemon's CPU during the run (utime + \
+             stime from `/proc/<pid>/stat`, 1/CLK_TCK resolution, counted until it goes quiet \
+             after the CLI exits, at most 0.5 s) is added to *CPU*, and its peak resident set \
+             during the run ({}) to *RSS* (the sum of both peaks). The daemon is stopped after \
+             the run, outside the measured window.",
+            ids.join(", "),
+            opt(Summary::of(&startup), |s| format!(
+                "{:.0} ms",
+                s.median * 1000.0
+            )),
+            if window_only {
+                "`VmHWM` after resetting it through `/proc/<pid>/clear_refs`"
+            } else {
+                "`VmHWM`, not always resettable, so it may include start-up"
+            }
+        );
+    }
+    if let Some(g) = &meta.guard {
+        let busy = runs.iter().filter(|r| r.machine_busy).count();
+        let waited: f64 = runs.iter().filter_map(|r| r.idle_wait_s).sum();
+        let busy_cpus: Vec<f64> = runs.iter().filter_map(|r| r.busy_cpus).collect();
+        let _ = writeln!(
+            o,
+            "- **Idle-machine guard:** before each run the harness sampled how busy the rest \
+             of the machine was ({} ms) and read the load average; busy = 1-min load above {} \
+             or other processes on more than {} CPUs; it {}. Other processes used a median of \
+             {} CPUs before a run. {}",
+            g.sample_ms,
+            opt(g.max_load, |v| format!("{v:.2}")),
+            opt(g.max_busy_cpus, |v| format!("{v:.2}")),
+            if g.wait {
+                format!(
+                    "waited for idle (up to {} s per run; {:.0} s in total)",
+                    g.wait_timeout_s, waited
+                )
+            } else {
+                "warned only".to_owned()
+            },
+            opt(median_of(&busy_cpus), |v| format!("{v:.2}")),
+            if busy == 0 {
+                "Every run started on an idle machine.".to_owned()
+            } else {
+                format!(
+                    "**{busy} of {} runs started on a busy machine.**",
+                    runs.len()
+                )
+            }
+        );
+    }
     let _ = writeln!(
         o,
         "- **Statistics:** median, p90 (linear interpolation) and min of *time*; \
@@ -550,6 +740,49 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
         o.push('\n');
     }
     o.push('\n');
+    let _ = writeln!(
+        o,
+        "Median time *to durability* (start to the file synced to disk; the harness fsyncs \
+         every client's finished file and its directory) in seconds, same marks:\n"
+    );
+    header(&mut o);
+    let mut any_fallback = false;
+    for key in &block_order {
+        let per = &blocks[key];
+        let rows: Vec<ClientRow> = clients_present
+            .iter()
+            .map(|c| client_row(c, per.get(c).map_or(&[][..], |v| v.as_slice())))
+            .collect();
+        let best = rows
+            .iter()
+            .filter(|r| r.ok == r.total && r.total > 0)
+            .filter_map(|r| r.durable.map(|w| w.median))
+            .fold(f64::INFINITY, f64::min);
+        let _ = write!(o, "| {} | {} |", key.0, key.1);
+        for r in &rows {
+            any_fallback |= r.durable_fallback;
+            let v = match (r.total, r.durable) {
+                (0, _) => "".to_owned(),
+                (_, None) => "✗".to_owned(),
+                (t, Some(w)) => {
+                    let mut s = durable_cell(r);
+                    if r.ok == t && w.median == best {
+                        s = format!("**{s}**");
+                    }
+                    if r.ok < t {
+                        s = format!("{s} `{}/{t}`", r.ok);
+                    }
+                    s
+                }
+            };
+            let _ = write!(o, " {v} |");
+        }
+        o.push('\n');
+    }
+    if any_fallback {
+        let _ = writeln!(o, "\n{FALLBACK_NOTE}");
+    }
+    o.push('\n');
     let _ = writeln!(o, "Peak concurrent connections (max over all runs):\n");
     header(&mut o);
     for key in &block_order {
@@ -621,11 +854,11 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
             .map(|r| (r.client, r.walls.clone()));
         let _ = writeln!(
             o,
-            "| Client | ok | median s | p90 s | min s | MiB/s | exit s | TTFB ms | peak conns | peak reqs | CPU s | RSS MiB | p vs best | failures |"
+            "| Client | ok | median s | p90 s | min s | durable s | sync ms | MiB/s | exit s | TTFB ms | peak conns | peak reqs | CPU s | RSS MiB | p vs best | failures |"
         );
         let _ = writeln!(
             o,
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"
         );
         for r in &rows {
             let p = match &best {
@@ -643,13 +876,15 @@ pub fn render(meta: &Meta, runs: &[RunRecord]) -> String {
                 .join(", ");
             let _ = writeln!(
                 o,
-                "| {} | {}/{} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                "| {} | {}/{} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                 r.client,
                 r.ok,
                 r.total,
                 opt(r.wall, |w| secs(w.median)),
                 opt(r.wall, |w| secs(w.p90)),
                 opt(r.wall, |w| secs(w.min)),
+                durable_cell(r),
+                opt(r.sync_ms, |v| format!("{v:.1}")),
                 opt(r.thr, |v| format!("{v:.1}")),
                 opt(r.exit, secs),
                 opt(r.ttfb, |v| format!("{:.0}", v * 1000.0)),
@@ -931,6 +1166,8 @@ mod tests {
                 },
             ],
             notes: vec![],
+            guard: None,
+            busy_runs: None,
         }
     }
 
@@ -1039,6 +1276,93 @@ mod tests {
         assert!(md.contains("✓ `বাংলা প্রতিবেদন ২০২৬.pdf` (expected)"));
         assert!(md.contains("✗ `bangla-report.pdf` (ASCII fallback)"));
         assert!(md.contains("- curl saved `bangla.bin` as `bangla-report.pdf` — ASCII fallback"));
+        // These records predate durable_s: the durable columns fall back,
+        // marked.
+        assert!(md.contains("0.530†"), "{md}");
+        assert!(md.contains(FALLBACK_NOTE), "{md}");
+    }
+
+    #[test]
+    fn renders_the_gate_resident_and_guard_sections() {
+        let mut m = meta();
+        m.clients.insert(
+            0,
+            ClientMeta {
+                id: "vayu".into(),
+                tool: "vayu".into(),
+                ..m.clients[0].clone()
+            },
+        );
+        m.guard = Some(crate::runner::IdleGuard::default());
+        m.busy_runs = Some(1);
+        let mut runs = Vec::new();
+        for i in 0..7 {
+            let mut v = rec(
+                i,
+                "vayu",
+                "clean",
+                "10m.bin",
+                0.4 + f64::from(i) * 0.01,
+                Outcome::Ok,
+            );
+            v.resident = Some(crate::measure::ResidentUsage {
+                startup_s: 0.08,
+                cpu_user_s: Some(0.01),
+                cpu_sys_s: Some(0.01),
+                max_rss_mib: Some(20.0),
+                rss_window_only: true,
+                settle_s: 0.05,
+            });
+            v.busy_cpus = Some(0.2);
+            v.machine_busy = i == 3;
+            runs.push(v);
+            let mut w = rec(
+                20 + i,
+                "curl",
+                "clean",
+                "10m.bin",
+                0.1 + f64::from(i) * 0.01,
+                Outcome::Ok,
+            );
+            w.busy_cpus = Some(0.3);
+            runs.push(w);
+        }
+        for r in &mut runs {
+            r.durable_s = r.done_s.or(r.wall_s).map(|t| t + 0.002);
+            r.sync_s = Some(0.002);
+        }
+        let md = render(&m, &runs);
+        assert!(md.contains("## Phase 1 gate: `vayu`"), "{md}");
+        assert!(
+            md.contains("rules 3 and 4 on the time **to durability**"),
+            "{md}"
+        );
+        assert!(!md.contains(FALLBACK_NOTE), "every run has a durable time");
+        // Scenario table: durable median 0.432 (0.43 + 0.002), sync 2.0 ms.
+        assert!(md.contains("| 0.432 | 2.0 |"), "{md}");
+        assert!(
+            md.contains("Overall (rules 1, 3, 4, 5): **FAIL** — 0 of 1 rows pass."),
+            "{md}"
+        );
+        assert!(
+            md.contains("1 of 14 runs started on a busy machine"),
+            "{md}"
+        );
+        assert!(
+            md.contains("| clean | 10m.bin | ✅ 7/7 byte-exact | ❌ significantly faster: curl"),
+            "{md}"
+        );
+        assert!(md.contains("**Resident daemon (vayu):**"), "{md}");
+        assert!(md.contains("median start-up 80 ms"), "{md}");
+        assert!(md.contains("**Idle-machine guard:**"), "{md}");
+        assert!(
+            md.contains("**1 of 14 runs started on a busy machine.**"),
+            "{md}"
+        );
+        let without = render_with_gate(&m, &runs, None);
+        assert!(!without.contains("## Phase 1 gate"));
+        // The gate section is only there when the client is.
+        assert!(!render(&meta(), &runs[..0]).contains("## Phase 1 gate"));
     }
 
     #[test]

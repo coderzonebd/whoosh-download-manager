@@ -1,8 +1,11 @@
 //! Finishing is crash-consistent: the process is killed exactly before or
 //! exactly after `Storage::finish` (the rename), before the journal and the
 //! record are updated, in every mode (ranged, no ranges, unknown size,
-//! empty). The next start must complete the download with exactly one file,
-//! byte-exact, without downloading it again.
+//! empty), in both durability modes (`PowerSafe`: a power cut loses what
+//! was not flushed; `ProcessSafe`: a killed process loses what was not
+//! handed to the operating system). The next start must complete the
+//! download with exactly one file, byte-exact; after the rename without
+//! downloading it again.
 
 mod common;
 
@@ -15,9 +18,9 @@ use bytes::Bytes;
 use common::*;
 use sha2::{Digest, Sha256};
 use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
-use vayu_engine::{Engine, EngineDeps};
+use vayu_engine::{Engine, EngineConfig, EngineDeps};
 use vayu_proto::service::Service;
-use vayu_proto::{AddParams, Checksum, DownloadState};
+use vayu_proto::{AddParams, Checksum, DownloadState, Durability};
 
 const LONG: Duration = Duration::from_secs(600);
 
@@ -49,9 +52,31 @@ struct World {
     src: Arc<FaultSource>,
     deps: EngineDeps,
     data: Bytes,
+    durability: Durability,
+}
+
+impl World {
+    fn cfg(&self) -> EngineConfig {
+        let mut c = config();
+        c.default_settings.durability = self.durability;
+        c
+    }
+
+    /// The kill the durability mode is built for: a power cut, or a killed
+    /// process.
+    fn lose_unsaved(&self) {
+        match self.durability {
+            Durability::PowerSafe => self.fs.crash(),
+            Durability::ProcessSafe => self.fs.kill(),
+        }
+    }
 }
 
 fn world(mode: Mode) -> World {
+    world_in(mode, Durability::PowerSafe)
+}
+
+fn world_in(mode: Mode, durability: Durability) -> World {
     let data = match mode {
         Mode::Empty | Mode::EmptyNoRanges => Bytes::new(),
         _ => content(3 * MIB + 77, 1),
@@ -80,6 +105,7 @@ fn world(mode: Mode) -> World {
         fs,
         src,
         data,
+        durability,
     }
 }
 
@@ -96,7 +122,7 @@ fn kill_at(w: &World, kill: Kill, params: AddParams) -> String {
     }
     let rt = runtime();
     let id = rt.block_on(async {
-        let engine = Engine::start(w.deps.clone(), config()).await.unwrap();
+        let engine = Engine::start(w.deps.clone(), w.cfg()).await.unwrap();
         let id = engine.add(params).await.unwrap().id;
         let t0 = tokio::time::Instant::now();
         while !w.fs.hooks.hit() {
@@ -106,7 +132,7 @@ fn kill_at(w: &World, kill: Kill, params: AddParams) -> String {
         id
     });
     drop(rt);
-    w.fs.crash();
+    w.lose_unsaved();
     w.fs.hooks.clear();
     id
 }
@@ -116,7 +142,7 @@ fn restart(w: &World, id: &str) -> (String, u64) {
     let opens = w.src.opens();
     let rt = runtime();
     let name = rt.block_on(async {
-        let engine = Engine::start(w.deps.clone(), config()).await.unwrap();
+        let engine = Engine::start(w.deps.clone(), w.cfg()).await.unwrap();
         let (d, _) = finish(&engine, id, LONG).await;
         assert!(
             w.deps
@@ -133,21 +159,40 @@ fn restart(w: &World, id: &str) -> (String, u64) {
 }
 
 fn check(mode: Mode, kill: Kill) {
-    let w = world(mode);
+    for durability in [Durability::PowerSafe, Durability::ProcessSafe] {
+        check_in(mode, kill, durability);
+    }
+}
+
+fn check_in(mode: Mode, kill: Kill, durability: Durability) {
+    let w = world_in(mode, durability);
     let id = kill_at(&w, kill, add_params(URL));
     if kill == Kill::AfterRename {
         assert_eq!(
             w.fs.finished().len(),
             1,
-            "{mode:?}: renamed before the kill"
+            "{mode:?} {durability:?}: renamed before the kill"
         );
     }
     let (name, reopened) = restart(&w, &id);
     let files = w.fs.finished();
-    assert_eq!(files.len(), 1, "{mode:?} {kill:?}: {:?}", files.keys());
-    assert_eq!(name, "data.bin", "{mode:?} {kill:?}");
+    assert_eq!(
+        files.len(),
+        1,
+        "{mode:?} {kill:?} {durability:?}: {:?}",
+        files.keys()
+    );
+    assert_eq!(name, "data.bin", "{mode:?} {kill:?} {durability:?}");
     assert_same(&files[&final_path("data.bin")], &w.data);
-    assert_eq!(reopened, 0, "{mode:?} {kill:?}: downloaded again");
+    // After the rename nothing is downloaded again. Before it, the intent
+    // (committed while the data was flushed) claims only what the journal
+    // already did, so the rest may be fetched again — never kept unsynced.
+    if kill == Kill::AfterRename {
+        assert_eq!(
+            reopened, 0,
+            "{mode:?} {kill:?} {durability:?}: downloaded again"
+        );
+    }
 }
 
 #[test]
@@ -187,7 +232,9 @@ fn the_numbered_name_finish_chose_is_recognised() {
         let id = kill_at(&w, kill, add_params(URL));
         let (name, reopened) = restart(&w, &id);
         assert_eq!(name, "data (1).bin", "{kill:?}");
-        assert_eq!(reopened, 0);
+        if kill == Kill::AfterRename {
+            assert_eq!(reopened, 0);
+        }
         let files = w.fs.finished();
         assert_eq!(files.len(), 2, "{kill:?}: {:?}", files.keys());
         assert_same(&files[&final_path("data.bin")], &other);
@@ -238,11 +285,14 @@ fn the_checksum_decides_whether_a_renamed_file_is_adopted() {
     assert!(reopened > 0);
     assert_same(&w.fs.finished()[&final_path("data (1).bin")], &w.data);
 
-    // Killed before the rename with a checksum: verified, then finished.
+    // Killed before the rename with a checksum: a single stream journals
+    // nothing before its finish intent (committed alongside the flush, so
+    // claiming nothing), so it is fetched once more, verified, finished.
     let w = world(Mode::NoRanges);
     let id = kill_at(&w, Kill::BeforeRename, with_checksum());
     let (name, reopened) = restart(&w, &id);
-    assert_eq!((name.as_str(), reopened), ("data.bin", 0));
+    assert_eq!((name.as_str(), reopened), ("data.bin", 1));
+    assert_same(&w.fs.finished()[&final_path("data.bin")], &w.data);
 }
 
 #[test]
@@ -405,4 +455,29 @@ fn a_failed_sync_keeps_the_journal_entry() {
     });
     assert_eq!(w.src.opens(), opens);
     assert_eq!(w.fs.finished().len(), 1);
+}
+
+#[test]
+fn process_safe_skips_the_power_loss_sync() {
+    use std::sync::atomic::Ordering::Relaxed;
+    // A saved record survives a killed process: no sync before the journal
+    // entry goes (a power cut is what `ProcessSafe` gives up).
+    let mut w = world_in(Mode::Ranged, Durability::ProcessSafe);
+    let state = Arc::new(SlowState::new());
+    w.deps.state = state.clone();
+    let id = runtime().block_on(async {
+        let engine = Engine::start(w.deps.clone(), w.cfg()).await.unwrap();
+        let id = engine.add(add_params(URL)).await.unwrap().id;
+        finish(&engine, &id, LONG).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        id
+    });
+    assert_same(&w.fs.finished()[&final_path("data.bin")], &w.data);
+    assert_eq!(state.syncs.load(Relaxed), 0);
+    assert!(
+        runtime()
+            .block_on(w.deps.journal.load(&id))
+            .unwrap()
+            .is_none()
+    );
 }

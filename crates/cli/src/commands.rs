@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{Value, json};
 use vayu_proto::{
-    AddParams, AddResult, Checksum, DownloadDetail, DownloadSummary, Header, IdParams, IdsParams,
-    ListParams, PreconnectParams, RemoveParams, RequestContext, Settings, method,
+    AddParams, AddResult, Checksum, DownloadDetail, DownloadSummary, Durability, Header, IdParams,
+    IdsParams, ListParams, PreconnectParams, RemoveParams, RequestContext, Settings, method,
 };
 
 use crate::daemon::{self, Connected, Found};
@@ -472,6 +472,13 @@ pub async fn settings(ctx: &Ctx, action: Option<SettingsCmd>) -> Result<u8> {
             ("speedLimitBps", speed),
             ("language", settings.language.clone()),
             ("theme", settings.theme.clone()),
+            (
+                "durability",
+                match settings.durability {
+                    Durability::PowerSafe => "powerSafe".to_owned(),
+                    Durability::ProcessSafe => "processSafe".to_owned(),
+                },
+            ),
         ] {
             println!("{k:<26} {v}");
         }
@@ -487,6 +494,7 @@ enum Key {
     SpeedLimitBps,
     Language,
     Theme,
+    Durability,
 }
 
 fn parse_pair(pair: &str) -> Result<(Key, String)> {
@@ -508,10 +516,11 @@ fn parse_pair(pair: &str) -> Result<(Key, String)> {
         "speedlimitbps" | "speedlimit" => Key::SpeedLimitBps,
         "language" | "lang" => Key::Language,
         "theme" => Key::Theme,
+        "durability" => Key::Durability,
         _ => {
             return Err(CliError::Usage(format!(
                 "unknown setting {key:?} (defaultDirectory, maxActiveDownloads, \
-                 maxConnectionsPerDownload, speedLimitBps, language, theme)"
+                 maxConnectionsPerDownload, speedLimitBps, language, theme, durability)"
             )));
         }
     };
@@ -541,6 +550,17 @@ fn apply(s: &mut Settings, key: Key, value: &str) -> Result<()> {
         }
         Key::Language => s.language = value.to_owned(),
         Key::Theme => s.theme = value.to_owned(),
+        Key::Durability => {
+            s.durability = match value.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
+                "powersafe" | "safe" => Durability::PowerSafe,
+                "processsafe" | "fast" => Durability::ProcessSafe,
+                _ => {
+                    return Err(CliError::Usage(format!(
+                        "durability: {value:?} is not powerSafe or processSafe"
+                    )));
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -833,6 +853,7 @@ mod tests {
             speed_limit_bps: None,
             language: "en".into(),
             theme: "system".into(),
+            durability: Default::default(),
         };
         for pair in [
             "max_active_downloads=5",

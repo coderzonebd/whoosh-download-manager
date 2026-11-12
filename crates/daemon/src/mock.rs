@@ -380,6 +380,7 @@ impl State {
                 speed_limit_bps: None,
                 language: "en".into(),
                 theme: "system".into(),
+                durability: Default::default(),
             },
             subscribers: Vec::new(),
             next_id: 1,

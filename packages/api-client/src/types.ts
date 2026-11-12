@@ -241,7 +241,14 @@ export interface Settings {
   speedLimitBps?: number;
   language: string;
   theme: "system" | "light" | "dark";
+  /**
+   * "powerSafe" (default): data is forced to disk before a file is finished, so a power cut never
+   * damages a finished file. "processSafe": faster, survives a killed vayu but not a power cut.
+   */
+  durability?: Durability;
 }
+
+export type Durability = "powerSafe" | "processSafe";
 
 // ------------------------------------------------------------ events
 
