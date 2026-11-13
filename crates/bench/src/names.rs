@@ -153,6 +153,8 @@ mod tests {
         );
         assert_eq!(g("bangla.bin", "bangla.bin"), NameCheck::UrlName);
         assert_eq!(g("latin1.bin", "résumé.pdf"), NameCheck::Expected);
+        // wget's escaped raw bytes; on Windows a backslash is a separator.
+        #[cfg(unix)]
         assert_eq!(g("latin1.bin", "r\\xe9sum\\xe9.pdf"), NameCheck::RawBytes);
         assert_eq!(
             g("latin1.bin", "r\u{fffd}sum\u{fffd}.pdf"),

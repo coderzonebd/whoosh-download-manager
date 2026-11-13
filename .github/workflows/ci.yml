@@ -93,7 +93,8 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
-        run: cargo test --workspace --locked
+        # Every test binary runs, so one failure does not hide the next.
+        run: cargo test --workspace --locked --no-fail-fast
 
   js:
     name: TypeScript (typecheck, test, build)
