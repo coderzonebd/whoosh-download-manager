@@ -1,0 +1,10 @@
+# The rude flavour: a request over the cap has its TCP connection reset
+# (RST), with no HTTP response at all.
+description = "Max 2 concurrent requests per IP, excess connections are reset"
+
+[limits]
+max_conns_per_ip = 2
+refuse = "reset"
+
+[bandwidth]
+per_conn = "5MB/s"

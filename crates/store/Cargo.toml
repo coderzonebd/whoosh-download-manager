@@ -1,0 +1,55 @@
+[package]
+name = "whoosh-store"
+description = "Download engine storage: preallocated files with positional writes, the crash-safe journal, and SQLite state"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[features]
+default = ["sqlite"]
+# `SqliteStateStore`. Off only to cross-check the file and journal code for
+# targets without a C toolchain (`cargo check --target … --no-default-features`).
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+bytes.workspace = true
+crc32c = "0.6"
+futures.workspace = true
+rusqlite = { version = "0.41", features = ["bundled"], optional = true }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true }
+tracing.workspace = true
+whoosh-core.workspace = true
+whoosh-proto.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", features = ["fs", "std"] }
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+# `F_PREALLOCATE` with a length relative to the current size (rustix's
+# `fallocate` asks for the whole length again on every call).
+libc = "0.2"
+nix = { version = "0.31", features = ["fs"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"
+tokio = { workspace = true }
+whoosh-core = { workspace = true, features = ["testing"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.31", features = ["resource"] }
+
+[lints]
+workspace = true
+
+[[example]]
+name = "state_bench"
+required-features = ["sqlite"]

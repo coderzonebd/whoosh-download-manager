@@ -1,0 +1,1164 @@
+# whoosh-engine
+
+The download engine. `Engine` implements `whoosh_proto::service::Service` (the
+local API as a Rust trait) on top of the `whoosh-core` seams:
+
+| Seam | Trait | Implemented by (at integration) | In tests |
+|---|---|---|---|
+| bytes in | `SourceFactory`, `RangeSource` | `whoosh-net` | `whoosh_core::testing::MemSourceFactory` + `FaultSource` (tests/common) |
+| bytes out | `StorageProvider`, `Storage` | `whoosh-store` | `MemStorageProvider`, `CrashFs` (tests/common) |
+| crash safety | `Journal` | `whoosh-store` | `MemJournal` |
+| everything else | `StateStore` | `whoosh-store` | `MemStateStore` |
+
+It never depends on `whoosh-net` or `whoosh-store`; the daemon wires them in.
+
+## Usage
+
+```rust
+use std::sync::Arc;
+use whoosh_engine::{Engine, EngineConfig, EngineDeps};
+use whoosh_proto::service::Service;
+
+let engine: Arc<Engine> = Engine::start(
+    EngineDeps { sources, storage, journal, state }, // Arc<dyn …> each
+    EngineConfig::new("/home/me/Downloads"),
+)
+.await?;                       // loads settings + records, resumes interrupted downloads
+let mut events = engine.subscribe();   // one independent stream per client
+let id = engine.add(params).await?.id;
+// … serve `engine` (an `Arc<dyn Service>`) over JSON-RPC …
+engine.shutdown().await;       // pauses everything, flushes, commits every journal
+```
+
+`EngineConfig` holds the default settings (used until `settings.set` stores
+some under the `StateStore` key `"settings"`), the advertised capabilities,
+an optional RNG seed (tests), and `Tuning`, the scheduler's knobs (below).
+
+## Policies
+
+### Scheduler (Speed Doctrine §1)
+
+**Start (ADR 0005 amendment 3).** A fresh download (no journal entry)
+begins with `RangeSource::start`: one request that describes the file and
+starts its body at offset 0, so the first byte arrives a round trip sooner
+than probe-then-open. That response is connection #1 and owns the whole
+file; when ranges do not work or the size is unknown it simply is the
+stream-mode download (#5). #1 runs **alone** while the rest of the file
+would take it no longer than `max(solo_ttfb_factor × what start took,
+solo_min_eta)` (2×, 100 ms), judged every `solo_check` (5 ms) from its rate
+since the previous look — past the burst a server's token bucket or the
+socket buffers deliver first (labserver's throttles front-load 50 ms worth)
+— : a new connection could not deliver sooner, and on a fast link more
+connections cost more than they save (labserver on loopback: 100 MiB on one
+connection 0.18 s against 0.21–0.23 s when split at once; 10 MiB at 500 ms
+time-to-first-byte 0.5 s instead of 1.0 s). Then its range is cut for the
+target count exactly like a resume's first plan, the others start, and #1
+keeps reading its response up to the end of the piece it still owns, where
+the stream is dropped (the source aborts the rest). Alone, a fault on #1
+would hold up the whole download: when it goes silent for
+`max(solo_silence, 4 × start's TTFB)` (20 ms on loopback) the others start
+at once; when it breaks, one replacement takes over the rest — by the rule
+above, less than a new connection is worth — without waiting out the retry
+backoff, since nothing else was running. A resume still probes
+first: the validators must be checked against the journal before any byte
+is taken.
+
+**A per-connection limit, seen at once.** When #1 is split off, its rate
+alone also says whether the server limits each connection: less than
+`solo_window` (16 KiB, TCP's initial window) per round trip — rate × start's
+time to first byte (at least 1 ms) — means the sender paces it, so the
+count jumps to `limited_connections` (16) at once instead of climbing there
+(labserver's per-conn-throttle: 2 KB per round trip, slow-drip 3.2 KB; its
+20 MB/s global-throttle 21 KB, where 16 connections cost 20 ms against 8;
+a clean loopback transfer ~700 KB). A shared limit can look the same, so
+the jump is a trial against that solo rate: kept when the 16 deliver at
+least `max(2, 16 / 4)` times as much; otherwise the count is judged
+carefully from there, fewer first (cutting 8 connections mid-flight on a
+shared limit cost labserver's global-throttle 25 ms; pinned to 1 or 8 it
+ties wget), so a long download comes down and a short one is left alone. At most `initial_connections` (8)
+requests ever wait for their headers at once, and the first plan cuts no
+more pieces than that: a server that caps connections refuses one wave
+(and sets the ceiling), and later connections take their work by splitting
+as they start.
+
+**Back to one when the others add nothing.** #1's solo rate is also the
+yardstick for the first window the starting count (8) is measured in (the
+better of its rate since its first look and since its headers, so one look
+caught in a dip does not count): when the eight together deliver less than
+`1 + solo_collapse_gain` (1.25×) what #1 did alone, the link is one
+connection wide (a fast server close by, a shared bottleneck) and the
+download drops to one connection at once (the slowest seven are cancelled;
+their ranges are fetched one after another). That is a trial, judged from
+one fast window: kept when one connection holds `keep_ratio` (97 %) of the
+eight, minus noise of at most `solo_collapse_slack` (7 %). Far short (under
+half) means the solo look flattered #1: back to eight, climbing as usual.
+A first window under *half* #1's solo rate is not compared at all: eight
+connections delivering less than half of what one did alone means #1's look
+caught a burst the server allows before its limit (labserver's
+global-throttle lets 50 ms of its 20 MB/s through at once, and #1 read
+100–150 MB/s in it). The solo rate is dropped and tuning goes on from eight
+in careful windows, so a short download settles before any step and no
+connection is cut mid-range: each cut throws away what that connection has
+in flight, which under a shared limit everyone pays for (seven cut at once
+cost a 10 MiB download 25–35 ms of the server's 20 MB/s; the drop to one was
+also judged against a single window, and one in six runs went back to eight
+and on to 16).
+In between, the window at one may only have caught the link slowing (a
+disk that starts throttling writes), so eight and one are compared in
+alternating windows, which cancel drift. On labserver's clean 1 GiB the
+first window at eight delivered 1.03–1.16 GB/s against 1.18–1.63 GB/s for
+#1 alone, and one connection then measured 1.4–1.9× the eight (10 traced
+runs, all dropped to one); without the rule the download climbed to a
+trial of 16 and stayed at 8–16 (2.3 CPU-s/GiB against 1.1–1.3): the
+careful steps down (8 → 4 → 2 → 1, alternating windows) end long after a
+gigabyte on a fast link is done.
+
+**Plan.** A ranged download (server honours ranges, size known) starts with
+the journalled gaps (everything, for a new download) cut into one range per
+connection, never below `min_split` (1 MiB). Each connection owns a
+*segment*; it *claims* bytes before writing them, so the scheduler can split
+the unclaimed tail off at any moment without ever giving away a byte in
+flight. Once connection speeds are known, a slow link may split finer: a
+piece must take at least `max(min_split_time, 4 × median TTFB)` (100 ms) at
+the median connection speed, and be at least `min_split_floor` (256 KiB),
+so 10 MiB at 2 MB/s per connection can use 16 connections, not 8.
+
+**Work stealing (#1).** The moment a connection finishes, its slot takes
+(1) an ownerless range (left by a failed or cancelled connection), else
+(2) the range that would finish last (`remaining / owner's EWMA speed`),
+split so both sides finish together (`owner keeps v/(v+u)` of it, `u` = the
+median connection speed), both pieces ≥ the minimum above, the split point rounded
+down to 64 KiB; else (3) an endgame hedge. Every connection has work until
+the last byte.
+
+**Hedging (#2).** Per connection: an EWMA of throughput (τ = 400 ms), time
+to first byte, and the time of its last chunk.
+- *Stall:* a connection silent for `max(stall_min, stall_factor × expected
+  gap between chunks)` (250 ms floor), or waiting for its first byte longer
+  than `max(stall_min, 4 × median TTFB)` (5 s until a TTFB is known), gets a
+  shadow request on its remaining range, even above the connection target
+  (≤ `max_extra_hedges`). Whichever delivers first wins: a hedge that
+  delivers takes the range over and cancels the original; an original that
+  delivers first cancels the hedge.
+- *Endgame:* when a slot is free and nothing is left to split, the
+  connection whose estimated finish is more than `hedge_gain` (2×) later than
+  a fresh connection's (`median TTFB + remaining / median speed`) is hedged;
+  one silent for `endgame_silence` (60 ms, or 3 expected chunk gaps) counts as
+  never finishing. A slow-hedge takes over as soon as it delivers.
+- At most `max_hedges_per_range` (3) hedges per range; hedges respect the
+  retry backoff. A hedge that never delivers is itself stall-checked and
+  cancelled, freeing the range for the next one. Once a range's hedges are
+  spent, its stalled owner is cancelled and the range handed to a fresh
+  connection, counted as a failure round, so a server that stalls everything
+  still ends in `failed` instead of hanging.
+
+**Learned connection count (#3).** Start at the host's
+`HostProfile::best_connections`, else `initial_connections` (8, as IDM),
+capped by `Settings::max_connections_per_download` and the host's
+`max_ok_connections`. Measure the base count, try 2n and keep it when the
+gain is *clearly* at least `climb_gain` (4 %: per-connection CPU is small
+now, so small real gains count); while doubling pays, keep doubling. If the
+very first doubling added about nothing (≤ 2 %), halve while the lower
+count still delivers `keep_ratio` (97 %) of the one above it, so it comes
+down to 1–2 connections when more do not help (loopback, a shared
+bottleneck). After a small but real gain it does not walk down (fewer would
+be slower; the old "8, 4, 2, 4" on the live link). After settling it
+re-probes one step every `tune_reprobe` (30 s, doubling up to 5 min while
+nothing changes), alternately up and down: conditions change during a long
+download, and a step that noise faked is taken back. Built for real links,
+where a new connection needs several round trips of slow start and
+throughput swings ±30 % second to second:
+- *windows sized from the run*: at least `max(tune_window, tune_rtt_windows
+  × median TTFB)` (200 ms on loopback, ≈ 1–4 s on the internet), extended
+  up to `tune_window_max` (4 s) until the relative standard error of its
+  100 ms throughput samples is ≤ 2 %;
+- *a warm-up* after every change: every connection streaming, then at least
+  `max(tune_window / 2, 4 × TTFB)`, and longer while throughput still rises
+  > 10 % per sample (slow start);
+- *a fast first climb* (when the jump above did not apply): a short
+  download ends before careful windows decide
+  anything (10 MiB at 8 × 2 MB/s takes 0.66 s; a careful step needs ≥ 0.6 s
+  plus margin), yet the commonest reason more connections pay — each one is
+  limited on its own (a server throttle, a long thin path) — is the easiest
+  to see: doubling the count about doubles the throughput. So a download's
+  first climb uses short windows (`tune_fast_window` 50 ms, at least 4
+  TTFBs; warm-up half that; samples every `tune_fast_sample` 25 ms, on a
+  25 ms `tick`) and
+  takes a doubling from one trial window when it delivers at least
+  `tune_fast_scaling` (half) of linear scaling beyond 2 standard errors
+  (≥ 1.5× for 2×), then tries the next at once. The first doubling that
+  scales less ends the fast climb and is judged carefully from there (as
+  below). Steps down are always careful, except the drop to the first
+  connection alone (*Back to one*, above). On the paused-clock model of
+  labserver's per-conn-throttle and slow-drip (10 MiB, 2 and 3.2 MB/s per
+  connection) it reaches 16 connections and finishes in 0.50 s / 0.38 s
+  instead of 0.74 s / 0.50 s at 8; on the 180 s link models below it
+  changes nothing measurable;
+- *paired, alternating comparisons*: after the first base and trial windows
+  they alternate (B T B T B …, up to `tune_rounds` = 4 trials); each trial
+  window is compared with the mean of the base windows on either side of
+  it, which cancels drift, and the error of the mean ratio is the larger of
+  the windows' own and the spread of the ratios. A climb is taken when its
+  lower confidence bound (2 standard errors) clears 4 % after two such
+  pairs, or at once for an obvious gain (≥ 25 % beyond the noise); an
+  unclear climb after the last round is not taken. A step down always needs
+  alternating windows and is taken when it clearly holds 97 %, or after the
+  last round when its estimate does.
+
+In a link model with the reported conditions (±30 % noise, ±25 % drift over
+40 s, 300 ms TTFB, slow start with a 0.8 s time constant; 100 seeds, 180 s,
+`cargo test -p whoosh-engine --lib outcome_statistics -- --ignored
+--nocapture`), final accepted count and mean throughput:
+
+| link | single 200 ms windows, 15 %, start 4 (the old behaviour) | this tuner, start 4 | this tuner, start 8 (default) |
+|---|---|---|---|
+| 3.8 MB/s per connection | 4: 44 %, 16: 56 % — 41.2 MB/s | 16: 100 % — 56.3 MB/s | 16: 100 % — 58.2 MB/s |
+| saturated by 8 connections (~30 MB/s) | 4: 45 %, 16: 55 % — 23.7 | 8: 100 % — 29.4 | 8: 99 %, 16: 1 % — 29.7 |
+| +8 % per doubling up to 16 (the live link) | 1–2: 30 %, 4: 62 %, 8: 8 % — 23.2 | 4: 18 %, 8: 81 %, 16: 1 % — 25.0 | 8: 18 %, 16: 82 % — 26.8 (ideal 27.2) |
+| shared 20 MB/s | 1: 38 %, 2: 16 %, 4: 39 %, 8: 7 % | 2: 92 %, 1/4/8: 8 % | 4: 92 %, 1/8/16: 8 % |
+| clean loopback | 1: 100 % | 1: 100 % | 1: 100 % |
+
+Starting at 8 is worth 3–8 % where connections help; on a shared bottleneck
+it costs only connections, not speed, and the count comes down (4 or
+fewer in 93 % of runs after 3 min). `Throttled` (429/503,
+refused under load), or two pre-first-byte failures within 2 s while others
+work, set a ceiling at the number of accepted connections (halving at most
+once per backoff round when none work) and settle. Learning pauses while a
+global speed limit is set and when too little is left to measure. When the
+target drops, the slowest connections are cancelled; their ranges are picked
+up by the rest. The result (best count, max ok count, range support,
+protocol, per-connection speed) is saved with `save_host_profile` when the
+run ends. `AddParams::connections` (1–64,
+else `-32602`) pins one download's count instead: no learning, not capped
+by `max_connections_per_download`, still lowered by throttling, nothing saved
+to the host profile; it is kept under the `StateStore` key
+`"download_connections"` (`CONNECTIONS_KEY`) so it survives restarts.
+`Tuning::fixed_connections` is the engine-wide equivalent.
+
+**Retries (#4).** Sources classify, the engine decides. `Transient` and
+`Throttled` free the range for another connection and push new connections
+back by `Retry-After` when given, else `min(retry_cap, retry_base ×
+2^(n−1))` with jitter in the upper half (50 ms base, 30 s cap), `n` = failure
+rounds since the last byte arrived. Failures within one backoff window count
+as one round. `Retry-After` is honoured up to `retry_cap` (a server asking
+for a day must not park a download outside the error budget). After
+`error_budget` (10) rounds without a single byte, the
+download fails with `ErrorInfo { code: SourceError::code(), message }`.
+Connections that finish normally are replaced at once, backoff or not, and
+so is one reset (`Transient`) after delivering at least `min_split_floor`
+(256 KiB): real progress, not the server pushing back. The failure round
+still counts; a server that resets right away still gets the backoff.
+
+**Ranges unsupported or size unknown (#5).** One connection, whole file,
+from zero. Any failure discards the partial file (journal first, then the
+file) and starts again after backoff. A server that advertised ranges and
+then ignored them (`RangesUnsupported` mid-download, labserver
+`lying-ranges`) switches the download to this mode and discards everything
+it wrote, since none of it can be trusted. Requests stay pinned to the
+probed validators, and every response is read to its end: a body whose
+length differs from the probed size is a different version
+(`RemoteChanged`), never cut or padded to fit. Nothing can be hedged
+without ranges, so a response silent for `stream_idle_timeout` (20 s) is
+dropped and the download starts again from zero, as a failure round.
+
+**Remote changed (#6) — never mix versions.** A new request that finds the
+file changed (`RemoteChanged` before its first byte: validators are checked
+first) while other connections still stream the version the download
+started on does not restart anything: those connections finish their
+version. No new request is made from then on (it would get the new one); a
+range that was split off for the failed request goes back to the connection
+it was split from, which reads on into it (its request reaches that far).
+On labserver's changing-file the change only reaches the requests that
+split the last ranges, after the first wave covered the whole file: 0.13 s
+instead of 0.46 s on one traced run, where the restart had thrown away 90 %
+of the file. When that is not possible — an old-version connection breaks
+or stalls, a range has nobody to finish it, the change came through any
+other path (validators that conflict with the journal on resume, a tail
+mismatch without validators, stream mode) — stop every connection, ask for
+the new version with one `start` request (description and body from offset
+0, as a fresh download), commit an empty checkpoint for it, recreate the
+in-progress file, and start from zero — **once** (`max_remote_restarts`). If
+it changes again, fail with `remote_changed`; no file is produced. A
+download completes with exactly one version, the old or the new, never a
+mix (Gopeed and tuned aria2c produced mixed files here in the Phase 0
+baseline).
+
+**Expired links (#7).** `LinkExpired` stops the download in
+`needs_refresh` (error `link_expired`) after committing progress.
+`download.refreshUrl` swaps the URL (and request context, when given) and
+continues from the journal after the fresh probe's validators were checked
+against the journalled ones; a conflict is treated as `RemoteChanged`.
+
+**Write gathering.** A network chunk is ~10 KiB; one `write_at` per chunk
+cost the store a writer-thread wake-up and a `pwrite` each (in the daemon:
+58k futex calls for 426 MB). Each connection therefore gathers the
+contiguous bytes it claimed into one buffer and hands them to storage in a
+single `write_at` of up to `write_coalesce` (256 KiB), or sooner when the
+oldest gathered byte has waited `write_coalesce_delay` (200 ms; a timer, so
+this holds when the source goes quiet too), or when its range ends. Gathered bytes are claimed (nobody else fetches them) but count
+as written only when their write resolves, so the journal never claims them
+early. They are always written before the connection leaves — finished,
+failed, cancelled, or overtaken by a hedge — so a range is never handed over
+with a hole; if the whole run is stopped (tasks aborted) they are simply
+fetched again. A chunk at least `write_coalesce` long is written as is,
+without a copy; `write_coalesce = 0` restores one write per chunk.
+
+**Durability (#8).** Every byte goes through `Storage`. Every
+`checkpoint_interval` (2 s): `storage.flush()` *then* `journal.commit()`
+(never the reverse), off the scheduler loop and one at a time (a commit in
+flight is awaited before any newer one, including the empty checkpoint of a
+restart); also on pause, shutdown, `needs_refresh` and failure. Time-based
+checkpoints are spaced by what the last one cost: never sooner than its
+duration divided by `checkpoint_share` (5 %), up to
+`checkpoint_interval_max` (30 s); `checkpoint_bytes` (a byte trigger) is off
+by default. Since `whoosh-store` syncs on a thread of its own (a2c1e0c), a
+flush no longer stops its writer, so while a transfer runs the engine also
+flushes (and, when resumable, commits) every `writeback_bytes` (16 MiB) of
+new data whenever no flush is in flight, checked every `writeback_check`
+(10 ms), single-stream downloads included: the disk writes alongside the
+network, and the flush `finish` needs before the rename has little left
+(100 MiB on loopback: ~7 ms instead of 40–60 ms). A slower download is also
+flushed (no commit) every `writeback_interval` (100 ms) once at least
+`writeback_min_bytes` (1 MiB) are new, so one throttled to 10–30 MB/s does
+not leave 10 MiB to the sync after its last byte.
+
+**The early checkpoint.** When a transfer starts (ranged or stream), the
+engine flushes the part file and then commits a checkpoint, in the
+background. The commit claims only what the journal already claimed
+(nothing, for a fresh download). It is the journal entry's first commit —
+the record is saved first (alongside the flush), so a restart that finds the
+entry finds the file name the part file has — and it carries the finish
+intent (below) when the size is known and the final name is free at that
+moment. It waits for the flush so the part file's directory entry is durable
+before any intent is: a part file missing after a power cut then always
+means it was moved (or deleted by someone else), never a lost entry next to
+a surviving intent that would let a restart adopt a file that appeared under
+that name (no measurable cost: 1 MiB 25 vs 24 ms, 10 MiB 35 vs 34 ms against
+committing beside the flush). Its syncs (the part file's directory entry:
+the store syncs only the directory when nothing was written yet; the new
+journal file and its directory entry) run while the network is busy, so
+between the last byte and `completed` only the last bytes' `fdatasync`, the
+move and its directory sync remain. The last bytes' flush starts as soon as they are written, while
+any checkpoint still in flight lands. A completed transfer without a
+checksum to verify goes straight to finishing. The journal
+records only the contiguous prefix
+of each range whose writes resolved before the snapshot. Preallocation when
+the size is known. Records are saved on every state change and every
+`record_interval` (3 s) while running; writes to the `StateStore` are
+serialised and each writes the newest record, so a running download does not
+wait for them (they are advisory until the run ends: a restart re-queues it
+and the journal holds the progress), and `add` starts the run while its
+record is saved. A run's final record is saved, and awaited, in `run_ended`.
+
+**Durability modes (`Settings::durability`, read when a download
+starts).** `PowerSafe` (the default) is everything above: bytes are forced
+to disk (`Storage::flush`) before the journal claims them, a finished file's
+data before its rename (`Storage::finish`), and the completed record is
+synced (`StateStore::sync`) before its journal entry goes, so a power cut
+never leaves a completed download with missing bytes. `ProcessSafe` hands
+bytes to the operating system instead (`Storage::write_out`, then
+`Storage::finish_unsynced`), skips that last sync (a saved record survives a
+killed process) and the writeback flushes during a transfer (nothing is
+forced to disk at the end either). It keeps both guarantees against a
+killed or crashed Whoosh — the journal never claims a byte not yet handed to
+the operating system, and a kill between the rename and the record update
+never leads to a duplicate — but gives up the power cut: files finished, or
+progress journalled, in the last seconds before one may be damaged.
+
+**Resume (#9).** Probe fresh; validators conflicting with the journal →
+restart (as #6). Otherwise every journalled range's last `tail_verify_len`
+(64 KiB) is re-fetched (in parallel) and byte-compared with `read_at`. A
+mismatch drops that window and walks back window by window (up to
+`tail_walkback` = 16, then the whole range is dropped). Without an ETag or
+Last-Modified (labserver `no-validators`) a mismatch cannot tell local damage
+from a new remote version, so the download restarts from zero. Storage
+holding less than the journal claims (part file deleted or truncated) is
+local damage whatever the validators say: that range is dropped, without
+touching the network error budget. The
+trimmed set is committed before any
+connection overwrites the dropped bytes. A ranged start with nothing
+journalled (a new download, a crash before the first commit, a journal of
+another size) always starts from an empty in-progress file: whatever an
+existing `<name>.whoosh-part` holds (say, a removed download that kept its
+files) is never moved along into the finished file.
+
+**Finishing is crash-consistent, in every mode.** Before every rename
+attempt, the journal holds an *intent* naming the file it is about to create
+(`Checkpoint::finishing { name, len }`: `name`, then `name (1)`, … on
+`AlreadyExists`). For the first name it is usually the early checkpoint's,
+committed when the transfer started (only if that name was free then) and
+still the journal's last word: no later checkpoint withdrew it; then
+`finish` commits nothing. Otherwise `finish` commits it while the data is
+flushed — the two syncs overlap — so it claims only what the journal already
+claimed; later ones follow that flush and claim every byte. The rename waits
+for the intent and the data. The journal entry is removed only after the
+completed record is saved *and* `StateStore::sync` made it durable (after
+the completion is announced); a failed save or sync keeps the entry
+(harmless next to a completed record). So whenever the process dies, or the
+power goes:
+- before the rename → if the journal claims the whole file and the part
+  file is there at that length: verify the checksum if one was asked, then
+  finish again (no network); otherwise resume, fetching what the journal
+  does not claim (all of a file that never reached a checkpoint);
+- after the rename, before the record update → the part file is gone and the
+  intent's file exists at exactly that length (and passes the checksum if
+  one was asked): completed, nothing downloaded again
+  (`StorageProvider::file_len`) — whatever the intent claims, since the
+  rename happens only after the flush;
+- after the record update, before the journal removal (or with the sync
+  failed) → the record says completed; nothing runs;
+- anything else (say, the finished file was replaced meanwhile) → the
+  download runs normally.
+
+A journal written by the interim version of this (5a1c4dd: the name in
+`RemoteMeta::final_url` after a `whoosh-finishing:` prefix) is still read,
+never written.
+
+**Checksums (#10).** `AddParams::checksum` (sha256/sha512/sha1/md5, hex,
+validated at `add`) is verified in `verifying` by reading the file back; a
+mismatch fails with `checksum_mismatch` and discards the data so a retry
+starts clean.
+
+**File names (#11).** The user's name, else `RemoteMeta::filename`, else the
+last URL path segment (final URL, percent-decoded), else `download`; a MIME
+type adds an extension to names without one. Every candidate is sanitised
+again (last path component only, no control or Windows-reserved characters,
+no leading/trailing dots or spaces, `CON`/`LPT1`… defused, ≤ 245 bytes keeping
+the extension) and the final path must be a single component inside the
+directory. Downloads write to `<name>.whoosh-part`, unique among unfinished
+downloads in that directory (chosen and stored in one critical section, so concurrent
+downloads never share one), then `Storage::finish`; a name ending in
+`.whoosh-part` loses that suffix (it could be another download's part file);
+on `AlreadyExists`:
+`name (1).ext`, `name (2).ext`, … (`a (1).tar.gz` keeps double extensions).
+A name the user chose (`AddParams::filename`, stored as
+`DownloadRecord::filename_locked`) is never replaced by the server's; any
+other name can still improve after the first probe, but only while no journal
+exists for the download.
+
+**Categories, queues, limits (#12).** The built-in category comes from the
+extension (`category_for`); the user's `category` overrides it. The main
+queue runs up to `max_active_downloads`, oldest first; each named queue runs
+one download at a time, oldest first (`AddParams::queue`; an empty name is
+the main queue; `Engine::set_queue` moves an existing download).
+Lowering `max_active_downloads` does not stop running downloads. One global
+token bucket (`speed_limit_bps`; 50 ms burst) is shared by every connection;
+unlimited costs one atomic load per chunk.
+
+**Events (#13, PROTOCOL.md §4).** `added`, `state`, `removed`, `settings`
+are sent at once. Progress is batched every 250 ms (only downloads whose
+numbers changed), `segments` at most once a second per download, and a final
+progress item when a download stops. Stats once a second. Each `subscribe()`
+has its own queue: non-lossy notifications are never dropped; lossy ones are
+coalesced into the newest pending one once a subscriber is 8 behind and
+dropped past 4096; order is never changed. Streams end on `shutdown`.
+
+**Settings (#14).** Persisted as JSON under `"settings"`; `settings.set`
+validates (absolute directory, 1–1000 active, 1–256 connections, theme
+`system|light|dark`; a speed limit of 0 means unlimited), stores, applies the
+speed limit and connection cap to running downloads, and broadcasts
+`event.settings`.
+
+**Security (#15).** When a download completes, the stored request loses its
+cookie, the POST body (`bodyBase64`: CSRF tokens, credentials), the referer
+and every header whose name contains `auth`, `token`, `api-key`, `apikey`,
+`session`, `secret` or `csrf` (`Authorization`, `Proxy-Authorization`,
+`X-Auth-Token`, …). `remove` deletes the whole record.
+
+**Service semantics (#16).** `list`: newest first, `states`/`category`
+filters, `offset`/`limit`. `get`: summary plus segments (live while running,
+the last known otherwise). Errors: `-32002` unknown id, `-32003` wrong state
+(pause/resume/refresh a completed download, pause a failed one, anything
+after `shutdown`), `-32602` bad params (empty or unsupported URL, unusable
+file name, relative directory, unknown checksum algorithm or wrong length).
+`add { start: false }` adds the download `paused`. `pause` waits until the
+download has flushed and committed. `pause`, `remove` and `refresh_url`
+decide and act on a download in one critical section with the queue, so
+the queue can never start a download being paused or removed, and a
+refreshed running download restarts on the new URL. When a stop races a
+`resume`, the latest request wins (read under the same lock when the run
+ends). A run that panics still ends: `failed` with code `internal`, its
+queue slot freed. `shutdown` stops every download,
+flushes, commits, saves records as `queued` (so the next start resumes them)
+and ends every subscription.
+
+### State machine
+
+`queued → probing → downloading ⇄ paused → verifying → completed`, plus
+`failed` and `needs_refresh`. `resume` moves `paused`, `failed` and
+`needs_refresh` to `queued`. On start, records left in `probing`,
+`downloading` or `verifying` (the process died) are re-queued.
+
+## Knobs (`Tuning`)
+
+| Knob | Default | Trade-off |
+|---|---|---|
+| `initial_connections` | 8 | start count without a host profile; also the most requests waiting for headers at once, and the most pieces in a first plan |
+| `fixed_connections` | none | pin every download's count, no learning (`AddParams::connections` pins one) |
+| `solo_ttfb_factor`, `solo_min_eta`, `solo_check`, `solo_silence` | 2, 100 ms, 5 ms, 20 ms | a fresh download's first connection runs alone while it would finish within max(2 × start's TTFB, 100 ms), checked every 5 ms; silence of max(20 ms, 4 × that TTFB) ends it |
+| `solo_window`, `limited_connections` | 16 KiB, 16 | first connection under 16 KiB per round trip → jump to 16 at once (a trial against its solo rate) |
+| `solo_collapse_gain`, `solo_collapse_slack` | 0.25, 0.07 | the first window at the starting count under 1.25× the first connection's solo rate → one connection, kept when it holds `keep_ratio` within at most 7 % noise |
+| `min_split` | 1 MiB | smaller = better tail balance, more requests |
+| `min_split_floor`, `min_split_time` | 256 KiB, 100 ms | on slow links pieces may shrink to what the median connection fetches in max(100 ms, 4 TTFB), not below 256 KiB |
+| `split_align` | 64 KiB | split points round down to this |
+| `tick` | 25 ms | sampling/hedge/tuner cadence (refills are immediate) |
+| `tune_window`, `tune_window_max` | 200 ms, 4 s | shortest and longest measurement window |
+| `tune_rtt_windows` | 16 | a window spans at least this many median TTFBs |
+| `tune_sample`, `tune_target_rse` | 100 ms, 0.02 | windows grow until their samples' RSE is this low |
+| `tune_warm_rtts`, `tune_warm_rise` | 4, 0.10 | warm-up: at least 4 TTFBs, longer while rising > 10 % per sample |
+| `tune_z`, `tune_rounds` | 2.0, 4 | confidence (standard errors) a step needs; most trial windows of an alternating comparison |
+| `tune_fast_window`, `tune_fast_sample`, `tune_fast_scaling` | 50 ms, 25 ms, 0.5 | fast first climb: short windows; a doubling delivering ≥ half of linear scaling (beyond 2 SE) is taken from one window (`INFINITY` turns it off) |
+| `tune_reprobe` | 30 s | re-probe one step, alternately up and down, after settling (doubling up to 5 min) |
+| `climb_gain` / `keep_ratio` | 0.04 / 0.97 | a doubling's gain must clearly reach 4 %; a halving must keep 97 % |
+| `ewma_tau` | 400 ms | speed smoothing |
+| `write_coalesce`, `write_coalesce_delay` | 256 KiB, 200 ms | bytes gathered per `write_at`, and the longest a gathered byte waits |
+| `stall_min`, `stall_factor` | 250 ms, 12 | stall = silent ≥ max(floor, factor × chunk gap) |
+| `first_byte_factor`, `first_byte_timeout` | 4, 5 s | stall before the first byte |
+| `hedge_gain`, `endgame_silence` | 2.0, 60 ms | endgame hedging |
+| `max_hedges_per_range`, `max_extra_hedges` | 3, 4 | hedge bounds |
+| `stream_idle_timeout` | 20 s | silence before a no-range stream starts over |
+| `checkpoint_interval`, `checkpoint_bytes` | 2 s, off | flush + commit cadence (time; an optional byte trigger) |
+| `checkpoint_share`, `checkpoint_interval_max` | 0.05, 30 s | a checkpoint that took `d` is next due no sooner than `d / 0.05`, at most 30 s |
+| `writeback_bytes`, `writeback_check` | 16 MiB, 10 ms | while transferring, flush (and commit) every 16 MiB of new data when no flush is in flight |
+| `writeback_interval`, `writeback_min_bytes` | 100 ms, 1 MiB | also flush (no commit) 100 ms after the last flush started if at least 1 MiB is new: a slow download's last sync stays small |
+| `record_interval` | 3 s | record saves while running |
+| `retry_base`, `retry_cap` | 50 ms, 30 s | backoff |
+| `error_budget` | 10 | failure rounds without progress before `failed` |
+| `tail_verify_len`, `tail_walkback` | 64 KiB, 16 | resume verification |
+| `max_remote_restarts` | 1 | restarts on a changed file before failing |
+| `progress_interval`, `segments_interval`, `stats_interval` | 250 ms, 1 s, 1 s | events |
+| `verify_chunk` | 1 MiB | checksum read size |
+
+## Testing
+
+Run everything through the build-slot wrapper (ADR 0004):
+
+```sh
+scripts/cargo-slot.sh cargo test -p whoosh-engine
+scripts/cargo-slot.sh cargo clippy -p whoosh-engine --all-targets -- -D warnings
+```
+
+All engine tests run on tokio's paused clock: throttles, stalls and
+time-to-first-byte are exact, assertions on elapsed time are deterministic,
+and a test that "takes" 20 s of virtual time finishes in well under a second.
+
+| Suite | What |
+|---|---|
+| unit (`src/`) | segment claims/splits/hedge takeover, names, categories, checksums, limiter, event bus, backoff; the tuner on ideal models (exact paths) and on a link model with slow start, ±30 % noise and drift, 30 seeds each: a per-connection link climbs and never drops below the start, a saturated link stays ≥ 8, +8 % per doubling climbs (≥ 2/3 of seeds to 16, never below 4), a shared one spends ≤ 10 % of the time above the start and comes down over 10 min, a clean one settles on 1–2, a re-probe follows a link that opens up, windows scale with TTFB, and the old single-200 ms-window settings do wander; the solo-rate rule: eight that deliver what the first connection did alone drop to one (also at 98 %), a flattering solo look is corrected (back to eight, then 16 on a per-connection limit; at 85 % for one, not kept), connections that beat the solo rate stay, a solo look five times what eight deliver (a burst) is no yardstick: a 10 MiB download keeps its eight to the end, a long one comes down in careful windows, and only a fresh download's first window is compared with it |
+| `tests/scenarios.rs` (31) | labserver-like faults with `FaultSource`: per-connection and global throttle, connection caps (503 + Retry-After, resets), random resets, stalls (incl. one connection only), lying ranges, no ranges, unknown size, a file that changes once / keeps changing / changes under in-flight responses / changes in the endgame (the connections on the old version finish it, the split-off pieces handed back: exactly the old version, nothing served twice; fails with the old-version path disabled), slow first byte, expiring links + `refreshUrl` (same and different file), pause/resume from the journal, throttled probe, dead server, fatal errors, empty files (with and without ranges), a body longer than the probe, hedges that hang before their headers, a reset after real progress taken up at once (one after 64 KiB waits out the backoff), and a noisy slow-starting link (300 ms TTFB, slow start, ±30 % jitter) both per-connection-limited (climbs to ≥ 12) and saturated (stays ≥ 8) |
+| `tests/coalesce.rs` (5) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), a source that goes silent mid-buffer has its gathered bytes written by the timer, gathered bytes survive a hedge takeover and a pause |
+| `tests/service.rs` (20) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
+| `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
+| `tests/contract.rs` (5) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic) |
+| `tests/finish.rs` (14) | in both durability modes (a power cut for `PowerSafe`, a killed process for `ProcessSafe`), the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact (after the rename without downloading again; before it, fetching what the intent — committed alongside the flush — does not claim); also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry; `ProcessSafe` skips that sync. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) ; the early intent's name taken by another file of the same length while the transfer runs (`AlreadyExists`, an intent for `name (1)` committed before that move, killed right after it: adopted, the other file untouched), an intent withdrawn by a later checkpoint and a name taken before the transfer started (part file gone, a file of the same length in place: never adopted, downloaded again; the first fails if checkpoints keep the intent) |
+| `tests/start.rs` (18) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models: careful 0.75 s / 0.50 s at 8, the fast climb 0.50 s / 0.38 s, the jump from the first connection's solo rate 0.40 s / 0.27 s (16 at once); a shared 20 MB/s limit does not jump; a link the first connection fills alone (64 MiB/s shared) drops back to one connection after the first window, never tries 16, and records 1 as the host's best count (peak 16 without the rule); a server capped at 2 refuses one wave of the jump, not all of it |
+| `tests/checkpoints.rs` (4) | a 400 ms flush spaces checkpoints 8 s apart (4–6 commits in 32 s instead of 14–18); a fresh download without a checksum commits only its finish intent, with a checksum one checkpoint before verifying; a fast 64 MiB transfer is flushed (and committed) every 16 MiB as it goes, a single stream flushed but journalled only at its finish |
+| `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off, `start` in one request or two): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
+| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Half the cases are `PowerSafe` and every kill a power cut (every write not flushed is lost); half `ProcessSafe` and every kill a killed process (`CrashFs` keeps what `write_out` handed to the operating system, loses the rest); a power cut is not modelled for `ProcessSafe`, which gives it up. After every kill the journal's claims are checked directly against what survived (so tail verification cannot hide a violation: skipping `write_out` before commits, or the flush before checkpoints, fails within ~80 cases). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. A power cut also removes a part file whose directory entry was never synced (`CrashFs` tracks it: a flush syncs it). In a quarter of the cases another program puts a file of the download's length under its name at a random moment of a random round: it must stay untouched, and the record must name the download's own file (`name (1)`). `WHOOSH_CRASH_CASES=n` (default 300), `WHOOSH_CRASH_SEED=s` |
+
+Beyond the defaults, the long batches were run on 2026-11-10: the crash
+model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999,
+30000–31999, 40000–40999, 50000–50999, 60000–62999 and 70000–70999 (17,300
+cases, 1–5 kills each, ≈ 52,000 kills; 0 corrupt files; since 20000 also
+exactly one finished file each; since 60000 across every mode — ranged, no
+ranges, unknown size, empty — with crash-consistent finishing) and the
+property test over 5,100 schedules, all passing; after the speed round
+(half the cases starting in one request) seeds 80000–82999 and 90000–92999
+(6,000 cases) and 4,000 more schedules, all passing; after round 3 seeds
+100000–102999 and 110000–112999 (6,000 cases) and 4,000 schedules, all
+passing; with the durability modes (half the cases `ProcessSafe` under
+killed-process semantics, every kill followed by the direct check of the
+journal's claims) seeds 120000–122999 and 130000–132999 (6,000 cases) and
+4,000 schedules, all passing. Run
+them with the built test binaries, e.g.
+`WHOOSH_CRASH_SEED=300 WHOOSH_CRASH_CASES=3000 target/debug/deps/crash-*`.
+The real gate (1,000 hard kills of the daemon process with `whoosh-store` on
+disk) comes at integration.
+
+`FaultSource` (tests/common) serves in-memory versions of a file with
+per-connection and global throttles, connection caps (Throttled with
+`Retry-After`, or resets), lying/no ranges, unknown size, no validators,
+version changes after N bytes served, link expiry after N bytes, and a
+per-request script (TTFB, rate, stall, reset, failure).
+
+## Benchmarks
+
+### Gate run 3's failing rows (2026-11-13, 1bcd317)
+
+Gate run 3 (dev 8550bf1) failed global-throttle and five 1 MiB
+bangla-filename rows against wget on time to durability.
+
+**global-throttle.** The first connection's look alone read 100–150 MB/s
+(labserver's bucket lets 50 ms of its 20 MB/s through at once), the eight
+then delivered 20 MB/s, and *Back to one* cancelled seven of them mid-range.
+labserver had already reserved each one's next 64 KiB chunk, so the shared
+20 MB/s lost 25–35 ms (server-side transfer 502–510 ms against wget's 475
+for the same bytes sent), and one in six runs judged one connection short
+from a single window, went back to eight and on to 16 (the gate's peak 16).
+Now a first window under half the solo rate drops the solo rate: the eight
+finish their ranges (8 requests, server-side 478–479 ms). Interleaved, 15
+runs: 0.522 → 0.500 s, wget 0.498 (p = 0.25); 8 runs: 0.526 → 0.501
+(p = 0.041). Unchanged within noise (8 runs, all p > 0.4): per-conn-throttle
+0.333 / 0.333, conn-cap-2 1.071 → 1.057, conn-cap-reset 1.082 → 1.019,
+rate-limited 0.515 → 0.513, flaky 0.168 → 0.163, stall 0.162 → 0.154,
+slow-drip 0.298 → 0.296, high-latency 0.557 → 0.552, clean 10 MiB 0.036 /
+0.037, clean 1 GiB 1.207 → 1.130 (load ~4.6).
+
+**1 MiB.** In the gate, Whoosh's last byte left labserver as early as wget's
+(6.6–7.5 ms against 4.6–8.0) and its first byte was no later; the loss is
+the 12.5–15 ms from the last byte to exit (wget: 1.6–4). That is the
+power-safe chain: the part file's directory entry, the finish intent
+(which must follow it), the data `fdatasync`, then the move's directory
+sync, each an ext4 journal commit. Two changes in `whoosh-store` shorten it:
+the journal file is created and its entry synced when the fresh download's
+`load` misses (the intent is then one `fdatasync`), and the data sync no
+longer queues behind the entry's sync. 30 interleaved runs, plain.bin, to
+durability: base 26.4 ms, tuner-only build 26.0, new 25.6 (tighter: IQR
+24.0–26.4 against 23.5–29.1), wget 19.4 (this harness adds ~6 ms to every
+client).
+
+The floor, measured on the bare filesystem (Python, 50 interleaved runs,
+from the first data write to durable including the harness's own sync):
+wget's pattern (write, exit, harness `fsync` of file and directory) 5.1 ms;
+the shortest power-safe chain with no intent (`fdatasync`, rename,
+directory sync, then the harness's `fsync`s, which still cost two device
+cache flushes on an already durable file) 7.1 ms; with the intent as
+committed now about 9 ms. So the intent costs 2–3 ms and power safety by
+rename about 2 ms more than wget's unsynced write plus the harness's sync.
+Closing the 1 MiB rows needs a finish without a separate intent commit
+(for example the part file's name kept as a hard link until the completed
+record is durable, recognised by identity on restart): a contract change,
+not made here.
+
+`whoosh-bench run --scenarios bangla-filename,global-throttle,per-conn-throttle,conn-cap-reset,rate-limited --clients whoosh,wget,curl,mdm,gopeed,aria2-next-tuned --wait-for-idle`
+on 1bcd317 (7 runs, labserver on loopback, a machine shared with other
+work), median time to durability:
+
+| Row | Whoosh | best rival | gate rows 1, 3, 4, 5 |
+|---|---:|---:|---|
+| global-throttle | 498.6 ms | curl 513.4, wget 539.3 | PASS (Whoosh fastest) |
+| per-conn-throttle | 331.5 ms | gopeed 383.3 | PASS |
+| rate-limited | 509.5 ms | mdm 516.7 | PASS |
+| conn-cap-reset | 1067.9 ms | mdm 1043.7 (p = 0.456) | PASS |
+| bangla.bin | 22.3 ms | wget 19.7 (p = 0.128) | PASS |
+| plain.bin | 22.3 ms | wget 19.6 (p = 0.053) | PASS |
+| latin1.bin | 22.9 ms | wget 19.7 (p = 0.128) | PASS |
+| bangla-star-only.bin | 23.4 ms | wget 19.4 (p = 0.002) | FAIL |
+| raw-utf8.bin | 22.4 ms | wget 19.1 (p < 0.001) | FAIL |
+| traversal.bin | 23.0 ms | wget 19.1 (p < 0.001) | FAIL |
+
+Two of the seven global-throttle runs had 16 connections and 18 requests
+(522 ms against 494–499): consecutive runs share labserver's bucket, a run
+that starts within 50 ms of the last one gets no burst, the first
+connection then reads 20 MB/s, which at loopback's 0.5 ms TTFB is under 16
+KiB per round trip, and the per-connection jump to 16 fires (judged a
+shared limit right after, with nothing cut). wget's runs split the same
+way (495–498 ms with the burst, 539–545 without); Whoosh's no-burst runs
+took 521–523.
+
+Verified on 1bcd317: engine, store and daemon tests; clippy `-D warnings`
+and fmt; crash model 6,000 cases (seeds 310000–315999) and 4,000
+proptests; `whoosh-bench hardkill --kills 250` (seed 20261114): 597
+downloads, 0 corrupt, 0 leftovers, 0 unfinished.
+
+### End-of-download sync chain (2026-11-13, gate run 2's failing rows)
+
+Gate run 2 failed 1 MiB and 10 MiB rows against wget on time to
+durability. A trace of a 1 MiB download (base a213c53) showed, between the
+last byte and `completed`: the part file's `fdatasync` and its first-flush
+directory sync, beside the intent's commit creating the journal file
+(`fdatasync`, journal directory, and in a fresh daemon the data directory),
+then the move's `fdatasync` and directory sync, about 12 ms. Changes (1ed8264):
+the early checkpoint carrying the intent, the last bytes' flush overlapping
+it, the 100 ms writeback, and in `whoosh-store` a flush that skips the
+`fdatasync` when nothing was written and journal directories synced in the
+background at open. After the last byte, 1 MiB now waits for the part's data
+sync and the new journal file's sync chain side by side, then the move
+(7.5–12 ms on this machine, mostly the journal chain).
+
+Time to durability, median ms (interleaved harness, resident daemon, fresh
+data directory per run, 20 runs; whoosh-bench 10 runs per side for the
+`vs wget` columns, which ran back to back on a machine with other load):
+
+| Row | base | new | wget (whoosh-bench) | new vs wget, p |
+|---|---:|---:|---:|---:|
+| clean 1 MiB | 28 | 25 | 19.4 (new 23.2) | 0.0008 |
+| bangla.bin 1 MiB | 25.8 | 23.3 | 19.6 | 0.026 |
+| plain.bin 1 MiB | 25.8 | 25.4 | 19.4 | 0.017 |
+| clean 10 MiB | 46 | 35 | 43.2 (new 33.7) | 0.014 (new faster) |
+| referer-required 10 MiB | 42.4 | 32.4 | 43.6 | 0.24 (new faster) |
+| per-conn-throttle 10 MiB | 405 | 332 | gopeed 380 | — |
+| conn-cap-reset 10 MiB | 1024 | 1012 | mdm 1037 | — |
+
+- The early intent alone (same build without it): 1 MiB 28 → 25 ms
+  (p = 0.001), 10 MiB 40 → 36 ms (p = 0.023), 25 interleaved runs.
+- per-conn-throttle: base runs are multimodal (0.34 / 0.37 / 0.40 s; the
+  gate's own Whoosh runs spread 0.339–0.444 s), the new build's sit at
+  0.33 s. With debug logging the last byte arrives at the same ~312 ms in
+  both, and the part that reproduces is the end chain: 14–18 ms → 6–10 ms.
+  The cause of base's slower modes is not pinned down.
+- conn-cap-reset still shows the occasional ~2 s run in both builds (base
+  3 of 10, new 1 of 10; the gate had 2 of 7): a reset-handling issue, not
+  the sync chain.
+- Other engine scenarios, 8 interleaved runs, base → new: slow-drip 307 →
+  295 ms, flaky 163 → 160, stall 160 → 149, rate-limited 559 → 506,
+  global-throttle 573 → 523, no-range 100 MiB 140 → 122; high-latency 595 →
+  606 (p = 0.083) in one round and 551 → 536 in the next (10 runs).
+- 1 MiB stays behind wget plus the harness's sync. That gap is two device
+  round trips for a new journal file per download (its data and its
+  directory entry) and the daemon's request path (2.4–4 ms from `add` to the
+  last byte). A journal that does not create a file per download would
+  close most of it.
+- Verified on 5ee5a98: engine and store tests, crash model 6,000 cases
+  (seeds 200000–205999, with the foreign same-length file and lost part
+  file entries) and 4,000 proptests, daemon tests, `whoosh-bench hardkill
+  --kills 250` (seed 20261113): 468 downloads, 0 corrupt, 0 leftovers,
+  0 unfinished.
+
+### Phase 1 gate round (2026-11-12, resident daemon, labserver on loopback)
+
+The gate (`docs/bench/data/2026-11-12-pop-os-phase1-gate`) left clean
+1 GiB (1.39 s against wget's 0.912 s to durability; 17 connections, 2.60
+CPU-s/GiB), changing-file (0.265 s against 0.191 s) and the CPU of short
+files. Same harness as the rounds below (fresh daemon state per run, the
+daemon ready before the clock, `whoosh --no-start get` timed), now with time
+**to durability** (the output file and its directory `fsync`ed inside the
+timing, for every client) and CPU (the CLI's rusage plus the daemon's
+utime + stime until it goes quiet, as the gate counts it). *Base* is
+`phase1/engine` a4b86bb, *new* this branch (9dbf657); clients interleaved
+in random order, 9 runs each, labserver reset before every run. The
+machine was shared with other sessions' benchmarks: the 1 GiB runs pause
+4 s between runs (without the pause the disk fell behind after two runs
+and every client took 2.5–3.5 s), and the engine scenarios ran on tmpfs
+(the disk's IO pressure reached 40 %). Median seconds to durability, p of
+a two-sided Mann-Whitney U test, CPU-s/GiB:
+
+| scenario | file | base | new | p | wget | base CPU | new CPU |
+|---|---|---:|---:|---:|---:|---:|---:|
+| clean (disk) | 1g | 1.244 | **0.856** | 0.008 | 0.897 | 2.32 | **1.06** |
+| changing-file (disk) | 100m | 0.221 | **0.170** | 0.16 | 0.203 | 2.41 | 1.39 |
+| redirect-chain (disk) | 100m | 0.166 | 0.178 | 0.06 | 0.192 | 1.29 | 1.60 |
+| per-conn-throttle | 10m | 0.322 | 0.321 | 0.48 | 5.202 | 6.82 | 6.81 |
+| slow-drip | 10m | 0.291 | 0.296 | 0.66 | 4.094 | 7.83 | 7.84 |
+| flaky | 100m | 0.149 | 0.161 | 0.48 | 10.188 | 1.80 | 1.90 |
+| stall | 100m | 0.165 | 0.159 | 0.38 | 8.091 | 1.81 | 1.90 |
+| high-latency | 10m | 0.524 | 0.524 | 0.48 | 0.520 | 2.64 | 2.60 |
+| rate-limited | 10m | 0.576 | 0.494 | 1.00 | 2.056 | 6.72 | 7.84 |
+| global-throttle | 10m | 0.512 | 0.512 | 1.00 | 0.482 | 7.80 | 6.84 |
+| clean | 10m | 0.028 | 0.034 | 0.19 | 0.017 | 2.63 | 3.75 |
+| cookie-required | 10m | 0.035 | 0.034 | 0.72 | — | 3.76 | 3.74 |
+
+- **clean 1 GiB.** New against wget: p = 1.0 (not slower; a second set of
+  14 runs each: 0.906 against 0.866 s with the 50 ms tick, p = 0.008,
+  which the 25 ms tick closed). CPU 1.06 CPU-s/GiB, under aria2c-tuned's
+  1.66 in the gate. What it does is in *Back to one* above; the first
+  window at eight now ends 110–240 ms after the split.
+- **changing-file.** Base restarted from zero in 5 of 9 runs; new kept the
+  old version in 3 and restarted once (an old-version connection gone
+  before the change reached the steal). New is faster than wget here
+  (p = 0.04): the runs that never split are one connection anyway.
+- **Rows that moved by noise:** redirect-chain (base / 50 ms tick / 25 ms
+  tick in a separate 12-run set: 0.175 / 0.166 / 0.163 s, 1.42 / 1.49 /
+  1.49 CPU-s/GiB), rate-limited (6.73 / 6.84 / 6.32 CPU-s/GiB), clean 10m
+  (the daemon's CPU is counted in 10 ms ticks: one tick is ~1 CPU-s/GiB on
+  a 10 MiB file; cookie-required, the same download with a header, did not
+  move).
+- **Short files (rule 5).** A 1 MiB download costs the daemon ~4 ms (of
+  which ~1.5 ms is the data) and the CLI ~2–3 ms (process start ~1 ms);
+  the rest scales with bytes. One connection, 100 MiB to disk, per thread
+  (schedstat): the runtime's worker 71 ms, the store's writer 64 ms, its
+  syncer 13 ms — ~1.5 CPU-s/GiB against wget's ~0.8, nearly all in
+  `whoosh-net`'s read path and `whoosh-store`'s write path. The gate's 10 MiB
+  rows count the daemon in 10 ms ticks (Whoosh on cookie-required: 36, 46,
+  46, 46, 47, 56, 56 ms); in a quiet harness run the same download counted
+  12 ms. The engine's share here is small: back-to-back record saves of one
+  download now ride on one queued save (one or two fewer SQLite writes per
+  download, a fraction of a millisecond). Not measurable at 9 runs.
+- **Worker threads.** `DEFAULT_WORKER_THREADS = 1` (crates/daemon) does not
+  cap this: on 100 MiB (tmpfs, 10 runs) one connection took 0.129 s with
+  one worker and 0.129 s with two, two connections 0.115 / 0.130 s, at
+  more CPU with two workers; one connection cannot be read on two threads,
+  and one connection is what a fast link now gets. Left at 1.
+- **Write gathering.** Writing chunks of 64 KiB and more directly (no copy
+  into the 256 KiB gather buffer; one connection delivers 64 KiB chunks)
+  was not faster (0.119 s gathered, 0.137 s direct, 0.134 s from 16 KiB;
+  12 runs, noisy): the per-write cost of the store's queue offsets the
+  copy. Kept at 256 KiB.
+- **Write gathering, again, with the store's inline writes** (5b4d08d: the
+  `pwrite` on the calling thread) and `whoosh-net`'s 256 KiB read buffer
+  (7508665), merged as 2a0e763. Chunks now average 100 KiB on clean 1 GiB,
+  330–470 KiB on flaky/stall/redirect-chain, 16–33 KiB on the paced
+  scenarios. Gather (256 KiB) against every chunk straight to `write_at`
+  (`write_coalesce = 0`) and against chunks of at least 48 KiB straight,
+  smaller ones gathered (64 KiB in one round: loopback reads come in just
+  under 64 KiB, so that one gathered most of them anyway), to durability,
+  interleaved, four rounds of 12–18 runs. On an idle machine (30 runs per
+  row, pooled): clean 1 GiB 0.840 / 0.829 / 0.836 s at 0.79 / 0.80 / 0.78
+  CPU-s/GiB (p ≥ 0.30), cookie-required, high-latency, no-range,
+  redirect-chain, flaky, stall, slow-drip and global-throttle within
+  noise; direct costs CPU on paced servers (per-conn-throttle 6.82 → 7.92,
+  p = 0.001), the hybrid on rate-limited (7.11 → 7.89, p = 0.003: its
+  chunks mix sizes, so the gather is flushed early and writes multiply).
+  Only the two rounds with other work on the machine showed direct ahead
+  on clean 1 GiB (CPU 1.11 → 0.89, p = 0.02 over 24 runs). Not kept: the
+  gather stays at 256 KiB.
+- **Verified on 9dbf657:** `whoosh-bench hardkill --kills 100` (seed
+  20261113): 234 downloads, 0 corrupt, 0 leftovers, 0 unfinished (also on
+  7eaf9ca: 165 downloads, 0 corrupt); the crash model, 6,000 cases (seeds
+  180000–182999, 190000–192999), and 4,000 proptest schedules.
+
+### Durability modes (2026-11-11, resident daemon, labserver on loopback)
+
+The gate now times every client to durability (the bench syncs other
+clients' output). Same harness as below, this engine (1aadffb) with
+`whoosh-store`'s `write_out` / `finish_unsynced` (0630a52, overlaid for the
+measurement only), 6 runs per cell (engine scenarios 5), load 2–3 (this
+machine ran slower than in round 3's table). `+sync`: the file and its
+directory `fsync`ed after the client exits, inside the timing. Median s:
+
+| scenario | file | Whoosh PowerSafe | wget+sync | curl+sync | Whoosh ProcessSafe | wget | curl |
+|---|---|---:|---:|---:|---:|---:|---:|
+| clean | 1m | 0.024 | **0.008** | 0.015 | 0.012 | **0.004** | 0.009 |
+| clean | 10m | 0.047 | **0.021** | 0.026 | 0.029 | **0.010** | 0.016 |
+| high-latency | 10m | 0.566 | **0.543** | 0.576 | 0.550 | **0.524** | 0.534 |
+| no-range | 100m | 0.195 | **0.154** | 0.173 | 0.117 | **0.091** | 0.092 |
+| no-length | 100m | 0.192 | **0.156** | 0.167 | 0.155 | **0.086** | 0.103 |
+| lying-ranges | 100m | 0.162 | **0.145** | 0.157 | 0.119 | **0.083** | 0.091 |
+| no-validators | 100m | 0.180 | **0.145** | 0.156 | 0.146 | **0.084** | 0.096 |
+| changing-file | 100m | 0.284 | 0.176 | **0.156** | 0.227 | **0.110** | 0.124 |
+| redirect-chain | 100m | 0.185 | **0.172** | fails | 0.145 | **0.095** | fails |
+
+Engine scenarios, Whoosh PowerSafe / ProcessSafe: per-conn-throttle 0.373 /
+0.340, slow-drip 0.336 / 0.291, flaky 0.184 / 0.142, stall 0.175 / 0.161,
+global-throttle 0.542 / 0.519, rate-limited 0.600 / 0.533.
+
+A ProcessSafe 100 MiB download, traced, syncs nothing of the data; what is
+left on its finish path is the journal's own sync of the finish intent
+(2.6 ms) and two `fsync`s of the journal directory for the new journal file
+(1.4 ms each) — now the slowest step beside `write_out`, so a
+`Journal::commit` that only hands the entry to the operating system under
+`ProcessSafe` would remove ~5 ms (see *Contract proposals*). The rest of the
+gap to wget on single streams is the transfer itself (one connection here
+~0.8 GB/s against wget's ~1.2 GB/s: HTTP client, the gather copy, the
+store's writer thread), and on small files the CLI, the local API and the
+state store.
+
+### Round 3 (2026-11-11, resident daemon, labserver on loopback)
+
+The amended Phase 1 gate measures a resident daemon. Here: per run a fresh
+daemon state (no learned host profile), the daemon started and ready
+*before* the clock, which covers `whoosh --no-start get` only; wget and curl
+plain; builds and clients interleaved in random order every run, labserver
+reset before each; 6 runs per cell (1 GiB: 4), load 1–3. *Base* is the
+merged `phase1/engine` (5462a10: last round's engine, `whoosh-net`'s
+one-request `start`, the store's syncer thread); *now* is this branch.
+Median seconds:
+
+| scenario | file | base | now | wget | curl |
+|---|---|---:|---:|---:|---:|
+| per-conn-throttle | 10m | 0.454 | **0.329** | 5.198 | 5.200 |
+| slow-drip | 10m | 0.431 | **0.293** | 3.941 | 3.937 |
+| flaky | 100m | 0.186 | **0.155** | 10.154 | fails |
+| stall | 100m | 0.181 | **0.157** | 8.069 | 8.082 |
+| high-latency | 10m | 0.529 | 0.528 | **0.512** | 0.515 |
+| rate-limited | 10m | **0.501** | 0.514 | 2.051 | 2.054 |
+| global-throttle | 10m | 0.504 | 0.498 | 0.498 | **0.494** |
+| conn-cap-2 | 10m | **0.999** | 1.017 | 2.051 | 2.054 |
+| conn-cap-reset | 10m | **0.999** | 1.012 | 2.051 | 2.055 |
+| no-range | 100m | 0.150 | 0.142 | **0.078** | 0.085 |
+| no-length | 100m | 0.163 | 0.135 | **0.071** | 0.084 |
+| lying-ranges | 100m | 0.150 | 0.139 | **0.080** | 0.080 |
+| no-validators | 100m | 0.153 | 0.134 | **0.078** | 0.082 |
+| changing-file | 100m | 0.162 | 0.134 | **0.072** | 0.081 |
+| redirect-chain | 100m | 0.158 | 0.130 | **0.080** | fails |
+| clean | 1m | 0.014 | 0.012 | **0.003** | 0.006 |
+| clean | 10m | 0.028 | 0.026 | **0.009** | 0.013 |
+| clean | 1g | 2.576 | 2.061 | **1.566** | 2.207 |
+
+Gopeed (16 connections from the start) took 0.368 s / 0.314 s on
+per-conn-throttle / slow-drip in the last full run (cold, under load),
+aria2-next-tuned 0.431 s on flaky, surge 0.364 s on stall, MDM 0.538 s on
+rate-limited.
+
+- **per-conn-throttle, slow-drip:** the jump to 16 from the first
+  connection's solo rate (2 and 3.2 KB per round trip).
+- **flaky, stall:** last round's regressions are gone: a broken first
+  connection is replaced by one at once, a reset after progress is taken up
+  without the backoff, and the faster finish path helps.
+- **global-throttle:** a tie. The first version of the jump used a 64 KiB
+  bar and sent this one to 16 too: 0.519–0.520 s, where pinned to 1 or 8
+  connections Whoosh tied wget (0.493 / 0.496 vs 0.494) and pinned to 16 it
+  lost the same 20 ms; at 16 KiB (TCP's initial window) it does not jump.
+- **rate-limited, conn-caps:** +1–3 % against base, within run-to-run noise
+  of these 6-run medians; the jump opens in a wave of 8, so a capped server
+  refuses one wave.
+- **single stream, small files, high-latency:** what is left is fixed cost,
+  mostly syncs. A 100 MiB single stream (traced): ~4 ms before the first
+  byte (CLI 1.2 ms), the transfer, then the data must be on disk before the
+  rename — 40–60 ms in one `fdatasync` before, ~7 ms now that the transfer
+  is flushed as it goes (but the transfer itself runs slower beside the
+  disk writes: 0.13 s against 0.15 s in all). wget and curl never sync. Only
+  a durability-policy change (sync before the rename only for power loss,
+  not needed against a killed process) closes the rest; see *Contract
+  proposals*.
+
+How the knobs were chosen (interleaved, same harness): writeback every
+8 / 16 / 32 MiB / never on 100 MiB single streams and 1 GiB: 0.284 / 0.284 /
+0.301 / 0.316 s and 2.72 / 2.66 / 2.71 / 2.86 s (busy machine), 4 MiB no
+better than 16 on 10 MiB files; `solo_window` 64 → 16 KiB from the
+global-throttle numbers above.
+
+### Speed round (2026-11-10, labserver on loopback)
+
+Measured on the Phase 1 bench machine (i5-10210U, 8 threads, NVMe,
+`dirty_bytes` 256 MiB / `dirty_background_bytes` 128 MiB, so the page cache
+does not absorb 1 GiB; load 2–4 from other sessions) with
+`whoosh-bench run --clients whoosh --scenarios … --runs 4 --force-runs`
+against daemon + CLI release builds of this branch before (2d8270b) and
+after, alternating builds round by round. `whoosh-net` on this branch still
+uses the trait's default `start` (probe, then open: two requests), so the
+round trip `start` saves on `high-latency` is not in these numbers yet (the
+paused-clock model shows it: 1.04 s → 0.54 s).
+
+Median time (start of `whoosh get` to the file complete, daemon start-up
+included) over all rounds: before 32 runs per scenario, after 8 (flaky and
+stall: 56 and 32, from three extra rounds of just those two); wget and curl
+from one interleaved round of 4 for reference. Medians of 8 runs move by up
+to ±10 % from round to round on this machine (`no-validators` measured
+−14 % to −17 % in the two previous rounds of the same rules).
+
+| scenario | file | before s | after s | change | peak conns | requests | wget s | curl s |
+|---|---|---:|---:|---:|---|---|---:|---:|
+| per-conn-throttle | 10m.bin | 0.684 | 0.491 | -28 % | 8 → 16 | 9 → 17 | 5.197 | 5.201 |
+| slow-drip | 10m.bin | 0.561 | 0.459 | -18 % | 8 → 16 | 9 → 17 | 3.918 | 3.934 |
+| global-throttle | 10m.bin | 0.526 | 0.527 | +0 % | 8 → 15 | 9 → 11 | 0.479 | 0.482 |
+| rate-limited | 10m.bin | 0.585 | 0.527 | -10 % | 8 → 8 | 13 → 13 | 2.051 | 2.055 |
+| conn-cap-2 | 10m.bin | 1.098 | 1.102 | +0 % | 8 → 8 | 15 → 15 | 2.051 | 2.054 |
+| conn-cap-reset | 10m.bin | 1.090 | 1.073 | -2 % | 8 → 8 | 15 → 15 | 2.051 | 2.054 |
+| high-latency | 10m.bin | 1.091 | 1.104 | +1 % | 8 → 1 | 9 → 2 | 0.514 | 0.516 |
+| clean | 1g.bin | 1.799 | 1.452 | -19 % | 17 → 17 | 23 → 27 | 1.003 | 1.062 |
+| flaky | 100m.bin | 0.221 | 0.263 | +19 % | 8 → 9 | 17 → 19 | 10.162 | — |
+| stall | 100m.bin | 0.202 | 0.220 | +9 % | 9 → 8 | 16 → 15 | 8.080 | 8.081 |
+| no-validators | 100m.bin | 0.201 | 0.195 | -3 % | 9 → 8 | 15.5 → 2 | 0.074 | 0.079 |
+| no-length | 100m.bin | 0.220 | 0.196 | -11 % | 10 → 9 | 12 → 2 | 0.079 | 0.083 |
+| no-range | 100m.bin | 0.184 | 0.174 | -5 % | 1 → 1 | 2 → 2 | 0.078 | 0.101 |
+| lying-ranges | 100m.bin | 0.183 | 0.181 | -1 % | 1 → 1 | 2 → 2 | 0.070 | 0.082 |
+| changing-file | 100m.bin | 0.324 | 0.191 | -41 % | 9 → 1 | 28 → 2 | 0.077 | 0.084 |
+| expiring-url | 10m.bin | 0.059 | 0.054 | -9 % | 8 → 1 | 9 → 2 | 0.010 | 0.014 |
+| bangla-filename | bangla-star-only.bin | 0.039 | 0.041 | +6 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | bangla.bin | 0.040 | 0.035 | -12 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | latin1.bin | 0.038 | 0.039 | +1 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | plain.bin | 0.038 | 0.037 | -3 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | raw-utf8.bin | 0.039 | 0.040 | +3 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+| bangla-filename | traversal.bin | 0.040 | 0.037 | -7 % | 1 → 1 | 2 → 2 | 0.003 | 0.006 |
+
+- **per-conn-throttle, slow-drip:** the fast first climb (8 → 16 within
+  ~200 ms) and finer pieces on slow links. Gopeed (16 from the start) was
+  0.38 s / 0.30 s in the Phase 1 run.
+- **100 MiB without faults, changing-file, expiring-url, small files:** one
+  request (no probe) and, below 100 ms of work, one connection; a fresh
+  download commits its journal once.
+- **clean 1 GiB:** time-based checkpoints (see below). Still behind wget,
+  which neither syncs nor needs more than one connection here.
+- **high-latency:** unchanged until `whoosh-net`'s one-request `start` is
+  merged; the engine side is in (one connection, two requests instead of
+  nine).
+- **global-throttle:** the fast climb now tries 16 for a moment before
+  coming back down (peak 8 → 15); time unchanged.
+- **flaky (+19 %), stall (+9 %):** a 100 MiB file now streams on one
+  connection, so each injected reset (labserver: ~1 per 50 MiB) costs a new
+  request for the rest. The fixes above (a replacement without backoff, a
+  silent connection released at 20 ms, and any reset after ≥ 256 KiB of
+  progress taken up at once) brought them from +34 % / +42 % in the first
+  measurement to this; with a warm daemon the medians are equal (flaky
+  0.185 s both, stall 0.182 vs 0.174 s over 12 runs).
+
+What the numbers came from:
+
+- **Where a small file's time goes.** `strace` of the daemon during a 1 MiB
+  download (23 ms from the CLI's view, daemon already running): 19 ms were
+  `fsync`/`fdatasync` — the data (5.4 ms), the journal (empty checkpoint,
+  final checkpoint, finish intent: 0.6–1.4 ms each plus 1.3 ms for its
+  directory), the state database (record on add and on completion, then the
+  WAL checkpoint of `StateStore::sync`: 1.4–3.1 ms), the part file's and the
+  final file's directories. The engine now skips the two journal commits it
+  does not need. More connections were not the cost: pinned to one
+  connection, `expiring-url` took 0.065 s and `no-validators` 0.213 s, the
+  same as with eight; the rest is daemon start-up (≈ 25 ms) and the store's
+  syncs.
+- **The solo rule.** `solo_min_eta` 0 / 100 / 300 ms (time-based
+  checkpoints, 2 × 4 runs): `no-validators` 100 MiB 0.212–0.225 s split at
+  once, 0.181–0.186 s alone at 100 and 300 ms; `expiring-url`,
+  `per-conn-throttle` and `clean` unchanged. Hence 100 ms.
+- **Flush cost on a disk-bound machine.** `strace` of a 1 GiB `clean`
+  download (2.03 s): nine data `fdatasync`s of 58, 62, 62, 62, 84, 91, 118,
+  194 and 254 ms — about 1 s during which the store's writer thread could not
+  write. `checkpoint_bytes` 64 MiB / 256 MiB / off (2 × 4 runs): 1.77 /
+  1.56–1.64 / 1.39–1.43 s.
+- **Fewer write regions.** Pinned counts, time-based checkpoints, 2 × 3
+  runs, wget alongside: 1 connection 1.02–1.06 s (wget 0.93–0.99), 2:
+  1.40–1.73, 4: 1.49–1.65, 8: 1.52–1.59; CPU 1.0 s at one connection, 2.0–2.7
+  s at more. A daemon log showed one connection alone at 0.7 GB/s and eight
+  together at 0.8–0.9 GB/s, the seven new ones waiting 50–200 ms for their
+  first byte (labserver generating far content; curl sees 48 ms there while
+  a transfer runs, 0.4 ms idle). In-process (`examples/throughput.rs`,
+  writer thread into the page cache) 1 and 8 connections cost the same
+  (1.45 GiB/s; 1.06 vs 1.27 CPU s per GB), so the extra CPU is in the
+  network and storage layers. See *Known limitations*.
+
+### Engine data path
+
+`examples/throughput.rs` pushes data through the engine in-process from a
+zero-copy pattern source, with fixed connection counts, and reports
+throughput, CPU seconds per GB (median over runs) and `write_at` calls per
+GiB:
+
+```sh
+scripts/cargo-slot.sh cargo build --release -p whoosh-engine --example throughput
+# GiB, chunk KiB, runs, storage (null|thread), MB/s per connection (0 = unpaced), connections
+target/release/examples/throughput 0.25 8 5 thread 4 16
+WHOOSH_COALESCE=0 target/release/examples/throughput 0.25 8 5 thread 4 16   # one write per chunk
+```
+
+`null` storage discards writes inline (the engine's own cost). `thread`
+models `whoosh-store`: a bounded 8 MiB buffer, one channel message to a writer
+thread per `write_at`, one `pwrite` per message into an unlinked temp file.
+With a per-connection rate the source paces chunks like a network, so the
+writer sleeps between writes as it does on a real link.
+
+Write gathering, on the Phase 0 bench machine (i5-10210U, 8 threads;
+2026-11-10, load ≤ 3), 0.25 GiB, 16 connections at 4 MB/s each, `thread`
+storage, median of 5:
+
+| chunk | gather | `write_at` per GiB | CPU s per GB |
+|---|---|---:|---:|
+| 8 KiB | off (one per chunk) | 131,072 | 2.81 |
+| 8 KiB | 128 KiB | 8,192 | 2.83 |
+| 8 KiB | **256 KiB (default)** | **4,096** | **2.51** |
+| 8 KiB | 512 KiB | 2,112 | 2.62 |
+| 16 KiB | off | 65,536 | 1.84 |
+| 16 KiB | 256 KiB | 4,096 | 1.91 |
+| 16 KiB | 512 KiB | 2,048 | 1.94 |
+
+Calls to storage drop 16–32×. In this model, where each write is cheap (a
+channel send and a page-cache `pwrite`), the CPU effect is within −11 % to
++5 %: the saved per-write work roughly pays for the gather copy, and most of
+the CPU here is the per-chunk pacing, which stands in for the network read
+path. In the daemon each write cost far more (futex wake-ups were 88 % of
+syscall time), so the saving there should be larger. That is to be
+confirmed on the live link. Bigger gathers did not help in the unpaced
+runs: 16 connections × 512 KiB of buffers no longer fit this CPU's 6 MB
+L3, and the copy becomes memory-bound. Hence 256 KiB.
+
+The engine's own data path (`null` storage, unpaced, 16 GiB, best of 3,
+before gathering; load ≈ 11):
+
+| chunk | connections | GiB/s | CPU s per GB |
+|---|---:|---:|---:|
+| 64 KiB | 1 | 219 | 0.005 |
+| 64 KiB | 16 | 290 | 0.011 |
+| 16 KiB | 1 | 44 | 0.025 |
+| 16 KiB | 16 | 73 | 0.049 |
+
+Gathering adds a copy, about 0.05–0.1 CPU s per GB at one connection and up
+to 0.2 at 16 when buffers spill out of cache. A
+`Storage::write_vectored_at` (one `pwritev` of the received chunks) would
+remove it (see proposals).
+
+## Contract proposals
+
+Applied in amendment 3 and used here: `RangeSource::start` (a fresh
+download's first connection). Applied in amendment 2: `Checkpoint::finishing`
+(the finish intent) and `StateStore::sync` (called after saving a completed
+record, before removing its journal entry).
+
+Applied in `whoosh-store` (a2c1e0c): **`Storage::flush` no longer holds up
+later writes** (it syncs on a thread of its own), which the engine's
+writeback during transfers relies on.
+
+Applied (c03a1cd, the owner's option A): **`Settings::durability`**,
+`Storage::write_out`, `Storage::finish_unsynced`; power-cut safety stays
+the default.
+
+Open: **`Journal::commit` under `ProcessSafe`.** The journal always syncs a
+commit (and, for a new entry, its directory twice). Under `ProcessSafe` the
+engine needs a commit only to reach the operating system — the same
+guarantee `write_out` gives the data — so a `Journal::commit_unsynced` (or a
+durability argument) would take ~5 ms off every ProcessSafe finish, where
+the intent's commit is now the slowest step.
+
+Open, for `whoosh-store` (no contract change): a download that finishes
+before its first checkpoint still pays, on its critical path, a directory
+`fsync` at the first flush of a new part file (1.5–1.8 ms; not needed for
+safety — an unsynced part-file entry only means a re-download, and the
+rename's directory sync in `finish` covers the same directory), the data
+`fdatasync` and the rename's directory `fsync`. Each download's first
+journal commit also creates a file and syncs the journal directory (1.6 ms;
+now overlapped with the data flush). Early writeback inside the store
+(`sync_file_range(SYNC_FILE_RANGE_WRITE)` after large batches) could replace
+the engine's 16 MiB flushes more cheaply.
+
+Open, for the engine and `whoosh-net` (option B of the changing-file item,
+not needed for the gate): when a ranged request with `If-Range` comes back
+`200` with new validators, the source drops that body and reports
+`RemoteChanged`. Handing the body back instead (`RemoteChanged { fresh:
+Option<(RemoteMeta, ByteStream)> }`, or a `RangeSource::open` variant) would
+let a restart that cannot keep the old version adopt the new version's
+first response as its solo connection, saving the restart's `start` round
+trip. Option A (finish the old version, implemented) avoids the restart in
+the common case, so this is worth one round trip on real links only when
+the old version cannot be finished.
+
+Open: **`Storage::write_vectored_at(offset, Vec<Bytes>)`** (or `write_at`
+taking several buffers): the engine could hand over the received chunks of
+a gather as they are and the store issue one `pwritev`, removing the gather
+copy (about 0.05–0.2 CPU s per GB).
+
+All four from the first round were applied on `phase1/engine` (ADR 0005,
+amendment 1) and are implemented here: `AddParams::connections`,
+`AddParams::queue`, `DownloadRecord::filename_locked` (replacing a name
+heuristic) and `StorageProvider::file_len` (adopting a file finished just
+before a crash instead of downloading it again into `name (1).ext`). The
+storage contract now also states what the engine relied on: a dropped
+`write_at` is safe and never loses an error, errors are sticky, and after a
+`remove` or `finish` a new `open` of the path is a new file.
+
+## Known limitations
+
+- `Durability::ProcessSafe` does not survive a power cut (by design): files
+  finished, and progress journalled, in the seconds before one can be
+  damaged, and tail verification on resume is then the only check. The
+  crash model tests it against killed processes only.
+- Host profiles are keyed by host and port, so in a resident daemon every
+  labserver scenario (one server, many paths) shares one profile: a count
+  learned on per-conn-throttle (16) is where global-throttle then starts,
+  and the other way round. A bench of a resident daemon should give each
+  scenario fresh state (as measured above) or its own host name.
+- A server that changes a file **without** changing its size, ETag or
+  Last-Modified cannot be detected while downloading — by any client (the
+  headers are identical). Tail verification on resume and checksums are the
+  only protection. The crash and property tests therefore only change files
+  that carry validators.
+- `mirrors` are stored but not used yet (multi-source is Speed Doctrine #9).
+- On a link where one connection is already as fast as the machine (loopback,
+  LAN), a download whose first connection would need more than 100 ms alone
+  still gets 8 for its first window (~150–300 ms: it cannot know more will
+  not help without trying) before it drops back to one. The seven ranges
+  the drop cancels are then fetched one after another, each with a new
+  request: on loopback that costs well under a millisecond each (labserver
+  answers a range of 1g.bin anywhere in < 1 ms now), on a distant server
+  one time to first byte each — only on a link one connection fills, and
+  only once per download.
+- The drop to one is judged against the first window at 8 (measured just
+  before it) and, when one comes out somewhat short, against eight measured
+  again around it. A link that changes faster than that (a disk that starts
+  throttling writes mid-download) can still send a 1 GiB download back to 8
+  for a while; the re-probe (30 s) or the next download from the host (its
+  profile) corrects it.
+- Finishing the old version after a change keeps the connections that were
+  streaming it and makes no new request: its endgame has no work stealing
+  and no hedges, and a connection that breaks or stalls then restarts the
+  download from zero on the new version.
+- Checksums are verified by reading the file back after the download.
+- Hedging is not possible in stream mode (no ranges): a stalled single
+  stream is only replaced after `stream_idle_timeout`, from zero.

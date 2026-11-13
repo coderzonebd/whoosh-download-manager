@@ -1,0 +1,326 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Base styles and shared primitives for every whoosh surface. Components keep
+   their own scoped styles; only things used in three or more places live
+   here. Logical properties only, so RTL locales flip for free. */
+
+@import "@whoosh/design-tokens/tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  block-size: 100%;
+}
+
+html {
+  font-family: var(--vy-font-sans);
+  color: var(--vy-color-text);
+  background: var(--vy-color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-size: var(--vy-font-size-md);
+  line-height: var(--vy-line-height-normal);
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ app root */
+
+.vy-app {
+  /* Category hues for file tiles. Mapped from semantic tokens so every theme
+     (incl. high contrast) keeps enough contrast. */
+  --vy-cat-video: var(--vy-color-info);
+  --vy-cat-music: var(--vy-color-danger);
+  --vy-cat-documents: var(--vy-color-accent);
+  --vy-cat-compressed: var(--vy-color-warning);
+  --vy-cat-programs: var(--vy-color-success);
+  --vy-cat-images: color-mix(in srgb, var(--vy-color-success) 55%, var(--vy-color-accent));
+  --vy-cat-other: var(--vy-color-neutral);
+
+  container: vy-app / inline-size;
+  position: relative;
+  block-size: 100%;
+  font-family: var(--vy-font-sans);
+  font-size: var(--vy-font-size-md);
+  line-height: var(--vy-line-height-normal);
+  color: var(--vy-color-text);
+  background: var(--vy-color-surface);
+  scrollbar-color: color-mix(in srgb, var(--vy-color-text-muted) 45%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.vy-app :focus-visible {
+  outline: var(--vy-size-focus-width) solid var(--vy-color-focus);
+  outline-offset: var(--vy-size-focus-offset);
+}
+
+.vy-app ::-webkit-scrollbar {
+  inline-size: 10px;
+  block-size: 10px;
+}
+.vy-app ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vy-color-text-muted) 40%, transparent);
+  border: 2px solid transparent;
+  border-radius: var(--vy-radius-full);
+  background-clip: padding-box;
+}
+.vy-app ::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--vy-color-text-muted) 65%, transparent);
+}
+.vy-app ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.vy-app ::selection {
+  background: var(--vy-color-selection-strong);
+}
+
+/* ------------------------------------------------------------------ utilities */
+
+.vy-sr-only {
+  position: absolute !important;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.vy-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.vy-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+.vy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vy-space-1-5);
+  min-block-size: var(--vy-size-control-md);
+  padding-block: 0;
+  padding-inline: var(--vy-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--vy-radius-sm);
+  background: transparent;
+  color: var(--vy-color-text);
+  font-weight: var(--vy-font-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--vy-duration-fast) var(--vy-ease-standard),
+    border-color var(--vy-duration-fast) var(--vy-ease-standard),
+    color var(--vy-duration-fast) var(--vy-ease-standard),
+    transform var(--vy-duration-fast) var(--vy-ease-out);
+}
+.vy-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.vy-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.vy-btn--secondary {
+  background: var(--vy-color-surface);
+  border-color: var(--vy-color-border);
+  box-shadow: var(--vy-shadow-sm);
+}
+.vy-btn--primary {
+  background: var(--vy-color-accent);
+  color: var(--vy-color-text-on-accent);
+  box-shadow: var(--vy-shadow-sm);
+}
+.vy-btn--danger {
+  background: var(--vy-color-danger);
+  color: #fff;
+}
+[data-theme="dark"] .vy-btn--danger,
+[data-theme="high-contrast"] .vy-btn--danger {
+  color: var(--vy-color-bg);
+}
+.vy-btn--icon {
+  padding-inline: 0;
+  inline-size: var(--vy-size-control-md);
+}
+.vy-btn--sm {
+  min-block-size: var(--vy-size-control-sm);
+  padding-inline: var(--vy-space-2);
+  font-size: var(--vy-font-size-sm);
+}
+.vy-btn--sm.vy-btn--icon {
+  inline-size: var(--vy-size-control-sm);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .vy-btn:hover:not(:disabled) {
+    background: var(--vy-color-surface-hover);
+  }
+  .vy-btn--secondary:hover:not(:disabled) {
+    background: var(--vy-color-surface-hover);
+    border-color: var(--vy-color-border-strong);
+  }
+  .vy-btn--primary:hover:not(:disabled) {
+    background: var(--vy-color-accent-hover);
+  }
+  .vy-btn--danger:hover:not(:disabled) {
+    background: var(--vy-color-danger-text);
+  }
+}
+.vy-btn--primary:active:not(:disabled) {
+  background: var(--vy-color-accent-active);
+}
+
+/* ------------------------------------------------------------------ form fields */
+
+.vy-field {
+  display: grid;
+  gap: var(--vy-space-1);
+}
+.vy-label {
+  font-weight: var(--vy-font-weight-medium);
+}
+.vy-hint {
+  color: var(--vy-color-text-muted);
+  font-size: var(--vy-font-size-sm);
+}
+.vy-error {
+  color: var(--vy-color-danger-text);
+  font-size: var(--vy-font-size-sm);
+}
+
+.vy-input,
+.vy-select {
+  inline-size: 100%;
+  min-block-size: var(--vy-size-control-md);
+  padding-block: var(--vy-space-1);
+  padding-inline: var(--vy-space-2-5);
+  border: 1px solid var(--vy-color-border-strong);
+  border-radius: var(--vy-radius-sm);
+  background: var(--vy-color-surface);
+  color: var(--vy-color-text);
+  transition:
+    border-color var(--vy-duration-fast) var(--vy-ease-standard),
+    box-shadow var(--vy-duration-fast) var(--vy-ease-standard);
+}
+.vy-input::placeholder {
+  color: var(--vy-color-text-subtle);
+  opacity: 1;
+}
+.vy-input:focus-visible,
+.vy-select:focus-visible {
+  outline: none;
+  border-color: var(--vy-color-focus);
+  box-shadow: 0 0 0 1px var(--vy-color-focus);
+}
+.vy-input[aria-invalid="true"] {
+  border-color: var(--vy-color-danger);
+}
+.vy-select {
+  appearance: none;
+  padding-inline-end: var(--vy-space-8);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+}
+[dir="rtl"] .vy-select {
+  background-position:
+    15px 50%,
+    10px 50%;
+}
+
+.vy-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vy-space-2);
+  cursor: pointer;
+}
+.vy-check input {
+  inline-size: 16px;
+  block-size: 16px;
+  margin: 0;
+  accent-color: var(--vy-color-accent);
+}
+
+/* ------------------------------------------------------------------ misc */
+
+.vy-kbd {
+  display: inline-block;
+  min-inline-size: 1.6em;
+  padding-inline: 0.4em;
+  border: 1px solid var(--vy-color-border);
+  border-block-end-width: 2px;
+  border-radius: var(--vy-radius-xs);
+  background: var(--vy-color-bg);
+  font-family: var(--vy-font-mono);
+  font-size: var(--vy-font-size-xs);
+  line-height: 1.6;
+  text-align: center;
+  color: var(--vy-color-text-muted);
+}
+
+.vy-spinner {
+  inline-size: 14px;
+  block-size: 14px;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-block-start-color: currentColor;
+  border-radius: 50%;
+  animation: vy-spin 0.7s linear infinite;
+}
+@keyframes vy-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vy-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+@media (forced-colors: active) {
+  .vy-btn--primary {
+    border-color: ButtonText;
+  }
+}

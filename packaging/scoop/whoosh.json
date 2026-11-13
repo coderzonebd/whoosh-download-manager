@@ -1,0 +1,33 @@
+{
+    "version": "0.0.1",
+    "description": "Fast, open-source download manager (TEMPLATE manifest, see packaging/scoop/README.md)",
+    "homepage": "https://github.com/coderzonebd/whoosh-download-manager",
+    "license": "GPL-3.0-or-later",
+    "notes": "Needs the Microsoft Edge WebView2 runtime (preinstalled on Windows 10 and 11).",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.0.1/Whoosh_0.0.1_x64_portable.zip",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+    },
+    "shortcuts": [
+        [
+            "whoosh-desktop.exe",
+            "Whoosh"
+        ]
+    ],
+    "checkver": {
+        "github": "https://github.com/coderzonebd/whoosh-download-manager"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v$version/Whoosh_$version_x64_portable.zip",
+                "hash": {
+                    "url": "$baseurl/SHA256SUMS",
+                    "regex": "$sha256\\s+\\*?$basename"
+                }
+            }
+        }
+    }
+}

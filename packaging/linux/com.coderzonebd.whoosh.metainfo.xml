@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PLACEHOLDER: name, URLs, developer id and screenshots change once the
+     product name is chosen and the repository is public. -->
+<component type="desktop-application">
+  <id>com.coderzonebd.whoosh</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Whoosh</name>
+  <summary>Fast, open-source download manager</summary>
+  <developer id="com.coderzonebd">
+    <name>CoderZone BD</name>
+  </developer>
+
+  <description>
+    <p>
+      A free download manager built on one Rust engine: many connections per
+      file, instant resume after a crash or power cut, and a browser extension
+      that hands downloads over with their cookies and referrer.
+    </p>
+    <p>
+      Every speed claim comes from a public, reproducible benchmark harness.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.coderzonebd.whoosh.desktop</launchable>
+
+  <url type="homepage">https://github.com/coderzonebd/whoosh-download-manager</url>
+  <url type="bugtracker">https://github.com/coderzonebd/whoosh-download-manager/issues</url>
+  <url type="vcs-browser">https://github.com/coderzonebd/whoosh-download-manager</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <releases>
+    <release version="0.0.1" date="2026-11-10">
+      <description>
+        <p>Pre-release packaging skeleton; not for distribution.</p>
+      </description>
+    </release>
+  </releases>
+</component>

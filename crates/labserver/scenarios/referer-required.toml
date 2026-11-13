@@ -1,0 +1,5 @@
+# Hot-link protection: 403 unless the Referer starts with the download page.
+description = "403 unless Referer starts with https://downloads.example.test/"
+
+[access]
+referer = "https://downloads.example.test/"

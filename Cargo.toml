@@ -1,0 +1,49 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+authors = ["CoderZone BD and contributors"]
+publish = false
+
+# Shared dependency versions. Crates opt in with `foo.workspace = true`.
+# Add a new entry here only when two or more crates need it; otherwise
+# declare it in the crate's own Cargo.toml (keeps parallel branches from
+# colliding on this file).
+[workspace.dependencies]
+anyhow = "1"
+bytes = "1"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+
+whoosh-core = { path = "crates/core" }
+whoosh-engine = { path = "crates/engine" }
+whoosh-net = { path = "crates/net" }
+whoosh-proto = { path = "crates/proto" }
+whoosh-store = { path = "crates/store" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev]
+# Keep debug builds light on RAM and disk; this machine has 7.5 GB.
+debug = "line-tables-only"

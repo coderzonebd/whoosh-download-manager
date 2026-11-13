@@ -1,0 +1,7 @@
+# Live link with the tuner round (172bfb8), interleaved 90 s windows; the link was slower and less steady (10-22 MB/s)
+vayu-auto  22.4 MB/s cpu=7.95 s => 3.93 s/GB targets: to=16 to=8 to=16 to=8 to=16 to=8 to=16 to=8 to=4 to=8 to=4 to=8 to=4 to=8 
+aria2c-x16 14.7 MB/s cpu=6.34 s => 4.80 s/GB 
+vayu-auto  13.4 MB/s cpu=5.08 s => 4.23 s/GB targets: to=16 to=4 to=8 to=4 to=8 to=4 to=8 to=4 to=8 to=2 to=4 
+aria2c-x16 14.6 MB/s cpu=6.3 s => 4.80 s/GB 
+vayu-auto  10.1 MB/s cpu=4.51 s => 4.95 s/GB targets: to=16 
+aria2c-x16 11.3 MB/s cpu=5.48 s => 5.37 s/GB 

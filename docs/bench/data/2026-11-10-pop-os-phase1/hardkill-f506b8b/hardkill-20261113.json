@@ -1,0 +1,59 @@
+{
+  "seed": 20261113,
+  "kills": 250,
+  "rounds": 134,
+  "downloads": 402,
+  "verified": 402,
+  "corrupt": 0,
+  "leftovers": 0,
+  "unfinished": 0,
+  "elapsed_s": 2333.997368978,
+  "per_case": {
+    "clean/100m.bin": {
+      "downloads": 35,
+      "kills_during": 22,
+      "ok": 35
+    },
+    "clean/1m.bin": {
+      "downloads": 55,
+      "kills_during": 14,
+      "ok": 55
+    },
+    "clean/empty.bin": {
+      "downloads": 43,
+      "kills_during": 7,
+      "ok": 43
+    },
+    "flaky/1g.bin": {
+      "downloads": 51,
+      "kills_during": 124,
+      "ok": 51
+    },
+    "global-throttle/100m.bin": {
+      "downloads": 53,
+      "kills_during": 117,
+      "ok": 53
+    },
+    "no-range/100m.bin": {
+      "downloads": 49,
+      "kills_during": 41,
+      "ok": 49
+    },
+    "no-validators/100m.bin": {
+      "downloads": 38,
+      "kills_during": 30,
+      "ok": 38
+    },
+    "per-conn-throttle/100m.bin": {
+      "downloads": 36,
+      "kills_during": 84,
+      "ok": 36
+    },
+    "slow-drip/10m.bin": {
+      "downloads": 42,
+      "kills_during": 20,
+      "ok": 42
+    }
+  },
+  "problems": []
+}

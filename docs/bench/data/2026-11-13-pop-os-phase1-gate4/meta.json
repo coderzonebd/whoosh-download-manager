@@ -1,0 +1,519 @@
+{
+  "runset": "2026-11-13-pop-os-phase1-gate4",
+  "started_utc": "2026-11-12T22:23:09Z",
+  "finished_utc": "2026-11-12T23:11:08Z",
+  "duration_s": 2879.007042513,
+  "harness": "vayu-bench 0.1.0",
+  "git_commit": "9665f1bf8f3b9ccf1c3f6899e902a60b306efbbc",
+  "command": [
+    "target/release/vayu-bench",
+    "run",
+    "--seed",
+    "20261113",
+    "--bin",
+    "vayu=~/projects/download-manager/target/release/vayu",
+    "--bin",
+    "vayu-cold=~/projects/download-manager/target/release/vayu",
+    "--label",
+    "2026-11-13-pop-os-phase1-gate4",
+    "--wait-for-idle",
+    "--idle-timeout",
+    "300",
+    "--quiet"
+  ],
+  "machine": {
+    "host": "pop-os",
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "7.2.15-76070215-generic",
+    "cpu": "Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz",
+    "logical_cpus": 8,
+    "mem_total_mib": 7710
+  },
+  "load_at_start": [
+    4.22,
+    2.77,
+    2.53
+  ],
+  "load_at_end": [
+    0.57,
+    0.89,
+    0.92
+  ],
+  "mem_available_mib_at_start": 2998,
+  "lab": "in-process",
+  "lab_cache_mb": 256,
+  "internet": false,
+  "seed": 20261113,
+  "runs": 7,
+  "conn": "default",
+  "clients": [
+    {
+      "id": "vayu",
+      "tool": "vayu",
+      "description": "vayu (this project), daemon resident: `vayu --no-start get` against a running vayu-daemon (daemon start/stop not timed; its CPU and memory during the run counted)",
+      "settings": "resident vayu-daemon --port 0; vayu --no-start get -o <dir> [-c N]",
+      "mode": "cli",
+      "program": "~/projects/download-manager/target/release/vayu",
+      "version": "vayu 0.1.0",
+      "binary_sha256": "04a50cdef753a01822d099205e09f5ae11f6fb1ca63fef94daa1ac9b6e55a213",
+      "fetched": null
+    },
+    {
+      "id": "vayu-cold",
+      "tool": "vayu",
+      "description": "vayu (this project), cold one-shot: daemon start + `vayu get` + daemon stop, all timed",
+      "settings": "vayu-daemon (foreground) + vayu --no-start get -o <dir> [-c N]",
+      "mode": "cli",
+      "program": "~/projects/download-manager/target/release/vayu",
+      "version": "vayu 0.1.0",
+      "binary_sha256": "04a50cdef753a01822d099205e09f5ae11f6fb1ca63fef94daa1ac9b6e55a213",
+      "fetched": null
+    },
+    {
+      "id": "curl",
+      "tool": "curl",
+      "description": "curl, one connection (baseline); -L -O -J, no retries (curl's default)",
+      "settings": "-sS -f -L -O -J",
+      "mode": "cli",
+      "program": "/usr/bin/curl",
+      "version": "curl 8.5.0 (x86_64-pc-linux-gnu) libcurl/8.5.0 OpenSSL/3.0.13 zlib/1.3 brotli/1.1.0 zstd/1.5.5 libidn2/2.3.7 libpsl/0.21.2 (+libidn2/2.3.7) libssh/0.10.6/openssl/zlib nghttp2/1.59.0 librtmp/2.3 OpenLDAP/2.6.10",
+      "binary_sha256": "1ccbd3dae948374ba8eef1ebda26c64b783ede50b463196e53666e0880bdac60",
+      "fetched": null
+    },
+    {
+      "id": "wget",
+      "tool": "wget",
+      "description": "GNU Wget, one connection; --content-disposition, default retries (20)",
+      "settings": "-nv --content-disposition",
+      "mode": "cli",
+      "program": "/usr/bin/wget",
+      "version": "GNU Wget 1.21.4 built on linux-gnu.",
+      "binary_sha256": "6e47207f7a759f371ff895817f4ec9bad9b6eae6be1cc30a091d6743293ef9f3",
+      "fetched": null
+    },
+    {
+      "id": "aria2c",
+      "tool": "aria2c",
+      "description": "aria2c with default settings (-x1: one connection per server)",
+      "settings": "defaults",
+      "mode": "cli",
+      "program": "/usr/bin/aria2c",
+      "version": "aria2 version 1.37.0",
+      "binary_sha256": "86d88cbee95351235729d6884bb4ecda465b9ab8b10fe59cc53cbd3d6e412c29",
+      "fetched": null
+    },
+    {
+      "id": "aria2c-tuned",
+      "tool": "aria2c",
+      "description": "aria2c tuned: -x16 -s16 -k1M",
+      "settings": "-x16 -s16 -k1M",
+      "mode": "cli",
+      "program": "/usr/bin/aria2c",
+      "version": "aria2 version 1.37.0",
+      "binary_sha256": "86d88cbee95351235729d6884bb4ecda465b9ab8b10fe59cc53cbd3d6e412c29",
+      "fetched": null
+    },
+    {
+      "id": "aria2-next",
+      "tool": "aria2-next",
+      "description": "aria2-next (Rayburst's engine) with default settings",
+      "settings": "defaults",
+      "mode": "cli",
+      "program": "~/.cache/vayu-bench/tools/aria2-next-3.1.0/bin/aria2-next",
+      "version": "aria2-next version 3.1.0",
+      "binary_sha256": "5a264fc39312cc1abc6d12cfd2d96464d27f0349fd7cb5e0cbf1ee5bd686e890",
+      "fetched": {
+        "tool": "aria2-next",
+        "version": "3.1.0",
+        "repo": "AnInsomniacy/aria2-next",
+        "tag": "v3.1.0",
+        "asset": "aria2-next-3.1.0-linux-x86_64",
+        "sha256": "5a264fc39312cc1abc6d12cfd2d96464d27f0349fd7cb5e0cbf1ee5bd686e890",
+        "verified_by": "checksum-file:aria2-next-3.1.0-checksums.sha256",
+        "binaries": {
+          "aria2-next": "~/.cache/vayu-bench/tools/aria2-next-3.1.0/bin/aria2-next"
+        }
+      }
+    },
+    {
+      "id": "aria2-next-tuned",
+      "tool": "aria2-next",
+      "description": "aria2-next tuned: -x16 -s16 -k1M",
+      "settings": "-x16 -s16 -k1M",
+      "mode": "cli",
+      "program": "~/.cache/vayu-bench/tools/aria2-next-3.1.0/bin/aria2-next",
+      "version": "aria2-next version 3.1.0",
+      "binary_sha256": "5a264fc39312cc1abc6d12cfd2d96464d27f0349fd7cb5e0cbf1ee5bd686e890",
+      "fetched": {
+        "tool": "aria2-next",
+        "version": "3.1.0",
+        "repo": "AnInsomniacy/aria2-next",
+        "tag": "v3.1.0",
+        "asset": "aria2-next-3.1.0-linux-x86_64",
+        "sha256": "5a264fc39312cc1abc6d12cfd2d96464d27f0349fd7cb5e0cbf1ee5bd686e890",
+        "verified_by": "checksum-file:aria2-next-3.1.0-checksums.sha256",
+        "binaries": {
+          "aria2-next": "~/.cache/vayu-bench/tools/aria2-next-3.1.0/bin/aria2-next"
+        }
+      }
+    },
+    {
+      "id": "mdm",
+      "tool": "mdm",
+      "description": "Mister Download Manager, misterdownloadmanager-cli get (default: up to 8 connections)",
+      "settings": "get -o <dir>",
+      "mode": "cli",
+      "program": "~/.cache/vayu-bench/tools/mdm-0.5.2/files/MisterDownloadManager-0.5.2-linux-x86_64/misterdownloadmanager-cli",
+      "version": "mdm-cli 0.5.2",
+      "binary_sha256": "eb3aedd6e3f0a0e8fd7cbc97d4078173ba59372d3c3327bbf01a3c5a0395514e",
+      "fetched": {
+        "tool": "mdm",
+        "version": "0.5.2",
+        "repo": "anefzaoui/misterdownloadmanager",
+        "tag": "v0.5.2",
+        "asset": "MisterDownloadManager-0.5.2-linux-x86_64.tar.gz",
+        "sha256": "3327ebd6b5565186c3e1286bbfdc85ffc95fa681cc2a57a51b0bc07ff42a009f",
+        "verified_by": "checksum-file:SHA256SUMS.txt",
+        "binaries": {
+          "misterdownloadmanager-cli": "~/.cache/vayu-bench/tools/mdm-0.5.2/files/MisterDownloadManager-0.5.2-linux-x86_64/misterdownloadmanager-cli"
+        }
+      }
+    },
+    {
+      "id": "surge",
+      "tool": "surge",
+      "description": "Surge, headless `surge server <url> --exit-when-done` (default: up to 16 connections)",
+      "settings": "server --exit-when-done --no-resume",
+      "mode": "cli",
+      "program": "~/.cache/vayu-bench/tools/surge-0.12.4/files/surge",
+      "version": "Surge v0.12.4",
+      "binary_sha256": "ba7f703f94121cb5007666f4d4473a88d06f61cf7c81822474d1c5b6f6a34c72",
+      "fetched": {
+        "tool": "surge",
+        "version": "0.12.4",
+        "repo": "SurgeDM/Surge",
+        "tag": "v0.12.4",
+        "asset": "Surge_0.12.4_linux_amd64.tar.gz",
+        "sha256": "2f7b4c4bc0bcac5996e6d223e5be676c041125832212fa3d92f7fe120d6fcd69",
+        "verified_by": "checksum-file:Surge_0.12.4_checksums.txt",
+        "binaries": {
+          "surge": "~/.cache/vayu-bench/tools/surge-0.12.4/files/surge"
+        }
+      }
+    },
+    {
+      "id": "gopeed",
+      "tool": "gopeed",
+      "description": "Gopeed (gopeed-web server, REST API; default connections)",
+      "settings": "REST: POST /api/v1/tasks",
+      "mode": "api",
+      "program": "~/.cache/vayu-bench/tools/gopeed-1.9.3/files/gopeed-web-v1.9.3-linux-amd64/gopeed",
+      "version": "1.9.3",
+      "binary_sha256": "8a581d66d1420f9cd188a0cfe1324e26bbaf3270aa251e08158deb685066f208",
+      "fetched": {
+        "tool": "gopeed",
+        "version": "1.9.3",
+        "repo": "GopeedLab/gopeed",
+        "tag": "v1.9.3",
+        "asset": "gopeed-web-v1.9.3-linux-amd64.zip",
+        "sha256": "52444c86ffb5152c89d1c3a3b074285c4ef6dd3dabc9d4ae097cc703e0fa3e15",
+        "verified_by": "github-digest",
+        "binaries": {
+          "gopeed-web": "~/.cache/vayu-bench/tools/gopeed-1.9.3/files/gopeed-web-v1.9.3-linux-amd64/gopeed"
+        }
+      }
+    }
+  ],
+  "matrix": [
+    {
+      "scenario": "clean",
+      "description": "No faults; the speed ceiling",
+      "files": [
+        [
+          "1g.bin",
+          1073741824
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 120,
+      "why": "the speed ceiling; 1 GiB so client throughput, not startup, dominates"
+    },
+    {
+      "scenario": "per-conn-throttle",
+      "description": "2 MB/s per TCP connection; more connections help",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "2 MB/s per connection: one connection needs ~5 s"
+    },
+    {
+      "scenario": "global-throttle",
+      "description": "20 MB/s total for everyone; extra connections do not help",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "20 MB/s shared: ~0.5 s for everyone; measures politeness"
+    },
+    {
+      "scenario": "conn-cap-2",
+      "description": "Max 2 concurrent requests per IP (503 + Retry-After), 5 MB/s per connection",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "5 MB/s per connection, 2 allowed: ~1-2 s"
+    },
+    {
+      "scenario": "rate-limited",
+      "description": "Max 4 concurrent requests per IP (429 + Retry-After), 5 MB/s per connection",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "5 MB/s per connection, 4 allowed, 429s beyond"
+    },
+    {
+      "scenario": "conn-cap-reset",
+      "description": "Max 2 concurrent requests per IP, excess connections are reset",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "5 MB/s per connection, 2 allowed, RST beyond"
+    },
+    {
+      "scenario": "flaky",
+      "description": "Random TCP resets, ~1 per 50 MiB sent",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 90,
+      "why": "~1 reset per 50 MiB: a 100 MiB file sees about two"
+    },
+    {
+      "scenario": "stall",
+      "description": "Mid-stream 8 s stalls, ~1 per 100 MiB per response",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 90,
+      "why": "8 s stalls, ~1 per 100 MiB per response"
+    },
+    {
+      "scenario": "high-latency",
+      "description": "500 ms time-to-first-byte on every request",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "500 ms before every response head"
+    },
+    {
+      "scenario": "slow-drip",
+      "description": "5 ms pause before every 16 KiB chunk",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "~3 MB/s per response: one connection needs ~3.5 s"
+    },
+    {
+      "scenario": "no-range",
+      "description": "No Accept-Ranges; Range ignored (200 full)",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "segmenting impossible"
+    },
+    {
+      "scenario": "lying-ranges",
+      "description": "Advertises Accept-Ranges but ignores Range (200 full)",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "Range ignored despite Accept-Ranges: corruption trap"
+    },
+    {
+      "scenario": "no-length",
+      "description": "No Content-Length (chunked); ranges still honoured",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "chunked, size only in Content-Range"
+    },
+    {
+      "scenario": "no-validators",
+      "description": "No ETag and no Last-Modified",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "no ETag / Last-Modified"
+    },
+    {
+      "scenario": "changing-file",
+      "description": "Content and ETag change once after 32 MiB served",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "content changes after 32 MiB served: corruption trap"
+    },
+    {
+      "scenario": "expiring-url",
+      "description": "Signed URLs that expire after 60 s (403 after expiry); mint via /_lab/mint",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "signed URL minted per run (60 s TTL)"
+    },
+    {
+      "scenario": "cookie-required",
+      "description": "403 unless Cookie contains vayu_session=lab-ok",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "needs a Cookie header"
+    },
+    {
+      "scenario": "referer-required",
+      "description": "403 unless Referer starts with https://downloads.example.test/",
+      "files": [
+        [
+          "10m.bin",
+          10485760
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "needs a Referer header"
+    },
+    {
+      "scenario": "redirect-chain",
+      "description": "Three 302 redirects before the file",
+      "files": [
+        [
+          "100m.bin",
+          104857600
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 60,
+      "why": "three 302 hops"
+    },
+    {
+      "scenario": "bangla-filename",
+      "description": "Content-Disposition variants: RFC 5987 Bangla, plain, and broken non-UTF-8",
+      "files": [
+        [
+          "bangla.bin",
+          1048576
+        ],
+        [
+          "bangla-star-only.bin",
+          1048576
+        ],
+        [
+          "plain.bin",
+          1048576
+        ],
+        [
+          "latin1.bin",
+          1048576
+        ],
+        [
+          "raw-utf8.bin",
+          1048576
+        ],
+        [
+          "traversal.bin",
+          1048576
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 30,
+      "why": "1 MiB files; a naming-correctness check, also judged by the gate, so the full run count"
+    }
+  ],
+  "notes": [],
+  "guard": {
+    "max_load": 4.0,
+    "max_busy_cpus": 1.0,
+    "wait": true,
+    "wait_timeout_s": 300,
+    "sample_ms": 200
+  },
+  "busy_runs": 0
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@whoosh/api-client",
+  "version": "0.0.1",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock": "./src/mock.ts",
+    "./ws": "./src/ws.ts",
+    "./errors": "./src/errors.ts",
+    "./auth": "./src/auth.ts",
+    "./categories": "./src/categories.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0",
+    "ws": "^8.22.2"
+  }
+}

@@ -1,0 +1,40 @@
+[package]
+name = "whoosh-bench"
+description = "Benchmark harness: runs download managers against whoosh-labserver and reports speed, politeness and correctness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "whoosh-bench"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+whoosh-labserver = { path = "../labserver" }
+
+fastrand = "2"
+flate2 = "1"
+hex = "0.4"
+sha2 = "0.10"
+tar = "0.4"
+# Plain HTTP to the lab and the clients' local APIs; HTTPS (rustls + ring,
+# webpki roots) only for `fetch` and the opt-in real-internet mode.
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", default-features = false, features = ["resource", "signal", "process", "hostname", "feature"] }
+
+[lints]
+workspace = true

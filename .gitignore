@@ -1,0 +1,30 @@
+# Rust
+/target/
+**/target/
+
+# Node
+node_modules/
+dist/
+.svelte-kit/
+*.tsbuildinfo
+.vite/
+
+# Tauri
+apps/*/src-tauri/gen/
+
+# Bench / labserver output
+/bench-results/
+/tmp/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Local env
+.env
+.env.*
+!.env.example

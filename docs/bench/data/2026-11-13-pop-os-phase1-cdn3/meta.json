@@ -1,0 +1,159 @@
+{
+  "runset": "2026-11-13-pop-os-phase1-cdn3",
+  "started_utc": "2026-11-12T23:57:51Z",
+  "finished_utc": "2026-11-13T00:07:07Z",
+  "duration_s": 555.927783501,
+  "harness": "vayu-bench 0.1.0",
+  "git_commit": "9665f1bf8f3b9ccf1c3f6899e902a60b306efbbc",
+  "command": [
+    "target/release/vayu-bench",
+    "run",
+    "--real-internet",
+    "--url",
+    "fastly-kernel-org=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.tar.xz",
+    "--url",
+    "google-dl=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb",
+    "--url",
+    "mozilla-cdn=https://download-installer.cdn.mozilla.net/pub/firefox/releases/128.0/linux-x86_64/en-US/firefox-128.0.tar.bz2",
+    "--clients",
+    "vayu,aria2c-tuned,aria2-next-tuned,mdm",
+    "--bin",
+    "vayu=~/projects/download-manager/target/release/vayu",
+    "--runs",
+    "7",
+    "--seed",
+    "20261114",
+    "--label",
+    "2026-11-13-pop-os-phase1-cdn3",
+    "--wait-for-idle",
+    "--idle-timeout",
+    "300",
+    "--quiet"
+  ],
+  "machine": {
+    "host": "pop-os",
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "7.2.15-76070215-generic",
+    "cpu": "Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz",
+    "logical_cpus": 8,
+    "mem_total_mib": 7710
+  },
+  "load_at_start": [
+    3.74,
+    6.3,
+    6.95
+  ],
+  "load_at_end": [
+    1.17,
+    1.89,
+    4.26
+  ],
+  "mem_available_mib_at_start": 3358,
+  "lab": "none (real internet)",
+  "lab_cache_mb": null,
+  "internet": true,
+  "seed": 20261114,
+  "runs": 7,
+  "conn": "default",
+  "clients": [
+    {
+      "id": "vayu",
+      "tool": "vayu",
+      "description": "vayu (this project), daemon resident: `vayu --no-start get` against a running vayu-daemon (daemon start/stop not timed; its CPU and memory during the run counted)",
+      "settings": "resident vayu-daemon --port 0; vayu --no-start get -o <dir> [-c N]",
+      "mode": "cli",
+      "program": "~/projects/download-manager/target/release/vayu",
+      "version": "vayu 0.1.0",
+      "binary_sha256": "04a50cdef753a01822d099205e09f5ae11f6fb1ca63fef94daa1ac9b6e55a213",
+      "fetched": null
+    },
+    {
+      "id": "aria2c-tuned",
+      "tool": "aria2c",
+      "description": "aria2c tuned: -x16 -s16 -k1M",
+      "settings": "-x16 -s16 -k1M",
+      "mode": "cli",
+      "program": "/usr/bin/aria2c",
+      "version": "aria2 version 1.37.0",
+      "binary_sha256": "86d88cbee95351235729d6884bb4ecda465b9ab8b10fe59cc53cbd3d6e412c29",
+      "fetched": null
+    },
+    {
+      "id": "aria2-next-tuned",
+      "tool": "aria2-next",
+      "description": "aria2-next tuned: -x16 -s16 -k1M",
+      "settings": "-x16 -s16 -k1M",
+      "mode": "cli",
+      "program": "~/.cache/vayu-bench/tools/aria2-next-3.1.0/bin/aria2-next",
+      "version": "aria2-next version 3.1.0",
+      "binary_sha256": "5a264fc39312cc1abc6d12cfd2d96464d27f0349fd7cb5e0cbf1ee5bd686e890",
+      "fetched": {
+        "tool": "aria2-next",
+        "version": "3.1.0",
+        "repo": "AnInsomniacy/aria2-next",
+        "tag": "v3.1.0",
+        "asset": "aria2-next-3.1.0-linux-x86_64",
+        "sha256": "5a264fc39312cc1abc6d12cfd2d96464d27f0349fd7cb5e0cbf1ee5bd686e890",
+        "verified_by": "checksum-file:aria2-next-3.1.0-checksums.sha256",
+        "binaries": {
+          "aria2-next": "~/.cache/vayu-bench/tools/aria2-next-3.1.0/bin/aria2-next"
+        }
+      }
+    },
+    {
+      "id": "mdm",
+      "tool": "mdm",
+      "description": "Mister Download Manager, misterdownloadmanager-cli get (default: up to 8 connections)",
+      "settings": "get -o <dir>",
+      "mode": "cli",
+      "program": "~/.cache/vayu-bench/tools/mdm-0.5.2/files/MisterDownloadManager-0.5.2-linux-x86_64/misterdownloadmanager-cli",
+      "version": "mdm-cli 0.5.2",
+      "binary_sha256": "eb3aedd6e3f0a0e8fd7cbc97d4078173ba59372d3c3327bbf01a3c5a0395514e",
+      "fetched": {
+        "tool": "mdm",
+        "version": "0.5.2",
+        "repo": "anefzaoui/misterdownloadmanager",
+        "tag": "v0.5.2",
+        "asset": "MisterDownloadManager-0.5.2-linux-x86_64.tar.gz",
+        "sha256": "3327ebd6b5565186c3e1286bbfdc85ffc95fa681cc2a57a51b0bc07ff42a009f",
+        "verified_by": "checksum-file:SHA256SUMS.txt",
+        "binaries": {
+          "misterdownloadmanager-cli": "~/.cache/vayu-bench/tools/mdm-0.5.2/files/MisterDownloadManager-0.5.2-linux-x86_64/misterdownloadmanager-cli"
+        }
+      }
+    }
+  ],
+  "matrix": [
+    {
+      "scenario": "internet",
+      "description": "public test files (real internet, user-run only)",
+      "files": [
+        [
+          "fastly-kernel-org",
+          0
+        ],
+        [
+          "google-dl",
+          0
+        ],
+        [
+          "mozilla-cdn",
+          0
+        ]
+      ],
+      "runs": 7,
+      "timeout_s": 600,
+      "why": "opt-in"
+    }
+  ],
+  "notes": [],
+  "guard": {
+    "max_load": 4.0,
+    "max_busy_cpus": 1.0,
+    "wait": true,
+    "wait_timeout_s": 300,
+    "sample_ms": 200
+  },
+  "busy_runs": 0
+}

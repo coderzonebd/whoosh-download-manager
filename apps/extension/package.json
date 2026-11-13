@@ -1,0 +1,26 @@
+{
+  "name": "@whoosh/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "whoosh browser extension (Pro mode: hands browser downloads to the whoosh daemon)",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:store": "node scripts/build.mjs --store",
+    "package": "node scripts/build.mjs --zip",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:e2e": "node scripts/build.mjs && vitest run --config vitest.e2e.config.ts"
+  },
+  "dependencies": {
+    "@whoosh/api-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "playwright-core": "^1.65.0",
+    "rolldown": "^1.3.0",
+    "vitest": "^5.1.0"
+  }
+}

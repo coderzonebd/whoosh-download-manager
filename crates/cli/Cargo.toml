@@ -1,0 +1,26 @@
+[package]
+name = "whoosh-cli"
+description = "whoosh: the command-line client of the whoosh download daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "whoosh"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true, features = ["env"] }
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
+whoosh-proto.workspace = true
+
+[lints]
+workspace = true

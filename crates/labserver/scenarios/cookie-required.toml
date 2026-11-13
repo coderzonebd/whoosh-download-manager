@@ -1,0 +1,7 @@
+# Downloads need the session cookie the "site" set (403 without it), the way
+# file hosts gate downloads behind a login. GET /_lab/login?scenario=cookie-required
+# sets it.
+description = "403 unless Cookie contains whoosh_session=lab-ok"
+
+[access]
+cookie = "whoosh_session=lab-ok"

@@ -1,0 +1,12 @@
+# At most two in-flight requests per client IP; the third gets 503 with
+# Retry-After. Each connection is also capped at 5 MB/s, so the best a
+# downloader can do is exactly two connections (~10 MB/s).
+description = "Max 2 concurrent requests per IP (503 + Retry-After), 5 MB/s per connection"
+
+[limits]
+max_conns_per_ip = 2
+refuse = "503"
+retry_after_secs = 1
+
+[bandwidth]
+per_conn = "5MB/s"

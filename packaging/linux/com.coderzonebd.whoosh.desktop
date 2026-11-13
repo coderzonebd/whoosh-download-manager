@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Whoosh
+GenericName=Download Manager
+Comment=Fast, open-source download manager
+Exec=whoosh-desktop
+Icon=com.coderzonebd.whoosh
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;downloader;accelerator;resume;
+StartupNotify=true

@@ -1,0 +1,46 @@
+# TEMPLATE Flatpak manifest (see README.md): repackages the release .deb.
+# Flathub will ask for a from-source build before accepting it.
+id: com.coderzonebd.whoosh
+runtime: org.gnome.Platform
+# Must still ship WebKitGTK 4.1 (GTK 3); see README.md before bumping.
+runtime-version: "50"
+sdk: org.gnome.Sdk
+command: whoosh-desktop
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=network
+  # Default download folder; other folders go through the file chooser portal.
+  - --filesystem=xdg-download
+  # Tray icon (StatusNotifierItem via libayatana-appindicator).
+  - --talk-name=org.kde.StatusNotifierWatcher
+
+modules:
+  # Tray support is loaded at runtime by Tauri; the GNOME runtime lacks it.
+  # Flathub's shared-modules repository is added as a git submodule there.
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+
+  - name: whoosh
+    buildsystem: simple
+    sources:
+      - type: file
+        dest-filename: whoosh.deb
+        only-arches: [x86_64]
+        url: https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.0.1/Whoosh_0.0.1_amd64.deb
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      - type: file
+        path: ../linux/com.coderzonebd.whoosh.desktop
+      - type: file
+        path: ../linux/com.coderzonebd.whoosh.metainfo.xml
+    build-commands:
+      - ar -x whoosh.deb
+      - tar -xf data.tar.gz
+      - install -Dm755 usr/bin/whoosh-desktop /app/bin/whoosh-desktop
+      - install -Dm644 com.coderzonebd.whoosh.desktop /app/share/applications/com.coderzonebd.whoosh.desktop
+      - install -Dm644 com.coderzonebd.whoosh.metainfo.xml /app/share/metainfo/com.coderzonebd.whoosh.metainfo.xml
+      - install -Dm644 usr/share/icons/hicolor/32x32/apps/whoosh-desktop.png /app/share/icons/hicolor/32x32/apps/com.coderzonebd.whoosh.png
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/whoosh-desktop.png /app/share/icons/hicolor/128x128/apps/com.coderzonebd.whoosh.png
+      - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/whoosh-desktop.png /app/share/icons/hicolor/256x256/apps/com.coderzonebd.whoosh.png

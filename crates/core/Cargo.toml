@@ -1,0 +1,24 @@
+[package]
+name = "whoosh-core"
+description = "Download engine core: shared types and the engine's extension traits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[features]
+# In-memory implementations of every trait (`whoosh_core::testing`), for other
+# crates' tests: `whoosh-core = { workspace = true, features = ["testing"] }`.
+testing = []
+
+[dependencies]
+bytes.workspace = true
+futures.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+whoosh-proto.workspace = true
+
+[lints]
+workspace = true

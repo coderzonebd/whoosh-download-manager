@@ -1,0 +1,8 @@
+# Every response head is delayed 500 ms (slow origin / long path). Rewards
+# connection reuse, preconnect and pipelining requests ahead of need.
+# Note: this is server think-time, not RTT; real RTT/loss shaping needs
+# `tc netem` and is out of scope.
+description = "500 ms time-to-first-byte on every request"
+
+[latency]
+ttfb_ms = 500

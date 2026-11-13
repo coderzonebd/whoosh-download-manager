@@ -1,0 +1,7 @@
+# A server without range support: no Accept-Ranges, Range is ignored and the
+# full file comes back with 200. Segmenting is impossible; resume must
+# restart.
+description = "No Accept-Ranges; Range ignored (200 full)"
+
+[ranges]
+mode = "ignore"

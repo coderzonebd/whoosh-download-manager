@@ -1,0 +1,7 @@
+# Bodies stop dead for 8 s, on average once per 100 MiB per response, then
+# continue. Hedged requests should make these stalls invisible.
+description = "Mid-stream 8 s stalls, ~1 per 100 MiB per response"
+
+[stalls]
+prob_per_mb = 0.01
+duration_ms = 8000
