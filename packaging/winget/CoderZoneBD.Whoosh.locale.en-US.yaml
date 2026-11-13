@@ -5,11 +5,11 @@ PackageVersion: 0.0.1
 PackageLocale: en-US
 Publisher: CoderZone BD
 PublisherUrl: https://github.com/coderzonebd
-PublisherSupportUrl: https://github.com/coderzonebd/whoosh/issues
+PublisherSupportUrl: https://github.com/coderzonebd/whoosh-download-manager/issues
 PackageName: Whoosh
-PackageUrl: https://github.com/coderzonebd/whoosh
+PackageUrl: https://github.com/coderzonebd/whoosh-download-manager
 License: GPL-3.0-or-later
-LicenseUrl: https://github.com/coderzonebd/whoosh/blob/main/LICENSE.md
+LicenseUrl: https://github.com/coderzonebd/whoosh-download-manager/blob/main/LICENSE.md
 Copyright: Copyright © 2026 CoderZone BD and contributors
 ShortDescription: Fast, open-source download manager
 Description: >-
@@ -22,6 +22,6 @@ Tags:
   - downloader
   - accelerator
   - open-source
-ReleaseNotesUrl: https://github.com/coderzonebd/whoosh/releases/tag/v0.0.1
+ReleaseNotesUrl: https://github.com/coderzonebd/whoosh-download-manager/releases/tag/v0.0.1
 ManifestType: defaultLocale
 ManifestVersion: 1.10.0

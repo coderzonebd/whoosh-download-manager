@@ -45,7 +45,7 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest com.code
 ## Placeholders until the name and signing are settled
 
 - App id `com.coderzonebd.whoosh` (also the `identifier` in `tauri.conf.json`),
-  command `whoosh-desktop`, every `github.com/coderzonebd/whoosh` URL.
+  command `whoosh-desktop`, every `github.com/coderzonebd/whoosh-download-manager` URL.
 - The `.deb` URL and zeroed `sha256`; x86_64 only.
 - The icon paths inside the `.deb` follow what Tauri 2 produced in a local
   build on 2026-11-10; recheck them if the bundler changes.

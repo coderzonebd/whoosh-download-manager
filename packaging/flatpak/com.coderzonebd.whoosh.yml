@@ -29,7 +29,7 @@ modules:
       - type: file
         dest-filename: whoosh.deb
         only-arches: [x86_64]
-        url: https://github.com/coderzonebd/whoosh/releases/download/v0.0.1/Whoosh_0.0.1_amd64.deb
+        url: https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.0.1/Whoosh_0.0.1_amd64.deb
         sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       - type: file
         path: ../linux/com.coderzonebd.whoosh.desktop

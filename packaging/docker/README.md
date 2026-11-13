@@ -27,7 +27,7 @@ data with no authentication: keep it off the LAN.
 ## Placeholders until the daemon and the name are settled
 
 - Package, binary, entrypoint, ports and `LABEL`s name `whoosh-labserver`.
-- `org.opencontainers.image.source` points at `github.com/coderzonebd/whoosh`.
+- `org.opencontainers.image.source` points at `github.com/coderzonebd/whoosh-download-manager`.
 - No volume, healthcheck or config file yet: the daemon will need a data
   volume (`WHOOSH_DATA_DIR`), a download volume and a token for its API.
 - Publishing (GHCR with `GITHUB_TOKEN`, Docker Hub with its own token),

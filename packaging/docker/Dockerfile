@@ -31,7 +31,7 @@ FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f0
 LABEL org.opencontainers.image.title="whoosh-labserver" \
       org.opencontainers.image.description="Fault-injecting HTTP test server (stand-in for the whoosh daemon image)" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/coderzonebd/whoosh"
+      org.opencontainers.image.source="https://github.com/coderzonebd/whoosh-download-manager"
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \

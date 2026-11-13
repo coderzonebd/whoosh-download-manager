@@ -169,7 +169,7 @@ offline.
   (every action here already is).
 - *Settings → Environments*: create `release` as described above.
 - *Settings → Rules*: run `scripts/github-setup.sh OWNER/REPO` once. It makes
-  `dev` the default branch and applies `.github/rulesets/*.json`: `dev` needs a
+  `pub` the default branch (visitors see the latest release) and applies `.github/rulesets/*.json`: `dev` needs a
   reviewed PR with the **CI OK** check; `pub` takes release PRs from `dev` only
   (**CI OK** + **PR source is dev**), merge commits only; tags `v*` cannot be
   deleted or moved. No force pushes or deletion on either branch.

@@ -20,7 +20,7 @@ Check locally with `scoop install .\whoosh.json` and
 ## Placeholders until the name, portable mode and signing are settled
 
 - App name `whoosh`, `whoosh-desktop.exe`, shortcut name and every
-  `github.com/coderzonebd/whoosh` URL; zeroed `hash`, version `0.0.1`.
+  `github.com/coderzonebd/whoosh-download-manager` URL; zeroed `hash`, version `0.0.1`.
 - No `persist` yet: the app does not have a portable mode (data next to the
   executable, MASTER-PLAN §3.1). Until it does, settings live in
   `%APPDATA%` and survive `scoop update` anyway.

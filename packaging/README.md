@@ -24,7 +24,7 @@ these are placeholders in every file here:
 - the name **Whoosh** / `whoosh`, the app id **`com.coderzonebd.whoosh`** (also in
   `tauri.conf.json` and the native messaging host name), winget id
   `CoderZoneBD.Whoosh`;
-- the repository URL **`github.com/coderzonebd/whoosh`**;
+- the repository URL **`github.com/coderzonebd/whoosh-download-manager`**;
 - versions (`0.0.1`) and zeroed hashes.
 
 Renaming later means: `tauri.conf.json` (`productName`, `identifier`), the

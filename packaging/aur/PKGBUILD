@@ -9,7 +9,7 @@ pkgver=0.0.1
 pkgrel=1
 pkgdesc='Fast, open-source download manager'
 arch=('x86_64' 'aarch64')
-url='https://github.com/coderzonebd/whoosh'
+url='https://github.com/coderzonebd/whoosh-download-manager'
 # Desktop app GPL-3.0-or-later; engine, protocol and native host Apache-2.0.
 license=('GPL-3.0-or-later' 'Apache-2.0')
 depends=(

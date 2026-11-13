@@ -7,7 +7,7 @@ security problem.**
 
 Report it privately through GitHub's security advisories:
 **Security → Report a vulnerability** on this repository
-(`https://github.com/coderzonebd/whoosh/security/advisories/new`). Only the
+(`https://github.com/coderzonebd/whoosh-download-manager/security/advisories/new`). Only the
 maintainers can see the report, and we can work on the fix and the advisory
 with you there.
 

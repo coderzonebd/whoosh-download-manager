@@ -7,6 +7,7 @@ version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -24,6 +25,7 @@ updates:
   - package-ecosystem: npm
     # pnpm workspace: the root lockfile covers apps/* and packages/*.
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -42,6 +44,7 @@ updates:
     directories:
       - /
       - /.github/actions/*
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday

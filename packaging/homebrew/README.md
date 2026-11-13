@@ -25,7 +25,7 @@ Automating the bump from `release.yml` needs a token that can push to the tap
 ## Placeholders until the name and signing are settled
 
 - Token `whoosh`, `name "Whoosh"`, `Whoosh.app`, the bundle id in `zap` paths
-  (`com.coderzonebd.whoosh`) and every `github.com/coderzonebd/whoosh` URL.
+  (`com.coderzonebd.whoosh`) and every `github.com/coderzonebd/whoosh-download-manager` URL.
 - Zeroed `sha256` and version `0.0.1`.
 - `depends_on macos: ">= :monterey"` follows `bundle.macOS.minimumSystemVersion`
   (12.0) in `tauri.conf.json`; keep them in step.
