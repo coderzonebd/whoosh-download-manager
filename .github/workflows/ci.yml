@@ -136,7 +136,7 @@ jobs:
       - name: Point the tests at both browsers
         # The suites skip silently when a browser is missing; fail here instead.
         run: |
-          chrome=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux64/chrome | sort -V | tail -n 1)
+          chrome=$(find "$HOME/.cache/ms-playwright" -path '*/chromium-*/chrome-linux64/chrome' -type f | sort -V | tail -n 1)
           firefox=$(command -v firefox || true)
           test -x "$chrome" || { echo "::error::Chrome for Testing not found"; exit 1; }
           test -n "$firefox" || { echo "::error::Firefox not found on the runner"; exit 1; }

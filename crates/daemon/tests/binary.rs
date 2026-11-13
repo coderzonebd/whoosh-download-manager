@@ -51,6 +51,7 @@ fn wait_exit(child: &mut Child, within: Duration) -> std::process::ExitStatus {
     }
 }
 
+#[cfg(unix)]
 fn stderr_of(child: &mut Child) -> String {
     use std::io::Read;
     let mut s = String::new();
