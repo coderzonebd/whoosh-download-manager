@@ -5199,7 +5199,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "http",
  "http-body-util",
  "hyper",
@@ -5337,7 +5337,7 @@ name = "whoosh-proto"
 version = "0.1.0"
 dependencies = [
  "futures",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "hmac",
  "rustix",
  "serde",
