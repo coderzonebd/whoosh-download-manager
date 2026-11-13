@@ -28,7 +28,7 @@ field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sy
 status=$(field status)
 if [ "$status" != "Accepted" ]; then
   id=$(field id)
-  [ -n "$id" ] && xcrun notarytool log "$id" "${auth[@]}" || true
+  if [ -n "$id" ]; then xcrun notarytool log "$id" "${auth[@]}" || true; fi
   echo "::error::Notarization of $file finished with status '$status'"
   exit 1
 fi
