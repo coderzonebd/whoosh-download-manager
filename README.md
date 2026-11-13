@@ -9,7 +9,7 @@
 
 [![License: Apache-2.0 / GPL-3.0](https://img.shields.io/badge/license-Apache--2.0%20%2F%20GPL--3.0-2f74ec)](LICENSE.md)
 [![Rust](https://img.shields.io/badge/engine-Rust-6a4bd8?logo=rust)](crates)
-[![Phase](https://img.shields.io/badge/status-Phase%201%20·%20engine-2f74ec)](#roadmap)
+[![Release](https://img.shields.io/badge/release-v0.1.0%20·%20engine-2f74ec)](CHANGELOG.md)
 [![Platforms](https://img.shields.io/badge/targets-Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-6a4bd8)](MASTER-PLAN.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome%20(into%20dev)-2f74ec)](CONTRIBUTING.md)
 
@@ -19,7 +19,7 @@
 
 ---
 
-> **Status: Phase 1 (the engine) is in its release gate.** The engine, daemon and CLI work today on Linux. The desktop app and the browser extension arrive in Phase 2 (v1.0). `vayu` is a working codename.
+> **Status: Phase 1 (the engine) is released as v0.1.0.** The engine, daemon and CLI work today on Linux. The desktop app and the browser extension arrive in Phase 2 (v1.0). `vayu` is a working codename.
 
 ## Measured, not claimed
 
@@ -27,16 +27,17 @@ Every number below comes from [`vayu-bench`](crates/bench). It runs vayu and nin
 
 | | vayu | Best competitor |
 |---|---|---|
-| **Correct files** | **175 / 175 runs byte-exact**, 0 wrong names | Gopeed: 14 corrupt files · Surge: 3 corrupt files |
-| **Crash test**: 1,000 × `kill -9` mid-download | **0 corrupt, 0 duplicates** (1,701 downloads) | not measured by anyone else |
-| **CPU per GiB** (1 GiB file) | **0.72 CPU-s** | 1.43 CPU-s (aria2c, 16 connections) |
-| **Flaky server**, 100 MiB | **0.141 s**, fastest | aria2-next 0.150 s |
-| **Stalling server**, 100 MiB | **0.151 s**, fastest | 0.167 s+ |
-| **Slow-drip server**, 10 MiB | **0.306 s**, fastest | Gopeed 0.303 s, tied |
+| **Correct files** | **175 / 175 runs byte-exact**, 0 wrong names | Gopeed: 14 corrupt files · Surge: 1 corrupt file |
+| **Crash test**: 1,000 × `kill -9` mid-download | **0 corrupt, 0 duplicates** (1,584 downloads) | not measured by anyone else |
+| **CPU per GiB** (1 GiB file) | **1.26 CPU-s** | 1.51 CPU-s (aria2c, 16 connections) |
+| **Flaky server**, 100 MiB | **0.142 s**, fastest | aria2-next 0.216 s |
+| **Stalling server**, 100 MiB | **0.169 s**, fastest | Surge 0.199 s |
+| **Slow-drip server**, 10 MiB | **0.295 s**, fastest | Gopeed 0.316 s |
+| **Real CDNs** (kernel.org/Fastly, Google, Mozilla) | no competitor significantly faster · **lowest CPU on all three** | aria2-next, Mister DM, aria2c `-x16` |
 
-<sub>Run set <a href="docs/bench/data/2026-11-12-pop-os-phase1-gate2/report.md">2026-11-12-pop-os-phase1-gate2</a>: Pop!_OS, loopback. Competitors: curl, wget, aria2c, aria2-next, Mister DM, Surge, Gopeed. Lower CPU is better.</sub>
+<sub>Run sets <a href="docs/bench/data/2026-11-13-pop-os-phase1-gate4/report.md">2026-11-13-pop-os-phase1-gate4</a>, <a href="docs/bench/data/2026-11-13-pop-os-phase1-hardkill-9665f1b">hardkill-9665f1b</a> and <a href="docs/bench/data/2026-11-13-pop-os-phase1-cdn3/report.md">cdn3</a>: Pop!_OS laptop, loopback and real internet. Times are to the file being safely on disk. Competitors: curl, wget, aria2c, aria2-next, Mister DM, Surge, Gopeed. Lower is better.</sub>
 
-vayu doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock.
+vayu doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
 
 ## What the engine does today
 
@@ -106,7 +107,7 @@ flowchart LR
 | Phase | Ships | Status |
 |---|---|---|
 | **0 · Foundations** | monorepo, CI, design system, labserver, bench, baseline report | ✅ done |
-| **1 · Engine** | H1/H2/H3 engine, daemon, CLI, crash-proof journal; [public gate](MASTER-PLAN.md#phase-1--engine-months-13) | 🔶 release gate |
+| **1 · Engine** | H1/H2/H3 engine, daemon, CLI, crash-proof journal; [public gate](MASTER-PLAN.md#phase-1--engine-months-13) | ✅ v0.1.0 |
 | **2 · v1.0** | desktop app (Windows, macOS, Linux), extension Pro mode, self-healing links, yt-dlp, signed installers, Bangla + English | next |
 | **3 · v1.5** | BitTorrent, FTP/SFTP, HLS/DASH, multi-source + LAN peers, BDIX mode, Docker, web remote | planned |
 | **4 · v2.0** | extension Lite mode (WASM), Android, iOS companion, send-to-device, plugins | planned |

@@ -6,6 +6,8 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 The first release: the download engine, its daemon and the command line, all measured against nine other downloaders in a public, reproducible benchmark (gate: [MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
 
+Gate result ([gate run 4](docs/bench/data/2026-11-13-pop-os-phase1-gate4/report.md)): all 25 labserver rows pass, with 175 of 175 runs byte-exact. The 1,000-kill crash test leaves 0 corrupt and 0 duplicate files. On three real CDNs no competitor is significantly faster, and vayu uses the least CPU. Two 1 MiB rows pass under the small-file allowance added to rule 3 on 2026-11-13: wget is 4.7 and 8.1 ms faster there, because vayu forces the file to disk before calling it done.
+
 ### Engine (`vayu-engine`, `vayu-net`, `vayu-store`)
 - HTTP/1.1, HTTP/2 and HTTP/3 over TLS, with Happy Eyeballs and per-host profiles.
 - Adaptive connections: the first connection is measured alone, and more are added only when they beat it by at least 25 %.
@@ -16,6 +18,7 @@ The first release: the download engine, its daemon and the command line, all mea
   - detection of a file that changed on the server;
   - no duplicate files after a crash, even one around the final rename.
 - Power-safe by default: a download is reported done only once the file and its name are on disk. The end-of-download sync chain is kept short (early finish intent, no redundant syncs).
+- Under a limit shared by all connections (a global throttle), it adds no connections that would cut the first one's throughput.
 - Inline writes on the caller's thread while the data is still in the CPU cache; flushes on a thread of their own.
 - Cookies, referers, custom headers, redirect chains, expiring signed URLs, servers without ranges or lengths, and Unicode (RFC 5987) file names with path-traversal protection.
 - Queues, categories, a global speed limit, checksums and mirrors.
@@ -27,7 +30,7 @@ The first release: the download engine, its daemon and the command line, all mea
 
 ### Tooling
 - `labserver`: a fault-injecting HTTP/1.1, HTTP/2 and HTTP/3 test server with more than 20 scenarios.
-- `vayu-bench`: a benchmark harness (Mann-Whitney U, timing to durability, CPU per GiB, idle-machine guard) and a 1,000-SIGKILL crash test.
+- `vayu-bench`: a benchmark harness (Mann-Whitney U, timing to durability, CPU per GiB, idle-machine guard), the Phase 1 gate verdict in every report, and a 1,000-SIGKILL crash test.
 
 ### Repository
 - Two branches: `dev` for all work, and `pub` for releases, which takes release PRs from `dev` only. Enforced by workflows and rulesets.

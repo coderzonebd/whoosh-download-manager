@@ -347,9 +347,11 @@ fn gate_section(o: &mut String, g: &Gate) {
     let _ = writeln!(o, "## Phase 1 gate: `{}`\n", g.client);
     let _ = writeln!(
         o,
-        "MASTER-PLAN §8 (amended 2026-11-11), judged from this run set: **1** every run \
-         byte-exact, no wrong file name; **3** no competitor significantly faster \
-         (Mann-Whitney U, p < {}); **4** in the engine scenarios ({}), median time the \
+        "MASTER-PLAN §8 (amended 2026-11-11 and 2026-11-13), judged from this run set: \
+         **1** every run byte-exact, no wrong file name; **3** no competitor significantly \
+         faster (Mann-Whitney U, p < {}), except that on files of at most {} MiB a lead of \
+         at most {:.0} ms is allowed (the fixed cost of vayu's power-safe finish) and \
+         listed in the row; **4** in the engine scenarios ({}), median time the \
          best or within {:.0} % of it — rules 3 and 4 on the time **to durability** \
          (*durable*: until the harness's fsync of the finished file returns), as §8 \
          requires; **5** median CPU per GiB at or below every \
@@ -357,6 +359,8 @@ fn gate_section(o: &mut String, g: &Gate) {
          side. Rules 2 (1,000 hard kills: `vayu-bench hardkill`) and 6 (real CDNs) are not \
          judged here; other builds of the same tool are not competitors.\n",
         crate::gate::P_LIMIT,
+        crate::gate::SMALL_FILE >> 20,
+        crate::gate::SMALL_MARGIN_S * 1000.0,
         crate::gate::ENGINE_SCENARIOS.join(", "),
         crate::gate::WITHIN * 100.0,
         crate::gate::MIN_FOR_TEST

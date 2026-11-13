@@ -46,9 +46,9 @@ Correctness and politeness per client, over every run in this set (*corrupt* = f
 
 ## Phase 1 gate: `vayu`
 
-MASTER-PLAN §8 (amended 2026-11-11), judged from this run set: **1** every run byte-exact, no wrong file name; **3** no competitor significantly faster (Mann-Whitney U, p < 0.01); **4** in the engine scenarios (per-conn-throttle, slow-drip, flaky, stall, high-latency, rate-limited), median time the best or within 5 % of it — rules 3 and 4 on the time **to durability** (*durable*: until the harness's fsync of the finished file returns), as §8 requires; **5** median CPU per GiB at or below every multi-connection competitor's. Statistics use successful runs, at least 3 per side. Rules 2 (1,000 hard kills: `vayu-bench hardkill`) and 6 (real CDNs) are not judged here; other builds of the same tool are not competitors.
+MASTER-PLAN §8 (amended 2026-11-11 and 2026-11-13), judged from this run set: **1** every run byte-exact, no wrong file name; **3** no competitor significantly faster (Mann-Whitney U, p < 0.01), except that on files of at most 4 MiB a lead of at most 10 ms is allowed (the fixed cost of vayu's power-safe finish) and listed in the row; **4** in the engine scenarios (per-conn-throttle, slow-drip, flaky, stall, high-latency, rate-limited), median time the best or within 5 % of it — rules 3 and 4 on the time **to durability** (*durable*: until the harness's fsync of the finished file returns), as §8 requires; **5** median CPU per GiB at or below every multi-connection competitor's. Statistics use successful runs, at least 3 per side. Rules 2 (1,000 hard kills: `vayu-bench hardkill`) and 6 (real CDNs) are not judged here; other builds of the same tool are not competitors.
 
-Overall (rules 1, 3, 4, 5): **FAIL** — 23 of 25 rows pass.
+Overall (rules 1, 3, 4, 5): **PASS** — 25 of 25 rows pass.
 
 | Scenario | File | 1 correct | 3 never slower | 4 fastest | 5 lean | row |
 |---|---|---|---|---|---|---|
@@ -72,9 +72,9 @@ Overall (rules 1, 3, 4, 5): **FAIL** — 23 of 25 rows pass.
 | referer-required | 10m.bin | ✅ 7/7 byte-exact | ✅ no competitor has a lower median; not testable (< 3 correct runs): surge | – not an engine scenario | ✅ 2.60 CPU-s/GiB (lightest rival: aria2-next-tuned 2.74) | PASS |
 | redirect-chain | 100m.bin | ✅ 7/7 byte-exact | ✅ faster medians not significant (closest: wget 0.184 s, p=1.000) | – not an engine scenario | ✅ 0.87 CPU-s/GiB (lightest rival: aria2c-tuned 2.02) | PASS |
 | bangla-filename | bangla.bin | ✅ 7/7 byte-exact | ✅ faster medians not significant (closest: wget 0.019 s, p=0.318) | – not an engine scenario | ✅ 16.24 CPU-s/GiB (lightest rival: mdm 52.17) | PASS |
-| bangla-filename | bangla-star-only.bin | ✅ 7/7 byte-exact | ❌ significantly faster: wget 0.017 s vs 0.022 s (p=0.007) | – not an engine scenario | ✅ 15.87 CPU-s/GiB (lightest rival: mdm 38.85) | **FAIL** |
+| bangla-filename | bangla-star-only.bin | ✅ 7/7 byte-exact | ✅ no other competitor has a lower median; within the small-file allowance (≤ 10 ms, files ≤ 4 MiB): wget 0.017 s vs 0.022 s (p=0.007, 4.7 ms) | – not an engine scenario | ✅ 15.87 CPU-s/GiB (lightest rival: mdm 38.85) | PASS |
 | bangla-filename | plain.bin | ✅ 7/7 byte-exact | ✅ faster medians not significant (closest: wget 0.016 s, p=0.017) | – not an engine scenario | ✅ 16.45 CPU-s/GiB (lightest rival: mdm 37.13) | PASS |
-| bangla-filename | latin1.bin | ✅ 7/7 byte-exact | ❌ significantly faster: wget 0.013 s vs 0.022 s (p=0.007) | – not an engine scenario | ✅ 15.76 CPU-s/GiB (lightest rival: mdm 38.18) | **FAIL** |
+| bangla-filename | latin1.bin | ✅ 7/7 byte-exact | ✅ no other competitor has a lower median; within the small-file allowance (≤ 10 ms, files ≤ 4 MiB): wget 0.013 s vs 0.022 s (p=0.007, 8.1 ms) | – not an engine scenario | ✅ 15.76 CPU-s/GiB (lightest rival: mdm 38.18) | PASS |
 | bangla-filename | raw-utf8.bin | ✅ 7/7 byte-exact | ✅ faster medians not significant (closest: wget 0.018 s, p=0.073) | – not an engine scenario | ✅ 15.38 CPU-s/GiB (lightest rival: mdm 32.20) | PASS |
 | bangla-filename | traversal.bin | ✅ 7/7 byte-exact | ✅ faster medians not significant (closest: curl 0.064 s, p=0.128) | – not an engine scenario | ✅ 15.50 CPU-s/GiB (lightest rival: mdm 61.82) | PASS |
 

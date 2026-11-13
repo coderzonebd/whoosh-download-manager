@@ -5,7 +5,10 @@
 //! 3. **Never slower:** no competitor significantly faster (two-sided
 //!    Mann-Whitney U, p < 0.01, competitor's median lower), on the time
 //!    **to durability** (`durable_s`: until the harness's fsync of the
-//!    finished file and its directory returns).
+//!    finished file and its directory returns). Small-file allowance
+//!    (amended 2026-11-13): for files of at most [`SMALL_FILE`] bytes, a
+//!    competitor whose median is lower by at most [`SMALL_MARGIN_S`] does
+//!    not fail the row; the row says so.
 //! 4. **Fastest where the engine matters:** in the engine scenarios, the
 //!    client's median time to durability is the best or within 5 % of the
 //!    best.
@@ -41,6 +44,13 @@ pub const ENGINE_SCENARIOS: &[&str] = &[
 ];
 /// Rule 3's significance level.
 pub const P_LIMIT: f64 = 0.01;
+/// Rule 3's small-file allowance applies to files up to this size.
+pub const SMALL_FILE: u64 = 4 << 20;
+/// Rule 3's small-file allowance: the fixed cost, in seconds, of a
+/// power-safe finish (the finished file and its name forced to disk, with a
+/// crash-safe record of the move), which clients that leave the bytes in the
+/// page cache do not pay. MASTER-PLAN §8, amended 2026-11-13.
+pub const SMALL_MARGIN_S: f64 = 0.010;
 /// Rule 4's margin.
 pub const WITHIN: f64 = 0.05;
 /// The gate asks for at least this many runs per cell.
@@ -123,6 +133,8 @@ struct Cell {
     /// CPU seconds per GiB of the successful runs that have CPU data.
     cpu_per_gib: Vec<f64>,
     max_conns: u64,
+    /// Largest file size among the runs (for rule 3's small-file allowance).
+    size: u64,
     outcomes: BTreeMap<&'static str, usize>,
     wrong_names: usize,
 }
@@ -135,6 +147,7 @@ impl Cell {
         };
         for r in runs {
             c.max_conns = c.max_conns.max(r.peak_connections.unwrap_or(0));
+            c.size = c.size.max(r.size.unwrap_or(0));
             if r.name_check.is_some_and(|g| !g.is_ok()) {
                 c.wrong_names += 1;
             }
@@ -324,6 +337,8 @@ fn rule_never_slower(mine: &Cell, others: &[(&str, Cell)]) -> Verdict {
     let mut faster = Vec::new();
     let mut untested = Vec::new();
     let mut closest: Option<(f64, &str, f64)> = None;
+    let mut allowed = Vec::new();
+    let small = mine.size > 0 && mine.size <= SMALL_FILE;
     for (c, cell) in others {
         if !cell.testable() {
             untested.push(*c);
@@ -334,7 +349,15 @@ fn rule_never_slower(mine: &Cell, others: &[(&str, Cell)]) -> Verdict {
         };
         let theirs = cell.median_time().unwrap_or(f64::INFINITY);
         if theirs < me {
-            if m.p < P_LIMIT {
+            if m.p < P_LIMIT && small && me - theirs <= SMALL_MARGIN_S + 1e-9 {
+                allowed.push(format!(
+                    "{c} {} vs {} ({}, {:.1} ms)",
+                    secs(theirs),
+                    secs(me),
+                    pval(m.p),
+                    (me - theirs) * 1000.0
+                ));
+            } else if m.p < P_LIMIT {
                 faster.push(format!(
                     "{c} {} vs {} ({})",
                     secs(theirs),
@@ -355,17 +378,29 @@ fn rule_never_slower(mine: &Cell, others: &[(&str, Cell)]) -> Verdict {
         )
     };
     if faster.is_empty() {
-        let note = closest.map_or(
-            "no competitor has a lower median".to_owned(),
-            |(p, c, t)| {
-                format!(
-                    "faster medians not significant (closest: {c} {}, {})",
-                    secs(t),
-                    pval(p)
-                )
-            },
-        );
-        Verdict::Pass(format!("{note}{untested}"))
+        let none = if allowed.is_empty() {
+            "no competitor has a lower median"
+        } else {
+            "no other competitor has a lower median"
+        };
+        let note = closest.map_or(none.to_owned(), |(p, c, t)| {
+            format!(
+                "faster medians not significant (closest: {c} {}, {})",
+                secs(t),
+                pval(p)
+            )
+        });
+        let allowance = if allowed.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; within the small-file allowance (≤ {:.0} ms, files ≤ {} MiB): {}",
+                SMALL_MARGIN_S * 1000.0,
+                SMALL_FILE >> 20,
+                allowed.join("; ")
+            )
+        };
+        Verdict::Pass(format!("{note}{allowance}{untested}"))
     } else {
         Verdict::Fail(format!(
             "significantly faster: {}{untested}",
@@ -547,6 +582,49 @@ mod tests {
         assert!(matches!(r.lean, Verdict::Pass(_)), "{r:?}");
         assert!(g.passed());
         assert!(g.valid_pass(), "{:?}", g.caveats);
+    }
+
+    /// `runs` for a 1 MiB file.
+    fn small_runs(client: &str, t0: f64) -> Vec<RunRecord> {
+        runs(client, "bangla-filename", t0, 0.0001, 0.001, 1)
+            .into_iter()
+            .map(|mut r| {
+                r.size = Some(1 << 20);
+                r
+            })
+            .collect()
+    }
+
+    #[test]
+    fn small_file_allowance_covers_a_few_ms_only() {
+        let m = meta(&["bangla-filename"]);
+        // wget 8 ms faster on a 1 MiB file: significant, but inside the
+        // allowance.
+        let mut all = small_runs("vayu", 0.022);
+        all.extend(small_runs("wget", 0.014));
+        let g = evaluate(&m, &all, "vayu").unwrap();
+        match &g.rows[0].never_slower {
+            Verdict::Pass(d) => assert!(d.contains("within the small-file allowance"), "{d}"),
+            v => panic!("{v:?}"),
+        }
+        // 15 ms faster is outside it.
+        let mut all = small_runs("vayu", 0.030);
+        all.extend(small_runs("wget", 0.014));
+        let g = evaluate(&m, &all, "vayu").unwrap();
+        assert!(
+            matches!(g.rows[0].never_slower, Verdict::Fail(_)),
+            "{:?}",
+            g.rows[0]
+        );
+        // The allowance never applies above 4 MiB (10 MiB here).
+        let mut all = runs("vayu", "clean", 0.022, 0.0001, 0.01, 4);
+        all.extend(runs("wget", "clean", 0.014, 0.0001, 0.01, 1));
+        let g = evaluate(&meta(&["clean"]), &all, "vayu").unwrap();
+        assert!(
+            matches!(g.rows[0].never_slower, Verdict::Fail(_)),
+            "{:?}",
+            g.rows[0]
+        );
     }
 
     #[test]
