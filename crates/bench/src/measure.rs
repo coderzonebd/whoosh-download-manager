@@ -116,6 +116,7 @@ fn exit_signal(_: &std::process::ExitStatus) -> Option<i32> {
 #[cfg(unix)]
 fn wait_controlled(mut child: Child) -> Result<std::process::ExitStatus> {
     use nix::sys::signal::{Signal, kill};
+    #[cfg(target_os = "linux")]
     use nix::sys::wait::{Id, WaitPidFlag, waitid};
     use nix::unistd::Pid;
     use std::sync::{Arc, Mutex};
@@ -144,19 +145,35 @@ fn wait_controlled(mut child: Child) -> Result<std::process::ExitStatus> {
             }
         }
     });
-    // Wait for exit without reaping.
-    loop {
-        match waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT) {
-            Ok(_) => break,
-            Err(nix::errno::Errno::EINTR) => continue,
-            Err(e) => bail!("waitid: {e}"),
+    // Linux: wait for exit without reaping.
+    #[cfg(target_os = "linux")]
+    {
+        loop {
+            match waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT) {
+                Ok(_) => break,
+                Err(nix::errno::Errno::EINTR) => continue,
+                Err(e) => bail!("waitid: {e}"),
+            }
         }
+        let mut done = exited.lock().unwrap_or_else(|e| e.into_inner());
+        *done = true;
+        let status = child.wait()?;
+        drop(done);
+        Ok(status)
     }
-    let mut done = exited.lock().unwrap_or_else(|e| e.into_inner());
-    *done = true;
-    let status = child.wait()?;
-    drop(done);
-    Ok(status)
+    // Elsewhere (no `waitid` in nix for macOS and the BSDs): poll, reaping
+    // only while holding the lock, so the signalling thread still never
+    // signals a reaped (reusable) pid.
+    #[cfg(not(target_os = "linux"))]
+    loop {
+        let mut done = exited.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(status) = child.try_wait()? {
+            *done = true;
+            return Ok(status);
+        }
+        drop(done);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
 }
 
 #[cfg(not(unix))]

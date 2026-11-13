@@ -15,6 +15,7 @@ use std::time::Duration;
 use common::*;
 use serde_json::{Value, json};
 use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
+#[cfg(target_os = "linux")]
 use whoosh_daemon::paths;
 
 fn nmhost() -> &'static Path {

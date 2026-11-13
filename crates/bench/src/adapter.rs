@@ -902,6 +902,7 @@ mod tests {
         assert!(inv.api.is_none());
     }
 
+    #[cfg(unix)] // POSIX shell wrapper and Unix paths
     #[test]
     fn whoosh_cold_runs_daemon_and_cli_under_one_shell() {
         let h = cookie();
@@ -937,6 +938,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // POSIX shell wrapper and Unix paths
     #[test]
     fn whoosh_resident_measures_only_the_cli() {
         let h = cookie();

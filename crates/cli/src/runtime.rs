@@ -27,11 +27,11 @@ pub fn read(data_dir: &Path) -> Result<Lookup, RuntimeError> {
     }
 }
 
-#[cfg(test)]
+// The only test needs Unix permissions.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn unusable_runtime_files() {
         use std::os::unix::fs::PermissionsExt;

@@ -683,6 +683,7 @@ fn preconnect_and_watch() {
     #[cfg(not(unix))]
     {
         let _ = watch.kill();
+        let _ = watch.wait();
     }
 }
 
@@ -692,12 +693,14 @@ fn preconnect_and_watch() {
 /// `token`, it proves itself like a real daemon (and records requests);
 /// without, it answers hello with a wrong proof, like an impostor on the
 /// port of a stale runtime file. Every message it receives is recorded.
+#[cfg(unix)]
 struct Fake {
     rt: tokio::runtime::Runtime,
     port: u16,
     received: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
 }
 
+#[cfg(unix)]
 impl Fake {
     fn start(token: Option<&str>) -> Self {
         use futures::{SinkExt, StreamExt};
@@ -748,6 +751,7 @@ impl Fake {
     }
 }
 
+#[cfg(unix)]
 impl Drop for Fake {
     fn drop(&mut self) {
         let _ = &self.rt;
