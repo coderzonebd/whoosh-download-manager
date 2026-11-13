@@ -329,6 +329,25 @@ async fn a_symlinked_database_is_refused() {
     assert_eq!(std::fs::read(&target).unwrap(), b"do not touch");
 }
 
+/// A symlink above the data directory is fine (macOS: /var -> /private/var);
+/// only the database file itself must not be a link.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_database_under_a_symlinked_directory_opens() {
+    let d = tempfile::tempdir().unwrap();
+    let real = d.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    let link = d.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let path = link.join("data").join("state.db");
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    s.save_download(&record(1)).await.unwrap();
+    drop(s);
+    assert!(real.join("data").join("state.db").exists());
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    assert_eq!(s.load_downloads().await.unwrap(), vec![record(1)]);
+}
+
 /// `filename_locked` (contract amendment 1) is stored with the record;
 /// rows written before it existed read as `false`.
 #[tokio::test]

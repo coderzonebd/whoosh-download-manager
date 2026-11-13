@@ -22,5 +22,8 @@ tokio.workspace = true
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
 whoosh-proto.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
 [lints]
 workspace = true

@@ -19,7 +19,7 @@ Open-source, crash-proof, and measured against every competitor in public.
 
 ---
 
-> **Status: Phase 1 (the engine) is released as v0.1.0.** The engine, daemon and CLI work today on Linux. The desktop app and the browser extension arrive in Phase 2 (v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
+> **Status: Phase 1 (the engine) is released as v0.1.0.** The engine, daemon and CLI work today on Linux and macOS; the Windows port comes with Phase 2. The desktop app and the browser extension arrive in Phase 2 (v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
 
 ## Measured, not claimed
 

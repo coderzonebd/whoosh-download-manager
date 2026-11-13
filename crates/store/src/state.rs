@@ -715,8 +715,16 @@ fn open_db(path: &Path) -> io::Result<Opened> {
 
 fn try_open(path: &Path) -> Result<Opened, OpenError> {
     let prepared = prepare_files(path)?;
+    // SQLITE_OPEN_NOFOLLOW refuses a symlink anywhere in the name, and some
+    // systems put one above every data directory (macOS: /var ->
+    // /private/var, so every temporary directory). Resolve the directory,
+    // which now exists; the file itself is still never followed.
+    let resolved = std::fs::canonicalize(sys::parent_or_cwd(path))
+        .ok()
+        .zip(path.file_name())
+        .map(|(dir, name)| dir.join(name));
     let mut conn = Connection::open_with_flags(
-        path,
+        resolved.as_deref().unwrap_or(path),
         OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
             | OpenFlags::SQLITE_OPEN_NO_MUTEX

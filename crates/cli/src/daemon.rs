@@ -155,6 +155,7 @@ pub fn spawn_detached(data_dir: &Path, extra_args: &[String]) -> Result<Child> {
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        keep_std_handles_to_ourselves();
     }
     cmd.spawn().map_err(|e| {
         CliError::DaemonUnavailable(format!(
@@ -163,6 +164,35 @@ pub fn spawn_detached(data_dir: &Path, extra_args: &[String]) -> Result<Child> {
             exe.display()
         ))
     })
+}
+
+/// Windows starts children with every inheritable handle of the parent, and
+/// our standard handles are inheritable when whoever started us passed them
+/// as pipes. The long-lived daemon would then hold the caller's pipes open,
+/// and a script reading our output to the end would wait for the daemon to
+/// exit. The daemon gets its own handles (null and the log) anyway, and
+/// `std::process` duplicates any handle it hands to a child, so clearing the
+/// flag on ours changes nothing else.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn keep_std_handles_to_ourselves() {
+    use windows_sys::Win32::Foundation::{
+        HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    };
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    for id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: plain Win32 calls on this process's own standard handles;
+        // a missing or invalid handle is skipped, and a failure only leaves
+        // the flag as it was.
+        unsafe {
+            let h = GetStdHandle(id);
+            if !h.is_null() && h != INVALID_HANDLE_VALUE {
+                SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
 }
 
 /// Truncates or creates `path`, owner-only (0600) on Unix.

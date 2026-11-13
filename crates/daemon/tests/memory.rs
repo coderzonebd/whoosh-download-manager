@@ -2,6 +2,7 @@
 //! messages (review finding: one 16 MiB `[0,0,…]` frame took the daemon from
 //! 13 MB to 292 MB). A test binary of its own so nothing else allocates
 //! while it measures.
+#![cfg(target_os = "linux")]
 
 mod common;
 

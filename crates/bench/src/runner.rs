@@ -1512,6 +1512,8 @@ fn sync_file_and_dirs(file: &Path, out: &Path) -> Result<()> {
                 .with_context(|| format!("fsync directory {}", d.display()))?;
         }
     }
+    #[cfg(not(unix))]
+    let _ = out; // directories cannot be fsynced on Windows
     Ok(())
 }
 
