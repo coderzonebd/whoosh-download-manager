@@ -4,7 +4,7 @@ use std::io;
 
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use vayu_proto::DownloadId;
+use whoosh_proto::DownloadId;
 
 use crate::RangeSet;
 use crate::source::RemoteMeta;

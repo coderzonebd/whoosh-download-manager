@@ -2,11 +2,11 @@
 <!-- PLACEHOLDER: name, URLs, developer id and screenshots change once the
      product name is chosen and the repository is public. -->
 <component type="desktop-application">
-  <id>com.coderzonebd.vayu</id>
+  <id>com.coderzonebd.whoosh</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
 
-  <name>Vayu</name>
+  <name>Whoosh</name>
   <summary>Fast, open-source download manager</summary>
   <developer id="com.coderzonebd">
     <name>CoderZone BD</name>
@@ -23,11 +23,11 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">com.coderzonebd.vayu.desktop</launchable>
+  <launchable type="desktop-id">com.coderzonebd.whoosh.desktop</launchable>
 
-  <url type="homepage">https://github.com/coderzonebd/vayu</url>
-  <url type="bugtracker">https://github.com/coderzonebd/vayu/issues</url>
-  <url type="vcs-browser">https://github.com/coderzonebd/vayu</url>
+  <url type="homepage">https://github.com/coderzonebd/whoosh</url>
+  <url type="bugtracker">https://github.com/coderzonebd/whoosh/issues</url>
+  <url type="vcs-browser">https://github.com/coderzonebd/whoosh</url>
 
   <content_rating type="oars-1.1"/>
 

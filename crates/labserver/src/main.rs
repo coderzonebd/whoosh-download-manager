@@ -1,16 +1,16 @@
-//! `vayu-labserver` command-line entry point.
+//! `whoosh-labserver` command-line entry point.
 
 use anyhow::Context;
 use clap::Parser;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-use vayu_labserver::{LabConfig, LabServer, Scenario, scenario};
+use whoosh_labserver::{LabConfig, LabServer, Scenario, scenario};
 
-/// Deterministic, fault-injecting HTTP test server for vayu's tests and
+/// Deterministic, fault-injecting HTTP test server for whoosh's tests and
 /// benchmarks.
 #[derive(Debug, Parser)]
-#[command(name = "vayu-labserver", version)]
+#[command(name = "whoosh-labserver", version)]
 struct Args {
     /// Address to listen on.
     #[arg(long, default_value = "127.0.0.1")]
@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "vayu_labserver=info".into()),
+                .unwrap_or_else(|_| "whoosh_labserver=info".into()),
         )
         .init();
     let args = Args::parse();
@@ -79,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
         std::fs::write(path, pem).with_context(|| format!("writing {}", path.display()))?;
     }
 
-    println!("vayu-labserver listening");
+    println!("whoosh-labserver listening");
     println!(
         "  http   http://{}  (HTTP/1.1, h2c prior knowledge)",
         lab.http_addr()

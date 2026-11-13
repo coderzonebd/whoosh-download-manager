@@ -20,11 +20,11 @@ use tokio::sync::watch;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
-use vayu_core::{
+use whoosh_core::{
     ByteRange, ByteStream, Checkpoint, DownloadRecord, Finishing, HostProfile, OpenRequest,
     RangeSet, RangeSource, RemoteMeta, SourceError, Storage, Validators,
 };
-use vayu_proto::{
+use whoosh_proto::{
     Checksum, DownloadId, DownloadState, Durability, ErrorInfo, RequestContext, SegmentInfo,
 };
 
@@ -68,7 +68,7 @@ enum Recovery {
 /// The interim intent marker (before `Checkpoint::finishing` existed):
 /// `RemoteMeta::final_url` = this prefix + the name. Still read, never
 /// written.
-const LEGACY_FINISHING: &str = "vayu-finishing:";
+const LEGACY_FINISHING: &str = "whoosh-finishing:";
 
 /// The finish intent of a checkpoint: the field, or the interim marker.
 fn intent(cp: &Checkpoint) -> Option<Finishing> {
@@ -809,7 +809,7 @@ impl Driver {
             done = verified;
         }
         if done.is_empty() && !pristine {
-            // Nothing journalled: whatever a `<name>.vayu-part` already holds
+            // Nothing journalled: whatever a `<name>.whoosh-part` already holds
             // (a removed download that kept its files, a crash before the
             // first commit, an older version) is not ours. Start from an
             // empty file, so `finish` can never move stale bytes along.

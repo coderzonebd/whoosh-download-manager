@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Vayu desktop shell (Phase 0): renders `packages/ui` on the mock daemon,
+//! Whoosh desktop shell (Phase 0): renders `packages/ui` on the mock daemon,
 //! remembers window size, position and maximised state, and shows a tray
 //! icon whose tooltip the UI keeps updated with the total download speed.
 //!
@@ -14,7 +14,7 @@ use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 mod window_size;
 
 /// Tray icon id, so commands can find it again.
-pub const TRAY_ID: &str = "vayu-tray";
+pub const TRAY_ID: &str = "whoosh-tray";
 const MAIN_WINDOW: &str = "main";
 
 /// Longest tooltip we pass on; Windows truncates at 127 UTF-16 units anyway.
@@ -25,7 +25,7 @@ fn window_state_flags() -> StateFlags {
     StateFlags::all() - StateFlags::SIZE
 }
 
-/// Called by the UI about once a second with e.g. "Vayu — ↓ 12.5 MB/s · 3 active".
+/// Called by the UI about once a second with e.g. "Whoosh — ↓ 12.5 MB/s · 3 active".
 #[tauri::command]
 fn set_tray_tooltip<R: Runtime>(app: AppHandle<R>, text: String) -> Result<(), String> {
     let text: String = text.chars().take(MAX_TOOLTIP_CHARS).collect();
@@ -53,18 +53,18 @@ fn save_state_and_quit<R: Runtime>(app: &AppHandle<R>) {
         window_size::save(&window);
     }
     if let Err(err) = app.save_window_state(window_state_flags()) {
-        eprintln!("vayu-desktop: could not save window state: {err}");
+        eprintln!("whoosh-desktop: could not save window state: {err}");
     }
     app.exit(0);
 }
 
 fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show Vayu", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show Whoosh", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Vayu")
+        .tooltip("Whoosh")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -114,7 +114,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![set_tray_tooltip])
         .run(tauri::generate_context!())
         .unwrap_or_else(|err| {
-            eprintln!("vayu-desktop: failed to start: {err}");
+            eprintln!("whoosh-desktop: failed to start: {err}");
             std::process::exit(1);
         });
 }

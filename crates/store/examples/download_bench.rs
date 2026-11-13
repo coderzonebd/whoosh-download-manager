@@ -2,7 +2,7 @@
 //! costs the writers.
 //!
 //! ```text
-//! cargo run --release -p vayu-store --example download_bench -- \
+//! cargo run --release -p whoosh-store --example download_bench -- \
 //!     [--dir DIR] [--size-gib 1] [--segments 8] [--chunk-kib 256] \
 //!     [--flush-mib 64] [--flush-ms 0] [--buffer-mib 16] [--runs 3] \
 //!     [--drop-cache true|false] [--inline true|false]
@@ -25,8 +25,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use vayu_core::StorageProvider;
-use vayu_store::{FileStorageProvider, StorageOptions};
+use whoosh_core::StorageProvider;
+use whoosh_store::{FileStorageProvider, StorageOptions};
 
 #[derive(Debug, Clone)]
 struct Args {
@@ -209,10 +209,10 @@ fn main() {
     let mut all_flushes = Vec::new();
     for r in 1..=a.runs {
         let tmp = tempfile::Builder::new()
-            .prefix("vayu-download-bench-")
+            .prefix("whoosh-download-bench-")
             .tempdir_in(&a.dir)
             .unwrap();
-        let res = rt.block_on(run(&a, &tmp.path().join("bench.vayu-part"), data.clone()));
+        let res = rt.block_on(run(&a, &tmp.path().join("bench.whoosh-part"), data.clone()));
         let mut f = res.flushes.clone();
         f.sort();
         let pick = |q: f64| {

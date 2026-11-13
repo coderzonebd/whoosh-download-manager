@@ -110,7 +110,7 @@ impl ScenarioRt {
             .signed_url
             .as_ref()
             .and_then(|s| s.secret.clone())
-            .unwrap_or_else(|| format!("vayu-lab-secret:{}", sc.name));
+            .unwrap_or_else(|| format!("whoosh-lab-secret:{}", sc.name));
         Self {
             idx,
             global_bucket: sc.bandwidth.global.map(|r| Arc::new(TokenBucket::new(r.0))),

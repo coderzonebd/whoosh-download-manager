@@ -25,7 +25,7 @@ fn peak_rss_kib() -> u64 {
 /// Opens a WebSocket and streams one masked 16 MiB text frame of `[0,0,0,…`
 /// (each `0,` would become a 32-byte JSON value if parsed) from a small
 /// reused buffer, until the daemon hangs up.
-async fn hostile(d: &vayu_daemon::RunningDaemon) {
+async fn hostile(d: &whoosh_daemon::RunningDaemon) {
     let (mut ws, _) = tokio_tungstenite::connect_async(d.rpc_url()).await.unwrap();
     let stream = match ws.get_mut() {
         tokio_tungstenite::MaybeTlsStream::Plain(s) => s,

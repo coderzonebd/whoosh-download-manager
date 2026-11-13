@@ -11,7 +11,9 @@ use serde_json::{Value, json};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use vayu_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, auth, method};
+use whoosh_proto::{
+    ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, auth, method,
+};
 
 use crate::token::Token;
 

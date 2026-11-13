@@ -1,5 +1,5 @@
 //! Where the daemon publishes its port and token (PROTOCOL.md §1), shared by
-//! the daemon, the CLI and `vayu-nmhost` so the three always agree.
+//! the daemon, the CLI and `whoosh-nmhost` so the three always agree.
 //!
 //! On Unix, [`read_runtime`] refuses a file that another user could have
 //! written: a symlink, a file not owned by the current user or readable by
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Overrides the data directory. Meant for tests, portable installs and
 /// running a second daemon side by side.
-pub const DATA_DIR_ENV: &str = "VAYU_DATA_DIR";
+pub const DATA_DIR_ENV: &str = "WHOOSH_DATA_DIR";
 
 /// The runtime file's name inside the data directory.
 pub const RUNTIME_FILE: &str = "runtime.json";
@@ -64,7 +64,7 @@ pub enum RuntimeError {
 /// the resolution itself is a pure function (and testable for every OS).
 #[derive(Debug, Clone, Default)]
 pub struct Env {
-    pub vayu_data_dir: Option<PathBuf>,
+    pub whoosh_data_dir: Option<PathBuf>,
     pub home: Option<PathBuf>,
     pub xdg_data_home: Option<PathBuf>,
     pub xdg_config_home: Option<PathBuf>,
@@ -79,7 +79,7 @@ impl Env {
                 .map(PathBuf::from)
         };
         Self {
-            vayu_data_dir: var(DATA_DIR_ENV),
+            whoosh_data_dir: var(DATA_DIR_ENV),
             home: var("HOME").or_else(|| var("USERPROFILE")),
             xdg_data_home: var("XDG_DATA_HOME").filter(|p| p.is_absolute()),
             xdg_config_home: var("XDG_CONFIG_HOME").filter(|p| p.is_absolute()),
@@ -109,25 +109,25 @@ impl Os {
 }
 
 /// The daemon's data directory:
-/// Linux `$XDG_DATA_HOME/vayu` (default `~/.local/share/vayu`),
-/// macOS `~/Library/Application Support/vayu`, Windows `%LOCALAPPDATA%\vayu`.
-/// `VAYU_DATA_DIR` overrides it everywhere.
+/// Linux `$XDG_DATA_HOME/whoosh` (default `~/.local/share/whoosh`),
+/// macOS `~/Library/Application Support/whoosh`, Windows `%LOCALAPPDATA%\whoosh`.
+/// `WHOOSH_DATA_DIR` overrides it everywhere.
 pub fn data_dir(os: Os, env: &Env) -> Result<PathBuf, RuntimeError> {
-    if let Some(dir) = &env.vayu_data_dir {
+    if let Some(dir) = &env.whoosh_data_dir {
         return Ok(dir.clone());
     }
     let home = || env.home.clone().ok_or(RuntimeError::NoBaseDir("HOME"));
     Ok(match os {
         Os::Linux => match &env.xdg_data_home {
-            Some(xdg) => xdg.join("vayu"),
-            None => home()?.join(".local/share/vayu"),
+            Some(xdg) => xdg.join("whoosh"),
+            None => home()?.join(".local/share/whoosh"),
         },
-        Os::MacOs => home()?.join("Library/Application Support/vayu"),
+        Os::MacOs => home()?.join("Library/Application Support/whoosh"),
         Os::Windows => env
             .local_app_data
             .clone()
             .ok_or(RuntimeError::NoBaseDir("LOCALAPPDATA"))?
-            .join("vayu"),
+            .join("whoosh"),
     })
 }
 
@@ -280,15 +280,15 @@ mod tests {
     fn data_dir_per_os() {
         assert_eq!(
             data_dir(Os::Linux, &env()).unwrap(),
-            PathBuf::from("/home/u/.local/share/vayu")
+            PathBuf::from("/home/u/.local/share/whoosh")
         );
         assert_eq!(
             data_dir(Os::MacOs, &env()).unwrap(),
-            PathBuf::from("/home/u/Library/Application Support/vayu")
+            PathBuf::from("/home/u/Library/Application Support/whoosh")
         );
         assert_eq!(
             data_dir(Os::Windows, &env()).unwrap(),
-            PathBuf::from(r"C:\Users\u\AppData\Local").join("vayu")
+            PathBuf::from(r"C:\Users\u\AppData\Local").join("whoosh")
         );
     }
 
@@ -300,14 +300,14 @@ mod tests {
         };
         assert_eq!(
             data_dir(Os::Linux, &env).unwrap(),
-            PathBuf::from("/data/vayu")
+            PathBuf::from("/data/whoosh")
         );
     }
 
     #[test]
     fn override_wins_everywhere() {
         let env = Env {
-            vayu_data_dir: Some("/portable".into()),
+            whoosh_data_dir: Some("/portable".into()),
             ..env()
         };
         for os in [Os::Linux, Os::MacOs, Os::Windows] {
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn missing_runtime_file_is_reported_as_such() {
-        let err = read_runtime(Path::new("/nonexistent/vayu/runtime.json")).unwrap_err();
+        let err = read_runtime(Path::new("/nonexistent/whoosh/runtime.json")).unwrap_err();
         assert!(matches!(err, RuntimeError::Missing(_)), "{err}");
     }
 
@@ -342,7 +342,7 @@ mod tests {
         impl TempDir {
             fn new(tag: &str) -> Self {
                 let dir = std::env::temp_dir().join(format!(
-                    "vayu-proto-rt-{tag}-{}-{:?}",
+                    "whoosh-proto-rt-{tag}-{}-{:?}",
                     std::process::id(),
                     std::thread::current().id()
                 ));

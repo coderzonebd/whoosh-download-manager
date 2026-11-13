@@ -13,13 +13,13 @@ use std::time::{Duration, Instant};
 use futures::StreamExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use vayu_core::{
+use whoosh_core::{
     ByteRange, ByteStream, OpenRequest, Protocol, RangeSource, SourceError, SourceFactory,
     Validators,
 };
-use vayu_labserver::{LabConfig, LabServer, Scenario};
-use vayu_net::{HttpSourceFactory, NetConfig};
-use vayu_proto::RequestContext;
+use whoosh_labserver::{LabConfig, LabServer, Scenario};
+use whoosh_net::{HttpSourceFactory, NetConfig};
+use whoosh_proto::RequestContext;
 
 pub const MIB: u64 = 1 << 20;
 

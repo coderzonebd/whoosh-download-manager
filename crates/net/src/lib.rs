@@ -1,14 +1,14 @@
-//! `vayu-net`: the engine's network layer.
+//! `whoosh-net`: the engine's network layer.
 //!
-//! [`HttpSourceFactory`] implements [`vayu_core::SourceFactory`] for `http`
+//! [`HttpSourceFactory`] implements [`whoosh_core::SourceFactory`] for `http`
 //! and `https` URLs; the [`HttpSource`]s it makes implement
-//! [`vayu_core::RangeSource`] over HTTP/1.1, HTTP/2 and HTTP/3.
+//! [`whoosh_core::RangeSource`] over HTTP/1.1, HTTP/2 and HTTP/3.
 //!
 //! ```no_run
-//! # async fn demo() -> Result<(), vayu_core::SourceError> {
+//! # async fn demo() -> Result<(), whoosh_core::SourceError> {
 //! use futures::StreamExt;
-//! use vayu_core::{ByteRange, OpenRequest, SourceFactory};
-//! use vayu_net::{HttpSourceFactory, NetConfig};
+//! use whoosh_core::{ByteRange, OpenRequest, SourceFactory};
+//! use whoosh_net::{HttpSourceFactory, NetConfig};
 //!
 //! let factory = HttpSourceFactory::new(NetConfig::default());
 //! let source = factory.source("https://example.com/big.iso", None)?;
@@ -60,8 +60,8 @@ use std::time::Duration;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use url::Url;
-use vayu_core::{RangeSource, SourceError, SourceFactory};
-use vayu_proto::RequestContext;
+use whoosh_core::{RangeSource, SourceError, SourceFactory};
+use whoosh_proto::RequestContext;
 
 mod altsvc;
 mod body;

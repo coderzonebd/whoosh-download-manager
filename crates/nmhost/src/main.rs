@@ -1,4 +1,4 @@
-//! `vayu-nmhost` — see the crate docs and README.
+//! `whoosh-nmhost` — see the crate docs and README.
 //!
 //! Browsers start it with their own arguments (Chrome: the caller's origin,
 //! plus `--parent-window=…` on Windows; Firefox: the manifest path and the
@@ -8,21 +8,21 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use vayu_nmhost::register::{self, Browser};
-use vayu_nmhost::relay::{self, Config};
-use vayu_nmhost::runtime::{self, Env, Os};
-use vayu_nmhost::{DEV_CHROMIUM_EXTENSION_ID, FIREFOX_EXTENSION_ID, HOST_NAME, log};
-use vayu_proto::ClientInfo;
+use whoosh_nmhost::register::{self, Browser};
+use whoosh_nmhost::relay::{self, Config};
+use whoosh_nmhost::runtime::{self, Env, Os};
+use whoosh_nmhost::{DEV_CHROMIUM_EXTENSION_ID, FIREFOX_EXTENSION_ID, HOST_NAME, log};
+use whoosh_proto::ClientInfo;
 
 const USAGE: &str = "\
-vayu-nmhost — native messaging host for the vayu browser extension
+whoosh-nmhost — native messaging host for the whoosh browser extension
 
 USAGE:
-    vayu-nmhost                     run as a host (browsers start it like this)
-    vayu-nmhost --register [OPTIONS]
-    vayu-nmhost --unregister
-    vayu-nmhost --print-manifest <chromium|firefox> [OPTIONS]
-    vayu-nmhost --version | --help
+    whoosh-nmhost                     run as a host (browsers start it like this)
+    whoosh-nmhost --register [OPTIONS]
+    whoosh-nmhost --unregister
+    whoosh-nmhost --print-manifest <chromium|firefox> [OPTIONS]
+    whoosh-nmhost --version | --help
 
 OPTIONS (for --register and --print-manifest):
     --browser <NAME>        chrome, chromium, brave, edge, vivaldi, firefox or all;
@@ -33,8 +33,8 @@ OPTIONS (for --register and --print-manifest):
     --host-path <FILE>      executable to put in the manifests (default: this one)
 
 ENVIRONMENT:
-    VAYU_DATA_DIR           daemon data directory (holds runtime.json)
-    VAYU_NMHOST_LOG=debug   verbose logging on stderr
+    WHOOSH_DATA_DIR           daemon data directory (holds runtime.json)
+    WHOOSH_NMHOST_LOG=debug   verbose logging on stderr
 ";
 
 fn main() -> ExitCode {
@@ -45,7 +45,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("--version" | "-V") => {
-            println!("vayu-nmhost {}", env!("CARGO_PKG_VERSION"));
+            println!("whoosh-nmhost {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         Some("--register") => cli(|| do_register(&args[1..])),
@@ -59,7 +59,7 @@ fn cli(f: impl FnOnce() -> Result<(), String>) -> ExitCode {
     match f() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("vayu-nmhost: {e}");
+            eprintln!("whoosh-nmhost: {e}");
             ExitCode::from(2)
         }
     }

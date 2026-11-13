@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Pro mode: JSON-RPC to the daemon through the `vayu-nmhost` native
+// Pro mode: JSON-RPC to the daemon through the `whoosh-nmhost` native
 // messaging host. The host performs `session.hello` and holds the token; the
 // extension only ever sees the relayed requests, responses and events.
 
-import type { EventMap, MethodMap } from "@vayu/api-client";
+import type { EventMap, MethodMap } from "@whoosh/api-client";
 
 import { HOST_NAME } from "../shared/constants";
 import { RpcPeer, TransportError, type TransportErrorKind } from "./rpc";
@@ -37,7 +37,7 @@ export interface NativeOptions {
 export function classifyDisconnect(message: string | undefined): TransportErrorKind {
   const m = (message ?? "").toLowerCase();
   // Chromium: "Specified native messaging host not found."
-  // Firefox:  "No such native application com.coderzonebd.vayu"
+  // Firefox:  "No such native application com.coderzonebd.whoosh"
   if (m.includes("not found") || m.includes("no such native application")) return "host-missing";
   // Chromium: "Access to the specified native messaging host is forbidden."
   // Firefox:  "This extension does not have permission to use native application …"
@@ -48,11 +48,11 @@ export function classifyDisconnect(message: string | undefined): TransportErrorK
 function describe(kind: TransportErrorKind, message: string | undefined): string {
   switch (kind) {
     case "host-missing":
-      return "The vayu native host is not installed for this browser (run `vayu-nmhost --register`).";
+      return "The whoosh native host is not installed for this browser (run `whoosh-nmhost --register`).";
     case "forbidden":
-      return "The vayu native host does not allow this extension ID (re-run `vayu-nmhost --register`).";
+      return "The whoosh native host does not allow this extension ID (re-run `whoosh-nmhost --register`).";
     default:
-      return message ? `The vayu native host disconnected: ${message}` : "The vayu native host disconnected.";
+      return message ? `The whoosh native host disconnected: ${message}` : "The whoosh native host disconnected.";
   }
 }
 
@@ -227,7 +227,7 @@ export class NativeMessagingTransport implements Transport {
     };
     if (typeof s.hostVersion === "string") status.hostVersion = s.hostVersion;
     if (s.daemonRunning && typeof s.daemonVersion === "string") status.daemonVersion = s.daemonVersion;
-    if (!status.daemonRunning) status.error = "The vayu app is not running.";
+    if (!status.daemonRunning) status.error = "The whoosh app is not running.";
     return status;
   }
 
@@ -245,7 +245,7 @@ export class NativeMessagingTransport implements Transport {
       try {
         listener(status);
       } catch (e) {
-        console.error("vayu: status listener failed", e);
+        console.error("whoosh: status listener failed", e);
       }
     }
   }

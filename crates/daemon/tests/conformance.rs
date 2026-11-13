@@ -11,10 +11,10 @@ use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{self, Message};
-use vayu_daemon::mock::{MockOptions, MockService, Scenario};
-use vayu_daemon::{ServeError, runtime};
-use vayu_proto::service::Notification;
-use vayu_proto::*;
+use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
+use whoosh_daemon::{ServeError, runtime};
+use whoosh_proto::service::Notification;
+use whoosh_proto::*;
 
 fn mock() -> Arc<MockService> {
     MockService::new(MockOptions {
@@ -61,7 +61,7 @@ async fn listens_on_loopback_only_and_falls_back_to_a_free_port() {
     assert_eq!(runtime::read(dir.path()).unwrap().unwrap().port, d.port());
 
     let dir2 = TempDir::new("port-strict");
-    let err = vayu_daemon::serve(ScriptedService::new(), {
+    let err = whoosh_daemon::serve(ScriptedService::new(), {
         let mut c = config(dir2.path());
         c.port = taken;
         c.port_fallback = false;
@@ -181,10 +181,10 @@ async fn hello_returns_version_protocol_and_service_capabilities() {
     assert_eq!(
         reply["result"],
         json!({
-            "daemonVersion": vayu_daemon::VERSION,
+            "daemonVersion": whoosh_daemon::VERSION,
             "protocol": PROTOCOL_VERSION,
             "capabilities": ["http", "scripted"],
-            "proof": vayu_proto::auth::hello_proof(&d.runtime_info().token, NONCE),
+            "proof": whoosh_proto::auth::hello_proof(&d.runtime_info().token, NONCE),
         })
     );
     // A second hello on the same session is an invalid request.
@@ -575,7 +575,7 @@ fn progress_event(round: u64, items: usize) -> Notification {
 
 /// A client socket with a tiny receive buffer, so the daemon's writes block
 /// as soon as the client stops reading.
-async fn slow_client(d: &vayu_daemon::RunningDaemon) -> Ws {
+async fn slow_client(d: &whoosh_daemon::RunningDaemon) -> Ws {
     let socket = tokio::net::TcpSocket::new_v4().unwrap();
     socket.set_recv_buffer_size(4096).unwrap();
     let stream = socket.connect(d.local_addr()).await.unwrap();
@@ -716,13 +716,13 @@ async fn clients_too_far_behind_on_lossless_events_are_closed_with_4429() {
 #[tokio::test]
 async fn runtime_file_contents_and_permissions() {
     let dir = TempDir::new("runtime");
-    let data = dir.path().join("nested").join("vayu");
+    let data = dir.path().join("nested").join("whoosh");
     let d = start(ScriptedService::new(), &data).await;
     let raw: Value =
         serde_json::from_slice(&std::fs::read(data.join("runtime.json")).unwrap()).unwrap();
     assert_eq!(raw["port"], d.port());
     assert_eq!(raw["pid"], std::process::id());
-    assert_eq!(raw["version"], vayu_daemon::VERSION);
+    assert_eq!(raw["version"], whoosh_daemon::VERSION);
     let token = raw["token"].as_str().unwrap();
     assert_eq!(token.len(), 43);
     assert!(
@@ -748,7 +748,7 @@ async fn runtime_file_contents_and_permissions() {
 async fn single_instance() {
     let dir = TempDir::new("single");
     let first = start(ScriptedService::new(), dir.path()).await;
-    match vayu_daemon::serve(ScriptedService::new(), config(dir.path())).await {
+    match whoosh_daemon::serve(ScriptedService::new(), config(dir.path())).await {
         Err(ServeError::AlreadyRunning { pid, port }) => {
             assert_eq!(pid, Some(std::process::id()));
             assert_eq!(port, Some(first.port()));
@@ -776,7 +776,7 @@ async fn single_instance_without_the_lock_still_checks_hello() {
         c.single_instance = false
     })
     .await;
-    match vayu_daemon::serve(ScriptedService::new(), config(dir.path())).await {
+    match whoosh_daemon::serve(ScriptedService::new(), config(dir.path())).await {
         Err(ServeError::AlreadyRunning { port, .. }) => assert_eq!(port, Some(other.port())),
         other => panic!("started next to a live daemon: {other:?}"),
     }
@@ -840,18 +840,18 @@ async fn ws_connect_only(port: u16) -> Ws {
 async fn the_bundled_client_and_probe() {
     let dir = TempDir::new("client");
     let d = start(mock(), dir.path()).await;
-    let token = vayu_daemon::token::Token::from_string(d.runtime_info().token.clone());
-    let hello = vayu_daemon::client::probe(d.port(), &token, Duration::from_secs(2))
+    let token = whoosh_daemon::token::Token::from_string(d.runtime_info().token.clone());
+    let hello = whoosh_daemon::client::probe(d.port(), &token, Duration::from_secs(2))
         .await
         .unwrap();
     assert!(hello.capabilities.contains(&"mock".to_owned()));
-    let bad = vayu_daemon::token::Token::from_string("bad".into());
-    let err = vayu_daemon::client::probe(d.port(), &bad, Duration::from_secs(2))
+    let bad = whoosh_daemon::token::Token::from_string("bad".into());
+    let err = whoosh_daemon::client::probe(d.port(), &bad, Duration::from_secs(2))
         .await
         .unwrap_err();
     assert_eq!(err.close_code(), Some(4401));
 
-    let mut c = vayu_daemon::client::Client::connect(d.port(), token.expose(), "t")
+    let mut c = whoosh_daemon::client::Client::connect(d.port(), token.expose(), "t")
         .await
         .unwrap();
     let added = c
@@ -910,7 +910,7 @@ async fn before_hello_at_most_64_kib_is_read() {
     d.shutdown().await;
 }
 
-async fn ws_connect(d: &vayu_daemon::RunningDaemon) -> Ws {
+async fn ws_connect(d: &whoosh_daemon::RunningDaemon) -> Ws {
     common::ws(d).await
 }
 
@@ -1042,19 +1042,19 @@ async fn impostor() -> (u16, tokio::task::JoinHandle<()>) {
 #[tokio::test]
 async fn a_port_that_answers_without_the_proof_is_not_the_daemon() {
     let (port, task) = impostor().await;
-    let token = vayu_daemon::token::Token::from_string("stale-token".into());
-    let err = vayu_daemon::client::probe(port, &token, Duration::from_secs(2))
+    let token = whoosh_daemon::token::Token::from_string("stale-token".into());
+    let err = whoosh_daemon::client::probe(port, &token, Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(
-        matches!(err, vayu_daemon::client::ClientError::BadProof),
+        matches!(err, whoosh_daemon::client::ClientError::BadProof),
         "{err}"
     );
 
     // A stale runtime.json pointing at that port does not stop a new daemon.
     let dir = TempDir::new("impostor");
-    vayu_daemon::runtime::create_data_dir(dir.path()).unwrap();
-    vayu_daemon::runtime::secure_dir(dir.path()).unwrap();
+    whoosh_daemon::runtime::create_data_dir(dir.path()).unwrap();
+    whoosh_daemon::runtime::secure_dir(dir.path()).unwrap();
     runtime::write_atomic(
         dir.path(),
         &runtime::RuntimeInfo {
@@ -1088,7 +1088,7 @@ async fn the_data_dir_is_made_private_or_refused() {
 
     let link = base.path().join("link");
     std::os::unix::fs::symlink(&data, &link).unwrap();
-    match vayu_daemon::serve(ScriptedService::new(), config(&link)).await {
+    match whoosh_daemon::serve(ScriptedService::new(), config(&link)).await {
         Err(ServeError::InsecureDataDir(_, reason)) => {
             assert!(reason.contains("symlink"), "{reason}")
         }

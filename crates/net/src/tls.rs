@@ -7,7 +7,7 @@ use std::time::Duration;
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::ServerCertVerifier;
 use rustls::pki_types::CertificateDer;
-use vayu_core::SourceError;
+use whoosh_core::SourceError;
 
 use crate::NetConfig;
 

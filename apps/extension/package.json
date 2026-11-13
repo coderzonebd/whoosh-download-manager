@@ -1,8 +1,8 @@
 {
-  "name": "@vayu/extension",
+  "name": "@whoosh/extension",
   "version": "0.1.0",
   "private": true,
-  "description": "vayu browser extension (Pro mode: hands browser downloads to the vayu daemon)",
+  "description": "whoosh browser extension (Pro mode: hands browser downloads to the whoosh daemon)",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
@@ -14,7 +14,7 @@
     "test:e2e": "node scripts/build.mjs && vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
-    "@vayu/api-client": "workspace:*"
+    "@whoosh/api-client": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.7",

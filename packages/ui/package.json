@@ -1,5 +1,5 @@
 {
-  "name": "@vayu/ui",
+  "name": "@whoosh/ui",
   "version": "0.0.1",
   "private": true,
   "license": "Apache-2.0",
@@ -19,8 +19,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@vayu/api-client": "workspace:*",
-    "@vayu/design-tokens": "workspace:*"
+    "@whoosh/api-client": "workspace:*",
+    "@whoosh/design-tokens": "workspace:*"
   },
   "peerDependencies": {
     "svelte": "^5.46.4"

@@ -16,14 +16,14 @@ use bytes::Bytes;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use tokio::time::Instant;
-use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
-use vayu_core::{
+use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
+use whoosh_core::{
     ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, Storage,
     StorageProvider, Validators,
 };
-use vayu_engine::{Engine, EngineConfig, EngineDeps};
-use vayu_proto::service::Service;
-use vayu_proto::{AddParams, DownloadDetail, DownloadState, IdParams};
+use whoosh_engine::{Engine, EngineConfig, EngineDeps};
+use whoosh_proto::service::Service;
+use whoosh_proto::{AddParams, DownloadDetail, DownloadState, IdParams};
 
 pub const KIB: u64 = 1024;
 pub const MIB: u64 = 1024 * 1024;
@@ -934,7 +934,7 @@ pub fn assert_same(got: &[u8], want: &[u8]) {
     }
 }
 
-/// Log to the test output (`RUST_LOG=vayu_engine=debug`).
+/// Log to the test output (`RUST_LOG=whoosh_engine=debug`).
 pub fn trace() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -968,13 +968,13 @@ impl SlowState {
     }
 }
 
-impl vayu_core::StateStore for SlowState {
-    fn load_downloads(&self) -> BoxFuture<'_, io::Result<Vec<vayu_core::DownloadRecord>>> {
+impl whoosh_core::StateStore for SlowState {
+    fn load_downloads(&self) -> BoxFuture<'_, io::Result<Vec<whoosh_core::DownloadRecord>>> {
         self.inner.load_downloads()
     }
     fn save_download<'a>(
         &'a self,
-        record: &'a vayu_core::DownloadRecord,
+        record: &'a whoosh_core::DownloadRecord,
     ) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let d = *lock(&self.save_delay);
@@ -996,7 +996,7 @@ impl vayu_core::StateStore for SlowState {
     fn host_profile<'a>(
         &'a self,
         host: &'a str,
-    ) -> BoxFuture<'a, io::Result<Option<vayu_core::HostProfile>>> {
+    ) -> BoxFuture<'a, io::Result<Option<whoosh_core::HostProfile>>> {
         self.inner.host_profile(host)
     }
     fn sync(&self) -> BoxFuture<'_, io::Result<()>> {
@@ -1008,7 +1008,7 @@ impl vayu_core::StateStore for SlowState {
                 .load_downloads()
                 .await?
                 .iter()
-                .any(|r| r.state == vayu_proto::DownloadState::Completed);
+                .any(|r| r.state == whoosh_proto::DownloadState::Completed);
             if completed {
                 self.syncs_after_completed.fetch_add(1, Relaxed);
             }
@@ -1020,7 +1020,7 @@ impl vayu_core::StateStore for SlowState {
     }
     fn save_host_profile<'a>(
         &'a self,
-        profile: &'a vayu_core::HostProfile,
+        profile: &'a whoosh_core::HostProfile,
     ) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let d = *lock(&self.profile_delay);

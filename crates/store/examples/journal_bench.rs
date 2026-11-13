@@ -1,7 +1,7 @@
 //! Journal commit latency, with and without fsync.
 //!
 //! ```text
-//! cargo run --release -p vayu-store --example journal_bench -- [--dir DIR] [--commits 1000] [--ranges 16]
+//! cargo run --release -p whoosh-store --example journal_bench -- [--dir DIR] [--commits 1000] [--ranges 16]
 //! ```
 //!
 //! Commits a typical checkpoint (`--ranges` done ranges, ETag, final URL)
@@ -13,9 +13,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use vayu_core::source::RemoteMeta;
-use vayu_core::{ByteRange, Checkpoint, Journal, RangeSet};
-use vayu_store::FileJournal;
+use whoosh_core::source::RemoteMeta;
+use whoosh_core::{ByteRange, Checkpoint, Journal, RangeSet};
+use whoosh_store::FileJournal;
 
 fn checkpoint(n: u64, ranges: u64) -> Checkpoint {
     Checkpoint {
@@ -113,7 +113,7 @@ fn main() {
     rt.block_on(async {
         for sync in [false, true] {
             let tmp = tempfile::Builder::new()
-                .prefix("vayu-journal-bench-")
+                .prefix("whoosh-journal-bench-")
                 .tempdir_in(&dir)
                 .unwrap();
             let mut j = FileJournal::open(tmp.path()).unwrap();

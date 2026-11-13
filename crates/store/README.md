@@ -1,6 +1,6 @@
-# vayu-store
+# whoosh-store
 
-Where the engine's bytes and state go. Implements four `vayu-core` traits
+Where the engine's bytes and state go. Implements four `whoosh-core` traits
 (ADR 0005):
 
 | Type | Implements | What it is |
@@ -15,8 +15,8 @@ The caller chooses every path. The daemon owns the data directory.
 
 ```rust
 use std::sync::Arc;
-use vayu_core::{Journal, StateStore, StorageProvider};
-use vayu_store::{FileJournal, FileStorageProvider, SqliteStateStore, StorageOptions};
+use whoosh_core::{Journal, StateStore, StorageProvider};
+use whoosh_store::{FileJournal, FileStorageProvider, SqliteStateStore, StorageOptions};
 
 let files: Arc<dyn StorageProvider> =
     Arc::new(FileStorageProvider::new(StorageOptions::default())); // 16 MiB buffer per file
@@ -264,7 +264,7 @@ C toolchain (see [Testing](#testing)).
 
   | Bytes | Field |
   |---|---|
-  | 0..8 | magic `VAYUJRNL` |
+  | 0..8 | magic `WHSHJRNL` |
   | 8..12 | format version, `1` |
   | 12..16 | reserved, zero |
   | 16..24 | the slot's own offset |
@@ -429,9 +429,9 @@ rustix and nix wrap those calls safely. Windows needs two blocks:
 ## Testing
 
 ```bash
-scripts/cargo-slot.sh cargo test -p vayu-store
-scripts/cargo-slot.sh cargo clippy -p vayu-store --all-targets -- -D warnings
-VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journal_kill -- --nocapture
+scripts/cargo-slot.sh cargo test -p whoosh-store
+scripts/cargo-slot.sh cargo clippy -p whoosh-store --all-targets -- -D warnings
+WHOOSH_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p whoosh-store --test journal_kill -- --nocapture
 ```
 
 **Storage** (`src/file.rs` unit tests, `tests/storage.rs`):
@@ -502,7 +502,7 @@ VAYU_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p vayu-store --test journ
 - No-replace semantics of both rename fallbacks.
 - 16 concurrent writers in 1 B–64 KiB chunks, with hedged rewrites and a
   256 KiB buffer, checked byte for byte against
-  `vayu_core::testing::MemStorage`.
+  `whoosh_core::testing::MemStorage`.
 - Runs under `futures::executor::block_on` with no tokio runtime.
 - **The syncer** (a paused-`fdatasync` test hook):
   - A stuck `fdatasync` doesn't hold up later writes: 1 MiB goes through a
@@ -607,16 +607,16 @@ for Windows and macOS from Linux:
 
 ```bash
 rustup target add x86_64-pc-windows-gnu aarch64-apple-darwin
-cargo clippy -p vayu-store --no-default-features --target x86_64-pc-windows-gnu -- -D warnings
-cargo clippy -p vayu-store --no-default-features --target aarch64-apple-darwin -- -D warnings
+cargo clippy -p whoosh-store --no-default-features --target x86_64-pc-windows-gnu -- -D warnings
+cargo clippy -p whoosh-store --no-default-features --target aarch64-apple-darwin -- -D warnings
 ```
 
 ## Benchmarks
 
 ```bash
-cargo run --release -p vayu-store --example storage_bench -- --dir <dir on the disk> [--mode raw]
-cargo run --release -p vayu-store --example journal_bench -- --dir <dir>
-cargo run --release -p vayu-store --example state_bench -- --dir <dir>
+cargo run --release -p whoosh-store --example storage_bench -- --dir <dir on the disk> [--mode raw]
+cargo run --release -p whoosh-store --example journal_bench -- --dir <dir>
+cargo run --release -p whoosh-store --example state_bench -- --dir <dir>
 ```
 
 - **`storage_bench`.** 16 writers, 1 MiB chunks at shuffled offsets, into a
@@ -675,10 +675,10 @@ NVMe.** "Write + flush" covers accepting every write plus the final
 
 | | Runs | Write + flush GB/s (median) | CPU-s per GB (median) |
 |---|---|---|---|
-| vayu-store | 7 | 0.15–0.82 (0.31) | 0.36–4.7 (1.2) |
+| whoosh-store | 7 | 0.15–0.82 (0.31) | 0.36–4.7 (1.2) |
 | raw `pwrite`, 16 threads | 5 | 0.14–1.50 (0.28) | 1.2–4.9 (2.1) |
 | io_uring, depth 16 (scratch, not in the crate) | 3 | 0.26–1.41 (0.26) | 0.38–0.54 (0.45) |
-| A/B at 2 GiB: vayu-store | 4 | 0.27–0.35 (0.33) | 1.37–3.50 (2.4) |
+| A/B at 2 GiB: whoosh-store | 4 | 0.27–0.35 (0.33) | 1.37–3.50 (2.4) |
 | A/B at 2 GiB: io_uring | 4 | 0.32–0.86 (0.34) | 1.12–2.67 (1.5) |
 
 **The same, on tmpfs (0.75 GiB).** This is the software ceiling with no
@@ -686,7 +686,7 @@ device in the way.
 
 | | Runs | GB/s (median) | CPU-s per GB (median) | User CPU |
 |---|---|---|---|---|
-| vayu-store | 3 | 1.34–1.50 (1.48) | 0.68–0.80 (0.70) | 0.02–0.05 s per run |
+| whoosh-store | 3 | 1.34–1.50 (1.48) | 0.68–0.80 (0.70) | 0.02–0.05 s per run |
 | raw `pwrite`, 16 threads | 3 | 1.09–1.65 (1.16) | 0.72–1.14 (1.13) | ~0 |
 | io_uring, depth 16 | 3 | 1.14–2.68 (1.34) | 0.37–0.84 (0.77) | ~0 |
 
@@ -739,7 +739,7 @@ The Phase 1 gate (rule 5, CPU per GiB) failed on clean 1 GiB (2.60
 CPU-s/GiB against aria2c-tuned 1.66), no-range (1.87 against mdm 1.66) and
 lying-ranges (2.01 against mdm 1.71).
 
-**Where the CPU went.** We ran `vayu get` against labserver with the daemon
+**Where the CPU went.** We ran `whoosh get` against labserver with the daemon
 resident, sampling each daemon thread's CPU from `/proc`. On the 1 GiB,
 16-connection download the daemon used 2.1–2.8 CPU-s:
 
@@ -771,7 +771,7 @@ resident, sampling each daemon thread's CPU from `/proc`. On the 1 GiB,
 
 **Fix: inline writes** (see [Design](#filestorage)). We compared the
 previous store (base) with inline writes (new), both on a4b86bb, running
-`vayu get` against labserver with interleaved pairs and a quiet machine
+`whoosh get` against labserver with interleaved pairs and a quiet machine
 (load average 0.7–2.1). Daemon CPU (net, engine and store) is per run,
 measured from `/proc` in 10 ms ticks.
 
@@ -801,7 +801,7 @@ traffic, so the cache effect is smaller), 4 interleaved pairs:
 | 1 | 0.73–1.35 | 0.56–0.69 | 45k–59k → 400 |
 | 16 | 1.03–1.48 | 1.06–1.24 | 33k–95k → 4.3k |
 
-Crash safety on the new build: `vayu-bench hardkill --kills 100` ran
+Crash safety on the new build: `whoosh-bench hardkill --kills 100` ran
 100 kills over 94 rounds. All 282 downloads were verified, with 0
 corrupt, 0 leftovers and 0 unfinished. `journal_kill` passes too.
 
@@ -872,7 +872,7 @@ which is the engine's old cadence and the stress case.
 - **Cache dropping after each flush** gave 2.9–3.6 s in the same rounds:
   no speed difference. It is kept as an option for memory pressure.
 
-**End to end: `vayu get` of labserver `clean/1g.bin`** (HTTP/1.1 on
+**End to end: `whoosh get` of labserver `clean/1g.bin`** (HTTP/1.1 on
 loopback) into a directory on the same NVMe.
 - The daemon and CLI are release builds of `phase1/engine` 1aac228, with
   the old store ("before") and with this one ("after").

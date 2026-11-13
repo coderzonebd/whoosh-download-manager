@@ -8,8 +8,8 @@
 //   not jump under the pointer while you aim at them; a re-sort happens on
 //   the next structural change or when you click a column header.
 
-import type { DownloadState, DownloadSummary, ProgressItem, StateEvent } from "@vayu/api-client";
-import { categoryForFilename, isCategory, type Category, CATEGORIES } from "@vayu/api-client/categories";
+import type { DownloadState, DownloadSummary, ProgressItem, StateEvent } from "@whoosh/api-client";
+import { categoryForFilename, isCategory, type Category, CATEGORIES } from "@whoosh/api-client/categories";
 import { untrack } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
 import { fraction } from "../format.ts";

@@ -1,4 +1,4 @@
-//! End to end: the `vayu-bench` binary runs curl against an in-process
+//! End to end: the `whoosh-bench` binary runs curl against an in-process
 //! labserver, verifies every file, writes the raw data and renders a report.
 //! Skipped (with a message) where curl is not installed.
 
@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn exe() -> &'static str {
-    env!("CARGO_BIN_EXE_vayu-bench")
+    env!("CARGO_BIN_EXE_whoosh-bench")
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("vayu-bench-it-{name}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("whoosh-bench-it-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -42,12 +42,12 @@ fn run(dir: &Path, label: &str, extra: &[&str]) -> Vec<Value> {
         .arg(dir.join("work"))
         .args(extra)
         // Keep fetched tools out of the picture.
-        .env("VAYU_BENCH_CACHE", dir.join("cache"))
+        .env("WHOOSH_BENCH_CACHE", dir.join("cache"))
         .output()
         .unwrap();
     assert!(
         out.status.success(),
-        "vayu-bench run failed:\n{}",
+        "whoosh-bench run failed:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
     let jsonl = std::fs::read_to_string(dir.join("data").join(label).join("runs.jsonl")).unwrap();
@@ -180,7 +180,7 @@ fn curl_against_labserver() {
         String::from_utf8_lossy(&out.stderr)
     );
     let md = std::fs::read_to_string(&report).unwrap();
-    assert!(md.contains("# vayu-bench report: `clean`"));
+    assert!(md.contains("# whoosh-bench report: `clean`"));
     assert!(md.contains("### clean — `10m.bin` (10 MiB)"));
     assert!(md.contains("| curl | 3/3 |"));
     assert!(md.contains("Every run produced a byte-exact file."));

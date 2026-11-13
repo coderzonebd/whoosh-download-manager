@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Interleaved A/B of whole-daemon CPU per GiB, measured as vayu-bench's
-# resident-daemon mode does: per run a fresh `vayu-daemon --port 0` with its
-# own data dir, then `vayu --no-start get`; CPU = the CLI's user+sys plus the
+# Interleaved A/B of whole-daemon CPU per GiB, measured as whoosh-bench's
+# resident-daemon mode does: per run a fresh `whoosh-daemon --port 0` with its
+# own data dir, then `whoosh --no-start get`; CPU = the CLI's user+sys plus the
 # daemon's utime+stime (/proc) from just before the CLI starts until it goes
 # quiet after the CLI exits.
 #
 #   tools/daemon-ab.sh <rounds> <variant>... -- <scenario/file>...
 #
-# A variant is a directory under $VARIANTS (default target/ab) holding `vayu`
-# and `vayu-daemon`, optionally followed by `:K=V,K=V` extra environment for
+# A variant is a directory under $VARIANTS (default target/ab) holding `whoosh`
+# and `whoosh-daemon`, optionally followed by `:K=V,K=V` extra environment for
 # the daemon (e.g. `old:GLIBC_TUNABLES=glibc.malloc.trim_threshold=1073741824`).
 # Each round runs every variant once, in alternating order. Output: one line
 # per run (wall, CLI and daemon CPU, CPU-s/GiB, size, daemon page faults,
 # load average). Linux only.
 set -u
 VARIANTS=${VARIANTS:-target/ab}
-LABSERVER=${LABSERVER:-target/release/vayu-labserver}
-WORK=${WORK:-$HOME/.cache/vayu-bench/work/ab-net}
+LABSERVER=${LABSERVER:-target/release/whoosh-labserver}
+WORK=${WORK:-$HOME/.cache/whoosh-bench/work/ab-net}
 rounds=$1; shift; vs=(); while [ "$1" != "--" ]; do vs+=("$1"); shift; done; shift
 PORT=$((20000 + RANDOM % 20000))
 "$LABSERVER" --port $PORT --no-tls --cache-mb 256 > "$WORK.lab.log" 2>&1 &
@@ -32,13 +32,13 @@ run_one() {
   [ "$dir" != "$v" ] && extra=${v#*:}
   mkdir -p $st/home/run $st/out; chmod 700 $st/home/run
   local envs=(HOME=$st/home XDG_CONFIG_HOME=$st/home/.config XDG_DATA_HOME=$st/home/.local/share
-              XDG_CACHE_HOME=$st/home/.cache XDG_RUNTIME_DIR=$st/home/run VAYU_DATA_DIR=$st/data
+              XDG_CACHE_HOME=$st/home/.cache XDG_RUNTIME_DIR=$st/home/run WHOOSH_DATA_DIR=$st/data
               PATH=/usr/bin:/bin ${extra//,/ })
-  env -i "${envs[@]}" "$VARIANTS/$dir/vayu-daemon" --port 0 > $st/daemon.log 2>&1 & local d=$!
+  env -i "${envs[@]}" "$VARIANTS/$dir/whoosh-daemon" --port 0 > $st/daemon.log 2>&1 & local d=$!
   for k in $(seq 1 3000); do [ -s $st/data/runtime.json ] && break; sleep 0.01; done
   curl -s -X POST http://127.0.0.1:$PORT/_lab/reset >/dev/null
   local c0 f0 f1 c1 prev=-1; c0=$(dcpu $d); f0=$(dflt $d)
-  env -i "${envs[@]}" /usr/bin/time -o $st/time -f "%e %U %S" "$VARIANTS/$dir/vayu" --no-start get \
+  env -i "${envs[@]}" /usr/bin/time -o $st/time -f "%e %U %S" "$VARIANTS/$dir/whoosh" --no-start get \
     http://127.0.0.1:$PORT/s/$sf -o $st/out >/dev/null 2>$st/cli.err
   for k in $(seq 1 10); do c1=$(dcpu $d); [ "$c1" = "$prev" ] && break; prev=$c1; sleep 0.05; done
   f1=$(dflt $d)

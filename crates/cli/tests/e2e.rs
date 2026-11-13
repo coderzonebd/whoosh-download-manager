@@ -1,8 +1,8 @@
-//! `vayu` end to end, against `vayu-daemon --mock` started by the CLI itself.
+//! `whoosh` end to end, against `whoosh-daemon --mock` started by the CLI itself.
 //!
 //! The daemon binary is built from the workspace into the same target
-//! directory, i.e. next to `vayu`, which is where the CLI looks first; set
-//! `VAYU_DAEMON_BIN_FOR_TESTS` to use another build.
+//! directory, i.e. next to `whoosh`, which is where the CLI looks first; set
+//! `WHOOSH_DAEMON_BIN_FOR_TESTS` to use another build.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -13,14 +13,14 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-const VAYU: &str = env!("CARGO_BIN_EXE_vayu");
+const WHOOSH: &str = env!("CARGO_BIN_EXE_whoosh");
 
-/// Builds `vayu-daemon` (once per test run) and checks it landed next to
-/// `vayu`.
+/// Builds `whoosh-daemon` (once per test run) and checks it landed next to
+/// `whoosh`.
 fn daemon_bin() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
     BIN.get_or_init(|| {
-        if let Some(path) = std::env::var_os("VAYU_DAEMON_BIN_FOR_TESTS") {
+        if let Some(path) = std::env::var_os("WHOOSH_DAEMON_BIN_FOR_TESTS") {
             return PathBuf::from(path);
         }
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
@@ -30,25 +30,27 @@ fn daemon_bin() -> &'static Path {
                 "--quiet",
                 "--message-format=json",
                 "-p",
-                "vayu-daemon",
+                "whoosh-daemon",
                 "--bin",
-                "vayu-daemon",
+                "whoosh-daemon",
             ])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .stderr(Stdio::inherit())
             .output()
             .expect("cannot run cargo");
-        assert!(out.status.success(), "building vayu-daemon failed");
+        assert!(out.status.success(), "building whoosh-daemon failed");
         let exe = String::from_utf8_lossy(&out.stdout)
             .lines()
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-            .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == "vayu-daemon")
+            .filter(|m| {
+                m["reason"] == "compiler-artifact" && m["target"]["name"] == "whoosh-daemon"
+            })
             .find_map(|m| m["executable"].as_str().map(PathBuf::from))
-            .expect("no vayu-daemon executable reported");
+            .expect("no whoosh-daemon executable reported");
         assert_eq!(
             exe.parent(),
-            Path::new(VAYU).parent(),
-            "vayu-daemon must sit next to vayu for auto-start"
+            Path::new(WHOOSH).parent(),
+            "whoosh-daemon must sit next to whoosh for auto-start"
         );
         exe
     })
@@ -65,7 +67,7 @@ impl World {
         daemon_bin();
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "vayu-cli-e2e-{name}-{}-{}",
+            "whoosh-cli-e2e-{name}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -79,17 +81,17 @@ impl World {
     }
 
     fn cmd(&self, args: &[&str]) -> Command {
-        let mut cmd = Command::new(VAYU);
+        let mut cmd = Command::new(WHOOSH);
         cmd.args(args)
-            .env("VAYU_DATA_DIR", self.data())
-            .env("VAYU_DAEMON_MOCK", "1")
-            .env("VAYU_DAEMON_MOCK_SCENARIO", "empty")
-            .env("VAYU_DAEMON_PORT", "0")
-            .env_remove("VAYU_NO_START")
-            .env_remove("VAYU_DAEMON_BIN")
+            .env("WHOOSH_DATA_DIR", self.data())
+            .env("WHOOSH_DAEMON_MOCK", "1")
+            .env("WHOOSH_DAEMON_MOCK_SCENARIO", "empty")
+            .env("WHOOSH_DAEMON_PORT", "0")
+            .env_remove("WHOOSH_NO_START")
+            .env_remove("WHOOSH_DAEMON_BIN")
             .stdin(Stdio::null());
-        if let Some(path) = std::env::var_os("VAYU_DAEMON_BIN_FOR_TESTS") {
-            cmd.env("VAYU_DAEMON_BIN", path);
+        if let Some(path) = std::env::var_os("WHOOSH_DAEMON_BIN_FOR_TESTS") {
+            cmd.env("WHOOSH_DAEMON_BIN", path);
         }
         cmd
     }
@@ -102,7 +104,7 @@ impl World {
         let mut all = vec!["--json"];
         all.extend_from_slice(args);
         let r = self.run(&all);
-        assert_eq!(r.code, 0, "vayu {args:?}: {}", r.stderr);
+        assert_eq!(r.code, 0, "whoosh {args:?}: {}", r.stderr);
         serde_json::from_str(&r.stdout).unwrap_or_else(|e| panic!("{e}: {}", r.stdout))
     }
 
@@ -112,7 +114,7 @@ impl World {
             .and_then(|b| serde_json::from_slice(&b).ok())
     }
 
-    /// Polls `vayu info --json` until `pred` holds.
+    /// Polls `whoosh info --json` until `pred` holds.
     fn wait_info(&self, id: &str, pred: impl Fn(&Value) -> bool) -> Value {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
@@ -130,10 +132,10 @@ impl Drop for World {
     fn drop(&mut self) {
         let _ = self.run(&["daemon", "stop"]);
         // Safety net for a daemon that did not stop: only ever a process
-        // that really is a vayu-daemon (runtime files in these tests may
+        // that really is a whoosh-daemon (runtime files in these tests may
         // name made-up pids).
         if let Some(pid) = self.runtime().and_then(|r| r["pid"].as_u64())
-            && is_vayu_daemon(pid)
+            && is_whoosh_daemon(pid)
         {
             let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
         }
@@ -141,9 +143,9 @@ impl Drop for World {
     }
 }
 
-fn is_vayu_daemon(pid: u64) -> bool {
+fn is_whoosh_daemon(pid: u64) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/comm"))
-        .is_ok_and(|comm| comm.trim() == "vayu-daemon")
+        .is_ok_and(|comm| comm.trim() == "whoosh-daemon")
 }
 
 #[derive(Debug)]
@@ -163,7 +165,7 @@ fn run(mut cmd: Command) -> Run {
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
             let _ = child.kill();
-            panic!("vayu did not finish within 60 s: {cmd:?}");
+            panic!("whoosh did not finish within 60 s: {cmd:?}");
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -199,7 +201,7 @@ fn status_and_no_start_never_start_a_daemon() {
     assert_eq!(r.code, 3, "{r:?}");
     assert!(r.stderr.contains("not running"), "{r:?}");
     let mut cmd = w.cmd(&["list"]);
-    cmd.env("VAYU_NO_START", "1");
+    cmd.env("WHOOSH_NO_START", "1");
     assert_eq!(run(cmd).code, 3);
     // Stopping a daemon that is not running is not an error.
     assert_eq!(w.run(&["daemon", "stop"]).code, 0);
@@ -211,7 +213,7 @@ fn status_and_no_start_never_start_a_daemon() {
 }
 
 #[test]
-fn any_command_starts_the_daemon_found_next_to_vayu() {
+fn any_command_starts_the_daemon_found_next_to_whoosh() {
     let w = World::new("autostart");
     let r = w.run(&["list"]);
     assert_eq!(r.code, 0, "{r:?}");
@@ -282,7 +284,7 @@ fn daemon_start_stop_status() {
 
     // Extra daemon arguments go after `--`.
     let mut cmd = w.cmd(&["daemon", "start", "--", "--mock-scenario", "demo"]);
-    cmd.env_remove("VAYU_DAEMON_MOCK_SCENARIO");
+    cmd.env_remove("WHOOSH_DAEMON_MOCK_SCENARIO");
     assert_eq!(run(cmd).code, 0);
     let list = w.json(&["list"]);
     assert!(list.as_array().unwrap().len() >= 6, "demo data: {list}");
@@ -292,7 +294,7 @@ fn daemon_start_stop_status() {
 fn the_real_engine_starts_without_mock() {
     let w = World::new("engine");
     let mut cmd = w.cmd(&["--json", "list"]);
-    cmd.env_remove("VAYU_DAEMON_MOCK");
+    cmd.env_remove("WHOOSH_DAEMON_MOCK");
     let r = run(cmd);
     assert_eq!(r.code, 0, "{r:?}");
     assert_eq!(
@@ -305,7 +307,7 @@ fn the_real_engine_starts_without_mock() {
         "the engine keeps its state in the data dir"
     );
     let mut cmd = w.cmd(&["daemon", "stop"]);
-    cmd.env_remove("VAYU_DAEMON_MOCK");
+    cmd.env_remove("WHOOSH_DAEMON_MOCK");
     assert_eq!(run(cmd).code, 0);
 }
 
@@ -313,7 +315,7 @@ fn the_real_engine_starts_without_mock() {
 fn a_daemon_that_cannot_start_is_reported() {
     let w = World::new("nostart-engine");
     let mut cmd = w.cmd(&["list"]);
-    cmd.env("VAYU_DAEMON_PORT", "not-a-port");
+    cmd.env("WHOOSH_DAEMON_PORT", "not-a-port");
     let r = run(cmd);
     assert_eq!(r.code, 3, "{r:?}");
     assert!(
@@ -322,7 +324,7 @@ fn a_daemon_that_cannot_start_is_reported() {
     );
 
     let mut cmd = w.cmd(&["list"]);
-    cmd.env("VAYU_DAEMON_BIN", w.dir.join("no-such-daemon"));
+    cmd.env("WHOOSH_DAEMON_BIN", w.dir.join("no-such-daemon"));
     let r = run(cmd);
     assert_eq!(r.code, 3, "{r:?}");
     assert!(r.stderr.contains("cannot start"), "{r:?}");
@@ -333,14 +335,14 @@ fn a_daemon_that_cannot_start_is_reported() {
 fn the_xdg_data_dir_is_shared_with_the_daemon() {
     let w = World::new("xdg");
     let mut cmd = w.cmd(&["list"]);
-    cmd.env_remove("VAYU_DATA_DIR")
+    cmd.env_remove("WHOOSH_DATA_DIR")
         .env("XDG_DATA_HOME", &w.dir)
         .env("HOME", w.dir.join("home"));
     assert_eq!(run(cmd).code, 0);
-    let rt = w.dir.join("vayu").join("runtime.json");
-    assert!(rt.exists(), "the daemon used $XDG_DATA_HOME/vayu");
+    let rt = w.dir.join("whoosh").join("runtime.json");
+    assert!(rt.exists(), "the daemon used $XDG_DATA_HOME/whoosh");
     let mut cmd = w.cmd(&["daemon", "stop"]);
-    cmd.env_remove("VAYU_DATA_DIR")
+    cmd.env_remove("WHOOSH_DATA_DIR")
         .env("XDG_DATA_HOME", &w.dir)
         .env("HOME", w.dir.join("home"));
     assert_eq!(run(cmd).code, 0);
@@ -721,7 +723,7 @@ impl Fake {
                             Some("session.hello") => {
                                 let nonce = msg["params"]["nonce"].as_str().unwrap_or_default();
                                 let proof = match &token {
-                                    Some(t) => vayu_proto::auth::hello_proof(t, nonce),
+                                    Some(t) => whoosh_proto::auth::hello_proof(t, nonce),
                                     None => "0".repeat(64),
                                 };
                                 serde_json::json!({"daemonVersion": "fake", "protocol": 1,
@@ -892,7 +894,7 @@ fn requests_carry_files_headers_connections_and_queue() {
     );
     let hello = &received[0];
     assert_eq!(hello["method"], "session.hello");
-    assert!(vayu_proto::auth::is_valid_nonce(
+    assert!(whoosh_proto::auth::is_valid_nonce(
         hello["params"]["nonce"].as_str().unwrap()
     ));
     // Not a daemon of ours: nothing for the world to stop when dropped.

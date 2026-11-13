@@ -1,9 +1,9 @@
-//! Where to find the daemon: [`vayu_proto::runtime`], the data-dir rule and
-//! the runtime file's checks shared with the daemon and `vayu-nmhost`.
+//! Where to find the daemon: [`whoosh_proto::runtime`], the data-dir rule and
+//! the runtime file's checks shared with the daemon and `whoosh-nmhost`.
 
 use std::path::Path;
 
-pub use vayu_proto::runtime::{RUNTIME_FILE, RuntimeError, RuntimeInfo, default_data_dir};
+pub use whoosh_proto::runtime::{RUNTIME_FILE, RuntimeError, RuntimeInfo, default_data_dir};
 
 /// What reading `<data dir>/runtime.json` found.
 #[derive(Debug)]
@@ -17,7 +17,7 @@ pub enum Lookup {
 
 pub fn read(data_dir: &Path) -> Result<Lookup, RuntimeError> {
     let path = data_dir.join(RUNTIME_FILE);
-    match vayu_proto::runtime::read_runtime(&path) {
+    match whoosh_proto::runtime::read_runtime(&path) {
         Ok(info) => Ok(Lookup::Found(info)),
         Err(RuntimeError::Missing(_)) => Ok(Lookup::Unusable("no runtime file".into())),
         Err(e @ (RuntimeError::Invalid { .. } | RuntimeError::Insecure { .. })) => {
@@ -35,7 +35,7 @@ mod tests {
     #[test]
     fn unusable_runtime_files() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("vayu-cli-rt-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("whoosh-cli-rt-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();

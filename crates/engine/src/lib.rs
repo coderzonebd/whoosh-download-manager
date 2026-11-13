@@ -1,10 +1,10 @@
-//! `vayu-engine`: the download engine.
+//! `whoosh-engine`: the download engine.
 //!
-//! [`Engine`] implements [`vayu_proto::service::Service`] on top of the
-//! `vayu-core` seams: bytes come from a [`vayu_core::SourceFactory`], go to a
-//! [`vayu_core::StorageProvider`], progress is made crash-safe by a
-//! [`vayu_core::Journal`], and everything else lives in a
-//! [`vayu_core::StateStore`]. The engine owns all policy (ADR 0005):
+//! [`Engine`] implements [`whoosh_proto::service::Service`] on top of the
+//! `whoosh-core` seams: bytes come from a [`whoosh_core::SourceFactory`], go to a
+//! [`whoosh_core::StorageProvider`], progress is made crash-safe by a
+//! [`whoosh_core::Journal`], and everything else lives in a
+//! [`whoosh_core::StateStore`]. The engine owns all policy (ADR 0005):
 //!
 //! - **Start in one request** (ADR 0005 amendment 3): a fresh download's
 //!   first connection is the response of `RangeSource::start`; it runs
@@ -50,5 +50,5 @@ pub use category::category_for;
 pub use config::{EngineConfig, Tuning};
 pub use engine::{CONNECTIONS_KEY, Engine, EngineDeps, SETTINGS_KEY};
 
-/// Suffix of in-progress files: `<final name>.vayu-part`.
+/// Suffix of in-progress files: `<final name>.whoosh-part`.
 pub const PART_SUFFIX: &str = names::PART_SUFFIX;

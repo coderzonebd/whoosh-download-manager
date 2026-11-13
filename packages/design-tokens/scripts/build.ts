@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Regenerates src/tokens.css from src/tokens.ts. Run: pnpm --filter @vayu/design-tokens build
+// Regenerates src/tokens.css from src/tokens.ts. Run: pnpm --filter @whoosh/design-tokens build
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { toCss } from "../src/css.ts";

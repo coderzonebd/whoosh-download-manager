@@ -1,15 +1,15 @@
-# @vayu/ui
+# @whoosh/ui
 
 The download manager interface shared by the desktop app, the extension
 popup/side panel, the mobile shell and the web remote. Svelte 5 (runes) +
 TypeScript. Apache-2.0.
 
 ```ts
-import "@vayu/ui/styles.css";             // tokens + base styles, once per host
-import { App } from "@vayu/ui";
+import "@whoosh/ui/styles.css";             // tokens + base styles, once per host
+import { App } from "@whoosh/ui";
 import { mount } from "svelte";
 
-mount(App, { target, props: { client, mode: "live" } }); // any VayuClient: ws, mock, native messaging
+mount(App, { target, props: { client, mode: "live" } }); // any WhooshClient: ws, mock, native messaging
 ```
 
 Props: `client`, `mode` (`"mock"` shows "Demo data"), `storage` (where device
@@ -81,9 +81,9 @@ Hebrew… switch the whole UI to RTL (every style uses logical properties).
 ## Commands
 
 ```bash
-corepack pnpm --filter @vayu/ui dev         # playground on the mock: http://localhost:5174 (?bulk=10000, ?lang=bn)
-corepack pnpm --filter @vayu/ui test        # vitest + @testing-library (jsdom)
-corepack pnpm --filter @vayu/ui typecheck   # svelte-check --fail-on-warnings (includes a11y rules)
+corepack pnpm --filter @whoosh/ui dev         # playground on the mock: http://localhost:5174 (?bulk=10000, ?lang=bn)
+corepack pnpm --filter @whoosh/ui test        # vitest + @testing-library (jsdom)
+corepack pnpm --filter @whoosh/ui typecheck   # svelte-check --fail-on-warnings (includes a11y rules)
 ```
 
 svelte-check does not support TypeScript 7 yet, so this package pins

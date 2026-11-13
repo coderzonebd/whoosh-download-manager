@@ -77,7 +77,7 @@ export function toCss(): string {
 
   const parts = [
     "/* SPDX-License-Identifier: Apache-2.0 */",
-    "/* Generated from src/tokens.ts by `pnpm --filter @vayu/design-tokens build`. Do not edit. */",
+    "/* Generated from src/tokens.ts by `pnpm --filter @whoosh/design-tokens build`. Do not edit. */",
     "",
     block(":root", staticDecls),
     "",

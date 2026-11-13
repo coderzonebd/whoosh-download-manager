@@ -1,7 +1,7 @@
-//! `vayu-bench`: the benchmark harness behind the project's speed claims
+//! `whoosh-bench`: the benchmark harness behind the project's speed claims
 //! (MASTER-PLAN §1 item 10, §8 Phase 0 gate, §12).
 //!
-//! It runs download managers ([`adapter`]) against `vayu-labserver`
+//! It runs download managers ([`adapter`]) against `whoosh-labserver`
 //! scenarios ([`lab`]), measures each run ([`measure`]: wall time, CPU,
 //! peak RSS; labserver adds time to first byte and peak connections),
 //! verifies every byte, and keeps the raw data ([`runner`]). [`report`]

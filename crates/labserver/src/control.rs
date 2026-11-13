@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use vayu_core::ByteRange;
+use whoosh_core::ByteRange;
 
 use crate::handler::{Body, ReqCtx, json, origin, text};
 use crate::scenario::Scenario;
@@ -245,7 +245,7 @@ pub(crate) async fn handle<B>(req: Request<B>, rest: &str, ctx: &ReqCtx) -> Resp
 /// `GET /`: a human-readable map of the server.
 pub(crate) fn index(ctx: &ReqCtx) -> Response<Body> {
     let mut s = String::from(
-        "vayu-labserver\n\nControl API:\n  GET  /_lab/health\n  GET  /_lab/scenarios\n  GET  /_lab/stats[/<scenario>]\n  POST /_lab/reset[?scenario=]\n  GET  /_lab/mint?scenario=&file=[&ttl=]\n  GET  /_lab/login?scenario=\n  GET  /_lab/digest?scenario=&file=[&start=&end=&version=]\n  GET  /_lab/cert.pem\n\nScenarios (GET /s/<scenario>/<file>, /s/<scenario>/<file>.sha256):\n",
+        "whoosh-labserver\n\nControl API:\n  GET  /_lab/health\n  GET  /_lab/scenarios\n  GET  /_lab/stats[/<scenario>]\n  POST /_lab/reset[?scenario=]\n  GET  /_lab/mint?scenario=&file=[&ttl=]\n  GET  /_lab/login?scenario=\n  GET  /_lab/digest?scenario=&file=[&start=&end=&version=]\n  GET  /_lab/cert.pem\n\nScenarios (GET /s/<scenario>/<file>, /s/<scenario>/<file>.sha256):\n",
     );
     for rt in &ctx.shared.scenarios {
         let _ = writeln!(s, "  {:<18} {}", rt.sc.name, rt.sc.description);

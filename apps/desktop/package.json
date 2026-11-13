@@ -1,5 +1,5 @@
 {
-  "name": "@vayu/desktop",
+  "name": "@whoosh/desktop",
   "version": "0.1.0",
   "private": true,
   "license": "GPL-3.0-or-later",
@@ -15,9 +15,9 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/noto-sans-bengali": "^5.3.0",
     "@tauri-apps/api": "^2.12.4",
-    "@vayu/api-client": "workspace:*",
-    "@vayu/design-tokens": "workspace:*",
-    "@vayu/ui": "workspace:*",
+    "@whoosh/api-client": "workspace:*",
+    "@whoosh/design-tokens": "workspace:*",
+    "@whoosh/ui": "workspace:*",
     "svelte": "^5.57.3"
   },
   "devDependencies": {

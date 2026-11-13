@@ -35,9 +35,9 @@ export const Event = {
 } as const;
 export type EventName = (typeof Event)[keyof typeof Event];
 
-/** Answered by `vayu-nmhost` itself, never by the daemon (PROTOCOL.md §1). */
+/** Answered by `whoosh-nmhost` itself, never by the daemon (PROTOCOL.md §1). */
 export const HostMethod = { NmStatus: "nm.status" } as const;
-/** Sent by `vayu-nmhost` whenever its daemon connection goes up or down. */
+/** Sent by `whoosh-nmhost` whenever its daemon connection goes up or down. */
 export const HostEvent = { NmStatus: "event.nm.status" } as const;
 /** Request ids starting with this prefix are reserved for the native host. */
 export const HOST_RESERVED_ID_PREFIX = "nmhost:";
@@ -243,7 +243,7 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   /**
    * "powerSafe" (default): data is forced to disk before a file is finished, so a power cut never
-   * damages a finished file. "processSafe": faster, survives a killed vayu but not a power cut.
+   * damages a finished file. "processSafe": faster, survives a killed whoosh but not a power cut.
    */
   durability?: Durability;
 }
@@ -324,7 +324,7 @@ export interface HostEventMap {
 }
 
 /** The transport-agnostic client every UI codes against (WebSocket, native messaging, or mock). */
-export interface VayuClient {
+export interface WhooshClient {
   call<M extends keyof MethodMap>(method: M, params: MethodMap[M]["params"]): Promise<MethodMap[M]["result"]>;
   on<E extends keyof EventMap>(event: E, handler: (payload: EventMap[E]) => void): () => void;
   close(): void;

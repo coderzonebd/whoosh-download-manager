@@ -7,7 +7,7 @@
 //!
 //! | Bytes | Field |
 //! |---|---|
-//! | 0..8 | magic `VAYUJRNL` |
+//! | 0..8 | magic `WHSHJRNL` |
 //! | 8..12 | format version (`1`) |
 //! | 12..16 | reserved, zero |
 //! | 16..24 | the slot's own offset in the file |
@@ -41,8 +41,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use futures::future::BoxFuture;
-use vayu_core::{Checkpoint, Journal};
-use vayu_proto::DownloadId;
+use whoosh_core::{Checkpoint, Journal};
+use whoosh_proto::DownloadId;
 
 use crate::{blocking, sys};
 
@@ -240,7 +240,7 @@ fn sync_in_background(pending: &Arc<Mutex<Vec<PathBuf>>>) {
     }
     let pending = pending.clone();
     let spawned = std::thread::Builder::new()
-        .name("vayu-journal-dirs".into())
+        .name("whoosh-journal-dirs".into())
         .spawn(move || {
             let mut dirs = lock(&pending);
             if sys::sync_dirs(&dirs).is_ok() {
@@ -390,9 +390,9 @@ fn is_windows_device(stem: &str) -> bool {
 
 /// The on-disk format, as pure functions over the file's bytes.
 pub(crate) mod format {
-    use vayu_core::Checkpoint;
+    use whoosh_core::Checkpoint;
 
-    pub(crate) const MAGIC: [u8; 8] = *b"VAYUJRNL";
+    pub(crate) const MAGIC: [u8; 8] = *b"WHSHJRNL";
     pub(crate) const VERSION: u32 = 1;
     pub(crate) const HEADER: usize = 40;
     /// The second slot position; later ones are its powers of two.
@@ -508,8 +508,8 @@ mod tests {
     use super::format::{HEADER, latest, plan, slot_at};
     use super::*;
     use proptest::prelude::*;
-    use vayu_core::source::RemoteMeta;
-    use vayu_core::{ByteRange, Finishing, RangeSet};
+    use whoosh_core::source::RemoteMeta;
+    use whoosh_core::{ByteRange, Finishing, RangeSet};
 
     /// A checkpoint whose JSON grows with `ranges`; 200 ranges ≈ 6 KiB,
     /// enough to force a slot past 4 KiB.

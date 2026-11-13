@@ -1,17 +1,17 @@
-//! `vayu-core`: the contract every part of the engine agrees on.
+//! `whoosh-core`: the contract every part of the engine agrees on.
 //!
 //! Phase 1 builds the engine as independent crates, at the same time, behind
 //! these seams:
 //!
 //! | Seam | Trait(s) | Implemented by |
 //! |---|---|---|
-//! | Bytes in | [`RangeSource`], [`SourceFactory`] | `vayu-net` (HTTP/1.1, HTTP/2, HTTP/3) |
-//! | Bytes out | [`Storage`], [`StorageProvider`] | `vayu-store` (preallocated files, positional writes) |
-//! | Crash safety | [`Journal`] | `vayu-store` (checksummed, atomic checkpoints) |
-//! | Everything else durable | [`StateStore`] | `vayu-store` (SQLite) |
-//! | The API | [`vayu_proto::service::Service`] | `vayu-engine` (scheduler, queues, rules) |
+//! | Bytes in | [`RangeSource`], [`SourceFactory`] | `whoosh-net` (HTTP/1.1, HTTP/2, HTTP/3) |
+//! | Bytes out | [`Storage`], [`StorageProvider`] | `whoosh-store` (preallocated files, positional writes) |
+//! | Crash safety | [`Journal`] | `whoosh-store` (checksummed, atomic checkpoints) |
+//! | Everything else durable | [`StateStore`] | `whoosh-store` (SQLite) |
+//! | The API | [`whoosh_proto::service::Service`] | `whoosh-engine` (scheduler, queues, rules) |
 //!
-//! `vayu-daemon` serves a `Service` over the local API; `vayu` (the CLI) is
+//! `whoosh-daemon` serves a `Service` over the local API; `whoosh` (the CLI) is
 //! one of its clients. The [`testing`] module (feature `testing`) has an
 //! in-memory implementation of every trait so each crate can be built and
 //! tested before the others exist.

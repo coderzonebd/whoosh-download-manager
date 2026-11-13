@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  The whole download manager UI. Hand it any VayuClient (mock, WebSocket,
+  The whole download manager UI. Hand it any WhooshClient (mock, WebSocket,
   native messaging) and it runs. Hosts (desktop, extension, mobile, web
   remote) only decide which client to pass and where to mount it.
 -->
 <script lang="ts">
-  import type { VayuClient } from "@vayu/api-client";
+  import type { WhooshClient } from "@whoosh/api-client";
   import { onDestroy, untrack } from "svelte";
   import { AppState, provideApp, type AppOptions } from "../lib/state/app.svelte.ts";
   import AddDownloadDialog from "./AddDownloadDialog.svelte";
@@ -22,7 +22,7 @@
   import Toolbar from "./Toolbar.svelte";
 
   interface Props {
-    client: VayuClient;
+    client: WhooshClient;
     /** "mock" shows "Demo data" in the status bar. */
     mode?: "mock" | "live";
     /** Where device preferences persist (default localStorage; null = nowhere). */

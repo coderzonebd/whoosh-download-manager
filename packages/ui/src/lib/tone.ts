@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { DownloadState } from "@vayu/api-client";
+import type { DownloadState } from "@whoosh/api-client";
 
 export type Tone = "accent" | "success" | "warning" | "danger" | "info" | "neutral";
 

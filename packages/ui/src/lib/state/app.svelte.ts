@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Everything the shell needs, built from one VayuClient. Components get it
+// Everything the shell needs, built from one WhooshClient. Components get it
 // from context (`getApp()`), so the same tree runs on the mock, the real
 // WebSocket client or (in the extension) a native-messaging client.
 
-import type { AddParams, DownloadSummary, Settings, Stats, VayuClient } from "@vayu/api-client";
-import { isVayuConnectionError, isVayuRpcError } from "@vayu/api-client/errors";
+import type { AddParams, DownloadSummary, Settings, Stats, WhooshClient } from "@whoosh/api-client";
+import { isWhooshConnectionError, isWhooshRpcError } from "@whoosh/api-client/errors";
 import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
 import { DownloadStore, PAUSABLE, RESUMABLE, type Download } from "./downloads.svelte.ts";
@@ -41,7 +41,7 @@ function defaultStorage(): Storage | null {
 }
 
 export class AppState {
-  readonly client: VayuClient;
+  readonly client: WhooshClient;
   readonly i18n: I18n;
   readonly store = new DownloadStore();
   readonly toasts = new ToastStore();
@@ -67,7 +67,7 @@ export class AppState {
 
   readonly #off: (() => void)[] = [];
 
-  constructor(client: VayuClient, opts: AppOptions = {}) {
+  constructor(client: WhooshClient, opts: AppOptions = {}) {
     this.client = client;
     this.prefs = new Prefs(opts.storage === undefined ? defaultStorage() : opts.storage);
     this.i18n = new I18n(opts.locale ?? (typeof navigator === "undefined" ? "en" : navigator.language));
@@ -180,7 +180,7 @@ export class AppState {
   }
 
   describe(err: unknown): string {
-    if (isVayuRpcError(err) || isVayuConnectionError(err)) return err.message;
+    if (isWhooshRpcError(err) || isWhooshConnectionError(err)) return err.message;
     return err instanceof Error ? err.message : String(err);
   }
 
@@ -284,7 +284,7 @@ export class AppState {
   }
 }
 
-const KEY = Symbol("vayu.app");
+const KEY = Symbol("whoosh.app");
 
 export function provideApp(app: AppState): AppState {
   return setContext(KEY, app);

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.10.0.schema.json
 # TEMPLATE: see README.md before submitting to microsoft/winget-pkgs.
-PackageIdentifier: CoderZoneBD.Vayu
+PackageIdentifier: CoderZoneBD.Whoosh
 PackageVersion: 0.0.1
 DefaultLocale: en-US
 ManifestType: version

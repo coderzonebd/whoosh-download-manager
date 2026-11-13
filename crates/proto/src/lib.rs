@@ -1,4 +1,4 @@
-//! `vayu-proto`: the daemon's local API contract.
+//! `whoosh-proto`: the daemon's local API contract.
 //!
 //! Every client — desktop window, CLI, browser extension (through the native
 //! messaging host), web remote, MCP server — speaks JSON-RPC 2.0 to the
@@ -62,7 +62,7 @@ pub mod event {
     pub const SETTINGS: &str = "event.settings";
 }
 
-/// Answered by `vayu-nmhost` itself, never by the daemon (PROTOCOL.md §1).
+/// Answered by `whoosh-nmhost` itself, never by the daemon (PROTOCOL.md §1).
 pub mod host {
     pub const NM_STATUS: &str = "nm.status";
     /// Sent by the host whenever its daemon connection goes up or down.
@@ -114,7 +114,7 @@ pub mod close_code {
 }
 
 /// Opaque to clients. Daemons generate ids matching `[a-z0-9_-]{1,64}`
-/// (vayu-engine: `dl_` + lower-case hex); storage relies on that to keep
+/// (whoosh-engine: `dl_` + lower-case hex); storage relies on that to keep
 /// file names short and portable.
 pub type DownloadId = String;
 pub type UnixMillis = i64;
@@ -415,11 +415,11 @@ pub struct Settings {
 pub enum Durability {
     /// Data is forced to disk before a file is finished or its progress is
     /// journalled: a power cut never leaves a finished file with missing
-    /// bytes. The default (load-shedding is common where vayu is used).
+    /// bytes. The default (load-shedding is common where whoosh is used).
     #[default]
     PowerSafe,
     /// Data is handed to the operating system but not forced to disk: a
-    /// killed or crashed vayu loses nothing, a power cut can damage files
+    /// killed or crashed whoosh loses nothing, a power cut can damage files
     /// finished in the last few seconds. Faster on small files and fast
     /// links, like wget, aria2 and IDM.
     ProcessSafe,

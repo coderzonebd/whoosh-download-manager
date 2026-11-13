@@ -72,7 +72,7 @@ const healer = new SelfHealingStub();
 let lastCapture: PopupState["lastCapture"];
 
 function describe(result: CaptureResult): string {
-  if (result.outcome === "sent") return "sent to vayu";
+  if (result.outcome === "sent") return "sent to whoosh";
   if (result.outcome === "skipped") return `left to the browser (${result.reason})`;
   return `kept by the browser (${result.reason})`;
 }
@@ -81,7 +81,7 @@ function report(candidate: CandidateDownload, result: CaptureResult): void {
   if (result.outcome !== "skipped") {
     lastCapture = { url: candidate.url, outcome: describe(result), at: Date.now() };
   }
-  console.debug("vayu: download", candidate.id, describe(result));
+  console.debug("whoosh: download", candidate.id, describe(result));
   if (result.outcome === "sent") {
     void healer.remember({
       daemonId: result.daemonId,
@@ -93,7 +93,7 @@ function report(candidate: CandidateDownload, result: CaptureResult): void {
       capturedAt: Date.now(),
     });
   } else if (result.outcome === "kept" && result.late) {
-    void result.late.then((late) => console.debug("vayu: late answer for download", candidate.id, late.outcome));
+    void result.late.then((late) => console.debug("whoosh: late answer for download", candidate.id, late.outcome));
   }
 }
 
@@ -144,7 +144,7 @@ api.webRequest.onBeforeRequest.addListener(
 
 interface SendOptions {
   referrer?: string | undefined;
-  /** For a single explicit link: if vayu cannot take it, let the browser download it. */
+  /** For a single explicit link: if whoosh cannot take it, let the browser download it. */
   fallbackToBrowser: boolean;
   incognito?: boolean | undefined;
   cookieStoreId?: string | undefined;
@@ -176,7 +176,7 @@ async function sendLinks(urls: readonly string[], opts: SendOptions): Promise<Ac
   if (urls.length > 0) {
     lastCapture = {
       url: urls[0] ?? "",
-      outcome: failed === 0 ? `sent ${urls.length} link(s) to vayu` : `failed: ${lastError}`,
+      outcome: failed === 0 ? `sent ${urls.length} link(s) to whoosh` : `failed: ${lastError}`,
       at: Date.now(),
     };
   }
@@ -257,7 +257,7 @@ const preconnect = new PreconnectThrottle();
 
 async function onContentMessage(message: ContentMessage): Promise<void> {
   const now = Date.now();
-  if (message.type === "vayu/bypass-next") {
+  if (message.type === "whoosh/bypass-next") {
     bypass.arm(now);
     return;
   }
@@ -269,12 +269,12 @@ async function onContentMessage(message: ContentMessage): Promise<void> {
 
 async function onPopupMessage(message: PopupMessage): Promise<PopupState | ActionReply> {
   switch (message.type) {
-    case "vayu/popup-state":
+    case "whoosh/popup-state":
       return popupState(message.tabId, message.pageUrl);
-    case "vayu/set-capture":
+    case "whoosh/set-capture":
       await changeSettings({ captureEnabled: message.enabled });
       return { ok: true };
-    case "vayu/set-site-excluded": {
+    case "whoosh/set-site-excluded": {
       const host = normalizeSitePattern(message.host);
       if (!host) return { ok: false, error: "not a host name" };
       const current = (await settings()).excludedSites;
@@ -284,7 +284,7 @@ async function onPopupMessage(message: PopupMessage): Promise<PopupState | Actio
       await changeSettings({ excludedSites });
       return { ok: true };
     }
-    case "vayu/download-media":
+    case "whoosh/download-media":
       return sendLinks([message.url], { referrer: message.pageUrl, fallbackToBrowser: false });
   }
 }
@@ -342,7 +342,7 @@ api.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 
 transport.on("event.download.state", (event) => {
   if (event.state === "needs_refresh") {
-    void healer.heal(event).then((outcome) => console.debug("vayu: self-healing", event.id, outcome.status));
+    void healer.heal(event).then((outcome) => console.debug("whoosh: self-healing", event.id, outcome.status));
   } else if (event.state === "completed") {
     void healer.forget(event.id);
   }

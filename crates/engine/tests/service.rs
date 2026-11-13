@@ -12,10 +12,10 @@ use common::*;
 use futures::{FutureExt, StreamExt};
 use sha2::{Digest, Sha256};
 use tokio::time::Instant;
-use vayu_core::{Journal, StateStore, Storage};
-use vayu_engine::{Engine, SETTINGS_KEY};
-use vayu_proto::service::{Notification, Service};
-use vayu_proto::{
+use whoosh_core::{Journal, StateStore, Storage};
+use whoosh_engine::{Engine, SETTINGS_KEY};
+use whoosh_proto::service::{Notification, Service};
+use whoosh_proto::{
     AddParams, Checksum, DownloadState, Header, IdParams, IdsParams, ListParams, PreconnectParams,
     ProbeParams, RefreshUrlParams, RemoveParams, RequestContext, error_code,
 };
@@ -97,7 +97,7 @@ async fn list_is_newest_first_with_filters_and_paging() {
 #[tokio::test(start_paused = true)]
 async fn errors_use_the_protocol_codes() {
     let lab = Lab::new(config()).await;
-    let nf = |r: Result<_, vayu_proto::service::ServiceError>| r.unwrap_err().code;
+    let nf = |r: Result<_, whoosh_proto::service::ServiceError>| r.unwrap_err().code;
     assert_eq!(
         nf(lab
             .engine
@@ -125,7 +125,7 @@ async fn errors_use_the_protocol_codes() {
             .await),
         error_code::NOT_FOUND
     );
-    const BAD: i32 = vayu_proto::service::ServiceError::INVALID_PARAMS;
+    const BAD: i32 = whoosh_proto::service::ServiceError::INVALID_PARAMS;
     lab.serve(URL, Arc::new(FaultSource::new(content(MIB, 1))));
     let bad = |f: fn(&mut AddParams)| {
         let mut p = add_params(URL);
@@ -449,7 +449,7 @@ async fn events_are_batched_and_every_subscriber_gets_all() {
     );
     assert_eq!(states(&a), states(&b));
 
-    let progress: Vec<(Instant, &vayu_proto::ProgressEvent)> = a
+    let progress: Vec<(Instant, &whoosh_proto::ProgressEvent)> = a
         .iter()
         .filter_map(|(t, n)| match n {
             Notification::DownloadProgress(p) => Some((*t, p)),
@@ -594,7 +594,7 @@ async fn remove_stops_and_deletes_files() {
     let id = lab.add(URL).await;
     let mut events = lab.engine.subscribe();
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let part = Path::new(DIR).join("data.bin.vayu-part");
+    let part = Path::new(DIR).join("data.bin.whoosh-part");
     assert!(lab.storage.in_progress(&part).is_some());
     lab.engine
         .remove(RemoveParams {
@@ -665,7 +665,7 @@ async fn corrupt_tail_then_resume(validators: bool) -> (Bytes, Bytes, u64) {
     // disk cache would after a power cut.
     let part = lab
         .storage
-        .in_progress(&Path::new(DIR).join("data.bin.vayu-part"))
+        .in_progress(&Path::new(DIR).join("data.bin.whoosh-part"))
         .unwrap();
     let from = r.end.saturating_sub(100 * KIB).max(r.start);
     part.write_at(from, Bytes::from(vec![0u8; (r.end - from) as usize]))
@@ -799,9 +799,12 @@ async fn lose_part_file_then_resume(validators: bool) {
     );
     // The part file disappears (deleted, or renamed by a finish whose
     // journal update was lost).
-    vayu_core::StorageProvider::remove(&*lab.storage, &Path::new(DIR).join("data.bin.vayu-part"))
-        .await
-        .unwrap();
+    whoosh_core::StorageProvider::remove(
+        &*lab.storage,
+        &Path::new(DIR).join("data.bin.whoosh-part"),
+    )
+    .await
+    .unwrap();
     lab.engine
         .resume(IdsParams {
             ids: vec![id.clone()],

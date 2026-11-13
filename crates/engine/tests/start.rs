@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use common::*;
-use vayu_core::{SourceError, StateStore};
-use vayu_proto::service::Service;
-use vayu_proto::{AddParams, DownloadState, IdsParams};
+use whoosh_core::{SourceError, StateStore};
+use whoosh_proto::service::Service;
+use whoosh_proto::{AddParams, DownloadState, IdsParams};
 
 const LONG: Duration = Duration::from_secs(600);
 

@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use http::StatusCode;
 use http::header::{self, HeaderMap};
-use vayu_core::{SourceError, Validators};
+use whoosh_core::{SourceError, Validators};
 
 /// A parsed `Content-Range` (`bytes a-b/total`, `bytes */total`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

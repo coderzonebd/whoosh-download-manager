@@ -4,7 +4,7 @@
 //! Priority: the user's name, then `RemoteMeta::filename`
 //! (`Content-Disposition`), then the last segment of the URL path
 //! (percent-decoded), then `download`. Every candidate is sanitised here
-//! again, even though `vayu-net` already sanitises `Content-Disposition`
+//! again, even though `whoosh-net` already sanitises `Content-Disposition`
 //! (defence in depth), and the final path is checked to stay inside the
 //! download directory.
 
@@ -12,8 +12,8 @@ use std::path::{Component, Path, PathBuf};
 
 use percent_encoding::percent_decode_str;
 
-/// Suffix of in-progress files: `<final name>.vayu-part`.
-pub(crate) const PART_SUFFIX: &str = ".vayu-part";
+/// Suffix of in-progress files: `<final name>.whoosh-part`.
+pub(crate) const PART_SUFFIX: &str = ".whoosh-part";
 
 /// The name used when nothing better is known.
 pub(crate) const FALLBACK: &str = "download";
@@ -221,12 +221,12 @@ mod tests {
         assert_eq!(sanitize("dir/").as_deref(), None);
         assert_eq!(sanitize("").as_deref(), None);
         assert_eq!(sanitize("বাংলা ফাইল.pdf").as_deref(), Some("বাংলা ফাইল.pdf"));
-        assert_eq!(sanitize("x.zip.vayu-part").as_deref(), Some("x.zip"));
+        assert_eq!(sanitize("x.zip.whoosh-part").as_deref(), Some("x.zip"));
         assert_eq!(
-            sanitize("x.zip.VAYU-PART.vayu-part").as_deref(),
+            sanitize("x.zip.WHOOSH-PART.whoosh-part").as_deref(),
             Some("x.zip")
         );
-        assert_eq!(sanitize(".vayu-part").as_deref(), Some("vayu-part"));
+        assert_eq!(sanitize(".whoosh-part").as_deref(), Some("whoosh-part"));
         let long = format!("{}.iso", "ক".repeat(200));
         let s = sanitize(&long).unwrap();
         assert!(s.len() <= MAX_LEN && s.ends_with(".iso"), "{s}");
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(inside(d, ""), None);
         assert_eq!(
             part_path(d, "a.bin"),
-            Some(PathBuf::from("/dl/a.bin.vayu-part"))
+            Some(PathBuf::from("/dl/a.bin.whoosh-part"))
         );
     }
 }

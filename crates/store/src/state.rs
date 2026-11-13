@@ -33,8 +33,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use futures::future::BoxFuture;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use tokio::sync::oneshot;
-use vayu_core::{DownloadRecord, HostProfile, StateStore};
-use vayu_proto::DownloadId;
+use whoosh_core::{DownloadRecord, HostProfile, StateStore};
+use whoosh_proto::DownloadId;
 
 use crate::sys;
 
@@ -153,7 +153,7 @@ impl SqliteStateStore {
         #[cfg(test)]
         let thread_stats = stats.clone();
         std::thread::Builder::new()
-            .name("vayu-store-sqlite".into())
+            .name("whoosh-store-sqlite".into())
             .spawn(move || match open_db(&p) {
                 Ok(opened) => {
                     let _ = ready_tx.send(Ok(()));
@@ -949,7 +949,7 @@ mod tests {
         DownloadRecord {
             id: id.into(),
             url: "https://example.test/f".into(),
-            request: cookie.map(|c| vayu_proto::RequestContext {
+            request: cookie.map(|c| whoosh_proto::RequestContext {
                 cookie: Some(c.into()),
                 ..Default::default()
             }),
@@ -959,7 +959,7 @@ mod tests {
             directory: "/d".into(),
             category: None,
             queue: None,
-            state: vayu_proto::DownloadState::Downloading,
+            state: whoosh_proto::DownloadState::Downloading,
             total_bytes: None,
             downloaded_bytes: 0,
             resumable: true,

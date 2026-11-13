@@ -73,7 +73,7 @@ pub trait StorageProvider: Send + Sync {
     /// Open the in-progress file at `path`, creating it (and missing parent
     /// directories) if needed. Existing contents are kept: this is how a
     /// download resumes. The engine names in-progress files
-    /// `<final name>.vayu-part`.
+    /// `<final name>.whoosh-part`.
     ///
     /// Opening a path that is already open returns the same live storage.
     /// After that storage finished (or the path was removed), opening the

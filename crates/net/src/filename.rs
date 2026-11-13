@@ -1,5 +1,5 @@
 //! File names from `Content-Disposition` (RFC 6266, RFC 8187/5987), and
-//! the sanitising rules of [`vayu_core::RemoteMeta::filename`].
+//! the sanitising rules of [`whoosh_core::RemoteMeta::filename`].
 //!
 //! Decoding follows what browsers do, which is also what the benchmark
 //! grades (`crates/bench/src/names.rs`):

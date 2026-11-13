@@ -5,8 +5,8 @@
   name and category follow the probe until you edit them yourself.
 -->
 <script lang="ts">
-  import type { ProbeResult } from "@vayu/api-client";
-  import { CATEGORIES, categoryForFilename, type Category } from "@vayu/api-client/categories";
+  import type { ProbeResult } from "@whoosh/api-client";
+  import { CATEGORIES, categoryForFilename, type Category } from "@whoosh/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Dialog from "./Dialog.svelte";
   import FileIcon from "./FileIcon.svelte";

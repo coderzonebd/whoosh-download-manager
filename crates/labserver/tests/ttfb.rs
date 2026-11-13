@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use vayu_labserver::{LabConfig, LabServer, Scenario, VirtualFile};
+use whoosh_labserver::{LabConfig, LabServer, Scenario, VirtualFile};
 
 const FILE: &str = "1g.bin";
 const MIB: u64 = 1 << 20;

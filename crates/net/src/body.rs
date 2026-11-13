@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use bytes::{Buf, Bytes};
 use futures::Stream;
 use http_body::Body as _;
-use vayu_core::SourceError;
+use whoosh_core::SourceError;
 
 use crate::classify::describe;
 use crate::origin::Origin;
@@ -318,6 +318,6 @@ impl Stream for CheckedBody {
 }
 
 /// A stream with nothing in it (an empty range).
-pub(crate) fn empty() -> vayu_core::ByteStream {
+pub(crate) fn empty() -> whoosh_core::ByteStream {
     Box::pin(futures::stream::empty())
 }

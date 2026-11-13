@@ -11,16 +11,16 @@ set -euo pipefail
 
 : "${APPLE_CERTIFICATE:?}" "${APPLE_SIGNING_IDENTITY:?}" "${RUNNER_TEMP:?}"
 
-keychain="$RUNNER_TEMP/vayu-signing.keychain-db"
+keychain="$RUNNER_TEMP/whoosh-signing.keychain-db"
 if [ ! -f "$keychain" ]; then
   pw=$(openssl rand -hex 24)
   security create-keychain -p "$pw" "$keychain"
   security set-keychain-settings -lut 3600 "$keychain"
   security unlock-keychain -p "$pw" "$keychain"
-  printf '%s' "$APPLE_CERTIFICATE" | base64 --decode >"$RUNNER_TEMP/vayu-cert.p12"
-  security import "$RUNNER_TEMP/vayu-cert.p12" -k "$keychain" -f pkcs12 \
+  printf '%s' "$APPLE_CERTIFICATE" | base64 --decode >"$RUNNER_TEMP/whoosh-cert.p12"
+  security import "$RUNNER_TEMP/whoosh-cert.p12" -k "$keychain" -f pkcs12 \
     -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
-  rm -f "$RUNNER_TEMP/vayu-cert.p12"
+  rm -f "$RUNNER_TEMP/whoosh-cert.p12"
   security set-key-partition-list -S apple-tool:,apple: -s -k "$pw" "$keychain" >/dev/null
   # Put the keychain first in the search list so codesign finds the identity.
   # shellcheck disable=SC2046

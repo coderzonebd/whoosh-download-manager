@@ -1,4 +1,4 @@
-import type { AddParams } from "@vayu/api-client";
+import type { AddParams } from "@whoosh/api-client";
 import { describe, expect, it, vi } from "vitest";
 
 import { CaptureController, type CaptureDeps } from "../src/background/capture/controller";

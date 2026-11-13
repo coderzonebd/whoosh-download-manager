@@ -6,7 +6,7 @@
 // segment's last known speed. The total is always exact; the split is an
 // estimate corrected on the next poll.
 
-import type { SegmentInfo } from "@vayu/api-client";
+import type { SegmentInfo } from "@whoosh/api-client";
 
 export interface SegmentFill {
   start: number;

@@ -1,6 +1,6 @@
 //! The API as a Rust trait, without transport or authentication.
 //!
-//! `vayu-engine` implements [`Service`]; `vayu-daemon` serves any `Service`
+//! `whoosh-engine` implements [`Service`]; `whoosh-daemon` serves any `Service`
 //! over JSON-RPC (PROTOCOL.md) and only translates. A mock `Service` lets
 //! the daemon, the CLI and the UIs be built before the engine exists.
 

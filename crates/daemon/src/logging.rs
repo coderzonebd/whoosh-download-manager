@@ -1,7 +1,7 @@
-//! Logging: `tracing` to `<data dir>/logs/vayu-daemon.<date>.log` (daily
+//! Logging: `tracing` to `<data dir>/logs/whoosh-daemon.<date>.log` (daily
 //! rotation, the last 7 files kept), plus stderr when running in the
-//! foreground. `VAYU_LOG` sets the filter (`info` by default; the syntax is
-//! `tracing-subscriber`'s `EnvFilter`, e.g. `VAYU_LOG=vayu_daemon=debug`).
+//! foreground. `WHOOSH_LOG` sets the filter (`info` by default; the syntax is
+//! `tracing-subscriber`'s `EnvFilter`, e.g. `WHOOSH_LOG=whoosh_daemon=debug`).
 //!
 //! Secrets: the daemon never logs request params (they carry cookies) or
 //! the token, at any level. The `log` crate is deliberately *not* bridged
@@ -17,8 +17,8 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 
-pub const LOG_ENV: &str = "VAYU_LOG";
-pub const LOG_FILE_PREFIX: &str = "vayu-daemon";
+pub const LOG_ENV: &str = "WHOOSH_LOG";
+pub const LOG_FILE_PREFIX: &str = "whoosh-daemon";
 pub const MAX_LOG_FILES: usize = 7;
 /// Log lines queued for the writer thread; more are dropped (never blocks).
 const BUFFERED_LINES: usize = 4096;
@@ -79,7 +79,7 @@ pub fn init(data_dir: Option<&Path>, foreground: bool) -> Result<LogGuard, LogEr
     Ok(LogGuard { _file: guard })
 }
 
-/// `<dir>/vayu-daemon.YYYY-MM-DD.log` (UTC), a new file each day, created
+/// `<dir>/whoosh-daemon.YYYY-MM-DD.log` (UTC), a new file each day, created
 /// owner-only (0600) whatever the umask; only the newest
 /// [`MAX_LOG_FILES`] are kept.
 #[derive(Debug)]
@@ -190,12 +190,12 @@ mod tests {
         assert_eq!(civil_from_days(-1), (1969, 12, 31));
         assert_eq!(civil_from_days(11_016), (2000, 2, 29));
         assert_eq!(civil_from_days(20_767), (2026, 11, 10));
-        assert_eq!(file_name(20_767), "vayu-daemon.2026-11-10.log");
+        assert_eq!(file_name(20_767), "whoosh-daemon.2026-11-10.log");
     }
 
     #[test]
     fn files_are_private_and_pruned() {
-        let dir = std::env::temp_dir().join(format!("vayu-daemon-logs-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("whoosh-daemon-logs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for day in 0..10 {

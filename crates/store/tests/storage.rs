@@ -1,14 +1,14 @@
 //! `FileStorage` against the `Storage` contract, with the in-memory double
-//! from `vayu_core::testing` as the reference model.
+//! from `whoosh_core::testing` as the reference model.
 
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use vayu_core::testing::MemStorageProvider;
-use vayu_core::{Storage, StorageProvider};
-use vayu_store::{FileStorageProvider, StorageOptions};
+use whoosh_core::testing::MemStorageProvider;
+use whoosh_core::{Storage, StorageProvider};
+use whoosh_store::{FileStorageProvider, StorageOptions};
 
 fn provider() -> FileStorageProvider {
     FileStorageProvider::new(StorageOptions::default())
@@ -33,7 +33,7 @@ fn same(a: &Arc<dyn Storage>, b: &Arc<dyn Storage>) -> bool {
 async fn writes_reads_flush_and_finish() {
     let d = tempfile::tempdir().unwrap();
     let p = provider();
-    let part = d.path().join("sub/dir/file.bin.vayu-part");
+    let part = d.path().join("sub/dir/file.bin.whoosh-part");
     let s = p.open(&part).await.unwrap();
     s.write_at(3, Bytes::from_static(b"lo, world"))
         .await
@@ -93,7 +93,7 @@ async fn rejects_offsets_past_u64() {
 async fn open_returns_the_live_storage_and_resumes_after_drop() {
     let d = tempfile::tempdir().unwrap();
     let p = provider();
-    let path = d.path().join("f.vayu-part");
+    let path = d.path().join("f.whoosh-part");
     let a = p.open(&path).await.unwrap();
     let b = p.open(&path).await.unwrap();
     assert!(same(&a, &b));
@@ -214,7 +214,7 @@ async fn disk_full_surfaces_as_storage_full_and_stays_inline() {
 async fn after_remove_old_handles_never_reach_the_new_file() {
     let d = tempfile::tempdir().unwrap();
     let p = provider();
-    let path = d.path().join("f.vayu-part");
+    let path = d.path().join("f.whoosh-part");
     let old = p.open(&path).await.unwrap();
     old.write_at(0, Bytes::from(vec![b'o'; 1 << 20]))
         .await
@@ -251,7 +251,7 @@ async fn matches_the_reference_under_concurrent_random_writes() {
         buffer_bytes: 256 << 10,
         ..StorageOptions::default()
     });
-    let s = p.open(&d.path().join("f.vayu-part")).await.unwrap();
+    let s = p.open(&d.path().join("f.whoosh-part")).await.unwrap();
     let mem = MemStorageProvider::default();
     let m = mem.open(Path::new("/m")).await.unwrap();
     s.preallocate(SIZE).await.unwrap();
@@ -318,7 +318,7 @@ async fn works_without_a_tokio_runtime() {
 /// The contract's reuse, length and isolation rules, run against the
 /// in-memory reference and against `FileStorageProvider` alike.
 async fn contract_rules(p: &dyn StorageProvider, dir: &Path) {
-    let part = dir.join("x.vayu-part");
+    let part = dir.join("x.whoosh-part");
     let fin = dir.join("x");
     assert_eq!(p.file_len(&part).await.unwrap(), None);
     let a = p.open(&part).await.unwrap();
@@ -368,7 +368,7 @@ async fn follows_the_contract_like_the_reference() {
 /// The process-safe calls (contract: `Durability::ProcessSafe`), against
 /// the reference (which falls back to `flush`/`finish`) and the real store.
 async fn process_safe_rules(p: &dyn StorageProvider, dir: &Path) {
-    let part = dir.join("y.vayu-part");
+    let part = dir.join("y.whoosh-part");
     let s = p.open(&part).await.unwrap();
     s.write_at(2, Bytes::from_static(b"cd")).await.unwrap();
     s.write_at(0, Bytes::from_static(b"ab")).await.unwrap();
@@ -376,7 +376,7 @@ async fn process_safe_rules(p: &dyn StorageProvider, dir: &Path) {
     assert_eq!(s.read_at(0, 10).await.unwrap(), "abcd");
     assert_eq!(p.file_len(&part).await.unwrap(), Some(4));
     // A taken name: AlreadyExists, and the storage stays usable.
-    let other = p.open(&dir.join("z.vayu-part")).await.unwrap();
+    let other = p.open(&dir.join("z.whoosh-part")).await.unwrap();
     other
         .write_at(0, Bytes::from_static(b"other"))
         .await
@@ -426,7 +426,7 @@ async fn file_len_reports_files_only() {
 async fn after_finish_old_handles_never_reach_the_new_file() {
     let d = tempfile::tempdir().unwrap();
     let p = provider();
-    let part = d.path().join("f.vayu-part");
+    let part = d.path().join("f.whoosh-part");
     let old = p.open(&part).await.unwrap();
     old.write_at(0, Bytes::from_static(b"first")).await.unwrap();
     old.finish(&d.path().join("f")).await.unwrap();

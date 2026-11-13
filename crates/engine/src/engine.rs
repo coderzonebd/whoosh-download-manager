@@ -12,9 +12,9 @@ use futures::future::{BoxFuture, join_all};
 use futures::stream::BoxStream;
 use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
-use vayu_core::{DownloadRecord, Journal, SourceFactory, StateStore, StorageProvider};
-use vayu_proto::service::{Notification, Service, ServiceError, ServiceResult};
-use vayu_proto::{
+use whoosh_core::{DownloadRecord, Journal, SourceFactory, StateStore, StorageProvider};
+use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
+use whoosh_proto::{
     AddParams, AddResult, DownloadDetail, DownloadId, DownloadState, DownloadSummary, Durability,
     ErrorInfo, IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult,
     ProgressEvent, ProgressItem, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo,
@@ -40,9 +40,9 @@ pub const CONNECTIONS_KEY: &str = "download_connections";
 /// Bounds of `AddParams::connections` (PROTOCOL.md).
 const CONNECTIONS_RANGE: std::ops::RangeInclusive<u32> = 1..=64;
 
-/// What the engine is built on. Every part is a `vayu-core` trait object,
-/// so the engine runs against `vayu-net`/`vayu-store` in the daemon and
-/// against `vayu_core::testing` doubles in tests.
+/// What the engine is built on. Every part is a `whoosh-core` trait object,
+/// so the engine runs against `whoosh-net`/`whoosh-store` in the daemon and
+/// against `whoosh_core::testing` doubles in tests.
 #[derive(Clone)]
 pub struct EngineDeps {
     pub sources: Arc<dyn SourceFactory>,
@@ -148,7 +148,7 @@ fn is_active(s: DownloadState) -> bool {
 
 /// Forget what was captured for this download only: the cookie, auth-like
 /// headers, a POST body (CSRF tokens, credentials) and the referer.
-fn scrub(req: &mut vayu_proto::RequestContext) {
+fn scrub(req: &mut whoosh_proto::RequestContext) {
     req.cookie = None;
     req.body_base64 = None;
     req.referer = None;

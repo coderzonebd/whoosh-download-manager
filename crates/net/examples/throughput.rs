@@ -1,8 +1,8 @@
-//! Throughput and CPU cost of `vayu-net` against labserver, over HTTP/1.1
+//! Throughput and CPU cost of `whoosh-net` against labserver, over HTTP/1.1
 //! (plain or TLS), HTTP/2 and HTTP/3, with 1, 4 and 16 concurrent opens.
 //!
 //! ```text
-//! cargo run --release -p vayu-net --example throughput -- \
+//! cargo run --release -p whoosh-net --example throughput -- \
 //!     [--transports h1,h1s,h2,h3] [--conns 1,4,16] [--file 100m.bin] \
 //!     [--scenario clean | --rate <MB/s per connection>] \
 //!     [--gb 1] [--runs 5] [--threads 4] [--cache-mb 256] [--compare]
@@ -32,8 +32,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
-use vayu_core::{ByteRange, OpenRequest, Protocol, RangeSource, SourceFactory};
-use vayu_net::{HttpSourceFactory, NetConfig};
+use whoosh_core::{ByteRange, OpenRequest, Protocol, RangeSource, SourceFactory};
+use whoosh_net::{HttpSourceFactory, NetConfig};
 
 #[derive(Debug, Clone)]
 struct Args {
@@ -101,16 +101,16 @@ fn parse() -> Args {
 fn serve(a: &Args) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let mut cfg = vayu_labserver::LabConfig {
+        let mut cfg = whoosh_labserver::LabConfig {
             h3_port: Some(0),
             cache_bytes: a.cache_mb << 20,
             ..Default::default()
         };
         if let Some(rate) = a.rate {
             let toml = format!("[bandwidth]\nper_conn = \"{rate}MB/s\"");
-            cfg = cfg.scenario(vayu_labserver::Scenario::from_toml("rated", &toml).unwrap());
+            cfg = cfg.scenario(whoosh_labserver::Scenario::from_toml("rated", &toml).unwrap());
         }
-        let lab = vayu_labserver::LabServer::start(cfg).await.unwrap();
+        let lab = whoosh_labserver::LabServer::start(cfg).await.unwrap();
         if let Some(p) = &a.write_pem {
             std::fs::write(p, lab.cert_pem().unwrap()).unwrap();
         }
@@ -200,7 +200,7 @@ async fn pass(
     size: u64,
     n: u64,
     reps: u64,
-    expect: &vayu_core::Validators,
+    expect: &whoosh_core::Validators,
 ) -> (u64, u64) {
     let tasks: Vec<_> = slices(size, n)
         .into_iter()
@@ -283,7 +283,7 @@ async fn run(a: &Args, srv: &Server, transport: &str, n: u64) -> u64 {
         cpus.push(dc / (bytes as f64 / 1e9));
     }
     row(
-        &format!("vayu-net {transport}"),
+        &format!("whoosh-net {transport}"),
         n,
         rates,
         cpus,
@@ -357,7 +357,7 @@ fn compare(a: &Args, srv: &Server, transport: &str, n: u64, size: u64) {
         });
     }
     // aria2c writes the file; /dev/shm keeps the disk out of it.
-    let dir = std::env::temp_dir().join(format!("vayu-throughput-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("whoosh-throughput-{}", std::process::id()));
     let shm = PathBuf::from("/dev/shm").join(dir.file_name().unwrap());
     let out = if PathBuf::from("/dev/shm").is_dir() {
         shm
@@ -390,7 +390,7 @@ fn main() {
         serve(&a);
         return;
     }
-    let pem = std::env::temp_dir().join(format!("vayu-throughput-{}.pem", std::process::id()));
+    let pem = std::env::temp_dir().join(format!("whoosh-throughput-{}.pem", std::process::id()));
     let mut child = None;
     let line = match &a.attach {
         Some(l) => l.clone(),

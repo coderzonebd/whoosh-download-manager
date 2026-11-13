@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <script lang="ts">
-  import { CATEGORIES, type Category } from "@vayu/api-client/categories";
+  import { CATEGORIES, type Category } from "@whoosh/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
   import type { StateGroup, View } from "../lib/state/downloads.svelte.ts";
   import Icon from "./Icon.svelte";

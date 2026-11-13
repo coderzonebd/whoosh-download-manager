@@ -29,15 +29,15 @@ function renderStatus(state: PopupState): void {
   if (!s.hostAvailable) {
     status.dataset["state"] = "bad";
     status.textContent = "Not connected";
-    detail.textContent = s.error ?? "The vayu native host is not installed.";
+    detail.textContent = s.error ?? "The whoosh native host is not installed.";
   } else if (!s.daemonRunning) {
     status.dataset["state"] = "warn";
     status.textContent = "App not running";
-    detail.textContent = "Start vayu; downloads stay in the browser until then.";
+    detail.textContent = "Start whoosh; downloads stay in the browser until then.";
   } else {
     status.dataset["state"] = "ok";
     status.textContent = "Connected";
-    detail.textContent = s.daemonVersion ? `vayu ${s.daemonVersion}` : "";
+    detail.textContent = s.daemonVersion ? `whoosh ${s.daemonVersion}` : "";
   }
 
   const counts = $("counts");
@@ -80,7 +80,7 @@ function mediaItem(entry: MediaEntry): HTMLLIElement {
   button.textContent = "Download";
   button.addEventListener("click", () => {
     button.disabled = true;
-    const message: PopupMessage = { type: "vayu/download-media", url: entry.url };
+    const message: PopupMessage = { type: "whoosh/download-media", url: entry.url };
     if (tab?.url) message.pageUrl = tab.url;
     void ask<ActionReply>(message).then((reply) => {
       button.textContent = reply.ok ? "Sent" : "Failed";
@@ -103,7 +103,7 @@ function renderLast(state: PopupState): void {
 }
 
 async function refresh(): Promise<void> {
-  const message: PopupMessage = { type: "vayu/popup-state" };
+  const message: PopupMessage = { type: "whoosh/popup-state" };
   if (tab?.id !== undefined) message.tabId = tab.id;
   if (tab?.url) message.pageUrl = tab.url;
   const state = await ask<PopupState>(message);
@@ -118,12 +118,12 @@ async function main(): Promise<void> {
 
   ($("capture") as HTMLInputElement).addEventListener("change", (event) => {
     const enabled = (event.target as HTMLInputElement).checked;
-    void ask<ActionReply>({ type: "vayu/set-capture", enabled }).then(refresh);
+    void ask<ActionReply>({ type: "whoosh/set-capture", enabled }).then(refresh);
   });
   ($("site") as HTMLInputElement).addEventListener("change", (event) => {
     const host = $("site-host").textContent ?? "";
     const excluded = !(event.target as HTMLInputElement).checked;
-    void ask<ActionReply>({ type: "vayu/set-site-excluded", host, excluded }).then(refresh);
+    void ask<ActionReply>({ type: "whoosh/set-site-excluded", host, excluded }).then(refresh);
   });
 
   await refresh();

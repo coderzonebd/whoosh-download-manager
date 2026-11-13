@@ -16,12 +16,12 @@ import { chromium, type Browser, type BrowserContext, type Worker } from "playwr
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const EXTENSION_ID = "clhjgofaikdmabdnebgcmdffdjenagfl";
-const HOST_NAME = "com.coderzonebd.vayu";
+const HOST_NAME = "com.coderzonebd.whoosh";
 const root = join(import.meta.dirname, "..");
 const extensionDir = join(root, "dist", "chromium");
 
 function findChrome(): string | undefined {
-  const fromEnv = process.env["VAYU_E2E_CHROME"];
+  const fromEnv = process.env["WHOOSH_E2E_CHROME"];
   if (fromEnv) return fromEnv;
   const cache = join(homedir(), ".cache", "ms-playwright");
   if (!existsSync(cache)) return undefined;
@@ -37,7 +37,7 @@ function findChrome(): string | undefined {
 
 const chromePath = process.platform === "linux" ? findChrome() : undefined;
 if (!chromePath) {
-  console.warn("e2e: no Chrome for Testing found (set VAYU_E2E_CHROME); skipping");
+  console.warn("e2e: no Chrome for Testing found (set WHOOSH_E2E_CHROME); skipping");
 }
 
 interface LogEntry {
@@ -56,7 +56,7 @@ async function waitFor<T>(what: string, probe: () => Promise<T | undefined> | T 
 }
 
 describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
-  const work = mkdtempSync(join(tmpdir(), "vayu-e2e-"));
+  const work = mkdtempSync(join(tmpdir(), "whoosh-e2e-"));
   const profile = join(work, "profile");
   const downloads = join(work, "downloads");
   const hostLog = join(work, "host.jsonl");
@@ -156,7 +156,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
         "about:blank",
       ],
       {
-        env: { ...process.env, VAYU_FAKE_HOST_LOG: hostLog, VAYU_FAKE_HOST_CONTROL: control },
+        env: { ...process.env, WHOOSH_FAKE_HOST_LOG: hostLog, WHOOSH_FAKE_HOST_CONTROL: control },
         stdio: "ignore",
       },
     );
@@ -179,7 +179,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     await browser?.close().catch(() => {});
     chromeProcess?.kill();
     await new Promise<void>((resolve) => server?.close(() => resolve()));
-    if (process.env["VAYU_E2E_KEEP"]) {
+    if (process.env["WHOOSH_E2E_KEEP"]) {
       writeFileSync(join(work, "sw-console.log"), swConsole.join("\n"));
       console.log(`e2e: kept ${work}`);
     } else {
@@ -224,7 +224,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${EXTENSION_ID}/popup.html`);
     await expect.poll(() => page.textContent("#status")).toBe("Connected");
-    expect(await page.textContent("#detail")).toBe("vayu e2e");
+    expect(await page.textContent("#detail")).toBe("whoosh e2e");
     expect(await page.textContent("#active")).toBe("3");
     expect(hostCalls("nm.status").length).toBeGreaterThan(0);
     // Chrome passes the caller's origin to the host.

@@ -3,7 +3,7 @@
 //! `write_out` (contract: `Durability::PowerSafe` / `ProcessSafe`).
 //!
 //! ```text
-//! cargo run --release -p vayu-store --example finish_bench -- [--dir DIR] [--rounds 5]
+//! cargo run --release -p whoosh-store --example finish_bench -- [--dir DIR] [--rounds 5]
 //! ```
 //!
 //! For 1 MiB and 100 MiB: write the file (256 KiB chunks into a preallocated
@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use vayu_core::{Storage, StorageProvider};
-use vayu_store::{FileStorageProvider, StorageOptions};
+use whoosh_core::{Storage, StorageProvider};
+use whoosh_store::{FileStorageProvider, StorageOptions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Call {
@@ -38,7 +38,7 @@ async fn write(s: &dyn Storage, size: u64, chunk: &Bytes) {
 
 async fn round(dir: &Path, size: u64, chunk: &Bytes, call: Call) -> Duration {
     let p = FileStorageProvider::new(StorageOptions::default());
-    let part = dir.join("f.vayu-part");
+    let part = dir.join("f.whoosh-part");
     let fin = dir.join("f");
     let s = p.open(&part).await.unwrap();
     write(&*s, size, chunk).await;
@@ -84,7 +84,7 @@ fn main() {
         .collect::<Vec<_>>()
         .into();
     let tmp = tempfile::Builder::new()
-        .prefix("vayu-finish-bench-")
+        .prefix("whoosh-finish-bench-")
         .tempdir_in(&dir)
         .unwrap();
     println!(

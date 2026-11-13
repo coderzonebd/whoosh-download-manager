@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
-use vayu_core::ByteRange;
+use whoosh_core::ByteRange;
 
 use crate::lock;
 
@@ -117,8 +117,8 @@ pub fn hex(bytes: &[u8]) -> String {
 /// The expected content of one version of a virtual file.
 ///
 /// ```
-/// use vayu_core::ByteRange;
-/// use vayu_labserver::VirtualFile;
+/// use whoosh_core::ByteRange;
+/// use whoosh_labserver::VirtualFile;
 ///
 /// let f = VirtualFile::named("1m.bin", 1 << 20);
 /// let head = f.bytes(ByteRange::new(0, 16).unwrap());

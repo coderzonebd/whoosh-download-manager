@@ -1,6 +1,6 @@
-//! `vayu-bench fetch`: downloads pinned competitor builds from each
+//! `whoosh-bench fetch`: downloads pinned competitor builds from each
 //! project's official GitHub releases, verifies them, and unpacks them
-//! under the cache directory (`~/.cache/vayu-bench/tools/`). Never run
+//! under the cache directory (`~/.cache/whoosh-bench/tools/`). Never run
 //! automatically; binaries are never committed.
 //!
 //! Verification, all of which must pass:
@@ -163,22 +163,22 @@ pub fn platform() -> String {
     format!("{os}-{}", std::env::consts::ARCH)
 }
 
-/// `$XDG_CACHE_HOME/vayu-bench` (`~/.cache/vayu-bench`), or
-/// `%LOCALAPPDATA%\vayu-bench` on Windows.
+/// `$XDG_CACHE_HOME/whoosh-bench` (`~/.cache/whoosh-bench`), or
+/// `%LOCALAPPDATA%\whoosh-bench` on Windows.
 pub fn cache_dir() -> PathBuf {
-    if let Some(d) = std::env::var_os("VAYU_BENCH_CACHE") {
+    if let Some(d) = std::env::var_os("WHOOSH_BENCH_CACHE") {
         return PathBuf::from(d);
     }
     if cfg!(windows)
         && let Some(d) = std::env::var_os("LOCALAPPDATA")
     {
-        return PathBuf::from(d).join("vayu-bench");
+        return PathBuf::from(d).join("whoosh-bench");
     }
     if let Some(d) = std::env::var_os("XDG_CACHE_HOME").filter(|d| !d.is_empty()) {
-        return PathBuf::from(d).join("vayu-bench");
+        return PathBuf::from(d).join("whoosh-bench");
     }
     let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from);
-    home.join(".cache").join("vayu-bench")
+    home.join(".cache").join("whoosh-bench")
 }
 
 /// What `fetch` records next to an unpacked tool.
@@ -240,7 +240,7 @@ struct Asset {
 fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(600)))
-        .user_agent("vayu-bench (benchmark harness; fetch)")
+        .user_agent("whoosh-bench (benchmark harness; fetch)")
         .build()
         .into()
 }
@@ -381,7 +381,7 @@ fn make_executable(_: &Path) -> Result<()> {
 
 // --------------------------------------------------------------- main --
 
-/// Options of `vayu-bench fetch`.
+/// Options of `whoosh-bench fetch`.
 #[derive(Debug, Clone)]
 pub struct FetchOptions {
     /// Tools to fetch; empty = every tool pinned for this platform.
@@ -604,7 +604,7 @@ nothex  other
 
     #[test]
     fn unpack_raw_and_find() {
-        let dir = std::env::temp_dir().join(format!("vayu-bench-fetch-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("whoosh-bench-fetch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("a/b")).unwrap();
         std::fs::write(dir.join("a/b/tool"), b"x").unwrap();

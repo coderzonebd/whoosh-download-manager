@@ -142,10 +142,10 @@ jobs:
           test -n "$firefox" || { echo "::error::Firefox not found on the runner"; exit 1; }
           "$chrome" --version
           "$firefox" --version
-          echo "VAYU_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
-          echo "VAYU_E2E_FIREFOX=$firefox" >> "$GITHUB_ENV"
+          echo "WHOOSH_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
+          echo "WHOOSH_E2E_FIREFOX=$firefox" >> "$GITHUB_ENV"
       - name: e2e tests
-        run: pnpm --filter @vayu/extension test:e2e
+        run: pnpm --filter @whoosh/extension test:e2e
 
   docker:
     name: Docker image (labserver stand-in for the daemon)
@@ -158,11 +158,11 @@ jobs:
         with:
           persist-credentials: false
       - name: docker build
-        run: docker build --file packaging/docker/Dockerfile --tag vayu-labserver:ci .
+        run: docker build --file packaging/docker/Dockerfile --tag whoosh-labserver:ci .
       - name: Smoke test
         run: |
-          docker run --rm vayu-labserver:ci --help
-          test "$(docker run --rm --entrypoint id vayu-labserver:ci -u)" != "0"
+          docker run --rm whoosh-labserver:ci --help
+          test "$(docker run --rm --entrypoint id whoosh-labserver:ci -u)" != "0"
 
   # Single required check for branch protection (matrix job names change).
   ci-ok:

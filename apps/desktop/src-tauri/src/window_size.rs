@@ -43,7 +43,7 @@ pub fn restore<R: Runtime>(window: &WebviewWindow<R>) {
     match serde_json::from_slice::<Saved>(&bytes) {
         Ok(saved) if sane(&saved) => {
             if let Err(err) = window.set_size(LogicalSize::new(saved.width, saved.height)) {
-                eprintln!("vayu-desktop: could not restore window size: {err}");
+                eprintln!("whoosh-desktop: could not restore window size: {err}");
             }
         }
         _ => {}
@@ -79,7 +79,7 @@ pub fn save<R: Runtime>(window: &WebviewWindow<R>) {
         .and_then(|()| serde_json::to_vec(&saved).map_err(std::io::Error::other))
         .and_then(|json| std::fs::write(&file, json));
     if let Err(err) = result {
-        eprintln!("vayu-desktop: could not save window size: {err}");
+        eprintln!("whoosh-desktop: could not save window size: {err}");
     }
 }
 

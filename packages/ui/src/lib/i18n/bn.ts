@@ -6,7 +6,7 @@
 import type { Messages } from "./en.ts";
 
 export const bn: Messages = {
-  "app.name": "Vayu",
+  "app.name": "Whoosh",
 
   "nav.label": "লাইব্রেরি",
   "nav.downloads": "ডাউনলোড",
@@ -134,7 +134,7 @@ export const bn: Messages = {
   "menu.label": "“{name}”-এর বিকল্প",
 
   "add.title": "নতুন ডাউনলোড",
-  "add.description": "লিংক পেস্ট করুন। শুরুর আগে Vayu লিংকটি যাচাই করে ফাইলের তথ্য দেখাবে।",
+  "add.description": "লিংক পেস্ট করুন। শুরুর আগে Whoosh লিংকটি যাচাই করে ফাইলের তথ্য দেখাবে।",
   "add.url": "ঠিকানা",
   "add.urlPlaceholder": "https://example.com/file.zip",
   "add.invalidUrl": "http://, https:// বা ftp:// দিয়ে শুরু হওয়া পুরো ঠিকানা দিন",

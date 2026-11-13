@@ -10,7 +10,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use vayu_core::ByteRange;
+use whoosh_core::ByteRange;
 
 use crate::body::{BodyPlan, stream_body};
 use crate::conn::ConnCtl;

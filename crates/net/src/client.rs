@@ -15,7 +15,7 @@ use http_body_util::Full;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use tokio::io::{AsyncRead, AsyncWrite};
 use url::Url;
-use vayu_core::SourceError;
+use whoosh_core::SourceError;
 
 use crate::altsvc::{AltSvcCache, H3Alt};
 use crate::body::{Lease, RespBody};
@@ -38,7 +38,7 @@ const H2_MAX_FRAME: u32 = 256 << 10;
 /// a soft limit: one read may fill whatever capacity the buffer has). Set
 /// to the engine's write size (`write_coalesce`, 256 KiB). Measured against
 /// 1 MiB (README, "Whole-daemon CPU"): page faults -45 %, read-buffer
-/// memory per connection -75 %, vayu-net's own CPU -15-20 % at 8-16
+/// memory per connection -75 %, whoosh-net's own CPU -15-20 % at 8-16
 /// connections with higher throughput; unchanged at one connection, and
 /// whole-daemon CPU unchanged within noise.
 const H1_MAX_BUF: usize = 256 << 10;

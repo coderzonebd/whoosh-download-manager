@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// VayuClient over JSON-RPC 2.0 / WebSocket, per docs/api/PROTOCOL.md:
+// WhooshClient over JSON-RPC 2.0 / WebSocket, per docs/api/PROTOCOL.md:
 // - `session.hello` is always the first frame on every (re)connection;
 // - requests are correlated by numeric id; responses may arrive in any order;
 // - notifications (`event.*`) are dispatched to `on()` handlers;
@@ -16,14 +16,14 @@
 // runtime file on every attempt (the daemon may restart on another port).
 
 import { newNonce, verifyHelloProof } from "./auth";
-import { CloseCode, VayuConnectionError, VayuRpcError, type ConnectionErrorReason } from "./errors";
+import { CloseCode, WhooshConnectionError, WhooshRpcError, type ConnectionErrorReason } from "./errors";
 import {
   PROTOCOL_VERSION,
   type ClientInfo,
   type EventMap,
   type HelloResult,
   type MethodMap,
-  type VayuClient,
+  type WhooshClient,
 } from "./types";
 
 /** The subset of the WHATWG WebSocket API this client needs (browser, Node ≥ 22, Tauri webview). */
@@ -88,7 +88,7 @@ interface Pending {
 
 const OPEN = 1;
 
-export class WsVayuClient implements VayuClient {
+export class WsWhooshClient implements WhooshClient {
   readonly #opts: WsClientOptions;
   readonly #protocol: number;
   readonly #handlers = new Map<string, Set<(p: unknown) => void>>();
@@ -131,7 +131,7 @@ export class WsVayuClient implements VayuClient {
   ready(): Promise<HelloResult> {
     const s = this.#status;
     if (s.state === "open") return Promise.resolve(s.hello);
-    if (s.state === "closed") return Promise.reject(new VayuConnectionError(s.reason));
+    if (s.state === "closed") return Promise.reject(new WhooshConnectionError(s.reason));
     return new Promise((resolve, reject) => {
       const off = this.onStatus((st) => {
         if (st.state === "open") {
@@ -139,7 +139,7 @@ export class WsVayuClient implements VayuClient {
           resolve(st.hello);
         } else if (st.state === "closed") {
           queueMicrotask(off);
-          reject(new VayuConnectionError(st.reason));
+          reject(new WhooshConnectionError(st.reason));
         }
       });
     });
@@ -148,7 +148,7 @@ export class WsVayuClient implements VayuClient {
   call<M extends keyof MethodMap>(method: M, params: MethodMap[M]["params"]): Promise<MethodMap[M]["result"]> {
     if (this.#final) {
       const reason = this.#status.state === "closed" ? this.#status.reason : "closed";
-      return Promise.reject(new VayuConnectionError(reason));
+      return Promise.reject(new WhooshConnectionError(reason));
     }
     if (method === "session.hello") {
       return Promise.reject(new Error("session.hello is sent by the client itself on every connection"));
@@ -163,7 +163,7 @@ export class WsVayuClient implements VayuClient {
         p.timer = setTimeout(() => {
           this.#inflight.delete(id);
           this.#outbox = this.#outbox.filter((q) => q !== p);
-          reject(new VayuConnectionError("timeout", `${method} timed out after ${timeout} ms`));
+          reject(new WhooshConnectionError("timeout", `${method} timed out after ${timeout} ms`));
         }, timeout);
       }
       if (this.#status.state === "open" && this.#socket?.readyState === OPEN) this.#send(p);
@@ -195,7 +195,7 @@ export class WsVayuClient implements VayuClient {
       try {
         h(s);
       } catch (err) {
-        console.error("[vayu ws] status handler threw", err);
+        console.error("[whoosh ws] status handler threw", err);
       }
     }
   }
@@ -239,7 +239,7 @@ export class WsVayuClient implements VayuClient {
       try {
         msg = JSON.parse(ev.data);
       } catch {
-        console.warn("[vayu ws] dropping a frame that is not JSON");
+        console.warn("[whoosh ws] dropping a frame that is not JSON");
         return;
       }
       for (const m of Array.isArray(msg) ? msg : [msg]) {
@@ -293,7 +293,7 @@ export class WsVayuClient implements VayuClient {
         try {
           h(msg.params);
         } catch (err) {
-          console.error(`[vayu ws] ${msg.method} handler threw`, err);
+          console.error(`[whoosh ws] ${msg.method} handler threw`, err);
         }
       }
       return;
@@ -331,7 +331,7 @@ export class WsVayuClient implements VayuClient {
     if (p.timer) clearTimeout(p.timer);
     if (error) {
       p.reject(
-        new VayuRpcError(
+        new WhooshRpcError(
           typeof error.code === "number" ? error.code : -32603,
           typeof error.message === "string" ? error.message : "unknown error",
           error.data,
@@ -361,7 +361,7 @@ export class WsVayuClient implements VayuClient {
   #failInflight(): void {
     for (const p of this.#inflight.values()) {
       if (p.timer) clearTimeout(p.timer);
-      p.reject(new VayuConnectionError("connection_lost", `connection lost during ${p.method}`));
+      p.reject(new WhooshConnectionError("connection_lost", `connection lost during ${p.method}`));
     }
     this.#inflight.clear();
   }
@@ -400,7 +400,7 @@ export class WsVayuClient implements VayuClient {
         // already closing
       }
     }
-    const err = (p: Pending) => new VayuConnectionError(reason, `${p.method}: ${reason}`);
+    const err = (p: Pending) => new WhooshConnectionError(reason, `${p.method}: ${reason}`);
     for (const p of [...this.#inflight.values(), ...this.#outbox]) {
       if (p.timer) clearTimeout(p.timer);
       p.reject(err(p));
@@ -412,6 +412,6 @@ export class WsVayuClient implements VayuClient {
 }
 
 /** Create a client and start connecting. Calls made before the hello completes are queued. */
-export function connectWs(opts: WsClientOptions): WsVayuClient {
-  return new WsVayuClient(opts);
+export function connectWs(opts: WsClientOptions): WsWhooshClient {
+  return new WsWhooshClient(opts);
 }

@@ -15,7 +15,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-pub use vayu_proto::runtime::{RUNTIME_FILE, RuntimeError, RuntimeInfo};
+pub use whoosh_proto::runtime::{RUNTIME_FILE, RuntimeError, RuntimeInfo};
 
 pub const LOCK_FILE: &str = "daemon.lock";
 
@@ -61,7 +61,7 @@ pub fn secure_dir(dir: &Path) -> Result<(), String> {
                 .map_err(|e| format!("cannot make it private (chmod 700): {e}"))?;
         }
     }
-    vayu_proto::runtime::check_private_dir(dir).map_err(|e| e.to_string())
+    whoosh_proto::runtime::check_private_dir(dir).map_err(|e| e.to_string())
 }
 
 /// Creates a new, empty file that only the owner can read or write. The
@@ -112,10 +112,10 @@ fn unique_suffix() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Reads `<dir>/runtime.json` with [`vayu_proto::runtime::read_runtime`]'s
+/// Reads `<dir>/runtime.json` with [`whoosh_proto::runtime::read_runtime`]'s
 /// checks. `Ok(None)` when there is none.
 pub fn read(dir: &Path) -> Result<Option<RuntimeInfo>, RuntimeError> {
-    match vayu_proto::runtime::read_runtime(&runtime_file(dir)) {
+    match whoosh_proto::runtime::read_runtime(&runtime_file(dir)) {
         Ok(info) => Ok(Some(info)),
         Err(RuntimeError::Missing(_)) => Ok(None),
         Err(e) => Err(e),
@@ -182,7 +182,7 @@ mod tests {
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "vayu-daemon-rt-{name}-{}-{}",
+            "whoosh-daemon-rt-{name}-{}-{}",
             std::process::id(),
             unique_suffix()
         ));

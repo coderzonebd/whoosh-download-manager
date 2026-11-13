@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Vayu
+Name=Whoosh
 GenericName=Download Manager
 Comment=Fast, open-source download manager
-Exec=vayu-desktop
-Icon=com.coderzonebd.vayu
+Exec=whoosh-desktop
+Icon=com.coderzonebd.whoosh
 Terminal=false
 Categories=Network;FileTransfer;
 Keywords=download;downloader;accelerator;resume;

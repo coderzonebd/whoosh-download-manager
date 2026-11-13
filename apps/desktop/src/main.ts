@@ -7,9 +7,9 @@
 //   ?bulk=10000   add N synthetic downloads    ?lang=bn   start in Bangla
 import "@fontsource-variable/inter";
 import "@fontsource-variable/noto-sans-bengali";
-import "@vayu/ui/styles.css";
-import { createMockClient } from "@vayu/api-client/mock";
-import { App } from "@vayu/ui";
+import "@whoosh/ui/styles.css";
+import { createMockClient } from "@whoosh/api-client/mock";
+import { App } from "@whoosh/ui";
 import { mount } from "svelte";
 import { startTrayUpdates } from "./tray.ts";
 

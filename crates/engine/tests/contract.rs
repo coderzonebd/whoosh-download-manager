@@ -9,11 +9,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
-use vayu_core::{DownloadRecord, StateStore};
-use vayu_engine::{CONNECTIONS_KEY, Engine, EngineDeps};
-use vayu_proto::service::{Service, ServiceError};
-use vayu_proto::{DownloadState, IdsParams, ListParams};
+use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
+use whoosh_core::{DownloadRecord, StateStore};
+use whoosh_engine::{CONNECTIONS_KEY, Engine, EngineDeps};
+use whoosh_proto::service::{Service, ServiceError};
+use whoosh_proto::{DownloadState, IdsParams, ListParams};
 
 const LONG: Duration = Duration::from_secs(600);
 
@@ -108,7 +108,7 @@ async fn connection_counts_are_validated_and_survive_a_restart() {
     finish(&again, &id, LONG).await;
     assert_eq!(src.peak(), 5);
     again
-        .remove(vayu_proto::RemoveParams {
+        .remove(whoosh_proto::RemoveParams {
             ids: vec![id.clone()],
             delete_files: false,
         })
@@ -192,7 +192,7 @@ async fn a_locked_name_is_never_replaced_by_the_server_name() {
     // before any byte was journalled (no heuristic involved).
     let state = Arc::new(MemStateStore::default());
     let sources = Arc::new(MemSourceFactory::default());
-    let storage = Arc::new(vayu_core::testing::MemStorageProvider::default());
+    let storage = Arc::new(whoosh_core::testing::MemStorageProvider::default());
     sources.insert(
         u,
         Arc::new(

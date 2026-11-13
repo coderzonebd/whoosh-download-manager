@@ -1,7 +1,7 @@
-//! `vayu-bench hardkill`: the Phase 1 gate's crash test, on real processes.
+//! `whoosh-bench hardkill`: the Phase 1 gate's crash test, on real processes.
 //!
-//! Downloads from labserver through the real daemon (vayu-engine over
-//! vayu-net and vayu-store), SIGKILLs the daemon at random moments (during
+//! Downloads from labserver through the real daemon (whoosh-engine over
+//! whoosh-net and whoosh-store), SIGKILLs the daemon at random moments (during
 //! start-up and probing, mid-transfer, around the final rename), starts it
 //! again and lets the engine resume on its own. Every finished file must
 //! equal labserver's SHA-256 byte for byte, with no duplicate (`name (1)`)
@@ -40,8 +40,8 @@ pub struct Options {
     /// Stop after this many kills (the current round still finishes).
     pub kills: u32,
     pub seed: u64,
-    /// The `vayu` CLI; `vayu-daemon` must be next to it.
-    pub vayu: PathBuf,
+    /// The `whoosh` CLI; `whoosh-daemon` must be next to it.
+    pub whoosh: PathBuf,
     pub work_dir: PathBuf,
     /// Downloads running at once in each round.
     pub concurrent: usize,
@@ -109,7 +109,7 @@ impl Daemon {
             .open(&p.log)?;
         let child = Command::new(&p.daemon)
             .args(["--port", "0"])
-            .env("VAYU_DATA_DIR", &p.data_dir)
+            .env("WHOOSH_DATA_DIR", &p.data_dir)
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log)
@@ -133,10 +133,10 @@ impl Daemon {
                 return Ok(());
             }
             if let Some(status) = self.child.try_wait()? {
-                bail!("vayu-daemon exited during start-up: {status}");
+                bail!("whoosh-daemon exited during start-up: {status}");
             }
             if t0.elapsed() > Duration::from_secs(30) {
-                bail!("vayu-daemon did not become ready in 30 s");
+                bail!("whoosh-daemon did not become ready in 30 s");
             }
             std::thread::sleep(Duration::from_millis(2));
         }
@@ -149,17 +149,17 @@ impl Daemon {
     }
 }
 
-fn vayu(opts: &Options, data_dir: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new(&opts.vayu)
+fn whoosh(opts: &Options, data_dir: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new(&opts.whoosh)
         .args(["--no-start", "--json"])
         .args(args)
-        .env("VAYU_DATA_DIR", data_dir)
+        .env("WHOOSH_DATA_DIR", data_dir)
         .stdin(Stdio::null())
         .output()
-        .with_context(|| format!("run {}", opts.vayu.display()))?;
+        .with_context(|| format!("run {}", opts.whoosh.display()))?;
     if !out.status.success() {
         bail!(
-            "vayu {}: {}: {}",
+            "whoosh {}: {}: {}",
             args.join(" "),
             out.status,
             String::from_utf8_lossy(&out.stderr).trim()
@@ -185,16 +185,16 @@ fn finished(p: &Pending) -> bool {
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
-    names.contains(&p.file) && !names.iter().any(|n| n.ends_with(".vayu-part"))
+    names.contains(&p.file) && !names.iter().any(|n| n.ends_with(".whoosh-part"))
 }
 
 pub fn run(lab: &Lab, opts: &Options) -> Result<Summary> {
     if !cfg!(unix) {
         bail!("hardkill needs Unix (SIGKILL)");
     }
-    let daemon = opts.vayu.with_file_name("vayu-daemon");
+    let daemon = opts.whoosh.with_file_name("whoosh-daemon");
     if !daemon.is_file() {
-        bail!("{} not found next to vayu", daemon.display());
+        bail!("{} not found next to whoosh", daemon.display());
     }
     let root = opts.work_dir.join(format!("hardkill-{}", opts.seed));
     if root.exists() {
@@ -225,15 +225,15 @@ pub fn run(lab: &Lab, opts: &Options) -> Result<Summary> {
             fs::create_dir_all(&dir)?;
             let url = lab.run_url(scenario, file)?;
             let (_, expected) = lab.digest(scenario, file, None)?;
-            let out = vayu(
+            let out = whoosh(
                 opts,
                 &paths.data_dir,
                 &["add", &url, "-o", &dir.to_string_lossy()],
             )?;
-            let v: serde_json::Value = serde_json::from_str(&out).context("parse vayu add")?;
+            let v: serde_json::Value = serde_json::from_str(&out).context("parse whoosh add")?;
             let id = v[0]["id"]
                 .as_str()
-                .with_context(|| format!("vayu add answered {out}"))?
+                .with_context(|| format!("whoosh add answered {out}"))?
                 .to_owned();
             let case = format!("{scenario}/{file}");
             s.per_case.entry(case.clone()).or_default().downloads += 1;
@@ -292,7 +292,7 @@ pub fn run(lab: &Lab, opts: &Options) -> Result<Summary> {
             ids.push(p.id.clone());
             if !finished(p) {
                 s.unfinished += 1;
-                let info = vayu(opts, &paths.data_dir, &["info", &p.id]).unwrap_or_default();
+                let info = whoosh(opts, &paths.data_dir, &["info", &p.id]).unwrap_or_default();
                 s.problems.push(format!(
                     "round {}: {} unfinished: {}",
                     s.rounds,
@@ -325,11 +325,11 @@ pub fn run(lab: &Lab, opts: &Options) -> Result<Summary> {
         // Forget the round (keep the list small) and free the disk.
         let mut args = vec!["rm"];
         args.extend(ids.iter().map(String::as_str));
-        let _ = vayu(opts, &paths.data_dir, &args);
+        let _ = whoosh(opts, &paths.data_dir, &args);
         fs::remove_dir_all(&round_dir)?;
     }
 
-    let _ = vayu(opts, &paths.data_dir, &["daemon", "stop"]);
+    let _ = whoosh(opts, &paths.data_dir, &["daemon", "stop"]);
     let _ = d.child.wait();
     s.elapsed_s = t0.elapsed().as_secs_f64();
     Ok(s)

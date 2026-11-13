@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use support::*;
-use vayu_core::{RangeSource, RemoteMeta, SourceError, SourceFactory};
-use vayu_proto::RequestContext;
+use whoosh_core::{RangeSource, RemoteMeta, SourceError, SourceFactory};
+use whoosh_proto::RequestContext;
 
 macro_rules! per_transport {
     ($($name:ident),* $(,)?) => {$(
@@ -111,7 +111,7 @@ async fn start_redirects_and_gates(t: T) {
         Some(lab.url("redirect-chain", "_hop/3/1m.bin").as_str())
     );
     let cookie = RequestContext {
-        cookie: Some("vayu_session=lab-ok".into()),
+        cookie: Some("whoosh_session=lab-ok".into()),
         ..Default::default()
     };
     start_like_probe(&lab, "cookie-required", "1m.bin", || {

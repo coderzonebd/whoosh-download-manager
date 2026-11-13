@@ -1,7 +1,7 @@
 //! Errors and exit codes. The table is documented in the README and in
-//! `vayu --help`; scripts (and the benchmark harness) rely on it.
+//! `whoosh --help`; scripts (and the benchmark harness) rely on it.
 
-use vayu_proto::error_code;
+use whoosh_proto::error_code;
 
 pub mod exit {
     pub const OK: u8 = 0;

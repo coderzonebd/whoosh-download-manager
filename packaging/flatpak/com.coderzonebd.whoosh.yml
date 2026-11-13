@@ -1,11 +1,11 @@
 # TEMPLATE Flatpak manifest (see README.md): repackages the release .deb.
 # Flathub will ask for a from-source build before accepting it.
-id: com.coderzonebd.vayu
+id: com.coderzonebd.whoosh
 runtime: org.gnome.Platform
 # Must still ship WebKitGTK 4.1 (GTK 3); see README.md before bumping.
 runtime-version: "50"
 sdk: org.gnome.Sdk
-command: vayu-desktop
+command: whoosh-desktop
 
 finish-args:
   - --share=ipc
@@ -23,24 +23,24 @@ modules:
   # Flathub's shared-modules repository is added as a git submodule there.
   - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
 
-  - name: vayu
+  - name: whoosh
     buildsystem: simple
     sources:
       - type: file
-        dest-filename: vayu.deb
+        dest-filename: whoosh.deb
         only-arches: [x86_64]
-        url: https://github.com/coderzonebd/vayu/releases/download/v0.0.1/Vayu_0.0.1_amd64.deb
+        url: https://github.com/coderzonebd/whoosh/releases/download/v0.0.1/Whoosh_0.0.1_amd64.deb
         sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       - type: file
-        path: ../linux/com.coderzonebd.vayu.desktop
+        path: ../linux/com.coderzonebd.whoosh.desktop
       - type: file
-        path: ../linux/com.coderzonebd.vayu.metainfo.xml
+        path: ../linux/com.coderzonebd.whoosh.metainfo.xml
     build-commands:
-      - ar -x vayu.deb
+      - ar -x whoosh.deb
       - tar -xf data.tar.gz
-      - install -Dm755 usr/bin/vayu-desktop /app/bin/vayu-desktop
-      - install -Dm644 com.coderzonebd.vayu.desktop /app/share/applications/com.coderzonebd.vayu.desktop
-      - install -Dm644 com.coderzonebd.vayu.metainfo.xml /app/share/metainfo/com.coderzonebd.vayu.metainfo.xml
-      - install -Dm644 usr/share/icons/hicolor/32x32/apps/vayu-desktop.png /app/share/icons/hicolor/32x32/apps/com.coderzonebd.vayu.png
-      - install -Dm644 usr/share/icons/hicolor/128x128/apps/vayu-desktop.png /app/share/icons/hicolor/128x128/apps/com.coderzonebd.vayu.png
-      - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/vayu-desktop.png /app/share/icons/hicolor/256x256/apps/com.coderzonebd.vayu.png
+      - install -Dm755 usr/bin/whoosh-desktop /app/bin/whoosh-desktop
+      - install -Dm644 com.coderzonebd.whoosh.desktop /app/share/applications/com.coderzonebd.whoosh.desktop
+      - install -Dm644 com.coderzonebd.whoosh.metainfo.xml /app/share/metainfo/com.coderzonebd.whoosh.metainfo.xml
+      - install -Dm644 usr/share/icons/hicolor/32x32/apps/whoosh-desktop.png /app/share/icons/hicolor/32x32/apps/com.coderzonebd.whoosh.png
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/whoosh-desktop.png /app/share/icons/hicolor/128x128/apps/com.coderzonebd.whoosh.png
+      - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/whoosh-desktop.png /app/share/icons/hicolor/256x256/apps/com.coderzonebd.whoosh.png

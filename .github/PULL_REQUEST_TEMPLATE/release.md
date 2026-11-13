@@ -9,7 +9,7 @@
 ### Gate evidence
 
 - [ ] Phase gate / release checklist passed; report: `docs/bench/data/<run-set>/report.md`
-- [ ] Crash test (`vayu-bench hardkill`): 0 corrupt, 0 duplicates
+- [ ] Crash test (`whoosh-bench hardkill`): 0 corrupt, 0 duplicates
 - [ ] Versions bumped in all four places (see `docs/release.md`)
 - [ ] `CHANGELOG.md` updated
 

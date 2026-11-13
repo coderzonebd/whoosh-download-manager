@@ -6,10 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use vayu_core::{Journal, SourceError, StateStore};
-use vayu_engine::Tuning;
-use vayu_proto::service::Service;
-use vayu_proto::{DownloadState, IdsParams, RefreshUrlParams};
+use whoosh_core::{Journal, SourceError, StateStore};
+use whoosh_engine::Tuning;
+use whoosh_proto::service::Service;
+use whoosh_proto::{DownloadState, IdsParams, RefreshUrlParams};
 
 const LONG: Duration = Duration::from_secs(600);
 

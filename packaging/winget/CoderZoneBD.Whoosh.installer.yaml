@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
 # TEMPLATE: version, URLs and hashes are filled per release (see README.md).
-PackageIdentifier: CoderZoneBD.Vayu
+PackageIdentifier: CoderZoneBD.Whoosh
 PackageVersion: 0.0.1
 MinimumOSVersion: 10.0.17763.0
 Platform:
@@ -13,13 +13,13 @@ Installers:
   - Architecture: x64
     InstallerType: nullsoft
     Scope: user
-    InstallerUrl: https://github.com/coderzonebd/vayu/releases/download/v0.0.1/Vayu_0.0.1_x64-setup.exe
+    InstallerUrl: https://github.com/coderzonebd/whoosh/releases/download/v0.0.1/Whoosh_0.0.1_x64-setup.exe
     InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
   # MSI (WiX), per-machine. Not built for pre-release versions.
   - Architecture: x64
     InstallerType: wix
     Scope: machine
-    InstallerUrl: https://github.com/coderzonebd/vayu/releases/download/v0.0.1/Vayu_0.0.1_x64_en-US.msi
+    InstallerUrl: https://github.com/coderzonebd/whoosh/releases/download/v0.0.1/Whoosh_0.0.1_x64_en-US.msi
     InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
 ManifestType: installer
 ManifestVersion: 1.10.0

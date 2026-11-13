@@ -6,7 +6,7 @@
 // Proposed contract change (see packages/ui/README.md): put segments in the
 // progress event and this poller goes away.
 
-import type { DownloadDetail, VayuClient } from "@vayu/api-client";
+import type { DownloadDetail, WhooshClient } from "@whoosh/api-client";
 import { SvelteMap } from "svelte/reactivity";
 import type { DownloadStore } from "./downloads.svelte.ts";
 
@@ -19,7 +19,7 @@ const POLL_MS = 1000;
 const MAX_PER_TICK = 40;
 
 export class SegmentCache {
-  readonly #client: VayuClient;
+  readonly #client: WhooshClient;
   readonly #store: DownloadStore;
   readonly #snapshots = new SvelteMap<string, SegmentSnapshot>();
   #visible = new Set<string>();
@@ -29,7 +29,7 @@ export class SegmentCache {
   #inflight = new Set<string>();
   #stopped = false;
 
-  constructor(client: VayuClient, store: DownloadStore) {
+  constructor(client: WhooshClient, store: DownloadStore) {
     this.#client = client;
     this.#store = store;
   }

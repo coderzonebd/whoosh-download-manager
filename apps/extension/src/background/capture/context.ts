@@ -3,7 +3,7 @@
 // Builds the RequestContext that lets the daemon repeat the browser's
 // request: cookies for the URL, the referrer, the user agent.
 
-import type { AddParams, RequestContext } from "@vayu/api-client";
+import type { AddParams, RequestContext } from "@whoosh/api-client";
 
 import { chooseFilename } from "../../shared/filename";
 import { refererFrom } from "../../shared/url";

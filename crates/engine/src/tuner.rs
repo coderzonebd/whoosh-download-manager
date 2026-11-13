@@ -75,7 +75,7 @@
 use std::time::Duration;
 
 use tokio::time::Instant;
-use vayu_core::HostProfile;
+use whoosh_core::HostProfile;
 
 use crate::config::Tuning;
 

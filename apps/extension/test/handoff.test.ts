@@ -1,4 +1,4 @@
-import type { AddParams, AddResult } from "@vayu/api-client";
+import type { AddParams, AddResult } from "@whoosh/api-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -104,7 +104,7 @@ describe("handOff", () => {
   it("keeps the download when the host or daemon is unavailable", async () => {
     for (const error of [
       new TransportError("host-missing", "Specified native messaging host not found."),
-      new RpcError({ code: HostErrorCode.DaemonUnavailable, message: "the vayu daemon is not running" }),
+      new RpcError({ code: HostErrorCode.DaemonUnavailable, message: "the whoosh daemon is not running" }),
     ]) {
       const { log, daemon, release, run, downloads } = setup();
       const pending = run();

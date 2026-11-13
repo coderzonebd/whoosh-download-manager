@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// An in-memory VayuClient that simulates a daemon: segmented downloads with
+// An in-memory WhooshClient that simulates a daemon: segmented downloads with
 // wobbling speeds, dynamic segment splitting (when a connection finishes its
 // range it takes half of the largest remaining one), a global speed limit,
 // the active-download limit, a failure, an expiring link (`needs_refresh`),
@@ -10,7 +10,7 @@
 // `autoTick: false` and `advance(ms)` for deterministic results.
 
 import { CATEGORIES, categoryForFilename } from "./categories";
-import { VayuConnectionError, VayuRpcError, JsonRpcErrorCode } from "./errors";
+import { WhooshConnectionError, WhooshRpcError, JsonRpcErrorCode } from "./errors";
 import {
   ErrorCode,
   PROTOCOL_VERSION,
@@ -25,7 +25,7 @@ import {
   type SegmentInfo,
   type Settings,
   type Stats,
-  type VayuClient,
+  type WhooshClient,
 } from "./types";
 
 export interface MockClientOptions {
@@ -47,7 +47,7 @@ export interface MockClientOptions {
   now?: () => number;
 }
 
-export interface MockVayuClient extends VayuClient {
+export interface MockWhooshClient extends WhooshClient {
   /** Run the simulation forward by `ms` synchronously (in `tickMs` steps). */
   advance(ms: number): void;
   /** Snapshot of every download with segments, for assertions. */
@@ -116,8 +116,8 @@ function filenameFromUrl(raw: string): string {
   }
 }
 
-function invalidParams(message: string): VayuRpcError {
-  return new VayuRpcError(JsonRpcErrorCode.InvalidParams, message);
+function invalidParams(message: string): WhooshRpcError {
+  return new WhooshRpcError(JsonRpcErrorCode.InvalidParams, message);
 }
 
 function parseUrl(raw: unknown): URL {
@@ -129,7 +129,7 @@ function parseUrl(raw: unknown): URL {
     throw invalidParams(`not a valid URL: ${raw}`);
   }
   if (!["http:", "https:", "ftp:"].includes(u.protocol)) {
-    throw new VayuRpcError(ErrorCode.Unsupported, `unsupported scheme ${u.protocol.replace(":", "")}`);
+    throw new WhooshRpcError(ErrorCode.Unsupported, `unsupported scheme ${u.protocol.replace(":", "")}`);
   }
   return u;
 }
@@ -192,7 +192,7 @@ const BULK_NAMES = [
   ["installer", "exe"], ["paper", "pdf"], ["firmware", "img"], ["episode", "mkv"], ["package", "deb"],
 ] as const;
 
-export function createMockClient(options: MockClientOptions = {}): MockVayuClient {
+export function createMockClient(options: MockClientOptions = {}): MockWhooshClient {
   const tickMs = options.tickMs ?? 250;
   const latencyMs = options.latencyMs ?? 0;
   const wallNow = options.now ?? Date.now;
@@ -219,7 +219,7 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
       try {
         (h as (p: EventMap[E]) => void)(structuredClone(payload));
       } catch (err) {
-        console.error(`[vayu mock] ${event} handler threw`, err);
+        console.error(`[whoosh mock] ${event} handler threw`, err);
       }
     }
   }
@@ -490,7 +490,7 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
 
   function get(id: unknown): Sim {
     const sim = typeof id === "string" ? sims.get(id) : undefined;
-    if (!sim) throw new VayuRpcError(ErrorCode.NotFound, `no download with id ${String(id)}`);
+    if (!sim) throw new WhooshRpcError(ErrorCode.NotFound, `no download with id ${String(id)}`);
     return sim;
   }
 
@@ -504,10 +504,10 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
     const u = parseUrl(rawUrl);
     const href = u.toString();
     if (/(^|\/)404(\/|$)|not-found/.test(u.pathname)) {
-      throw new VayuRpcError(ErrorCode.Network, "The server says this file does not exist (HTTP 404).");
+      throw new WhooshRpcError(ErrorCode.Network, "The server says this file does not exist (HTTP 404).");
     }
     if (u.hostname.endsWith(".invalid")) {
-      throw new VayuRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
+      throw new WhooshRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
     }
     const filename = filenameFromUrl(href);
     const category = categoryForFilename(filename);
@@ -556,7 +556,7 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
   const handlersByMethod: { [M in keyof MethodMap]: (params: MethodMap[M]["params"]) => MethodMap[M]["result"] } = {
     "session.hello": (p) => {
       if (p?.protocol !== PROTOCOL_VERSION) {
-        throw new VayuRpcError(ErrorCode.Unsupported, `protocol ${String(p?.protocol)} not supported`);
+        throw new WhooshRpcError(ErrorCode.Unsupported, `protocol ${String(p?.protocol)} not supported`);
       }
       // The in-process mock has no transport to authenticate, so no real proof.
       return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock"], proof: "" };
@@ -579,7 +579,7 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
       const targets = idsOf(p);
       const bad = targets.filter((s) => !["queued", "probing", "downloading", "paused"].includes(s.d.state));
       if (bad.length > 0) {
-        throw new VayuRpcError(ErrorCode.InvalidState, `cannot pause a ${bad[0]?.d.state} download`, { ids: bad.map((s) => s.d.id) });
+        throw new WhooshRpcError(ErrorCode.InvalidState, `cannot pause a ${bad[0]?.d.state} download`, { ids: bad.map((s) => s.d.id) });
       }
       for (const sim of targets) {
         if (sim.d.state === "paused") continue;
@@ -593,7 +593,7 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
       const bad = targets.filter((s) => s.d.state === "completed" || s.d.state === "needs_refresh" || s.d.state === "verifying");
       if (bad.length > 0) {
         const why = bad[0]?.d.state === "needs_refresh" ? "the link expired; refresh it first" : `cannot resume a ${bad[0]?.d.state} download`;
-        throw new VayuRpcError(ErrorCode.InvalidState, why, { ids: bad.map((s) => s.d.id) });
+        throw new WhooshRpcError(ErrorCode.InvalidState, why, { ids: bad.map((s) => s.d.id) });
       }
       for (const sim of targets) {
         if (sim.d.state !== "paused" && sim.d.state !== "failed") continue;
@@ -614,7 +614,7 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
     "download.refreshUrl": (p) => {
       const sim = get(p?.id);
       const u = parseUrl(p?.url);
-      if (sim.d.state === "completed") throw new VayuRpcError(ErrorCode.InvalidState, "the download is already complete");
+      if (sim.d.state === "completed") throw new WhooshRpcError(ErrorCode.InvalidState, "the download is already complete");
       sim.d.url = u.toString();
       delete sim.expireAt;
       if (sim.d.state === "needs_refresh" || sim.d.state === "failed") setState(sim, "queued");
@@ -658,13 +658,13 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
 
   // ---------------------------------------------------------------- client
 
-  const client: MockVayuClient = {
+  const client: MockWhooshClient = {
     call(method, params) {
-      if (closed) return Promise.reject(new VayuConnectionError("closed"));
+      if (closed) return Promise.reject(new WhooshConnectionError("closed"));
       const fn = handlersByMethod[method] as ((p: unknown) => unknown) | undefined;
       const delay = method === "download.probe" ? latencyMs * 6 : latencyMs;
       const run = () => {
-        if (!fn) throw new VayuRpcError(JsonRpcErrorCode.MethodNotFound, `method not found: ${method}`);
+        if (!fn) throw new WhooshRpcError(JsonRpcErrorCode.MethodNotFound, `method not found: ${method}`);
         return structuredClone(fn(params));
       };
       if (delay <= 0) {
@@ -676,7 +676,7 @@ export function createMockClient(options: MockClientOptions = {}): MockVayuClien
       }
       return new Promise((resolve, reject) => {
         setTimeout(() => {
-          if (closed) return reject(new VayuConnectionError("connection_lost"));
+          if (closed) return reject(new WhooshConnectionError("connection_lost"));
           try {
             resolve(run() as never);
           } catch (e) {

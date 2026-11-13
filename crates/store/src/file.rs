@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use tokio::sync::{Semaphore, oneshot, watch};
-use vayu_core::{Storage, StorageProvider};
+use whoosh_core::{Storage, StorageProvider};
 
 use crate::{blocking, sys};
 
@@ -646,7 +646,7 @@ impl FileStorage {
             max_batch: (cap as usize / 4).max(1),
         };
         std::thread::Builder::new()
-            .name("vayu-store-writer".into())
+            .name("whoosh-store-writer".into())
             .spawn(move || writer.run(rx))?;
         Ok(Arc::new(Self { path, tx, shared }))
     }
@@ -1231,7 +1231,7 @@ impl Syncer {
         let outstanding: Arc<(Mutex<usize>, std::sync::Condvar)> = Arc::default();
         let drop_cache = opts.drop_cache_after_flush;
         let thread = std::thread::Builder::new()
-            .name("vayu-store-sync".into())
+            .name("whoosh-store-sync".into())
             .spawn({
                 let (shared, path) = (shared.clone(), path.to_path_buf());
                 move || sync_loop(&rx, &shared, &path, drop_cache)
@@ -1299,7 +1299,7 @@ impl Syncer {
         let shared = self.shared.clone();
         let mine = job.clone();
         let spawned = std::thread::Builder::new()
-            .name("vayu-store-dirs".into())
+            .name("whoosh-store-dirs".into())
             .spawn(move || {
                 let Some((file, reply, in_flight)) = lock(&mine).take() else {
                     return;
@@ -1584,7 +1584,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let root = d.path().to_path_buf();
         let p = provider(1 << 20);
-        let s = p.open_storage(&root.join("a/b/f.vayu-part")).await.unwrap();
+        let s = p
+            .open_storage(&root.join("a/b/f.whoosh-part"))
+            .await
+            .unwrap();
         s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
         s.flush().await.unwrap();
         let mut synced = lock(&s.shared.synced_dirs).clone();
@@ -1595,7 +1598,7 @@ mod tests {
         drop(s);
         // Reopening an existing file changes no directory entry.
         let again = provider(1 << 20)
-            .open_storage(&root.join("a/b/f.vayu-part"))
+            .open_storage(&root.join("a/b/f.whoosh-part"))
             .await
             .unwrap();
         again.flush().await.unwrap();
@@ -1612,7 +1615,7 @@ mod tests {
     async fn a_flush_with_nothing_written_syncs_no_data() {
         use std::sync::atomic::Ordering::Relaxed;
         let d = tempfile::tempdir().unwrap();
-        let path = d.path().join("f.vayu-part");
+        let path = d.path().join("f.whoosh-part");
         let s = provider(1 << 20).open_storage(&path).await.unwrap();
         s.flush().await.unwrap();
         assert_eq!(s.shared.data_syncs.load(Relaxed), 0);
@@ -1637,7 +1640,7 @@ mod tests {
         use std::sync::atomic::Ordering::Relaxed;
         let d = tempfile::tempdir().unwrap();
         let s = provider(1 << 20)
-            .open_storage(&d.path().join("f.vayu-part"))
+            .open_storage(&d.path().join("f.whoosh-part"))
             .await
             .unwrap();
         let (release, released) = std::sync::mpsc::channel::<()>();
@@ -1754,7 +1757,7 @@ mod tests {
     #[tokio::test]
     async fn remove_stops_the_old_writer_before_deleting() {
         let d = tempfile::tempdir().unwrap();
-        let path = d.path().join("f.vayu-part");
+        let path = d.path().join("f.whoosh-part");
         let p = provider(1 << 20);
         let old = p.open_storage(&path).await.unwrap();
         old.pause(true);
@@ -1787,7 +1790,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let target = d.path().join("precious");
         std::fs::write(&target, b"do not touch").unwrap();
-        let part = d.path().join("f.vayu-part");
+        let part = d.path().join("f.whoosh-part");
         std::os::unix::fs::symlink(&target, &part).unwrap();
         let e = provider(1 << 20).open_storage(&part).await.unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
@@ -1947,7 +1950,10 @@ mod tests {
     async fn finish_waits_for_an_in_flight_sync() {
         let d = tempfile::tempdir().unwrap();
         let p = provider(1 << 20);
-        let s = p.open_storage(&d.path().join("f.vayu-part")).await.unwrap();
+        let s = p
+            .open_storage(&d.path().join("f.whoosh-part"))
+            .await
+            .unwrap();
         s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
         s.pause_sync(true);
         let flush = tokio::spawn({
@@ -1972,7 +1978,7 @@ mod tests {
     #[tokio::test]
     async fn remove_waits_for_the_syncer_to_let_go() {
         let d = tempfile::tempdir().unwrap();
-        let path = d.path().join("f.vayu-part");
+        let path = d.path().join("f.whoosh-part");
         let p = provider(1 << 20);
         let s = p.open_storage(&path).await.unwrap();
         s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
@@ -2006,7 +2012,10 @@ mod tests {
             drop_cache_after_flush: true,
             ..StorageOptions::default()
         });
-        let s = p.open_storage(&d.path().join("f.vayu-part")).await.unwrap();
+        let s = p
+            .open_storage(&d.path().join("f.whoosh-part"))
+            .await
+            .unwrap();
         s.preallocate(4 << 20).await.unwrap();
         let mut want = vec![0u8; 4 << 20];
         for (i, chunk) in want.chunks_mut(32 << 10).enumerate() {
@@ -2036,7 +2045,7 @@ mod tests {
         }
         for kind in [SyncPanic::Sync, SyncPanic::Bookkeeping] {
             let d = tempfile::tempdir().unwrap();
-            let path = d.path().join("f.vayu-part");
+            let path = d.path().join("f.whoosh-part");
             let p = provider(1 << 20);
             let s = p.open_storage(&path).await.unwrap();
             s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
@@ -2083,7 +2092,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let root = d.path().to_path_buf();
         let p = provider(1 << 20);
-        let s = p.open_storage(&root.join("a/b/f.vayu-part")).await.unwrap();
+        let s = p
+            .open_storage(&root.join("a/b/f.whoosh-part"))
+            .await
+            .unwrap();
         s.write_at(0, Bytes::from_static(b"x")).await.unwrap();
         s.finish(&root.join("a/b/f")).await.unwrap();
         let mut synced = lock(&s.shared.synced_dirs).clone();
@@ -2094,7 +2106,7 @@ mod tests {
         // A taken name: nothing synced yet, still pending, then flushed.
         std::fs::create_dir(root.join("c")).unwrap();
         std::fs::write(root.join("c/taken"), b"other").unwrap();
-        let t = p.open_storage(&root.join("c/g.vayu-part")).await.unwrap();
+        let t = p.open_storage(&root.join("c/g.whoosh-part")).await.unwrap();
         t.write_at(0, Bytes::from_static(b"y")).await.unwrap();
         let e = t.finish(&root.join("c/taken")).await.unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::AlreadyExists);
@@ -2115,7 +2127,7 @@ mod tests {
     #[tokio::test]
     async fn write_out_hands_writes_to_the_os_without_syncing() {
         let d = tempfile::tempdir().unwrap();
-        let path = d.path().join("a/f.vayu-part");
+        let path = d.path().join("a/f.whoosh-part");
         let p = provider(1 << 20);
         let s = p.open_storage(&path).await.unwrap();
         s.pause(true);
@@ -2176,7 +2188,7 @@ mod tests {
     #[tokio::test]
     async fn finish_unsynced_never_overwrites_and_syncs_nothing() {
         let d = tempfile::tempdir().unwrap();
-        let part = d.path().join("new/f.vayu-part");
+        let part = d.path().join("new/f.whoosh-part");
         let p = provider(1 << 20);
         let s = p.open_storage(&part).await.unwrap();
         s.write_at(0, Bytes::from_static(b"mine")).await.unwrap();
@@ -2207,7 +2219,10 @@ mod tests {
     async fn finish_unsynced_waits_for_an_in_flight_sync() {
         let d = tempfile::tempdir().unwrap();
         let p = provider(1 << 20);
-        let s = p.open_storage(&d.path().join("f.vayu-part")).await.unwrap();
+        let s = p
+            .open_storage(&d.path().join("f.whoosh-part"))
+            .await
+            .unwrap();
         s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
         s.pause_sync(true);
         let flush = tokio::spawn({
@@ -2275,7 +2290,7 @@ mod tests {
     #[tokio::test]
     async fn finish_stops_inline_writes_unless_the_move_fails() {
         let d = tempfile::tempdir().unwrap();
-        let part = d.path().join("f.vayu-part");
+        let part = d.path().join("f.whoosh-part");
         let taken = d.path().join("taken");
         std::fs::write(&taken, b"keep").unwrap();
         let s = inline_provider().open_storage(&part).await.unwrap();

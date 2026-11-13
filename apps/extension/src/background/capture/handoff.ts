@@ -19,7 +19,7 @@
 // download. The worst case is a duplicate (when a compensating removal
 // fails), never a loss.
 
-import type { AddParams, AddResult, MethodMap } from "@vayu/api-client";
+import type { AddParams, AddResult, MethodMap } from "@whoosh/api-client";
 
 export type BrowserDownloadState = "in_progress" | "interrupted" | "complete" | "missing";
 

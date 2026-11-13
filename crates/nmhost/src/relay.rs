@@ -25,7 +25,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::{self, Message, Utf8Bytes};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use vayu_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, method};
+use whoosh_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, method};
 
 use crate::framing::{self, FrameError, Inbound, MAX_FROM_BROWSER, MAX_TO_BROWSER};
 use crate::log;
@@ -320,7 +320,7 @@ impl Relay {
                 self.reply_error(
                     id,
                     code::INVALID_REQUEST,
-                    "session.hello is performed by vayu-nmhost; extensions must not send it",
+                    "session.hello is performed by whoosh-nmhost; extensions must not send it",
                 )
                 .await;
             }
@@ -358,7 +358,7 @@ impl Relay {
                     self.start_connecting();
                     self.waiting.push(Waiter::Forward { text, id });
                 } else if let Some(id) = id {
-                    self.reply_unavailable(id, "the vayu daemon is not running")
+                    self.reply_unavailable(id, "the whoosh daemon is not running")
                         .await;
                 }
             }
@@ -409,7 +409,7 @@ impl Relay {
                 };
                 self.retry_delay = (self.retry_delay * 2).min(self.cfg.retry_max);
                 self.report(false).await;
-                let reason = format!("the vayu daemon is not available: {e}");
+                let reason = format!("the whoosh daemon is not available: {e}");
                 for waiter in std::mem::take(&mut self.waiting) {
                     match waiter {
                         Waiter::Status { id } => self.reply_status(id, false).await,
@@ -592,7 +592,7 @@ async fn connect(cfg: &Config) -> Result<Box<Daemon>, ConnectError> {
     let url = format!("ws://127.0.0.1:{}{RPC_PATH}", info.port);
     let (mut ws, _response) = tokio_tungstenite::connect_async(url).await?;
 
-    let nonce = vayu_proto::auth::new_nonce().map_err(|e| ConnectError::Task(e.to_string()))?;
+    let nonce = whoosh_proto::auth::new_nonce().map_err(|e| ConnectError::Task(e.to_string()))?;
     let token = info.token;
     let hello = json!({
         "jsonrpc": "2.0",
@@ -628,7 +628,7 @@ async fn connect(cfg: &Config) -> Result<Box<Daemon>, ConnectError> {
         let result = reply.get("result").cloned().unwrap_or(Value::Null);
         let hello: HelloResult =
             serde_json::from_value(result).map_err(|e| ConnectError::BadHello(e.to_string()))?;
-        if !vayu_proto::auth::verify_hello_proof(&token, &nonce, &hello.proof) {
+        if !whoosh_proto::auth::verify_hello_proof(&token, &nonce, &hello.proof) {
             // Close without relaying anything: no request of the extension's
             // (cookies, headers) may reach an impostor.
             let _ = ws.close(None).await;

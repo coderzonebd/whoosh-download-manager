@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it } from "vitest";
-import { VayuConnectionError, VayuRpcError } from "./errors";
-import { categoryForFilename, createMockClient, type MockVayuClient } from "./mock";
+import { WhooshConnectionError, WhooshRpcError } from "./errors";
+import { categoryForFilename, createMockClient, type MockWhooshClient } from "./mock";
 import { ErrorCode, type EventMap } from "./types";
 
-let client: MockVayuClient | undefined;
+let client: MockWhooshClient | undefined;
 afterEach(() => client?.close());
 
-function mock(opts: Parameters<typeof createMockClient>[0] = {}): MockVayuClient {
+function mock(opts: Parameters<typeof createMockClient>[0] = {}): MockWhooshClient {
   client = createMockClient({ autoTick: false, ...opts });
   return client;
 }
 
-function record<E extends keyof EventMap>(c: MockVayuClient, event: E): EventMap[E][] {
+function record<E extends keyof EventMap>(c: MockWhooshClient, event: E): EventMap[E][] {
   const out: EventMap[E][] = [];
   c.on(event, (p) => out.push(p));
   return out;
@@ -24,7 +24,7 @@ describe("mock client", () => {
     const hello = await c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 1, client: { name: "test", version: "0" } });
     expect(hello.protocol).toBe(1);
     expect(hello.capabilities).toContain("http");
-    await expect(c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 99, client: { name: "t", version: "0" } })).rejects.toBeInstanceOf(VayuRpcError);
+    await expect(c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 99, client: { name: "t", version: "0" } })).rejects.toBeInstanceOf(WhooshRpcError);
   });
 
   it("starts with a realistic mix of states", async () => {
@@ -133,10 +133,10 @@ describe("mock client", () => {
     const [done] = await c.call("download.list", { states: ["completed"] });
     if (!done) throw new Error("no completed download");
     const err = await c.call("download.resume", { ids: [done.id] }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(VayuRpcError);
-    expect((err as VayuRpcError).code).toBe(ErrorCode.InvalidState);
+    expect(err).toBeInstanceOf(WhooshRpcError);
+    expect((err as WhooshRpcError).code).toBe(ErrorCode.InvalidState);
     const nf = await c.call("download.get", { id: "nope" }).catch((e: unknown) => e);
-    expect((nf as VayuRpcError).isNotFound).toBe(true);
+    expect((nf as WhooshRpcError).isNotFound).toBe(true);
   });
 
   it("removes downloads and emits event.download.removed", async () => {
@@ -243,7 +243,7 @@ describe("mock client", () => {
   it("rejects calls after close", async () => {
     const c = mock();
     c.close();
-    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(VayuConnectionError);
+    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(WhooshConnectionError);
   });
 
   it("unsubscribes handlers", () => {

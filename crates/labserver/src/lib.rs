@@ -1,4 +1,4 @@
-//! `vayu-labserver`: a deterministic, fault-injecting HTTP test server.
+//! `whoosh-labserver`: a deterministic, fault-injecting HTTP test server.
 //!
 //! The engine's Phase 1 tests and the benchmark harness run against it. It
 //! serves virtual files whose bytes are a pure function of `(seed, offset)`
@@ -12,8 +12,8 @@
 //! and odd `Content-Disposition` headers.
 //!
 //! ```no_run
-//! # async fn demo() -> Result<(), vayu_labserver::LabError> {
-//! use vayu_labserver::{ByteRange, LabConfig, LabServer};
+//! # async fn demo() -> Result<(), whoosh_labserver::LabError> {
+//! use whoosh_labserver::{ByteRange, LabConfig, LabServer};
 //!
 //! let lab = LabServer::start(LabConfig::default()).await?;
 //! let url = lab.url("flaky", "100m.bin"); // http://127.0.0.1:<port>/s/flaky/100m.bin
@@ -54,7 +54,7 @@ pub use content::VirtualFile;
 pub use quic::{RESET_CODE as H3_RESET_CODE, RESET_REASON as H3_RESET_REASON};
 pub use scenario::{FileSpec, Scenario, ScenarioError};
 pub use stats::{ClientStats, ScenarioStats};
-pub use vayu_core::ByteRange;
+pub use whoosh_core::ByteRange;
 
 use state::Shared;
 

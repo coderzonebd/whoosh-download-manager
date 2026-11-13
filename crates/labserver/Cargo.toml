@@ -1,5 +1,5 @@
 [package]
-name = "vayu-labserver"
+name = "whoosh-labserver"
 description = "Deterministic, fault-injecting HTTP test server for engine tests and the benchmark harness"
 version.workspace = true
 edition.workspace = true
@@ -12,7 +12,7 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [[bin]]
-name = "vayu-labserver"
+name = "whoosh-labserver"
 path = "src/main.rs"
 
 [dependencies]
@@ -26,7 +26,7 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 futures.workspace = true
-vayu-core.workspace = true
+whoosh-core.workspace = true
 
 http = "1"
 http-body = "1"

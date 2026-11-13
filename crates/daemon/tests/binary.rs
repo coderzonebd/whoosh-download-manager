@@ -1,4 +1,4 @@
-//! The real `vayu-daemon` executable: startup, single instance, signals.
+//! The real `whoosh-daemon` executable: startup, single instance, signals.
 
 mod common;
 
@@ -7,16 +7,16 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::TempDir;
-use vayu_daemon::runtime;
+use whoosh_daemon::runtime;
 
-const EXE: &str = env!("CARGO_BIN_EXE_vayu-daemon");
+const EXE: &str = env!("CARGO_BIN_EXE_whoosh-daemon");
 
 fn daemon(data_dir: &Path) -> Command {
     let mut cmd = Command::new(EXE);
     cmd.args(["--mock", "--mock-scenario", "empty", "--port", "0"])
-        .env("VAYU_DATA_DIR", data_dir)
-        .env_remove("VAYU_DAEMON_MOCK")
-        .env_remove("VAYU_DAEMON_PORT")
+        .env("WHOOSH_DATA_DIR", data_dir)
+        .env_remove("WHOOSH_DAEMON_MOCK")
+        .env_remove("WHOOSH_DAEMON_PORT")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
@@ -78,15 +78,15 @@ fn serves_refuses_a_second_instance_and_stops_cleanly_on_sigterm() {
     assert_eq!(info.pid, first.id());
 
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let token = vayu_daemon::token::Token::from_string(info.token.clone());
+    let token = whoosh_daemon::token::Token::from_string(info.token.clone());
     let hello = rt
-        .block_on(vayu_daemon::client::probe(
+        .block_on(whoosh_daemon::client::probe(
             info.port,
             &token,
             Duration::from_secs(5),
         ))
         .unwrap();
-    assert_eq!(hello.daemon_version, vayu_daemon::VERSION);
+    assert_eq!(hello.daemon_version, whoosh_daemon::VERSION);
     assert!(hello.capabilities.iter().any(|c| c == "mock"));
 
     // A second daemon on the same data directory refuses to start.
@@ -112,7 +112,7 @@ fn serves_refuses_a_second_instance_and_stops_cleanly_on_sigterm() {
     assert!(!logs.is_empty());
     for log in logs {
         let text = std::fs::read_to_string(&log).unwrap();
-        assert!(text.contains("vayu-daemon ready"), "{text}");
+        assert!(text.contains("whoosh-daemon ready"), "{text}");
         assert!(!text.contains(&info.token), "token in {}", log.display());
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
@@ -125,7 +125,7 @@ fn serves_refuses_a_second_instance_and_stops_cleanly_on_sigterm() {
     assert_eq!(mode(dir.path()), 0o700, "the data dir was made private");
     assert_eq!(mode(&dir.path().join("logs")), 0o700);
     // Foreground mode also logs to stderr.
-    assert!(stderr_of(&mut first).contains("vayu-daemon ready"));
+    assert!(stderr_of(&mut first).contains("whoosh-daemon ready"));
 }
 
 #[cfg(unix)]
@@ -134,7 +134,7 @@ fn sigint_also_stops_it_and_detached_mode_is_quiet() {
     let dir = TempDir::new("bin-int");
     let mut child = daemon(dir.path()).arg("--detached").spawn().unwrap();
     wait_for_runtime(dir.path(), &mut child);
-    // Detached daemons ignore SIGHUP (the terminal that started `vayu` closed).
+    // Detached daemons ignore SIGHUP (the terminal that started `whoosh` closed).
     signal(&child, "HUP");
     std::thread::sleep(Duration::from_millis(300));
     assert!(child.try_wait().unwrap().is_none(), "SIGHUP killed it");
@@ -155,7 +155,7 @@ fn daemon_shutdown_stops_the_process() {
     let info = wait_for_runtime(dir.path(), &mut child);
     let rt = tokio::runtime::Runtime::new().unwrap();
     let reply = rt.block_on(async {
-        let mut c = vayu_daemon::client::Client::connect(info.port, &info.token, "test")
+        let mut c = whoosh_daemon::client::Client::connect(info.port, &info.token, "test")
             .await
             .unwrap();
         c.call("daemon.shutdown", serde_json::Value::Null).await
@@ -171,9 +171,9 @@ fn without_mock_it_runs_the_real_engine_and_stops_cleanly() {
     let dir = TempDir::new("bin-engine");
     let mut child = Command::new(EXE)
         .args(["--port", "0"])
-        .env("VAYU_DATA_DIR", dir.path())
-        .env_remove("VAYU_DAEMON_MOCK")
-        .env_remove("VAYU_DAEMON_PORT")
+        .env("WHOOSH_DATA_DIR", dir.path())
+        .env_remove("WHOOSH_DAEMON_MOCK")
+        .env_remove("WHOOSH_DAEMON_PORT")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -182,7 +182,7 @@ fn without_mock_it_runs_the_real_engine_and_stops_cleanly() {
     let info = wait_for_runtime(dir.path(), &mut child);
     let rt = tokio::runtime::Runtime::new().unwrap();
     let (list, hello_caps) = rt.block_on(async {
-        let mut c = vayu_daemon::client::Client::connect(info.port, &info.token, "test")
+        let mut c = whoosh_daemon::client::Client::connect(info.port, &info.token, "test")
             .await
             .unwrap();
         let caps = c.hello().capabilities.clone();
@@ -218,8 +218,8 @@ fn a_second_daemon_never_starts_the_engine_of_the_first() {
     wait_for_runtime(dir.path(), &mut first);
     let out = Command::new(EXE)
         .args(["--port", "0"])
-        .env("VAYU_DATA_DIR", dir.path())
-        .env_remove("VAYU_DAEMON_MOCK")
+        .env("WHOOSH_DATA_DIR", dir.path())
+        .env_remove("WHOOSH_DAEMON_MOCK")
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(3), "{out:?}");
@@ -235,10 +235,10 @@ fn a_second_daemon_never_starts_the_engine_of_the_first() {
 fn mock_mode_can_come_from_the_environment() {
     let dir = TempDir::new("bin-env");
     let mut child = Command::new(EXE)
-        .env("VAYU_DATA_DIR", dir.path())
-        .env("VAYU_DAEMON_MOCK", "1")
-        .env("VAYU_DAEMON_MOCK_SCENARIO", "demo")
-        .env("VAYU_DAEMON_PORT", "0")
+        .env("WHOOSH_DATA_DIR", dir.path())
+        .env("WHOOSH_DAEMON_MOCK", "1")
+        .env("WHOOSH_DAEMON_MOCK_SCENARIO", "demo")
+        .env("WHOOSH_DAEMON_PORT", "0")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -246,7 +246,7 @@ fn mock_mode_can_come_from_the_environment() {
     let info = wait_for_runtime(dir.path(), &mut child);
     let rt = tokio::runtime::Runtime::new().unwrap();
     let list = rt.block_on(async {
-        let mut c = vayu_daemon::client::Client::connect(info.port, &info.token, "test")
+        let mut c = whoosh_daemon::client::Client::connect(info.port, &info.token, "test")
             .await
             .unwrap();
         c.call("download.list", serde_json::json!({}))

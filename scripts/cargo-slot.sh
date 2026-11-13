@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Run a command (usually cargo) while holding one of the machine-wide build
 # slots from ADR 0004, so parallel sessions never compile Rust more than
-# VAYU_BUILD_SLOTS (default 2) at a time.
+# WHOOSH_BUILD_SLOTS (default 2) at a time.
 #
-#   scripts/cargo-slot.sh cargo test -p vayu-net
+#   scripts/cargo-slot.sh cargo test -p whoosh-net
 #
 # Linux/macOS development machines only; needs `flock` (util-linux).
 set -euo pipefail
-slots=${VAYU_BUILD_SLOTS:-2}
-dir=${XDG_RUNTIME_DIR:-/tmp}/vayu-build-slots
+slots=${WHOOSH_BUILD_SLOTS:-2}
+dir=${XDG_RUNTIME_DIR:-/tmp}/whoosh-build-slots
 mkdir -p "$dir"
 waited=0
 while :; do

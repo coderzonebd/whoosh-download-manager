@@ -1,6 +1,6 @@
 [package]
-name = "vayu-engine"
-description = "The download engine: work-stealing scheduler, hedged requests, learned connection counts, retries, queues; implements vayu_proto::service::Service"
+name = "whoosh-engine"
+description = "The download engine: work-stealing scheduler, hedged requests, learned connection counts, retries, queues; implements whoosh_proto::service::Service"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,14 +21,14 @@ sha2 = "0.10"
 tokio.workspace = true
 tokio-util = "0.7"
 tracing.workspace = true
-vayu-core.workspace = true
-vayu-proto.workspace = true
+whoosh-core.workspace = true
+whoosh-proto.workspace = true
 
 [dev-dependencies]
 proptest = "1"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true
-vayu-core = { workspace = true, features = ["testing"] }
+whoosh-core = { workspace = true, features = ["testing"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.31", features = ["resource"] }

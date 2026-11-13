@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <script lang="ts">
-  import type { DownloadState } from "@vayu/api-client";
+  import type { DownloadState } from "@whoosh/api-client";
   import { getApp } from "../lib/state/app.svelte.ts";
   import { toneFor } from "../lib/tone.ts";
 

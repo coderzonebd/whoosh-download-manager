@@ -1,8 +1,8 @@
-# vayu-bench
+# whoosh-bench
 
 The benchmark harness behind every speed claim the project makes
 (MASTER-PLAN §1 item 10, §8 Phase 0 gate, §12). It runs download managers
-against [`vayu-labserver`](../labserver) scenarios, measures each run,
+against [`whoosh-labserver`](../labserver) scenarios, measures each run,
 checks every byte, keeps the raw data, and renders a Markdown report with
 medians, p90s and Mann-Whitney U tests.
 
@@ -11,8 +11,8 @@ Published results and how to reproduce them: [`docs/bench/`](../../docs/bench/RE
 ## Quick start
 
 ```bash
-cargo build --release -p vayu-bench
-B=target/release/vayu-bench
+cargo build --release -p whoosh-bench
+B=target/release/whoosh-bench
 
 $B list                                   # which clients can run here
 $B fetch                                  # opt-in: pinned competitor builds (see below)
@@ -34,12 +34,12 @@ Each run is one client downloading one file from one scenario, cold:
    then `POST /_lab/reset?scenario=…` (counters, peaks, fault RNG,
    changing-file state). Signed-URL scenarios get a freshly minted URL;
    cookie/referer scenarios get the header passed to the client.
-2. Start the client inside the measurement wrapper (`vayu-bench __measure`,
+2. Start the client inside the measurement wrapper (`whoosh-bench __measure`,
    the harness re-executing itself) with an empty download directory and a
    private `HOME`/`XDG_*` directory, so no config, host profile, HSTS cache
    or resume journal survives between runs, and the user's `~/.curlrc`,
    `~/.wgetrc`, `~/.aria2/aria2.conf` never apply.
-   For a client with a resident daemon (`vayu`), the daemon is started
+   For a client with a resident daemon (`whoosh`), the daemon is started
    first, outside the measured window (see *Resident daemon* below).
 3. Wait until the download is complete (see `done_s` below), up to the
    scenario's timeout; then SIGTERM, then SIGKILL the process group. A
@@ -50,7 +50,7 @@ Each run is one client downloading one file from one scenario, cold:
 | Field (`runs.jsonl`) | Meaning |
 |---|---|
 | `done_s` | Client start → download complete. **The speed metric.** How "complete" is detected depends on the client (`completion`): `exit` — the process exits as soon as the file is done (curl, wget, aria2c, aria2-next); `final-file` — the client downloads into a partial file, renames it when done and then lingers (MDM's CLI reports on a 0.5 s tick; Surge's `--exit-when-done` first checks after 4 s), so done = the download directory holds the full-size file and none of the client's control/partial files (polled every 5 ms), after which the harness stops it; `api` — Gopeed's REST API reports the task done (polled every 10 ms, counted from the server's start). |
-| `durable_s` | Client start → the finished file is on disk. As soon as completion is detected (process exit; for lingering and API clients, before the harness stops them; before a resident daemon's window closes) the harness opens the output file, `fsync`s it (`File::sync_all`), and `fsync`s its directory and the download directory (Unix), and counts until that returns. MASTER-PLAN §8 rule 3 times every client **to durability**: vayu (power-safe by default) syncs before it reports done, so its extra sync costs almost nothing; clients that leave the bytes in the page cache pay for the write-back here. Shown as *durable* in the report; the gate's rules 3 and 4 use it. |
+| `durable_s` | Client start → the finished file is on disk. As soon as completion is detected (process exit; for lingering and API clients, before the harness stops them; before a resident daemon's window closes) the harness opens the output file, `fsync`s it (`File::sync_all`), and `fsync`s its directory and the download directory (Unix), and counts until that returns. MASTER-PLAN §8 rule 3 times every client **to durability**: Whoosh (power-safe by default) syncs before it reports done, so its extra sync costs almost nothing; clients that leave the bytes in the page cache pay for the write-back here. Shown as *durable* in the report; the gate's rules 3 and 4 use it. |
 | `sync_s`, `sync_error` | The harness's sync on its own (start to return), and why it failed or was skipped (no output file, I/O error). |
 | `wall_s` | Client start → process exit (or the harness stopping a lingering client). Shown as *exit* in the report. |
 | `last_byte_s` | Client start → labserver hands the last body byte to a connection. Informational only: on loopback the kernel buffers megabytes per connection, so the server finishes before the client does, and earlier still for clients with many connections. |
@@ -94,8 +94,8 @@ that block (recorded as `skipped`), so one hung client cannot eat hours.
 
 | Id | Mode | Command |
 |---|---|---|
-| `vayu` | CLI + resident daemon | `vayu --no-start get URL -o DIR [-c N] [-H …]` against a `vayu-daemon --port 0` the harness keeps running (see below) — the Phase 1 gate's configuration |
-| `vayu-cold` | CLI (Unix) | one `sh` that starts `vayu-daemon`, waits for `runtime.json`, runs `vayu --no-start get`, stops the daemon: all of it timed (cold one-shot; reported, does not gate) |
+| `whoosh` | CLI + resident daemon | `whoosh --no-start get URL -o DIR [-c N] [-H …]` against a `whoosh-daemon --port 0` the harness keeps running (see below) — the Phase 1 gate's configuration |
+| `whoosh-cold` | CLI (Unix) | one `sh` that starts `whoosh-daemon`, waits for `runtime.json`, runs `whoosh --no-start get`, stops the daemon: all of it timed (cold one-shot; reported, does not gate) |
 | `curl` | CLI | `curl -sS -f -L -O -J [-H …] URL` (cwd = download dir), one connection, no retries |
 | `wget` | CLI | `wget -nv --content-disposition -P DIR [--header=…] URL` |
 | `aria2c` | CLI | `aria2c --dir=DIR --no-conf=true …` with aria2's defaults (`-x1`: one connection per server) |
@@ -105,7 +105,7 @@ that block (recorded as `skipped`), so one hung client cannot eat hours.
 | `surge` | CLI | `surge server URL --output DIR --exit-when-done --no-resume --port P` (headless; no custom headers) |
 | `gopeed` | API | starts `gopeed-web -A 127.0.0.1 -P P -d STATE`, `POST /api/v1/tasks`, polls `GET /api/v1/tasks/<id>` |
 | `idm` | CLI (Windows) | `IDMan.exe /d URL /p DIR /f NAME /n /q` — implemented, untested (no Windows here) |
-| `abdm`, `fdm` | manual | GUI only: `vayu-bench manual --client abdm …` |
+| `abdm`, `fdm` | manual | GUI only: `whoosh-bench manual --client abdm …` |
 
 `--connections N` asks every client for N connections where it has a knob
 (aria2 `-x/-s`, MDM `-c`, Surge's settings file, Gopeed's
@@ -117,21 +117,21 @@ headers into a command line, `is_control_file()` for its bookkeeping files,
 `resident()` if it needs a daemon kept running), add it to
 `adapter::all()`, and a command-line unit test.
 
-## Resident daemon (vayu)
+## Resident daemon (Whoosh)
 
 A download manager's daemon is already running when the user clicks, so
-the Phase 1 gate measures vayu that way (MASTER-PLAN §8). For `vayu`, per
+the Phase 1 gate measures Whoosh that way (MASTER-PLAN §8). For `whoosh`, per
 run:
 
-1. Start `vayu-daemon --port 0` (found next to `vayu`) with a fresh
-   `VAYU_DATA_DIR` in the run's private state directory, and wait until its
+1. Start `whoosh-daemon --port 0` (found next to `whoosh`) with a fresh
+   `WHOOSH_DATA_DIR` in the run's private state directory, and wait until its
    `runtime.json` names its pid (up to 30 s). Not timed; the start-up time
    is recorded (`resident.startup_s`).
 2. Open the window: reset the daemon's peak-RSS mark
    (`echo 5 > /proc/<pid>/clear_refs`) and read its CPU so far
    (`/proc/<pid>/stat` utime + stime).
-3. Measure `vayu --no-start get …` exactly like any other client:
-   `done_s` is its spawn → exit (`vayu get` returns when the download is
+3. Measure `whoosh --no-start get …` exactly like any other client:
+   `done_s` is its spawn → exit (`whoosh get` returns when the download is
    complete), CPU and RSS come from the wrapper's `getrusage`.
 4. Close the window when the CLI exits, after letting the daemon finish
    its bookkeeping: keep reading its CPU every 50 ms until it stops rising
@@ -145,7 +145,7 @@ fine at the gate's file sizes, coarse for 1 MiB files. Linux only: on
 macOS and Windows the daemon is still started and stopped around the run,
 but its CPU and memory are not read (they would need `proc_pid_rusage` /
 `GetProcessTimes`), so the record's totals are left unknown rather than
-silently client-only. `vayu-cold` keeps the previous behaviour (daemon
+silently client-only. `whoosh-cold` keeps the previous behaviour (daemon
 start, download and stop all inside one timed `sh`).
 
 ## Idle-machine guard
@@ -167,10 +167,10 @@ busy runs "not valid". `--no-idle-guard` turns it off.
 
 ## The Phase 1 gate in the report
 
-`vayu-bench report <dir>` adds a *Phase 1 gate* section when the run set
-contains `vayu` (`--gate <client>` for another, `--gate none` to omit it).
+`whoosh-bench report <dir>` adds a *Phase 1 gate* section when the run set
+contains `whoosh` (`--gate <client>` for another, `--gate none` to omit it).
 Per (scenario, file) it evaluates the amended gate's rules for that client
-(other builds of the same tool, such as `vayu-cold`, are not competitors):
+(other builds of the same tool, such as `whoosh-cold`, are not competitors):
 
 | Rule | PASS when |
 |---|---|
@@ -179,12 +179,12 @@ Per (scenario, file) it evaluates the amended gate's rules for that client
 | 4 fastest (per-conn-throttle, slow-drip, flaky, stall, high-latency, rate-limited only) | the client's median time to durability is the best, or ≤ 5 % above the best competitor's |
 | 5 lean | median CPU-s per GiB (successful runs) ≤ that of every competitor that used ≥ 2 connections in that block |
 
-Overall PASS needs every row to pass. Rules 2 (`vayu-bench hardkill`) and 6
+Overall PASS needs every row to pass. Rules 2 (`whoosh-bench hardkill`) and 6
 (real CDNs) are not judged from a labserver run set. The section lists
 caveats that make a pass "not valid as a gate result": busy runs, fewer
-than 7 runs per cell, a run set without the guard, `vayu` runs without a
+than 7 runs per cell, a run set without the guard, `whoosh` runs without a
 resident daemon (run sets recorded before the resident mode existed, where
-`vayu` meant today's `vayu-cold`), or runs without `durable_s`.
+`whoosh` meant today's `whoosh-cold`), or runs without `durable_s`.
 
 Run sets recorded before `durable_s` existed still render: wherever a
 durable time is missing, the report shows the time to the file appearing
@@ -193,16 +193,16 @@ instead, marked †, and the gate judges rules 3 and 4 on it with a caveat.
 ## Fetching competitors
 
 ```bash
-vayu-bench fetch --list            # pins and what is installed
-vayu-bench fetch                   # everything pinned for this platform
-vayu-bench fetch surge gopeed      # some
-vayu-bench fetch --platform windows-x86_64   # e.g. to copy to a Windows box
+whoosh-bench fetch --list            # pins and what is installed
+whoosh-bench fetch                   # everything pinned for this platform
+whoosh-bench fetch surge gopeed      # some
+whoosh-bench fetch --platform windows-x86_64   # e.g. to copy to a Windows box
 ```
 
 `fetch` is never run automatically. It downloads only the versions pinned
 in [`src/fetch.rs`](src/fetch.rs), only from
 `https://github.com/<repo>/releases/download/<tag>/`, into
-`~/.cache/vayu-bench/` (`$VAYU_BENCH_CACHE` overrides; nothing is committed),
+`~/.cache/whoosh-bench/` (`$WHOOSH_BENCH_CACHE` overrides; nothing is committed),
 and installs nothing unless:
 
 - the SHA-256 equals the pinned hash (a changed release is refused), and
@@ -227,7 +227,7 @@ Programs are found in this order: `--bin tool=/path`, tools installed by
 ## Manual mode (GUI-only clients)
 
 ```bash
-vayu-bench manual --client abdm --scenario clean --file 100m.bin --runs 3 \
+whoosh-bench manual --client abdm --scenario clean --file 100m.bin --runs 3 \
     --watch-dir ~/Downloads
 ```
 
@@ -238,12 +238,12 @@ run ends (or press Enter). Time is labserver's first request → last byte
 (server-side, so it flatters the GUI client slightly: see docs/bench);
 peak connections come from labserver; with `--watch-dir` the newest file
 there is hashed. Results go to `docs/bench/data/<date>-<host>-manual-<client>/`
-and render with `vayu-bench report` like any run set.
+and render with `whoosh-bench report` like any run set.
 
 ## Real-internet mode (user-run only)
 
 ```bash
-vayu-bench run --real-internet [--url name=https://…] --runs 3
+whoosh-bench run --real-internet [--url name=https://…] --runs 3
 ```
 
 Off by default and never run in CI: it uses third-party bandwidth and the
@@ -256,7 +256,7 @@ are not available.
 ## Tests
 
 ```bash
-CARGO_BUILD_JOBS=2 cargo test -p vayu-bench
+CARGO_BUILD_JOBS=2 cargo test -p whoosh-bench
 ```
 
 Unit tests: statistics (exact U distribution against known counts and

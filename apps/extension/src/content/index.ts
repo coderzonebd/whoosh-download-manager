@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS, normalizeSettings, SETTINGS_KEY, type Settings } from
 import { collectLinks, linkFromTarget } from "./links";
 
 const HOVER_MS = 150;
-const MARK = Symbol.for("vayu.content");
+const MARK = Symbol.for("whoosh.content");
 
 type Api = typeof chrome;
 
@@ -41,7 +41,7 @@ function start(api: Api): void {
   window.addEventListener(
     "pointerdown",
     (event) => {
-      if (event.altKey && event.button === 0 && settings.captureEnabled) send({ type: "vayu/bypass-next" });
+      if (event.altKey && event.button === 0 && settings.captureEnabled) send({ type: "whoosh/bypass-next" });
     },
     { capture: true, passive: true },
   );
@@ -67,7 +67,7 @@ function start(api: Api): void {
       hovered = link;
       timer = setTimeout(() => {
         if (hovered !== link) return;
-        if (throttle.allow(link.href, Date.now())) send({ type: "vayu/preconnect", url: link.href });
+        if (throttle.allow(link.href, Date.now())) send({ type: "whoosh/preconnect", url: link.href });
       }, HOVER_MS);
     },
     { capture: true, passive: true },
@@ -84,7 +84,7 @@ function start(api: Api): void {
 
   api.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     const m = message as Partial<CollectLinksMessage> | null;
-    if (m?.type !== "vayu/collect-links" || (m.scope !== "all" && m.scope !== "selection")) return false;
+    if (m?.type !== "whoosh/collect-links" || (m.scope !== "all" && m.scope !== "selection")) return false;
     const reply: CollectLinksReply = { links: collectLinks(document, m.scope) };
     sendResponse(reply);
     return false;

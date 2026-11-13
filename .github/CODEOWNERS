@@ -7,20 +7,20 @@
 #
 # Later rules win. Suggested layout (replace the team names):
 #
-# *                                   @coderzonebd/vayu-maintainers
+# *                                   @coderzonebd/whoosh-maintainers
 #
 # # Engine, protocol and the API contract (changes in three places together)
-# /crates/                            @coderzonebd/vayu-engine
-# /crates/proto/                      @coderzonebd/vayu-engine @coderzonebd/vayu-ui
-# /packages/api-client/src/types.ts   @coderzonebd/vayu-engine @coderzonebd/vayu-ui
-# /docs/api/                          @coderzonebd/vayu-engine @coderzonebd/vayu-ui
+# /crates/                            @coderzonebd/whoosh-engine
+# /crates/proto/                      @coderzonebd/whoosh-engine @coderzonebd/whoosh-ui
+# /packages/api-client/src/types.ts   @coderzonebd/whoosh-engine @coderzonebd/whoosh-ui
+# /docs/api/                          @coderzonebd/whoosh-engine @coderzonebd/whoosh-ui
 #
 # # Applications and shared UI
-# /apps/                              @coderzonebd/vayu-ui
-# /packages/                          @coderzonebd/vayu-ui
+# /apps/                              @coderzonebd/whoosh-ui
+# /packages/                          @coderzonebd/whoosh-ui
 #
 # # Release engineering: CI, signing, packaging
-# /.github/                           @coderzonebd/vayu-release
-# /packaging/                         @coderzonebd/vayu-release
-# /docs/release.md                    @coderzonebd/vayu-release
-# /SECURITY.md                        @coderzonebd/vayu-maintainers
+# /.github/                           @coderzonebd/whoosh-release
+# /packaging/                         @coderzonebd/whoosh-release
+# /docs/release.md                    @coderzonebd/whoosh-release
+# /SECURITY.md                        @coderzonebd/whoosh-maintainers

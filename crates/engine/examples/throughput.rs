@@ -8,16 +8,16 @@
 //! `BoxFuture`, task wake-ups. Network and disk come on top.
 //!
 //! Storage modes: `null` discards writes inline; `thread` models
-//! `vayu-store`: every `write_at` is a message to a writer thread (a futex
+//! `whoosh-store`: every `write_at` is a message to a writer thread (a futex
 //! wake when it sleeps) that issues one `pwrite` into a real file (page
 //! cache; `$TMPDIR`, removed afterwards), through a bounded 8 MiB buffer
 //! like the store's (`write_at` waits when it is full; `flush` and `finish`
 //! wait until the writer caught up). The report includes the number of
-//! `write_at` calls per GiB. `VAYU_COALESCE=<bytes>` overrides
+//! `write_at` calls per GiB. `WHOOSH_COALESCE=<bytes>` overrides
 //! `Tuning::write_coalesce` (0 = one write per network chunk, the old path).
 //!
 //! ```text
-//! cargo run --release -p vayu-engine --example throughput -- [GiB] [chunk KiB] [runs] [null|thread] [MB/s per connection] [connections, e.g. 1,4,16]
+//! cargo run --release -p whoosh-engine --example throughput -- [GiB] [chunk KiB] [runs] [null|thread] [MB/s per connection] [connections, e.g. 1,4,16]
 //! ```
 //!
 //! With a per-connection rate the source paces its chunks like a network
@@ -32,14 +32,14 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures::future::BoxFuture;
-use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
-use vayu_core::{
+use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
+use whoosh_core::{
     ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, Storage,
     StorageProvider,
 };
-use vayu_engine::{Engine, EngineConfig, EngineDeps, Tuning};
-use vayu_proto::service::Service;
-use vayu_proto::{AddParams, DownloadState, IdParams};
+use whoosh_engine::{Engine, EngineConfig, EngineDeps, Tuning};
+use whoosh_proto::service::Service;
+use whoosh_proto::{AddParams, DownloadState, IdParams};
 
 const PATTERN: usize = 4 << 20;
 
@@ -118,7 +118,7 @@ impl NullStorage {
         let (tx, rx) = std::sync::mpsc::channel::<(u64, Bytes)>();
         let room = Arc::new(tokio::sync::Semaphore::new(BUFFER));
         let freed = room.clone();
-        let path = std::env::temp_dir().join(format!("vayu-throughput-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("whoosh-throughput-{}", std::process::id()));
         let file = std::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
@@ -236,7 +236,7 @@ async fn one(size: u64, chunk: usize, conns: u16, threaded: bool, pace: f64) -> 
     });
     let mut cfg = EngineConfig::new("/bench");
     cfg.tuning = Tuning::default();
-    if let Some(c) = std::env::var("VAYU_COALESCE")
+    if let Some(c) = std::env::var("WHOOSH_COALESCE")
         .ok()
         .and_then(|v| v.parse().ok())
     {

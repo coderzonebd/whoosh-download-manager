@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use support::*;
-use vayu_core::{SourceError, SourceFactory, Validators};
-use vayu_proto::{Header, RequestContext};
+use whoosh_core::{SourceError, SourceFactory, Validators};
+use whoosh_proto::{Header, RequestContext};
 
 const BODY: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!?";
 
@@ -118,7 +118,7 @@ async fn default_user_agent_and_identity_on_every_request() {
     fetch(&*src, Some(r(3, 9)), m.validators()).await;
     fetch(&*src, None, m.validators()).await;
     for s in fx.requests() {
-        assert_eq!(s.header("user-agent"), Some(vayu_net::DEFAULT_USER_AGENT));
+        assert_eq!(s.header("user-agent"), Some(whoosh_net::DEFAULT_USER_AGENT));
         assert_eq!(s.header("accept-encoding"), Some("identity"));
         assert_eq!(s.header("accept"), Some("*/*"));
     }
@@ -480,11 +480,11 @@ async fn refused_connections_are_throttled_and_dns_failures_transient() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn untrusted_certificate_is_fatal() {
-    let lab = vayu_labserver::LabServer::start(vayu_labserver::LabConfig::default())
+    let lab = whoosh_labserver::LabServer::start(whoosh_labserver::LabConfig::default())
         .await
         .unwrap();
     // OS roots only: the lab's self-signed certificate is unknown.
-    let f = vayu_net::HttpSourceFactory::new(vayu_net::NetConfig::default());
+    let f = whoosh_net::HttpSourceFactory::new(whoosh_net::NetConfig::default());
     let url = lab.https_url("clean", "1m.bin").unwrap();
     let e = f.source(&url, None).unwrap().probe().await.unwrap_err();
     assert!(

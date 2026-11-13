@@ -1,6 +1,6 @@
-//! Compatibility with the real `vayu-nmhost`: the browser extension's path to
+//! Compatibility with the real `whoosh-nmhost`: the browser extension's path to
 //! the daemon (PROTOCOL.md §1, native messaging). The host is built from the
-//! workspace (or taken from `$VAYU_NMHOST_BIN`), pointed at the daemon through
+//! workspace (or taken from `$WHOOSH_NMHOST_BIN`), pointed at the daemon through
 //! the environment alone, and driven with native-messaging frames.
 
 mod common;
@@ -14,12 +14,12 @@ use std::time::Duration;
 
 use common::*;
 use serde_json::{Value, json};
-use vayu_daemon::mock::{MockOptions, MockService, Scenario};
-use vayu_daemon::paths;
+use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
+use whoosh_daemon::paths;
 
 fn nmhost() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
-    BIN.get_or_init(|| workspace_bin("vayu-nmhost", "vayu-nmhost", "VAYU_NMHOST_BIN"))
+    BIN.get_or_init(|| workspace_bin("whoosh-nmhost", "whoosh-nmhost", "WHOOSH_NMHOST_BIN"))
 }
 
 fn mock() -> std::sync::Arc<MockService> {
@@ -43,7 +43,7 @@ impl Host {
     fn spawn(env: &[(&str, &Path)]) -> Self {
         let mut cmd = Command::new(nmhost());
         cmd.arg("chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/");
-        for var in ["VAYU_DATA_DIR", "XDG_DATA_HOME", "LOCALAPPDATA"] {
+        for var in ["WHOOSH_DATA_DIR", "XDG_DATA_HOME", "LOCALAPPDATA"] {
             cmd.env_remove(var);
         }
         for (k, v) in env {
@@ -131,7 +131,7 @@ impl Host {
 async fn the_native_host_relays_to_this_daemon_end_to_end() {
     let dir = TempDir::new("nmhost");
     let d = start(mock(), dir.path()).await;
-    let mut host = tokio::task::block_in_place(|| Host::spawn(&[("VAYU_DATA_DIR", dir.path())]));
+    let mut host = tokio::task::block_in_place(|| Host::spawn(&[("WHOOSH_DATA_DIR", dir.path())]));
     let mut events = Vec::new();
 
     tokio::task::block_in_place(|| {
@@ -139,7 +139,7 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
         // completed session.hello with its token.
         let status = host.status(1, &mut events);
         assert_eq!(status["daemonRunning"], true, "{status}");
-        assert_eq!(status["daemonVersion"], vayu_daemon::VERSION);
+        assert_eq!(status["daemonVersion"], whoosh_daemon::VERSION);
 
         // A method call, relayed verbatim both ways.
         host.send(json!({"jsonrpc": "2.0", "id": 2, "method": "download.add",
@@ -190,7 +190,7 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
         let up = host.wait_event(&mut events, |m| {
             m["method"] == "event.nm.status" && m["params"]["daemonRunning"] == true
         });
-        assert_eq!(up["params"]["daemonVersion"], vayu_daemon::VERSION);
+        assert_eq!(up["params"]["daemonVersion"], whoosh_daemon::VERSION);
         host.send(json!({"jsonrpc": "2.0", "id": 6, "method": "stats.get"}));
         assert!(host.response(6, &mut events)["result"]["active"].is_number());
         host.finish();
@@ -198,7 +198,7 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
     d.shutdown().await;
 }
 
-/// Without `VAYU_DATA_DIR`, both sides must derive the same directory from
+/// Without `WHOOSH_DATA_DIR`, both sides must derive the same directory from
 /// the platform rule (here Linux/XDG).
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -210,7 +210,7 @@ async fn the_native_host_and_the_daemon_agree_on_the_xdg_data_dir() {
         ..paths::Env::default()
     };
     let data_dir = paths::data_dir(paths::Os::Linux, &env).unwrap();
-    assert_eq!(data_dir, base.path().join("vayu"));
+    assert_eq!(data_dir, base.path().join("whoosh"));
     let d = start(mock(), &data_dir).await;
     let home = base.path().join("home");
     let mut host = tokio::task::block_in_place(|| {
@@ -225,16 +225,16 @@ async fn the_native_host_and_the_daemon_agree_on_the_xdg_data_dir() {
     d.shutdown().await;
 }
 
-/// Every client's reader (`vayu_proto::runtime`, with its ownership and
+/// Every client's reader (`whoosh_proto::runtime`, with its ownership and
 /// permission checks) accepts the file the daemon writes.
 #[tokio::test]
 async fn clients_accept_our_runtime_file() {
     let dir = TempDir::new("nmhost-rt");
     let d = start(mock(), dir.path()).await;
-    let info = vayu_proto::runtime::read_runtime(&d.runtime_file()).unwrap();
+    let info = whoosh_proto::runtime::read_runtime(&d.runtime_file()).unwrap();
     assert_eq!(info.port, d.port());
     assert_eq!(info.token, d.runtime_info().token);
     assert_eq!(info.pid, std::process::id());
-    assert_eq!(info.version, vayu_daemon::VERSION);
+    assert_eq!(info.version, whoosh_daemon::VERSION);
     d.shutdown().await;
 }

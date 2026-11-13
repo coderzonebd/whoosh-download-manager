@@ -1,9 +1,9 @@
 //! `--register` / `--unregister`: install the host manifest for the current
-//! user so browsers can launch `vayu-nmhost`.
+//! user so browsers can launch `whoosh-nmhost`.
 //!
 //! * Linux and macOS: one JSON manifest per browser in that browser's
 //!   user-level `NativeMessagingHosts` directory.
-//! * Windows: the manifests live under `%LOCALAPPDATA%\vayu\nmhost\` and a
+//! * Windows: the manifests live under `%LOCALAPPDATA%\whoosh\nmhost\` and a
 //!   per-browser key under `HKEY_CURRENT_USER` points at them.
 //!
 //! Linux is tested. macOS and Windows locations follow each browser's
@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use crate::HOST_NAME;
 use crate::runtime::{Env, Os};
 
-const DESCRIPTION: &str = "vayu download manager — browser integration";
+const DESCRIPTION: &str = "whoosh download manager — browser integration";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Browser {
@@ -192,7 +192,7 @@ pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, Regis
                 .local_app_data
                 .clone()
                 .ok_or(RegisterError::NoBaseDir("LOCALAPPDATA"))?;
-            let manifest_dir = local.join("vayu").join("nmhost");
+            let manifest_dir = local.join("whoosh").join("nmhost");
             let manifest = manifest_dir.join(match browser.family() {
                 Family::Chromium => format!("{HOST_NAME}.chromium.json"),
                 Family::Firefox => format!("{HOST_NAME}.firefox.json"),
@@ -428,7 +428,7 @@ mod tests {
     impl TempHome {
         fn new(tag: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "vayu-nmhost-{tag}-{}-{:?}",
+                "whoosh-nmhost-{tag}-{}-{:?}",
                 std::process::id(),
                 std::thread::current().id()
             ));
@@ -454,7 +454,7 @@ mod tests {
     fn opts(browsers: Option<Vec<Browser>>) -> Options {
         Options {
             browsers,
-            host_path: PathBuf::from("/opt/vayu/vayu-nmhost"),
+            host_path: PathBuf::from("/opt/whoosh/whoosh-nmhost"),
             chromium_ids: vec![DEV_CHROMIUM_EXTENSION_ID.to_owned()],
             firefox_ids: vec![FIREFOX_EXTENSION_ID.to_owned()],
         }
@@ -473,7 +473,7 @@ mod tests {
             home: Some("/home/u".into()),
             ..Env::default()
         };
-        let host = "com.coderzonebd.vayu.json";
+        let host = "com.coderzonebd.whoosh.json";
         let cases = [
             (
                 Browser::Chrome,
@@ -514,7 +514,7 @@ mod tests {
         };
         assert_eq!(
             only_file(Os::Linux, &env, Browser::Chromium),
-            PathBuf::from("/cfg/chromium/NativeMessagingHosts/com.coderzonebd.vayu.json")
+            PathBuf::from("/cfg/chromium/NativeMessagingHosts/com.coderzonebd.whoosh.json")
         );
     }
 
@@ -528,19 +528,19 @@ mod tests {
         assert_eq!(
             only_file(Os::MacOs, &env, Browser::Chrome),
             PathBuf::from(format!(
-                "{support}/Google/Chrome/NativeMessagingHosts/com.coderzonebd.vayu.json"
+                "{support}/Google/Chrome/NativeMessagingHosts/com.coderzonebd.whoosh.json"
             ))
         );
         assert_eq!(
             only_file(Os::MacOs, &env, Browser::Edge),
             PathBuf::from(format!(
-                "{support}/Microsoft Edge/NativeMessagingHosts/com.coderzonebd.vayu.json"
+                "{support}/Microsoft Edge/NativeMessagingHosts/com.coderzonebd.whoosh.json"
             ))
         );
         assert_eq!(
             only_file(Os::MacOs, &env, Browser::Firefox),
             PathBuf::from(format!(
-                "{support}/Mozilla/NativeMessagingHosts/com.coderzonebd.vayu.json"
+                "{support}/Mozilla/NativeMessagingHosts/com.coderzonebd.whoosh.json"
             ))
         );
     }
@@ -557,9 +557,9 @@ mod tests {
         };
         assert_eq!(
             key,
-            r"Software\Google\Chrome\NativeMessagingHosts\com.coderzonebd.vayu"
+            r"Software\Google\Chrome\NativeMessagingHosts\com.coderzonebd.whoosh"
         );
-        assert!(manifest.ends_with("com.coderzonebd.vayu.chromium.json"));
+        assert!(manifest.ends_with("com.coderzonebd.whoosh.chromium.json"));
 
         let firefox = &targets(Os::Windows, &env, Browser::Firefox).unwrap()[0];
         let Location::Registry { key, manifest } = &firefox.location else {
@@ -567,18 +567,18 @@ mod tests {
         };
         assert_eq!(
             key,
-            r"Software\Mozilla\NativeMessagingHosts\com.coderzonebd.vayu"
+            r"Software\Mozilla\NativeMessagingHosts\com.coderzonebd.whoosh"
         );
-        assert!(manifest.ends_with("com.coderzonebd.vayu.firefox.json"));
+        assert!(manifest.ends_with("com.coderzonebd.whoosh.firefox.json"));
     }
 
     #[test]
     fn manifests_have_the_right_shape() {
-        let host = Path::new("/opt/vayu/vayu-nmhost");
+        let host = Path::new("/opt/whoosh/whoosh-nmhost");
         let chromium = chromium_manifest(host, &[DEV_CHROMIUM_EXTENSION_ID.to_owned()]);
-        assert_eq!(chromium["name"], "com.coderzonebd.vayu");
+        assert_eq!(chromium["name"], "com.coderzonebd.whoosh");
         assert_eq!(chromium["type"], "stdio");
-        assert_eq!(chromium["path"], "/opt/vayu/vayu-nmhost");
+        assert_eq!(chromium["path"], "/opt/whoosh/whoosh-nmhost");
         assert_eq!(
             chromium["allowed_origins"],
             json!(["chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/"])
@@ -588,7 +588,7 @@ mod tests {
         let firefox = firefox_manifest(host, &[FIREFOX_EXTENSION_ID.to_owned()]);
         assert_eq!(
             firefox["allowed_extensions"],
-            json!(["vayu@coderzonebd.com"])
+            json!(["whoosh@coderzonebd.com"])
         );
         assert!(firefox.get("allowed_origins").is_none());
     }
@@ -616,7 +616,7 @@ mod tests {
 
         let chromium_path = home
             .0
-            .join(".config/chromium/NativeMessagingHosts/com.coderzonebd.vayu.json");
+            .join(".config/chromium/NativeMessagingHosts/com.coderzonebd.whoosh.json");
         let written: Value =
             serde_json::from_slice(&std::fs::read(&chromium_path).unwrap()).unwrap();
         assert_eq!(
@@ -625,10 +625,10 @@ mod tests {
         );
         let firefox_path = home
             .0
-            .join(".mozilla/native-messaging-hosts/com.coderzonebd.vayu.json");
+            .join(".mozilla/native-messaging-hosts/com.coderzonebd.whoosh.json");
         let written: Value =
             serde_json::from_slice(&std::fs::read(&firefox_path).unwrap()).unwrap();
-        assert_eq!(written["allowed_extensions"][0], "vayu@coderzonebd.com");
+        assert_eq!(written["allowed_extensions"][0], "whoosh@coderzonebd.com");
         assert!(!home.0.join(".config/google-chrome").exists());
 
         let removed = unregister(Os::Linux, &env).unwrap();
@@ -649,7 +649,7 @@ mod tests {
         assert_eq!(changes.len(), 1);
         assert!(
             home.0
-                .join(".config/google-chrome/NativeMessagingHosts/com.coderzonebd.vayu.json")
+                .join(".config/google-chrome/NativeMessagingHosts/com.coderzonebd.whoosh.json")
                 .is_file()
         );
     }
@@ -671,7 +671,7 @@ mod tests {
             Err(RegisterError::BadChromiumId(_))
         ));
         let mut o = opts(Some(vec![Browser::Chrome]));
-        o.host_path = "relative/vayu-nmhost".into();
+        o.host_path = "relative/whoosh-nmhost".into();
         assert!(matches!(
             register(Os::Linux, &home.env(), &o),
             Err(RegisterError::RelativeHostPath(_))

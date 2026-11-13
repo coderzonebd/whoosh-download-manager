@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use common::*;
 use proptest::prelude::*;
-use vayu_core::SourceError;
-use vayu_engine::Tuning;
-use vayu_proto::DownloadState;
+use whoosh_core::SourceError;
+use whoosh_engine::Tuning;
+use whoosh_proto::DownloadState;
 
 #[derive(Debug, Clone)]
 enum Fault {

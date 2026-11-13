@@ -8,9 +8,9 @@ use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use support::*;
-use vayu_core::{Protocol, RangeSource, SourceError, SourceFactory, Validators};
-use vayu_labserver::Scenario;
-use vayu_proto::RequestContext;
+use whoosh_core::{Protocol, RangeSource, SourceError, SourceFactory, Validators};
+use whoosh_labserver::Scenario;
+use whoosh_proto::RequestContext;
 
 macro_rules! per_transport {
     ($($name:ident),* $(,)?) => {$(
@@ -250,7 +250,11 @@ async fn expiring_url(t: T) {
 
 /// Opens `held` long requests (5 MB/s per connection, 20 MiB each) and
 /// returns them unread, so they occupy the server's per-IP slots.
-async fn hold(src: &Arc<dyn RangeSource>, v: &Validators, held: u64) -> Vec<vayu_core::ByteStream> {
+async fn hold(
+    src: &Arc<dyn RangeSource>,
+    v: &Validators,
+    held: u64,
+) -> Vec<whoosh_core::ByteStream> {
     let mut out = Vec::new();
     for i in 0..held {
         let s = src
@@ -434,7 +438,7 @@ async fn cookie_required(t: T) {
         .unwrap_err();
     assert!(matches!(e, SourceError::LinkExpired(_)), "{e:?}");
     let wrong = RequestContext {
-        cookie: Some("vayu_session=nope".into()),
+        cookie: Some("whoosh_session=nope".into()),
         ..Default::default()
     };
     let e = lab
@@ -444,7 +448,7 @@ async fn cookie_required(t: T) {
         .unwrap_err();
     assert!(matches!(e, SourceError::LinkExpired(_)), "{e:?}");
     let ok = RequestContext {
-        cookie: Some("theme=dark; vayu_session=lab-ok".into()),
+        cookie: Some("theme=dark; whoosh_session=lab-ok".into()),
         ..Default::default()
     };
     let src = lab.source_with("cookie-required", "1m.bin", &ok);
@@ -602,14 +606,14 @@ async fn flaky_builtin_h1() {
 /// HTTP/3 is learnt from `Alt-Svc` on a TCP response, then used.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn alt_svc_switches_to_h3() {
-    let lab3 = vayu_labserver::LabServer::start(vayu_labserver::LabConfig {
+    let lab3 = whoosh_labserver::LabServer::start(whoosh_labserver::LabConfig {
         h3_port: Some(0),
         ..Default::default()
     })
     .await
     .unwrap();
     // A plain factory: no host profile, so it starts on TCP.
-    let f = vayu_net::HttpSourceFactory::new(test_config(&lab3));
+    let f = whoosh_net::HttpSourceFactory::new(test_config(&lab3));
     let url = format!(
         "https://localhost:{}/s/clean/1m.bin",
         lab3.https_addr().unwrap().port()

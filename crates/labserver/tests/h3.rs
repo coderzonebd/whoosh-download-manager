@@ -9,7 +9,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use support::{Client, eventually, get};
-use vayu_labserver::{H3_RESET_CODE, H3_RESET_REASON, LabConfig, LabServer, Scenario};
+use whoosh_labserver::{H3_RESET_CODE, H3_RESET_REASON, LabConfig, LabServer, Scenario};
 
 const MIB: u64 = 1 << 20;
 

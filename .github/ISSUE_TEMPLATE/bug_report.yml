@@ -30,7 +30,7 @@ body:
       options:
         - Desktop app
         - Browser extension
-        - Native messaging host (vayu-nmhost)
+        - Native messaging host (whoosh-nmhost)
         - Engine / daemon
         - Installer or package
         - labserver / benchmark harness

@@ -2,7 +2,7 @@
 //! offsets into a preallocated file, then one `flush` makes it all durable.
 //!
 //! ```text
-//! cargo run --release -p vayu-store --example storage_bench -- \
+//! cargo run --release -p whoosh-store --example storage_bench -- \
 //!     [--dir DIR] [--size-gib 4] [--writers 16] [--chunk-kib 1024] \
 //!     [--buffer-mib 16] [--mode store|raw] [--runs 1]
 //! ```
@@ -22,8 +22,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use vayu_core::StorageProvider;
-use vayu_store::{FileStorageProvider, StorageOptions};
+use whoosh_core::StorageProvider;
+use whoosh_store::{FileStorageProvider, StorageOptions};
 
 #[derive(Debug, Clone)]
 struct Args {
@@ -305,7 +305,7 @@ fn main() {
     let gb = a.size as f64 / 1e9;
     println!(
         "mode={} size={:.2} GiB writers={} chunk={} KiB buffer={} MiB fs={} dir={}",
-        if a.raw { "raw-pwrite" } else { "vayu-store" },
+        if a.raw { "raw-pwrite" } else { "whoosh-store" },
         a.size as f64 / (1u64 << 30) as f64,
         a.writers,
         a.chunk >> 10,
@@ -315,10 +315,10 @@ fn main() {
     );
     for run in 1..=a.runs {
         let tmp = tempfile::Builder::new()
-            .prefix("vayu-storage-bench-")
+            .prefix("whoosh-storage-bench-")
             .tempdir_in(&a.dir)
             .unwrap();
-        let path = tmp.path().join("bench.vayu-part");
+        let path = tmp.path().join("bench.whoosh-part");
         let t = if a.raw {
             run_raw(&a, &path, data.clone())
         } else {

@@ -15,9 +15,9 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use vayu_daemon::{DaemonConfig, RunningDaemon};
-use vayu_proto::service::{Notification, Service, ServiceError, ServiceResult};
-use vayu_proto::*;
+use whoosh_daemon::{DaemonConfig, RunningDaemon};
+use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
+use whoosh_proto::*;
 
 /// A fresh, empty directory under the system temp dir, removed on drop.
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl TempDir {
     pub fn new(name: &str) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "vayu-daemon-test-{name}-{}-{}",
+            "whoosh-daemon-test-{name}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -173,7 +173,7 @@ pub fn config(dir: &Path) -> DaemonConfig {
 }
 
 pub async fn start(service: Arc<dyn Service>, dir: &Path) -> RunningDaemon {
-    vayu_daemon::serve(service, config(dir)).await.unwrap()
+    whoosh_daemon::serve(service, config(dir)).await.unwrap()
 }
 
 pub async fn start_with(
@@ -183,7 +183,7 @@ pub async fn start_with(
 ) -> RunningDaemon {
     let mut c = config(dir);
     tweak(&mut c);
-    vayu_daemon::serve(service, c).await.unwrap()
+    whoosh_daemon::serve(service, c).await.unwrap()
 }
 
 pub type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -228,7 +228,7 @@ pub async fn say_hello(ws: &mut Ws, daemon: &RunningDaemon) -> Value {
     // The daemon proves it knows the token.
     let proof = reply["result"]["proof"].as_str().unwrap_or_default();
     assert!(
-        vayu_proto::auth::verify_hello_proof(&daemon.runtime_info().token, NONCE, proof),
+        whoosh_proto::auth::verify_hello_proof(&daemon.runtime_info().token, NONCE, proof),
         "bad proof in {reply}"
     );
     reply
@@ -324,7 +324,7 @@ pub fn get(path: &str, port: u16) -> String {
 
 /// Builds a binary of another workspace package with the same cargo and
 /// target directory as this test run, and returns its path. `$<ENV>` (e.g.
-/// `VAYU_NMHOST_BIN`) skips the build and uses that file instead.
+/// `WHOOSH_NMHOST_BIN`) skips the build and uses that file instead.
 pub fn workspace_bin(package: &str, bin: &str, env: &str) -> PathBuf {
     if let Some(path) = std::env::var_os(env) {
         return PathBuf::from(path);

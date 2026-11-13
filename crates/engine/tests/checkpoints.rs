@@ -13,11 +13,11 @@ use bytes::Bytes;
 use common::*;
 use futures::future::BoxFuture;
 use sha2::{Digest, Sha256};
-use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
-use vayu_core::{Storage, StorageProvider};
-use vayu_engine::{Engine, EngineDeps, Tuning};
-use vayu_proto::service::Service;
-use vayu_proto::{AddParams, Checksum};
+use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
+use whoosh_core::{Storage, StorageProvider};
+use whoosh_engine::{Engine, EngineDeps, Tuning};
+use whoosh_proto::service::Service;
+use whoosh_proto::{AddParams, Checksum};
 
 const LONG: Duration = Duration::from_secs(600);
 

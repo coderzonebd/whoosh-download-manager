@@ -5,10 +5,10 @@
 //! discarding the bytes. Build it in release mode:
 //!
 //! ```text
-//! cargo run --release -p vayu-labserver --example throughput -- --conns 4 --secs 5
-//! cargo run --release -p vayu-labserver --example throughput -- --file 1g.bin --cache-mb 0   # generation-bound
-//! cargo run --release -p vayu-labserver --example throughput -- --h2 --tls
-//! cargo run --release -p vayu-labserver --example throughput -- --h3 --conns 2
+//! cargo run --release -p whoosh-labserver --example throughput -- --conns 4 --secs 5
+//! cargo run --release -p whoosh-labserver --example throughput -- --file 1g.bin --cache-mb 0   # generation-bound
+//! cargo run --release -p whoosh-labserver --example throughput -- --h2 --tls
+//! cargo run --release -p whoosh-labserver --example throughput -- --h3 --conns 2
 //! ```
 
 use bytes::{Buf, Bytes};
@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 
-use vayu_labserver::{LabConfig, LabServer, Scenario};
+use whoosh_labserver::{LabConfig, LabServer, Scenario};
 
 #[derive(Debug, Parser)]
 struct Args {

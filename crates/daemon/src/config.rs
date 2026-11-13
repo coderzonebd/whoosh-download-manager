@@ -58,7 +58,7 @@ impl DaemonConfig {
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
         Self {
             data_dir: data_dir.into(),
-            port: vayu_proto::DEFAULT_PORT,
+            port: whoosh_proto::DEFAULT_PORT,
             port_fallback: true,
             version: crate::VERSION.to_owned(),
             single_instance: true,

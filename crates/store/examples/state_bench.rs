@@ -2,16 +2,16 @@
 //! `sync` (what completing a download costs).
 //!
 //! ```text
-//! cargo run --release -p vayu-store --example state_bench -- [--dir DIR] [--downloads 10000]
+//! cargo run --release -p whoosh-store --example state_bench -- [--dir DIR] [--downloads 10000]
 //! ```
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use futures::future::join_all;
-use vayu_core::{DownloadRecord, StateStore};
-use vayu_proto::{DownloadState, Header, RequestContext};
-use vayu_store::SqliteStateStore;
+use whoosh_core::{DownloadRecord, StateStore};
+use whoosh_proto::{DownloadState, Header, RequestContext};
+use whoosh_store::SqliteStateStore;
 
 fn record(i: u64) -> DownloadRecord {
     DownloadRecord {
@@ -67,7 +67,7 @@ fn main() {
         .unwrap();
     rt.block_on(async {
         let tmp = tempfile::Builder::new()
-            .prefix("vayu-state-bench-")
+            .prefix("whoosh-state-bench-")
             .tempdir_in(&dir)
             .unwrap();
         let path = tmp.path().join("state.db");

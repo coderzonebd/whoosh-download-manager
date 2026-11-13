@@ -17,11 +17,11 @@ use std::time::Duration;
 use bytes::Bytes;
 use common::*;
 use sha2::{Digest, Sha256};
-use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
-use vayu_core::{Checkpoint, Finishing, StorageProvider};
-use vayu_engine::{Engine, EngineConfig, EngineDeps, Tuning};
-use vayu_proto::service::Service;
-use vayu_proto::{AddParams, Checksum, DownloadState, Durability};
+use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
+use whoosh_core::{Checkpoint, Finishing, StorageProvider};
+use whoosh_engine::{Engine, EngineConfig, EngineDeps, Tuning};
+use whoosh_proto::service::Service;
+use whoosh_proto::{AddParams, Checksum, DownloadState, Durability};
 
 const LONG: Duration = Duration::from_secs(600);
 
@@ -314,12 +314,12 @@ fn a_record_that_says_completed_needs_no_journal() {
     drop(rt);
     // The journal entry is still there (killed before its removal).
     let len = w.data.len() as u64;
-    let stale = vayu_core::Checkpoint {
-        meta: vayu_core::RemoteMeta {
+    let stale = whoosh_core::Checkpoint {
+        meta: whoosh_core::RemoteMeta {
             size: Some(len),
-            ..vayu_core::RemoteMeta::default()
+            ..whoosh_core::RemoteMeta::default()
         },
-        done: vayu_core::RangeSet::from_ranges(vayu_core::ByteRange::new(0, len)),
+        done: whoosh_core::RangeSet::from_ranges(whoosh_core::ByteRange::new(0, len)),
         finishing: None,
     };
     let opens = w.src.opens();
@@ -346,7 +346,7 @@ fn the_intent_is_the_checkpoint_field() {
         .unwrap();
     assert_eq!(
         cp.finishing,
-        Some(vayu_core::Finishing {
+        Some(whoosh_core::Finishing {
             name: "data.bin".into(),
             len: w.data.len() as u64,
         })
@@ -355,7 +355,7 @@ fn the_intent_is_the_checkpoint_field() {
         cp.meta
             .final_url
             .as_deref()
-            .is_none_or(|u| !u.starts_with("vayu-finishing:")),
+            .is_none_or(|u| !u.starts_with("whoosh-finishing:")),
         "no interim marker written"
     );
 }
@@ -363,7 +363,7 @@ fn the_intent_is_the_checkpoint_field() {
 #[test]
 fn an_interim_marker_journal_is_still_recognised() {
     // Written by 5a1c4dd (before `Checkpoint::finishing`): the name in
-    // `RemoteMeta::final_url` after a `vayu-finishing:` prefix.
+    // `RemoteMeta::final_url` after a `whoosh-finishing:` prefix.
     let w = world(Mode::Ranged);
     let len = w.data.len() as u64;
     w.fs.put_finished(&final_path("data.bin"), w.data.clone());
@@ -373,18 +373,18 @@ fn an_interim_marker_journal_is_still_recognised() {
         let mut p = add_params(URL);
         p.start = false;
         let id = engine.add(p).await.unwrap().id;
-        let legacy = vayu_core::Checkpoint {
-            meta: vayu_core::RemoteMeta {
+        let legacy = whoosh_core::Checkpoint {
+            meta: whoosh_core::RemoteMeta {
                 size: Some(len),
-                final_url: Some("vayu-finishing:data.bin".into()),
-                ..vayu_core::RemoteMeta::default()
+                final_url: Some("whoosh-finishing:data.bin".into()),
+                ..whoosh_core::RemoteMeta::default()
             },
-            done: vayu_core::RangeSet::from_ranges(vayu_core::ByteRange::new(0, len)),
+            done: whoosh_core::RangeSet::from_ranges(whoosh_core::ByteRange::new(0, len)),
             finishing: None,
         };
         w.deps.journal.commit(&id, &legacy).await.unwrap();
         engine
-            .resume(vayu_proto::IdsParams {
+            .resume(whoosh_proto::IdsParams {
                 ids: vec![id.clone()],
             })
             .await
@@ -505,7 +505,7 @@ async fn journal_until(w: &World, id: &str, f: impl Fn(&Checkpoint) -> bool) -> 
 /// file of the download's length holds its name.
 fn plant_same_length(w: &World, seed: u64) -> Bytes {
     runtime()
-        .block_on(w.fs.remove(&final_path("data.bin.vayu-part")))
+        .block_on(w.fs.remove(&final_path("data.bin.whoosh-part")))
         .unwrap();
     let foreign = content(w.data.len() as u64, seed);
     w.fs.put_finished(&final_path("data.bin"), foreign.clone());

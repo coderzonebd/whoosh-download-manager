@@ -4871,227 +4871,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
-name = "vayu-bench"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "fastrand",
- "flate2",
- "hex",
- "nix",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tokio",
- "ureq",
- "vayu-labserver",
- "zip",
-]
-
-[[package]]
-name = "vayu-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "futures",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "vayu-proto",
-]
-
-[[package]]
-name = "vayu-core"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "futures",
- "serde",
- "thiserror 2.0.21",
- "vayu-proto",
-]
-
-[[package]]
-name = "vayu-daemon"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "clap",
- "futures",
- "getrandom 0.3.4",
- "http",
- "http-body-util",
- "hyper",
- "hyper-util",
- "rustix",
- "serde",
- "serde_json",
- "subtle",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "vayu-engine",
- "vayu-net",
- "vayu-proto",
- "vayu-store",
-]
-
-[[package]]
-name = "vayu-desktop"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-window-state",
-]
-
-[[package]]
-name = "vayu-engine"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "fastrand",
- "futures",
- "hex",
- "md-5",
- "nix",
- "percent-encoding",
- "proptest",
- "serde_json",
- "sha1 0.10.7",
- "sha2",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "vayu-core",
- "vayu-proto",
-]
-
-[[package]]
-name = "vayu-labserver"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "futures",
- "h3",
- "h3-quinn",
- "http",
- "http-body",
- "http-body-util",
- "httpdate",
- "hyper",
- "hyper-util",
- "quinn",
- "rcgen",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "socket2",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "toml 1.2.1+spec-1.1.0",
- "tracing",
- "tracing-subscriber",
- "vayu-core",
-]
-
-[[package]]
-name = "vayu-net"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "bytes",
- "futures",
- "h2",
- "h3",
- "h3-quinn",
- "http",
- "http-body",
- "http-body-util",
- "httpdate",
- "hyper",
- "hyper-util",
- "nix",
- "percent-encoding",
- "quinn",
- "rcgen",
- "rustls",
- "rustls-platform-verifier",
- "socket2",
- "tokio",
- "tokio-rustls",
- "tracing",
- "url",
- "vayu-core",
- "vayu-labserver",
- "vayu-proto",
-]
-
-[[package]]
-name = "vayu-nmhost"
-version = "0.1.0"
-dependencies = [
- "futures",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "vayu-proto",
- "winreg",
-]
-
-[[package]]
-name = "vayu-proto"
-version = "0.1.0"
-dependencies = [
- "futures",
- "getrandom 0.3.4",
- "hmac",
- "rustix",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "vayu-store"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "crc32c",
- "futures",
- "libc",
- "nix",
- "proptest",
- "rusqlite",
- "rustix",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "vayu-core",
- "vayu-proto",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5366,6 +5145,227 @@ dependencies = [
  "thiserror 2.0.21",
  "windows",
  "windows-core",
+]
+
+[[package]]
+name = "whoosh-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fastrand",
+ "flate2",
+ "hex",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tokio",
+ "ureq",
+ "whoosh-labserver",
+ "zip",
+]
+
+[[package]]
+name = "whoosh-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "whoosh-proto",
+]
+
+[[package]]
+name = "whoosh-core"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "serde",
+ "thiserror 2.0.21",
+ "whoosh-proto",
+]
+
+[[package]]
+name = "whoosh-daemon"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "clap",
+ "futures",
+ "getrandom 0.3.4",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "rustix",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "whoosh-engine",
+ "whoosh-net",
+ "whoosh-proto",
+ "whoosh-store",
+]
+
+[[package]]
+name = "whoosh-desktop"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-window-state",
+]
+
+[[package]]
+name = "whoosh-engine"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures",
+ "hex",
+ "md-5",
+ "nix",
+ "percent-encoding",
+ "proptest",
+ "serde_json",
+ "sha1 0.10.7",
+ "sha2",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "whoosh-core",
+ "whoosh-proto",
+]
+
+[[package]]
+name = "whoosh-labserver"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "futures",
+ "h3",
+ "h3-quinn",
+ "http",
+ "http-body",
+ "http-body-util",
+ "httpdate",
+ "hyper",
+ "hyper-util",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "socket2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "toml 1.2.1+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "whoosh-core",
+]
+
+[[package]]
+name = "whoosh-net"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "futures",
+ "h2",
+ "h3",
+ "h3-quinn",
+ "http",
+ "http-body",
+ "http-body-util",
+ "httpdate",
+ "hyper",
+ "hyper-util",
+ "nix",
+ "percent-encoding",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "rustls-platform-verifier",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "url",
+ "whoosh-core",
+ "whoosh-labserver",
+ "whoosh-proto",
+]
+
+[[package]]
+name = "whoosh-nmhost"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "whoosh-proto",
+ "winreg",
+]
+
+[[package]]
+name = "whoosh-proto"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "getrandom 0.3.4",
+ "hmac",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "whoosh-store"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "crc32c",
+ "futures",
+ "libc",
+ "nix",
+ "proptest",
+ "rusqlite",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "whoosh-core",
+ "whoosh-proto",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

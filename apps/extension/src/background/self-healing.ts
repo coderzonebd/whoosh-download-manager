@@ -4,7 +4,7 @@
 // Implementation is Phase 2; until then a `needs_refresh` download waits for
 // the user to supply a new address in the app.
 
-import type { DownloadId, RequestContext, StateEvent } from "@vayu/api-client";
+import type { DownloadId, RequestContext, StateEvent } from "@whoosh/api-client";
 
 /** What the extension remembers about a download it handed over, to find a fresh URL later. */
 export interface Provenance {

@@ -9,7 +9,7 @@
 //! events. Pause, resume, remove, refresh-URL and settings work as the
 //! protocol says, including the error codes.
 //!
-//! Run it with `vayu-daemon --mock` so UIs, the CLI and the extension can be
+//! Run it with `whoosh-daemon --mock` so UIs, the CLI and the extension can be
 //! built against a running daemon before the engine exists.
 //!
 //! # URL hints
@@ -36,8 +36,8 @@ use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use vayu_proto::service::{Notification, Service, ServiceError, ServiceResult};
-use vayu_proto::{
+use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
+use whoosh_proto::{
     AddParams, AddResult, DownloadDetail, DownloadState, DownloadSummary, ErrorInfo, IdParams,
     IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent, ProgressItem,
     RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, Settings, StateEvent, Stats,
@@ -509,11 +509,11 @@ impl State {
             parse_url(mirror)?;
         }
         if let Some(c) = params.connections
-            && !(1..=vayu_proto::MAX_CONNECTIONS_PER_DOWNLOAD).contains(&c)
+            && !(1..=whoosh_proto::MAX_CONNECTIONS_PER_DOWNLOAD).contains(&c)
         {
             return Err(ServiceError::invalid_params(format!(
                 "connections must be 1–{}",
-                vayu_proto::MAX_CONNECTIONS_PER_DOWNLOAD
+                whoosh_proto::MAX_CONNECTIONS_PER_DOWNLOAD
             )));
         }
         let queue = match params.queue.as_deref().map(str::trim) {
@@ -1586,7 +1586,7 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, vayu_proto::error_code::INVALID_STATE);
+        assert_eq!(err.code, whoosh_proto::error_code::INVALID_STATE);
         // ...but continues after refreshUrl.
         mock.refresh_url(RefreshUrlParams {
             id: expire.clone(),
@@ -1635,7 +1635,7 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(missing.code, vayu_proto::error_code::NOT_FOUND);
+        assert_eq!(missing.code, whoosh_proto::error_code::NOT_FOUND);
 
         mock.resume(IdsParams {
             ids: vec![id.clone()],
@@ -1651,14 +1651,14 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, vayu_proto::error_code::INVALID_STATE);
+        assert_eq!(err.code, whoosh_proto::error_code::INVALID_STATE);
         let err = mock
             .pause(IdsParams {
                 ids: vec![id.clone()],
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, vayu_proto::error_code::INVALID_STATE);
+        assert_eq!(err.code, whoosh_proto::error_code::INVALID_STATE);
 
         let mut events = mock.subscribe();
         mock.remove(RemoveParams {
@@ -1673,7 +1673,7 @@ mod tests {
         ));
         assert_eq!(
             mock.get(IdParams { id }).await.unwrap_err().code,
-            vayu_proto::error_code::NOT_FOUND
+            whoosh_proto::error_code::NOT_FOUND
         );
     }
 
@@ -1784,11 +1784,11 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, vayu_proto::error_code::NETWORK);
+        assert_eq!(err.code, whoosh_proto::error_code::NETWORK);
         let err = mock.add(add("not a url")).await.unwrap_err();
         assert_eq!(err.code, -32602);
         let err = mock.add(add("ftp://example.com/x")).await.unwrap_err();
-        assert_eq!(err.code, vayu_proto::error_code::UNSUPPORTED);
+        assert_eq!(err.code, whoosh_proto::error_code::UNSUPPORTED);
         let live = mock
             .probe(ProbeParams {
                 url: "https://example.com/live/feed.ts".into(),

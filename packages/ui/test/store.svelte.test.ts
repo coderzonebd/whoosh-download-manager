@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createMockClient } from "@vayu/api-client/mock";
+import { createMockClient } from "@whoosh/api-client/mock";
 import { flushSync } from "svelte";
 import { describe, expect, it } from "vitest";
 import { DownloadStore } from "../src/lib/state/downloads.svelte.ts";

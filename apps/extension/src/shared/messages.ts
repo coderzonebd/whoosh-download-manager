@@ -21,22 +21,22 @@ export interface LinkInfo {
 
 /** Content script → background. */
 export type ContentMessage =
-  | { type: "vayu/preconnect"; url: string }
+  | { type: "whoosh/preconnect"; url: string }
   /** The user Alt+clicked: let the browser keep the next download. */
-  | { type: "vayu/bypass-next" };
+  | { type: "whoosh/bypass-next" };
 
 /** Background → content script. */
-export type CollectLinksMessage = { type: "vayu/collect-links"; scope: "all" | "selection" };
+export type CollectLinksMessage = { type: "whoosh/collect-links"; scope: "all" | "selection" };
 export interface CollectLinksReply {
   links: LinkInfo[];
 }
 
 /** Popup → background. */
 export type PopupMessage =
-  | { type: "vayu/popup-state"; tabId?: number; pageUrl?: string }
-  | { type: "vayu/set-capture"; enabled: boolean }
-  | { type: "vayu/set-site-excluded"; host: string; excluded: boolean }
-  | { type: "vayu/download-media"; url: string; pageUrl?: string };
+  | { type: "whoosh/popup-state"; tabId?: number; pageUrl?: string }
+  | { type: "whoosh/set-capture"; enabled: boolean }
+  | { type: "whoosh/set-site-excluded"; host: string; excluded: boolean }
+  | { type: "whoosh/download-media"; url: string; pageUrl?: string };
 
 export interface PopupState {
   status: ConnectionStatus;
@@ -58,10 +58,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 /** Narrows an untrusted message from a content script. */
 export function asContentMessage(value: unknown): ContentMessage | undefined {
   if (!isObject(value)) return undefined;
-  if (value["type"] === "vayu/preconnect" && typeof value["url"] === "string") {
-    return { type: "vayu/preconnect", url: value["url"] };
+  if (value["type"] === "whoosh/preconnect" && typeof value["url"] === "string") {
+    return { type: "whoosh/preconnect", url: value["url"] };
   }
-  if (value["type"] === "vayu/bypass-next") return { type: "vayu/bypass-next" };
+  if (value["type"] === "whoosh/bypass-next") return { type: "whoosh/bypass-next" };
   return undefined;
 }
 
@@ -71,23 +71,23 @@ export function asPopupMessage(value: unknown): PopupMessage | undefined {
   const optionalNumber = (v: unknown) => (typeof v === "number" ? v : undefined);
   const optionalString = (v: unknown) => (typeof v === "string" ? v : undefined);
   switch (value["type"]) {
-    case "vayu/popup-state": {
-      const msg: PopupMessage = { type: "vayu/popup-state" };
+    case "whoosh/popup-state": {
+      const msg: PopupMessage = { type: "whoosh/popup-state" };
       const tabId = optionalNumber(value["tabId"]);
       const pageUrl = optionalString(value["pageUrl"]);
       if (tabId !== undefined) msg.tabId = tabId;
       if (pageUrl !== undefined) msg.pageUrl = pageUrl;
       return msg;
     }
-    case "vayu/set-capture":
-      return typeof value["enabled"] === "boolean" ? { type: "vayu/set-capture", enabled: value["enabled"] } : undefined;
-    case "vayu/set-site-excluded":
+    case "whoosh/set-capture":
+      return typeof value["enabled"] === "boolean" ? { type: "whoosh/set-capture", enabled: value["enabled"] } : undefined;
+    case "whoosh/set-site-excluded":
       return typeof value["host"] === "string" && typeof value["excluded"] === "boolean"
-        ? { type: "vayu/set-site-excluded", host: value["host"], excluded: value["excluded"] }
+        ? { type: "whoosh/set-site-excluded", host: value["host"], excluded: value["excluded"] }
         : undefined;
-    case "vayu/download-media": {
+    case "whoosh/download-media": {
       if (typeof value["url"] !== "string") return undefined;
-      const msg: PopupMessage = { type: "vayu/download-media", url: value["url"] };
+      const msg: PopupMessage = { type: "whoosh/download-media", url: value["url"] };
       const pageUrl = optionalString(value["pageUrl"]);
       if (pageUrl !== undefined) msg.pageUrl = pageUrl;
       return msg;

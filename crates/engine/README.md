@@ -1,23 +1,23 @@
-# vayu-engine
+# whoosh-engine
 
-The download engine. `Engine` implements `vayu_proto::service::Service` (the
-local API as a Rust trait) on top of the `vayu-core` seams:
+The download engine. `Engine` implements `whoosh_proto::service::Service` (the
+local API as a Rust trait) on top of the `whoosh-core` seams:
 
 | Seam | Trait | Implemented by (at integration) | In tests |
 |---|---|---|---|
-| bytes in | `SourceFactory`, `RangeSource` | `vayu-net` | `vayu_core::testing::MemSourceFactory` + `FaultSource` (tests/common) |
-| bytes out | `StorageProvider`, `Storage` | `vayu-store` | `MemStorageProvider`, `CrashFs` (tests/common) |
-| crash safety | `Journal` | `vayu-store` | `MemJournal` |
-| everything else | `StateStore` | `vayu-store` | `MemStateStore` |
+| bytes in | `SourceFactory`, `RangeSource` | `whoosh-net` | `whoosh_core::testing::MemSourceFactory` + `FaultSource` (tests/common) |
+| bytes out | `StorageProvider`, `Storage` | `whoosh-store` | `MemStorageProvider`, `CrashFs` (tests/common) |
+| crash safety | `Journal` | `whoosh-store` | `MemJournal` |
+| everything else | `StateStore` | `whoosh-store` | `MemStateStore` |
 
-It never depends on `vayu-net` or `vayu-store`; the daemon wires them in.
+It never depends on `whoosh-net` or `whoosh-store`; the daemon wires them in.
 
 ## Usage
 
 ```rust
 use std::sync::Arc;
-use vayu_engine::{Engine, EngineConfig, EngineDeps};
-use vayu_proto::service::Service;
+use whoosh_engine::{Engine, EngineConfig, EngineDeps};
+use whoosh_proto::service::Service;
 
 let engine: Arc<Engine> = Engine::start(
     EngineDeps { sources, storage, journal, state }, // Arc<dyn …> each
@@ -207,7 +207,7 @@ throughput swings ±30 % second to second:
 
 In a link model with the reported conditions (±30 % noise, ±25 % drift over
 40 s, 300 ms TTFB, slow start with a 0.8 s time constant; 100 seeds, 180 s,
-`cargo test -p vayu-engine --lib outcome_statistics -- --ignored
+`cargo test -p whoosh-engine --lib outcome_statistics -- --ignored
 --nocapture`), final accepted count and mean throughput:
 
 | link | single 200 ms windows, 15 %, start 4 (the old behaviour) | this tuner, start 4 | this tuner, start 8 (default) |
@@ -311,7 +311,7 @@ restart); also on pause, shutdown, `needs_refresh` and failure. Time-based
 checkpoints are spaced by what the last one cost: never sooner than its
 duration divided by `checkpoint_share` (5 %), up to
 `checkpoint_interval_max` (30 s); `checkpoint_bytes` (a byte trigger) is off
-by default. Since `vayu-store` syncs on a thread of its own (a2c1e0c), a
+by default. Since `whoosh-store` syncs on a thread of its own (a2c1e0c), a
 flush no longer stops its writer, so while a transfer runs the engine also
 flushes (and, when resumable, commits) every `writeback_bytes` (16 MiB) of
 new data whenever no flush is in flight, checked every `writeback_check`
@@ -360,7 +360,7 @@ bytes to the operating system instead (`Storage::write_out`, then
 `Storage::finish_unsynced`), skips that last sync (a saved record survives a
 killed process) and the writeback flushes during a transfer (nothing is
 forced to disk at the end either). It keeps both guarantees against a
-killed or crashed vayu — the journal never claims a byte not yet handed to
+killed or crashed Whoosh — the journal never claims a byte not yet handed to
 the operating system, and a kill between the rename and the record update
 never leads to a duplicate — but gives up the power cut: files finished, or
 progress journalled, in the last seconds before one may be damaged.
@@ -379,7 +379,7 @@ trimmed set is committed before any
 connection overwrites the dropped bytes. A ranged start with nothing
 journalled (a new download, a crash before the first commit, a journal of
 another size) always starts from an empty in-progress file: whatever an
-existing `<name>.vayu-part` holds (say, a removed download that kept its
+existing `<name>.whoosh-part` holds (say, a removed download that kept its
 files) is never moved along into the finished file.
 
 **Finishing is crash-consistent, in every mode.** Before every rename
@@ -411,7 +411,7 @@ power goes:
   download runs normally.
 
 A journal written by the interim version of this (5a1c4dd: the name in
-`RemoteMeta::final_url` after a `vayu-finishing:` prefix) is still read,
+`RemoteMeta::final_url` after a `whoosh-finishing:` prefix) is still read,
 never written.
 
 **Checksums (#10).** `AddParams::checksum` (sha256/sha512/sha1/md5, hex,
@@ -425,10 +425,10 @@ type adds an extension to names without one. Every candidate is sanitised
 again (last path component only, no control or Windows-reserved characters,
 no leading/trailing dots or spaces, `CON`/`LPT1`… defused, ≤ 245 bytes keeping
 the extension) and the final path must be a single component inside the
-directory. Downloads write to `<name>.vayu-part`, unique among unfinished
+directory. Downloads write to `<name>.whoosh-part`, unique among unfinished
 downloads in that directory (chosen and stored in one critical section, so concurrent
 downloads never share one), then `Storage::finish`; a name ending in
-`.vayu-part` loses that suffix (it could be another download's part file);
+`.whoosh-part` loses that suffix (it could be another download's part file);
 on `AlreadyExists`:
 `name (1).ext`, `name (2).ext`, … (`a (1).tar.gz` keeps double extensions).
 A name the user chose (`AddParams::filename`, stored as
@@ -534,8 +534,8 @@ and ends every subscription.
 Run everything through the build-slot wrapper (ADR 0004):
 
 ```sh
-scripts/cargo-slot.sh cargo test -p vayu-engine
-scripts/cargo-slot.sh cargo clippy -p vayu-engine --all-targets -- -D warnings
+scripts/cargo-slot.sh cargo test -p whoosh-engine
+scripts/cargo-slot.sh cargo clippy -p whoosh-engine --all-targets -- -D warnings
 ```
 
 All engine tests run on tokio's paused clock: throttles, stalls and
@@ -554,7 +554,7 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | `tests/start.rs` (18) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models: careful 0.75 s / 0.50 s at 8, the fast climb 0.50 s / 0.38 s, the jump from the first connection's solo rate 0.40 s / 0.27 s (16 at once); a shared 20 MB/s limit does not jump; a link the first connection fills alone (64 MiB/s shared) drops back to one connection after the first window, never tries 16, and records 1 as the host's best count (peak 16 without the rule); a server capped at 2 refuses one wave of the jump, not all of it |
 | `tests/checkpoints.rs` (4) | a 400 ms flush spaces checkpoints 8 s apart (4–6 commits in 32 s instead of 14–18); a fresh download without a checksum commits only its finish intent, with a checksum one checkpoint before verifying; a fast 64 MiB transfer is flushed (and committed) every 16 MiB as it goes, a single stream flushed but journalled only at its finish |
 | `tests/props.rs` | proptest over random fault schedules (resets, stalls, 429s, refusals, slow starts, slow connections, caps, lying/no/unknown ranges, 0–2 file changes, validators on/off, `start` in one request or two): a completed file is exactly one version; failure only for `remote_changed` when the file changed more often than allowed. `PROPTEST_CASES=n` |
-| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Half the cases are `PowerSafe` and every kill a power cut (every write not flushed is lost); half `ProcessSafe` and every kill a killed process (`CrashFs` keeps what `write_out` handed to the operating system, loses the rest); a power cut is not modelled for `ProcessSafe`, which gives it up. After every kill the journal's claims are checked directly against what survived (so tail verification cannot hide a violation: skipping `write_out` before commits, or the flush before checkpoints, fails within ~80 cases). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. A power cut also removes a part file whose directory entry was never synced (`CrashFs` tracks it: a flush syncs it). In a quarter of the cases another program puts a file of the download's length under its name at a random moment of a random round: it must stay untouched, and the record must name the download's own file (`name (1)`). `VAYU_CRASH_CASES=n` (default 300), `VAYU_CRASH_SEED=s` |
+| `tests/crash.rs` | crash model: up to 5 random hard kills per case (runtime dropped mid-flight), then a new engine on the same journal/state/storage must finish with exactly the right bytes and exactly one finished file (a duplicate is a failure). Half the cases are `PowerSafe` and every kill a power cut (every write not flushed is lost); half `ProcessSafe` and every kill a killed process (`CrashFs` keeps what `write_out` handed to the operating system, loses the rest); a power cut is not modelled for `ProcessSafe`, which gives it up. After every kill the journal's claims are checked directly against what survived (so tail verification cannot hide a violation: skipping `write_out` before commits, or the flush before checkpoints, fails within ~80 cases). Modes: ranged (70 %), no ranges (15 %), unknown size (10 %), empty (5 %); half the cases start in one request. A power cut also removes a part file whose directory entry was never synced (`CrashFs` tracks it: a flush syncs it). In a quarter of the cases another program puts a file of the download's length under its name at a random moment of a random round: it must stay untouched, and the record must name the download's own file (`name (1)`). `WHOOSH_CRASH_CASES=n` (default 300), `WHOOSH_CRASH_SEED=s` |
 
 Beyond the defaults, the long batches were run on 2026-11-10: the crash
 model over seeds 0–3299, 5000–6999, 10000–11999, 20000–21999,
@@ -571,8 +571,8 @@ killed-process semantics, every kill followed by the direct check of the
 journal's claims) seeds 120000–122999 and 130000–132999 (6,000 cases) and
 4,000 schedules, all passing. Run
 them with the built test binaries, e.g.
-`VAYU_CRASH_SEED=300 VAYU_CRASH_CASES=3000 target/debug/deps/crash-*`.
-The real gate (1,000 hard kills of the daemon process with `vayu-store` on
+`WHOOSH_CRASH_SEED=300 WHOOSH_CRASH_CASES=3000 target/debug/deps/crash-*`.
+The real gate (1,000 hard kills of the daemon process with `whoosh-store` on
 disk) comes at integration.
 
 `FaultSource` (tests/common) serves in-memory versions of a file with
@@ -604,12 +604,12 @@ rate-limited 0.515 → 0.513, flaky 0.168 → 0.163, stall 0.162 → 0.154,
 slow-drip 0.298 → 0.296, high-latency 0.557 → 0.552, clean 10 MiB 0.036 /
 0.037, clean 1 GiB 1.207 → 1.130 (load ~4.6).
 
-**1 MiB.** In the gate, vayu's last byte left labserver as early as wget's
+**1 MiB.** In the gate, Whoosh's last byte left labserver as early as wget's
 (6.6–7.5 ms against 4.6–8.0) and its first byte was no later; the loss is
 the 12.5–15 ms from the last byte to exit (wget: 1.6–4). That is the
 power-safe chain: the part file's directory entry, the finish intent
 (which must follow it), the data `fdatasync`, then the move's directory
-sync, each an ext4 journal commit. Two changes in `vayu-store` shorten it:
+sync, each an ext4 journal commit. Two changes in `whoosh-store` shorten it:
 the journal file is created and its entry synced when the fresh download's
 `load` misses (the intent is then one `fdatasync`), and the data sync no
 longer queues behind the entry's sync. 30 interleaved runs, plain.bin, to
@@ -630,13 +630,13 @@ Closing the 1 MiB rows needs a finish without a separate intent commit
 record is durable, recognised by identity on restart): a contract change,
 not made here.
 
-`vayu-bench run --scenarios bangla-filename,global-throttle,per-conn-throttle,conn-cap-reset,rate-limited --clients vayu,wget,curl,mdm,gopeed,aria2-next-tuned --wait-for-idle`
+`whoosh-bench run --scenarios bangla-filename,global-throttle,per-conn-throttle,conn-cap-reset,rate-limited --clients whoosh,wget,curl,mdm,gopeed,aria2-next-tuned --wait-for-idle`
 on 1bcd317 (7 runs, labserver on loopback, a machine shared with other
 work), median time to durability:
 
-| Row | vayu | best rival | gate rows 1, 3, 4, 5 |
+| Row | Whoosh | best rival | gate rows 1, 3, 4, 5 |
 |---|---:|---:|---|
-| global-throttle | 498.6 ms | curl 513.4, wget 539.3 | PASS (vayu fastest) |
+| global-throttle | 498.6 ms | curl 513.4, wget 539.3 | PASS (Whoosh fastest) |
 | per-conn-throttle | 331.5 ms | gopeed 383.3 | PASS |
 | rate-limited | 509.5 ms | mdm 516.7 | PASS |
 | conn-cap-reset | 1067.9 ms | mdm 1043.7 (p = 0.456) | PASS |
@@ -653,12 +653,12 @@ that starts within 50 ms of the last one gets no burst, the first
 connection then reads 20 MB/s, which at loopback's 0.5 ms TTFB is under 16
 KiB per round trip, and the per-connection jump to 16 fires (judged a
 shared limit right after, with nothing cut). wget's runs split the same
-way (495–498 ms with the burst, 539–545 without); vayu's no-burst runs
+way (495–498 ms with the burst, 539–545 without); Whoosh's no-burst runs
 took 521–523.
 
 Verified on 1bcd317: engine, store and daemon tests; clippy `-D warnings`
 and fmt; crash model 6,000 cases (seeds 310000–315999) and 4,000
-proptests; `vayu-bench hardkill --kills 250` (seed 20261114): 597
+proptests; `whoosh-bench hardkill --kills 250` (seed 20261114): 597
 downloads, 0 corrupt, 0 leftovers, 0 unfinished.
 
 ### End-of-download sync chain (2026-11-13, gate run 2's failing rows)
@@ -670,17 +670,17 @@ directory sync, beside the intent's commit creating the journal file
 (`fdatasync`, journal directory, and in a fresh daemon the data directory),
 then the move's `fdatasync` and directory sync, about 12 ms. Changes (1ed8264):
 the early checkpoint carrying the intent, the last bytes' flush overlapping
-it, the 100 ms writeback, and in `vayu-store` a flush that skips the
+it, the 100 ms writeback, and in `whoosh-store` a flush that skips the
 `fdatasync` when nothing was written and journal directories synced in the
 background at open. After the last byte, 1 MiB now waits for the part's data
 sync and the new journal file's sync chain side by side, then the move
 (7.5–12 ms on this machine, mostly the journal chain).
 
 Time to durability, median ms (interleaved harness, resident daemon, fresh
-data directory per run, 20 runs; vayu-bench 10 runs per side for the
+data directory per run, 20 runs; whoosh-bench 10 runs per side for the
 `vs wget` columns, which ran back to back on a machine with other load):
 
-| Row | base | new | wget (vayu-bench) | new vs wget, p |
+| Row | base | new | wget (whoosh-bench) | new vs wget, p |
 |---|---:|---:|---:|---:|
 | clean 1 MiB | 28 | 25 | 19.4 (new 23.2) | 0.0008 |
 | bangla.bin 1 MiB | 25.8 | 23.3 | 19.6 | 0.026 |
@@ -693,7 +693,7 @@ data directory per run, 20 runs; vayu-bench 10 runs per side for the
 - The early intent alone (same build without it): 1 MiB 28 → 25 ms
   (p = 0.001), 10 MiB 40 → 36 ms (p = 0.023), 25 interleaved runs.
 - per-conn-throttle: base runs are multimodal (0.34 / 0.37 / 0.40 s; the
-  gate's own vayu runs spread 0.339–0.444 s), the new build's sit at
+  gate's own Whoosh runs spread 0.339–0.444 s), the new build's sit at
   0.33 s. With debug logging the last byte arrives at the same ~312 ms in
   both, and the part that reproduces is the end chain: 14–18 ms → 6–10 ms.
   The cause of base's slower modes is not pinned down.
@@ -711,7 +711,7 @@ data directory per run, 20 runs; vayu-bench 10 runs per side for the
   close most of it.
 - Verified on 5ee5a98: engine and store tests, crash model 6,000 cases
   (seeds 200000–205999, with the foreign same-length file and lost part
-  file entries) and 4,000 proptests, daemon tests, `vayu-bench hardkill
+  file entries) and 4,000 proptests, daemon tests, `whoosh-bench hardkill
   --kills 250` (seed 20261113): 468 downloads, 0 corrupt, 0 leftovers,
   0 unfinished.
 
@@ -721,7 +721,7 @@ The gate (`docs/bench/data/2026-11-12-pop-os-phase1-gate`) left clean
 1 GiB (1.39 s against wget's 0.912 s to durability; 17 connections, 2.60
 CPU-s/GiB), changing-file (0.265 s against 0.191 s) and the CPU of short
 files. Same harness as the rounds below (fresh daemon state per run, the
-daemon ready before the clock, `vayu --no-start get` timed), now with time
+daemon ready before the clock, `whoosh --no-start get` timed), now with time
 **to durability** (the output file and its directory `fsync`ed inside the
 timing, for every client) and CPU (the CLI's rusage plus the daemon's
 utime + stime until it goes quiet, as the gate counts it). *Base* is
@@ -768,8 +768,8 @@ a two-sided Mann-Whitney U test, CPU-s/GiB:
   the rest scales with bytes. One connection, 100 MiB to disk, per thread
   (schedstat): the runtime's worker 71 ms, the store's writer 64 ms, its
   syncer 13 ms — ~1.5 CPU-s/GiB against wget's ~0.8, nearly all in
-  `vayu-net`'s read path and `vayu-store`'s write path. The gate's 10 MiB
-  rows count the daemon in 10 ms ticks (vayu on cookie-required: 36, 46,
+  `whoosh-net`'s read path and `whoosh-store`'s write path. The gate's 10 MiB
+  rows count the daemon in 10 ms ticks (Whoosh on cookie-required: 36, 46,
   46, 46, 47, 56, 56 ms); in a quiet harness run the same download counted
   12 ms. The engine's share here is small: back-to-back record saves of one
   download now ride on one queued save (one or two fewer SQLite writes per
@@ -785,7 +785,7 @@ a two-sided Mann-Whitney U test, CPU-s/GiB:
   12 runs, noisy): the per-write cost of the store's queue offsets the
   copy. Kept at 256 KiB.
 - **Write gathering, again, with the store's inline writes** (5b4d08d: the
-  `pwrite` on the calling thread) and `vayu-net`'s 256 KiB read buffer
+  `pwrite` on the calling thread) and `whoosh-net`'s 256 KiB read buffer
   (7508665), merged as 2a0e763. Chunks now average 100 KiB on clean 1 GiB,
   330–470 KiB on flaky/stall/redirect-chain, 16–33 KiB on the paced
   scenarios. Gather (256 KiB) against every chunk straight to `write_at`
@@ -802,7 +802,7 @@ a two-sided Mann-Whitney U test, CPU-s/GiB:
   Only the two rounds with other work on the machine showed direct ahead
   on clean 1 GiB (CPU 1.11 → 0.89, p = 0.02 over 24 runs). Not kept: the
   gather stays at 256 KiB.
-- **Verified on 9dbf657:** `vayu-bench hardkill --kills 100` (seed
+- **Verified on 9dbf657:** `whoosh-bench hardkill --kills 100` (seed
   20261113): 234 downloads, 0 corrupt, 0 leftovers, 0 unfinished (also on
   7eaf9ca: 165 downloads, 0 corrupt); the crash model, 6,000 cases (seeds
   180000–182999, 190000–192999), and 4,000 proptest schedules.
@@ -811,12 +811,12 @@ a two-sided Mann-Whitney U test, CPU-s/GiB:
 
 The gate now times every client to durability (the bench syncs other
 clients' output). Same harness as below, this engine (1aadffb) with
-`vayu-store`'s `write_out` / `finish_unsynced` (0630a52, overlaid for the
+`whoosh-store`'s `write_out` / `finish_unsynced` (0630a52, overlaid for the
 measurement only), 6 runs per cell (engine scenarios 5), load 2–3 (this
 machine ran slower than in round 3's table). `+sync`: the file and its
 directory `fsync`ed after the client exits, inside the timing. Median s:
 
-| scenario | file | vayu PowerSafe | wget+sync | curl+sync | vayu ProcessSafe | wget | curl |
+| scenario | file | Whoosh PowerSafe | wget+sync | curl+sync | Whoosh ProcessSafe | wget | curl |
 |---|---|---:|---:|---:|---:|---:|---:|
 | clean | 1m | 0.024 | **0.008** | 0.015 | 0.012 | **0.004** | 0.009 |
 | clean | 10m | 0.047 | **0.021** | 0.026 | 0.029 | **0.010** | 0.016 |
@@ -828,7 +828,7 @@ directory `fsync`ed after the client exits, inside the timing. Median s:
 | changing-file | 100m | 0.284 | 0.176 | **0.156** | 0.227 | **0.110** | 0.124 |
 | redirect-chain | 100m | 0.185 | **0.172** | fails | 0.145 | **0.095** | fails |
 
-Engine scenarios, vayu PowerSafe / ProcessSafe: per-conn-throttle 0.373 /
+Engine scenarios, Whoosh PowerSafe / ProcessSafe: per-conn-throttle 0.373 /
 0.340, slow-drip 0.336 / 0.291, flaky 0.184 / 0.142, stall 0.175 / 0.161,
 global-throttle 0.542 / 0.519, rate-limited 0.600 / 0.533.
 
@@ -847,10 +847,10 @@ state store.
 
 The amended Phase 1 gate measures a resident daemon. Here: per run a fresh
 daemon state (no learned host profile), the daemon started and ready
-*before* the clock, which covers `vayu --no-start get` only; wget and curl
+*before* the clock, which covers `whoosh --no-start get` only; wget and curl
 plain; builds and clients interleaved in random order every run, labserver
 reset before each; 6 runs per cell (1 GiB: 4), load 1–3. *Base* is the
-merged `phase1/engine` (5462a10: last round's engine, `vayu-net`'s
+merged `phase1/engine` (5462a10: last round's engine, `whoosh-net`'s
 one-request `start`, the store's syncer thread); *now* is this branch.
 Median seconds:
 
@@ -887,7 +887,7 @@ rate-limited.
   without the backoff, and the faster finish path helps.
 - **global-throttle:** a tie. The first version of the jump used a 64 KiB
   bar and sent this one to 16 too: 0.519–0.520 s, where pinned to 1 or 8
-  connections vayu tied wget (0.493 / 0.496 vs 0.494) and pinned to 16 it
+  connections Whoosh tied wget (0.493 / 0.496 vs 0.494) and pinned to 16 it
   lost the same 20 ms; at 16 KiB (TCP's initial window) it does not jump.
 - **rate-limited, conn-caps:** +1–3 % against base, within run-to-run noise
   of these 6-run medians; the jump opens in a wave of 8, so a capped server
@@ -913,14 +913,14 @@ global-throttle numbers above.
 Measured on the Phase 1 bench machine (i5-10210U, 8 threads, NVMe,
 `dirty_bytes` 256 MiB / `dirty_background_bytes` 128 MiB, so the page cache
 does not absorb 1 GiB; load 2–4 from other sessions) with
-`vayu-bench run --clients vayu --scenarios … --runs 4 --force-runs`
+`whoosh-bench run --clients whoosh --scenarios … --runs 4 --force-runs`
 against daemon + CLI release builds of this branch before (2d8270b) and
-after, alternating builds round by round. `vayu-net` on this branch still
+after, alternating builds round by round. `whoosh-net` on this branch still
 uses the trait's default `start` (probe, then open: two requests), so the
 round trip `start` saves on `high-latency` is not in these numbers yet (the
 paused-clock model shows it: 1.04 s → 0.54 s).
 
-Median time (start of `vayu get` to the file complete, daemon start-up
+Median time (start of `whoosh get` to the file complete, daemon start-up
 included) over all rounds: before 32 runs per scenario, after 8 (flaky and
 stall: 56 and 32, from three extra rounds of just those two); wget and curl
 from one interleaved round of 4 for reference. Medians of 8 runs move by up
@@ -960,7 +960,7 @@ to ±10 % from round to round on this machine (`no-validators` measured
   download commits its journal once.
 - **clean 1 GiB:** time-based checkpoints (see below). Still behind wget,
   which neither syncs nor needs more than one connection here.
-- **high-latency:** unchanged until `vayu-net`'s one-request `start` is
+- **high-latency:** unchanged until `whoosh-net`'s one-request `start` is
   merged; the engine side is in (one connection, two requests instead of
   nine).
 - **global-throttle:** the fast climb now tries 16 for a moment before
@@ -1014,14 +1014,14 @@ throughput, CPU seconds per GB (median over runs) and `write_at` calls per
 GiB:
 
 ```sh
-scripts/cargo-slot.sh cargo build --release -p vayu-engine --example throughput
+scripts/cargo-slot.sh cargo build --release -p whoosh-engine --example throughput
 # GiB, chunk KiB, runs, storage (null|thread), MB/s per connection (0 = unpaced), connections
 target/release/examples/throughput 0.25 8 5 thread 4 16
-VAYU_COALESCE=0 target/release/examples/throughput 0.25 8 5 thread 4 16   # one write per chunk
+WHOOSH_COALESCE=0 target/release/examples/throughput 0.25 8 5 thread 4 16   # one write per chunk
 ```
 
 `null` storage discards writes inline (the engine's own cost). `thread`
-models `vayu-store`: a bounded 8 MiB buffer, one channel message to a writer
+models `whoosh-store`: a bounded 8 MiB buffer, one channel message to a writer
 thread per `write_at`, one `pwrite` per message into an unlinked temp file.
 With a per-connection rate the source paces chunks like a network, so the
 writer sleeps between writes as it does on a real link.
@@ -1072,7 +1072,7 @@ download's first connection). Applied in amendment 2: `Checkpoint::finishing`
 (the finish intent) and `StateStore::sync` (called after saving a completed
 record, before removing its journal entry).
 
-Applied in `vayu-store` (a2c1e0c): **`Storage::flush` no longer holds up
+Applied in `whoosh-store` (a2c1e0c): **`Storage::flush` no longer holds up
 later writes** (it syncs on a thread of its own), which the engine's
 writeback during transfers relies on.
 
@@ -1087,7 +1087,7 @@ guarantee `write_out` gives the data — so a `Journal::commit_unsynced` (or a
 durability argument) would take ~5 ms off every ProcessSafe finish, where
 the intent's commit is now the slowest step.
 
-Open, for `vayu-store` (no contract change): a download that finishes
+Open, for `whoosh-store` (no contract change): a download that finishes
 before its first checkpoint still pays, on its critical path, a directory
 `fsync` at the first flush of a new part file (1.5–1.8 ms; not needed for
 safety — an unsynced part-file entry only means a re-download, and the
@@ -1098,7 +1098,7 @@ now overlapped with the data flush). Early writeback inside the store
 (`sync_file_range(SYNC_FILE_RANGE_WRITE)` after large batches) could replace
 the engine's 16 MiB flushes more cheaply.
 
-Open, for the engine and `vayu-net` (option B of the changing-file item,
+Open, for the engine and `whoosh-net` (option B of the changing-file item,
 not needed for the gate): when a ranged request with `If-Range` comes back
 `200` with new validators, the source drops that body and reports
 `RemoteChanged`. Handing the body back instead (`RemoteChanged { fresh:

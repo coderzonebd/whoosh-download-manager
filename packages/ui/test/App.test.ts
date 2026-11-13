@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // The whole shell on the mock daemon, driven like a user would.
-import { createMockClient, type MockVayuClient } from "@vayu/api-client/mock";
+import { createMockClient, type MockWhooshClient } from "@whoosh/api-client/mock";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import App from "../src/components/App.svelte";
 import type { AppState } from "../src/lib/state/app.svelte.ts";
 
-let client: MockVayuClient | undefined;
+let client: MockWhooshClient | undefined;
 
 afterEach(() => {
   cleanup();
@@ -30,7 +30,7 @@ async function setup(opts: Parameters<typeof createMockClient>[0] = {}) {
 }
 
 const rows = (grid: HTMLElement) => within(grid).getAllByRole("row").filter((r) => r.dataset.rowId);
-const tick = (c: MockVayuClient, ms: number) => act(() => c.advance(ms));
+const tick = (c: MockWhooshClient, ms: number) => act(() => c.advance(ms));
 
 describe("App shell", () => {
   it("renders sidebar, toolbar, Classic grid with headers, and status bar", async () => {

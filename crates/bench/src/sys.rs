@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn hashing_and_ports() {
-        let p = std::env::temp_dir().join(format!("vayu-bench-sha-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("whoosh-bench-sha-{}", std::process::id()));
         std::fs::write(&p, b"abc").unwrap();
         assert_eq!(
             sha256_file(&p).unwrap(),

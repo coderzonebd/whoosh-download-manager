@@ -155,7 +155,7 @@ jobs:
           fi
           rustc --version
           # Strip build-machine paths from the binaries (reproducibility).
-          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/vayu --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/whoosh --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -209,7 +209,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           mkdir -p staging/exe
-          cp "target/$TARGET/release/vayu-desktop.exe" staging/exe/
+          cp "target/$TARGET/release/whoosh-desktop.exe" staging/exe/
       - name: Upload the unsigned executable
         id: unsigned-exe
         if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
@@ -232,7 +232,7 @@ jobs:
           output-artifact-directory: signed/exe
       - name: Use the signed executable
         if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
-        run: cp signed/exe/vayu-desktop.exe "target/$TARGET/release/vayu-desktop.exe"
+        run: cp signed/exe/whoosh-desktop.exe "target/$TARGET/release/whoosh-desktop.exe"
       - name: Bundle the installers
         if: runner.os == 'Windows'
         working-directory: apps/desktop
@@ -300,7 +300,7 @@ jobs:
             Windows)
               cp staging/installers/* out/
               # Portable build: the (signed) executable alone; needs the WebView2 runtime.
-              7z a -tzip -mx=9 "out/Vayu_${VERSION}_x64_portable.zip" "./target/$TARGET/release/vayu-desktop.exe" >/dev/null ;;
+              7z a -tzip -mx=9 "out/Whoosh_${VERSION}_x64_portable.zip" "./target/$TARGET/release/whoosh-desktop.exe" >/dev/null ;;
           esac
           ls -l out
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -337,7 +337,7 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
       TARGETS: ${{ matrix.targets }}
       PLATFORM: ${{ matrix.platform }}
-      BINARIES: vayu-nmhost vayu-labserver
+      BINARIES: whoosh-nmhost whoosh-labserver
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
       APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
     steps:
@@ -351,11 +351,11 @@ jobs:
           rustup toolchain install
           # shellcheck disable=SC2086 # TARGETS is a list
           rustup target add $TARGETS
-          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/vayu --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/whoosh --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
       - name: Build
         run: |
           for t in $TARGETS; do
-            cargo build --release --locked --target "$t" -p vayu-nmhost -p vayu-labserver
+            cargo build --release --locked --target "$t" -p whoosh-nmhost -p whoosh-labserver
           done
       - name: Stage the binaries
         run: |
@@ -426,7 +426,7 @@ jobs:
             dir="$b-$VERSION-$PLATFORM"
             mkdir -p "pkg/$dir"
             cp staging/bin/"$b"* LICENSE-APACHE "pkg/$dir/"
-            cp "crates/${b#vayu-}/README.md" "pkg/$dir/README.md"
+            cp "crates/${b#whoosh-}/README.md" "pkg/$dir/README.md"
             if [ "$RUNNER_OS" = Windows ]; then
               (cd pkg && 7z a -tzip -mx=9 "../out/$dir.zip" "$dir" >/dev/null)
             else
@@ -506,7 +506,7 @@ jobs:
           done
       - name: npm SBOMs (shipped apps, production dependencies)
         run: |
-          pnpm --filter @vayu/desktop --filter @vayu/extension sbom \
+          pnpm --filter @whoosh/desktop --filter @whoosh/extension sbom \
             --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --prod \
             --split --out "out/%s-%v.npm.cdx.json"
           ls -l out
@@ -543,8 +543,8 @@ jobs:
           path: dist
       - name: Source archive
         run: |
-          git archive --format=tar --prefix="vayu-$VERSION/" "$GITHUB_SHA" \
-            | gzip -n -9 > "dist/vayu-$VERSION-source.tar.gz"
+          git archive --format=tar --prefix="whoosh-$VERSION/" "$GITHUB_SHA" \
+            | gzip -n -9 > "dist/whoosh-$VERSION-source.tar.gz"
       - name: Updater manifest (latest.json)
         run: |
           node .github/scripts/updater-manifest.mjs dist "$VERSION" \
@@ -583,7 +583,7 @@ jobs:
               echo "Details: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/release.md#verifying-a-download"
               echo
             } > "$notes"
-            flags=(--draft --verify-tag --title "vayu $VERSION" --generate-notes --notes-file "$notes")
+            flags=(--draft --verify-tag --title "whoosh $VERSION" --generate-notes --notes-file "$notes")
             if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
             gh release create "$TAG" "${flags[@]}" dist/*
           fi

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The single source of design decisions for every vayu surface (desktop,
+// The single source of design decisions for every whoosh surface (desktop,
 // extension popup, mobile shell, web remote). `src/tokens.css` is generated
-// from this file by `pnpm --filter @vayu/design-tokens build`; a test fails
+// from this file by `pnpm --filter @whoosh/design-tokens build`; a test fails
 // when the two drift apart.
 //
 // Colour rules (checked by `test/contrast.test.ts`):

@@ -12,7 +12,7 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
-use vayu_proto::RequestContext;
+use whoosh_proto::RequestContext;
 
 use crate::ByteRange;
 
@@ -132,7 +132,7 @@ pub enum SourceError {
 }
 
 impl SourceError {
-    /// Stable code for [`vayu_proto::ErrorInfo::code`].
+    /// Stable code for [`whoosh_proto::ErrorInfo::code`].
     pub fn code(&self) -> &'static str {
         match self {
             Self::Transient(_) => "network",

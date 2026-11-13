@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use futures::future::{BoxFuture, FutureExt, Shared};
 use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::net::TcpStream;
-use vayu_core::SourceError;
+use whoosh_core::SourceError;
 
 use crate::classify::{Cause, Phase, io_cause, transport_error};
 use crate::lock;

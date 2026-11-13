@@ -1,6 +1,6 @@
 [package]
-name = "vayu-nmhost"
-description = "Native messaging host: relays the browser extension's JSON-RPC to the vayu daemon"
+name = "whoosh-nmhost"
+description = "Native messaging host: relays the browser extension's JSON-RPC to the whoosh daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ authors.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "vayu-nmhost"
+name = "whoosh-nmhost"
 path = "src/main.rs"
 
 [dependencies]
@@ -19,7 +19,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
-vayu-proto.workspace = true
+whoosh-proto.workspace = true
 
 [lints]
 workspace = true

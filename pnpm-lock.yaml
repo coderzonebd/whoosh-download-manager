@@ -181,13 +181,13 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.12.4
         version: 2.12.4
-      '@vayu/api-client':
+      '@whoosh/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
-      '@vayu/design-tokens':
+      '@whoosh/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
-      '@vayu/ui':
+      '@whoosh/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       svelte:
@@ -212,7 +212,7 @@ importers:
 
   apps/extension:
     dependencies:
-      '@vayu/api-client':
+      '@whoosh/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
     devDependencies:
@@ -261,10 +261,10 @@ importers:
 
   packages/ui:
     dependencies:
-      '@vayu/api-client':
+      '@whoosh/api-client':
         specifier: workspace:*
         version: link:../api-client
-      '@vayu/design-tokens':
+      '@whoosh/design-tokens':
         specifier: workspace:*
         version: link:../design-tokens
     devDependencies:

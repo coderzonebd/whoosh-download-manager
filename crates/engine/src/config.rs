@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use vayu_proto::Settings;
+use whoosh_proto::Settings;
 
 const MIB: u64 = 1024 * 1024;
 

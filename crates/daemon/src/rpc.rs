@@ -18,8 +18,8 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
-use vayu_proto::method;
-use vayu_proto::service::{Service, ServiceError};
+use whoosh_proto::method;
+use whoosh_proto::service::{Service, ServiceError};
 
 pub const PARSE_ERROR: i32 = -32700;
 pub const INVALID_REQUEST: i32 = -32600;
@@ -244,16 +244,16 @@ mod tests {
         assert!(no_params(Some(json!({}))).is_ok());
         assert!(no_params(Some(json!([]))).is_ok());
         assert_eq!(no_params(Some(json!({"a":1}))).unwrap_err().code, -32602);
-        let list: vayu_proto::ListParams = by_name(None).unwrap();
-        assert_eq!(list, vayu_proto::ListParams::default());
+        let list: whoosh_proto::ListParams = by_name(None).unwrap();
+        assert_eq!(list, whoosh_proto::ListParams::default());
         assert_eq!(
-            by_name::<vayu_proto::IdParams>(Some(json!(["dl_1"])))
+            by_name::<whoosh_proto::IdParams>(Some(json!(["dl_1"])))
                 .unwrap_err()
                 .code,
             -32602
         );
         assert_eq!(
-            by_name::<vayu_proto::IdParams>(Some(json!({})))
+            by_name::<whoosh_proto::IdParams>(Some(json!({})))
                 .unwrap_err()
                 .code,
             -32602

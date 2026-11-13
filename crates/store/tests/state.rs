@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use futures::future::join_all;
-use vayu_core::source::Protocol;
-use vayu_core::{DownloadRecord, HostProfile, StateStore};
-use vayu_proto::{Checksum, DownloadState, ErrorInfo, Header, RequestContext};
-use vayu_store::SqliteStateStore;
+use whoosh_core::source::Protocol;
+use whoosh_core::{DownloadRecord, HostProfile, StateStore};
+use whoosh_proto::{Checksum, DownloadState, ErrorInfo, Header, RequestContext};
+use whoosh_store::SqliteStateStore;
 
 /// A realistic record (~700 bytes of JSON, with a cookie).
 fn record(i: u64) -> DownloadRecord {
@@ -190,7 +190,7 @@ async fn files_are_owner_only() {
     use std::os::unix::fs::PermissionsExt;
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     let d = tempfile::tempdir().unwrap();
-    let dir = d.path().join("vayu");
+    let dir = d.path().join("whoosh");
     let path = dir.join("state.db");
     let s = SqliteStateStore::open(&path).await.unwrap();
     s.save_download(&record(1)).await.unwrap();

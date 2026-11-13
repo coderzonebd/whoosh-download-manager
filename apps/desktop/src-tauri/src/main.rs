@@ -3,5 +3,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    vayu_desktop_lib::run();
+    whoosh_desktop_lib::run();
 }

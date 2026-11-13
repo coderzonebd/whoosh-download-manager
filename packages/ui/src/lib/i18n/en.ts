@@ -4,7 +4,7 @@
 // is a plural message selected with Intl.PluralRules.
 
 export const en = {
-  "app.name": "Vayu",
+  "app.name": "Whoosh",
 
   "nav.label": "Library",
   "nav.downloads": "Downloads",
@@ -132,7 +132,7 @@ export const en = {
   "menu.label": "Actions for {name}",
 
   "add.title": "Add a download",
-  "add.description": "Paste a link. Vayu checks it first so you can see the file before it starts.",
+  "add.description": "Paste a link. Whoosh checks it first so you can see the file before it starts.",
   "add.url": "Address",
   "add.urlPlaceholder": "https://example.com/file.zip",
   "add.invalidUrl": "Enter a full address that starts with http://, https:// or ftp://",

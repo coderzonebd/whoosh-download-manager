@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <script lang="ts">
-  import type { Category } from "@vayu/api-client/categories";
+  import type { Category } from "@whoosh/api-client/categories";
   import Icon from "./Icon.svelte";
   import type { IconName } from "./icons.ts";
 

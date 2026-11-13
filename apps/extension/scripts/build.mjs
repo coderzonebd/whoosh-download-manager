@@ -4,7 +4,7 @@
 //   node scripts/build.mjs [--target chromium|firefox] [--store] [--zip]
 //
 // --store  omit the development `key` (store uploads must not carry it)
-// --zip    also write dist/vayu-<target>-<version>[-store].zip
+// --zip    also write dist/whoosh-<target>-<version>[-store].zip
 
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -61,7 +61,7 @@ for (const target of targets) {
 
   let line = `built dist/${target}`;
   if (values.zip) {
-    const zipName = `vayu-${target}-${version}${values.store ? "-store" : ""}.zip`;
+    const zipName = `whoosh-${target}-${version}${values.store ? "-store" : ""}.zip`;
     const count = zipDirectory(out, join(root, "dist", zipName));
     line += ` → dist/${zipName} (${count} files)`;
   }

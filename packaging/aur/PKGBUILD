@@ -4,12 +4,12 @@
 # host from the release source archive. Name, URLs and checksum are
 # placeholders until the product name and the repository are settled.
 
-pkgname=vayu
+pkgname=whoosh
 pkgver=0.0.1
 pkgrel=1
 pkgdesc='Fast, open-source download manager'
 arch=('x86_64' 'aarch64')
-url='https://github.com/coderzonebd/vayu'
+url='https://github.com/coderzonebd/whoosh'
 # Desktop app GPL-3.0-or-later; engine, protocol and native host Apache-2.0.
 license=('GPL-3.0-or-later' 'Apache-2.0')
 depends=(
@@ -28,24 +28,24 @@ depends=(
 makedepends=('cargo' 'nodejs' 'pnpm')
 # makepkg's LTO flags break Rust linking; the release profile already uses thin LTO.
 options=('!lto')
-source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/vayu-$pkgver-source.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/whoosh-$pkgver-source.tar.gz")
 # TEMPLATE: take the real hash from the release's SHA256SUMS.
 sha256sums=('SKIP')
 
-_appid=com.coderzonebd.vayu
+_appid=com.coderzonebd.whoosh
 
 prepare() {
-  cd "vayu-$pkgver"
+  cd "whoosh-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/^host: //p')"
   pnpm install --frozen-lockfile
 }
 
 build() {
-  cd "vayu-$pkgver"
+  cd "whoosh-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
   # Absolute: the Tauri CLI runs cargo from apps/desktop/src-tauri.
-  export CARGO_TARGET_DIR="$srcdir/vayu-$pkgver/target"
+  export CARGO_TARGET_DIR="$srcdir/whoosh-$pkgver/target"
   # Frontend + Rust binary, no Tauri bundles. Arch's nodejs has no corepack,
   # so call pnpm directly instead of the config's "corepack pnpm build".
   (
@@ -53,20 +53,20 @@ build() {
     pnpm tauri build --ci --no-bundle \
       --config '{"build":{"beforeBuildCommand":"pnpm build"}}' -- --frozen
   )
-  cargo build --release --frozen -p vayu-nmhost
+  cargo build --release --frozen -p whoosh-nmhost
 }
 
 check() {
-  cd "vayu-$pkgver"
+  cd "whoosh-$pkgver"
   export RUSTUP_TOOLCHAIN=stable
-  cargo test --frozen -p vayu-nmhost -p vayu-core -p vayu-proto
+  cargo test --frozen -p whoosh-nmhost -p whoosh-core -p whoosh-proto
 }
 
 package() {
-  cd "vayu-$pkgver"
+  cd "whoosh-$pkgver"
 
-  install -Dm755 target/release/vayu-desktop "$pkgdir/usr/bin/vayu-desktop"
-  install -Dm755 target/release/vayu-nmhost "$pkgdir/usr/bin/vayu-nmhost"
+  install -Dm755 target/release/whoosh-desktop "$pkgdir/usr/bin/whoosh-desktop"
+  install -Dm755 target/release/whoosh-nmhost "$pkgdir/usr/bin/whoosh-nmhost"
 
   install -Dm644 "packaging/linux/$_appid.desktop" "$pkgdir/usr/share/applications/$_appid.desktop"
   install -Dm644 "packaging/linux/$_appid.metainfo.xml" "$pkgdir/usr/share/metainfo/$_appid.metainfo.xml"
@@ -78,8 +78,8 @@ package() {
   # System-wide native messaging manifests. TEMPLATE: add the store
   # extension ids (--extension-id <chrome-web-store-id>) once published;
   # --no-dev-id keeps the public development id out of release installs.
-  local nmhost=target/release/vayu-nmhost
-  local hostargs=(--host-path /usr/bin/vayu-nmhost --no-dev-id)
+  local nmhost=target/release/whoosh-nmhost
+  local hostargs=(--host-path /usr/bin/whoosh-nmhost --no-dev-id)
   "$nmhost" --print-manifest firefox "${hostargs[@]}" > nm-firefox.json
   "$nmhost" --print-manifest chromium "${hostargs[@]}" > nm-chromium.json
   install -Dm644 nm-firefox.json "$pkgdir/usr/lib/mozilla/native-messaging-hosts/$_appid.json"

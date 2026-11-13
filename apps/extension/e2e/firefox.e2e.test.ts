@@ -10,18 +10,18 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const GECKO_ID = "vayu@coderzonebd.com";
-const HOST_NAME = "com.coderzonebd.vayu";
+const GECKO_ID = "whoosh@coderzonebd.com";
+const HOST_NAME = "com.coderzonebd.whoosh";
 const FILE_SIZE = 512 * 1024;
 const root = join(import.meta.dirname, "..");
 
 function findFirefox(): string | undefined {
-  const candidates = [process.env["VAYU_E2E_FIREFOX"], "/usr/bin/firefox", "/usr/local/bin/firefox"];
+  const candidates = [process.env["WHOOSH_E2E_FIREFOX"], "/usr/bin/firefox", "/usr/local/bin/firefox"];
   return candidates.find((p): p is string => !!p && existsSync(p));
 }
 
 const firefoxPath = process.platform === "linux" ? findFirefox() : undefined;
-if (!firefoxPath) console.warn("e2e: no Firefox found (set VAYU_E2E_FIREFOX); skipping");
+if (!firefoxPath) console.warn("e2e: no Firefox found (set WHOOSH_E2E_FIREFOX); skipping");
 
 interface LogEntry {
   argv?: string[];
@@ -79,7 +79,7 @@ class Bidi {
 }
 
 describe.skipIf(!firefoxPath)("Firefox extension ⇄ native host", () => {
-  const work = mkdtempSync(join(tmpdir(), "vayu-e2e-ff-"));
+  const work = mkdtempSync(join(tmpdir(), "whoosh-e2e-ff-"));
   const home = join(work, "home");
   const profile = join(work, "profile");
   const downloads = join(work, "downloads");
@@ -125,7 +125,7 @@ describe.skipIf(!firefoxPath)("Firefox extension ⇄ native host", () => {
     ];
     writeFileSync(join(profile, "user.js"), prefs.map(([k, v]) => `user_pref("${k}", ${JSON.stringify(v)});`).join("\n"));
 
-    // The same file `vayu-nmhost --register --browser firefox` writes, under a temporary HOME.
+    // The same file `whoosh-nmhost --register --browser firefox` writes, under a temporary HOME.
     const wrapper = join(work, "fake-host.sh");
     writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${join(root, "e2e", "fake-host.mjs")}" "$@"\n`);
     chmodSync(wrapper, 0o755);
@@ -173,8 +173,8 @@ describe.skipIf(!firefoxPath)("Firefox extension ⇄ native host", () => {
         ...process.env,
         HOME: home,
         XDG_CONFIG_HOME: join(home, ".config"),
-        VAYU_FAKE_HOST_LOG: hostLog,
-        VAYU_FAKE_HOST_CONTROL: control,
+        WHOOSH_FAKE_HOST_LOG: hostLog,
+        WHOOSH_FAKE_HOST_CONTROL: control,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

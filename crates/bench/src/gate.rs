@@ -1,5 +1,5 @@
 //! The Phase 1 gate (MASTER-PLAN §8, amended 2026-11-11), evaluated on a
-//! run set for one client (normally `vayu`, the daemon resident):
+//! run set for one client (normally `whoosh`, the daemon resident):
 //!
 //! 1. **Correct:** every run byte-exact; no corrupt files; no wrong names.
 //! 3. **Never slower:** no competitor significantly faster (two-sided
@@ -15,7 +15,7 @@
 //! 5. **Lean:** median CPU per GiB at or below every multi-connection
 //!    competitor's.
 //!
-//! Rules 2 (1,000 hard kills: `vayu-bench hardkill`) and 6 (real CDNs:
+//! Rules 2 (1,000 hard kills: `whoosh-bench hardkill`) and 6 (real CDNs:
 //! real-internet mode) are not judged from a labserver run set.
 //!
 //! Run sets recorded before `durable_s` existed fall back to the time to
@@ -23,7 +23,7 @@
 //!
 //! Statistics use successful runs only and need at least
 //! [`MIN_FOR_TEST`] of them on each side; competitors with fewer cannot be
-//! tested and are listed. Other builds of the same tool (`vayu-cold`) are
+//! tested and are listed. Other builds of the same tool (`whoosh-cold`) are
 //! not competitors.
 
 use std::collections::BTreeMap;
@@ -42,6 +42,9 @@ pub const ENGINE_SCENARIOS: &[&str] = &[
     "high-latency",
     "rate-limited",
 ];
+/// The client id of run sets recorded before the project was renamed to
+/// Whoosh (2026-11-13): its codename. `report` gates it when `whoosh` is absent.
+pub const LEGACY_CLIENT: &str = "vayu";
 /// Rule 3's significance level.
 pub const P_LIMIT: f64 = 0.01;
 /// Rule 3's small-file allowance applies to files up to this size.
@@ -507,8 +510,8 @@ mod tests {
             runs: 7,
             conn: Conn::Default,
             clients: vec![
-                client("vayu", "vayu"),
-                client("vayu-cold", "vayu"),
+                client("whoosh", "whoosh"),
+                client("whoosh-cold", "whoosh"),
                 client("aria2c-tuned", "aria2c"),
                 client("wget", "wget"),
             ],
@@ -556,7 +559,7 @@ mod tests {
                 .unwrap();
                 r.done_s = Some(t0 + f64::from(i) * step);
                 r.durable_s = Some(t0 + f64::from(i) * step + 0.001);
-                if client == "vayu" {
+                if client == "whoosh" {
                     r.resident = Some(ResidentUsage::default());
                 }
                 r
@@ -567,12 +570,12 @@ mod tests {
     #[test]
     fn passes_when_fastest_lean_and_correct() {
         let m = meta(&["stall"]);
-        let mut all = runs("vayu", "stall", 0.25, 0.001, 0.010, 16);
+        let mut all = runs("whoosh", "stall", 0.25, 0.001, 0.010, 16);
         all.extend(runs("aria2c-tuned", "stall", 8.0, 0.01, 0.030, 16));
         all.extend(runs("wget", "stall", 8.1, 0.01, 0.001, 1));
-        // vayu-cold is the same tool: slower or not, it is no competitor.
-        all.extend(runs("vayu-cold", "stall", 0.01, 0.001, 0.001, 16));
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        // whoosh-cold is the same tool: slower or not, it is no competitor.
+        all.extend(runs("whoosh-cold", "stall", 0.01, 0.001, 0.001, 16));
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         assert_eq!(g.rows.len(), 1);
         let r = &g.rows[0];
         assert!(r.correct.passed() && r.never_slower.passed(), "{r:?}");
@@ -600,26 +603,26 @@ mod tests {
         let m = meta(&["bangla-filename"]);
         // wget 8 ms faster on a 1 MiB file: significant, but inside the
         // allowance.
-        let mut all = small_runs("vayu", 0.022);
+        let mut all = small_runs("whoosh", 0.022);
         all.extend(small_runs("wget", 0.014));
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         match &g.rows[0].never_slower {
             Verdict::Pass(d) => assert!(d.contains("within the small-file allowance"), "{d}"),
             v => panic!("{v:?}"),
         }
         // 15 ms faster is outside it.
-        let mut all = small_runs("vayu", 0.030);
+        let mut all = small_runs("whoosh", 0.030);
         all.extend(small_runs("wget", 0.014));
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         assert!(
             matches!(g.rows[0].never_slower, Verdict::Fail(_)),
             "{:?}",
             g.rows[0]
         );
         // The allowance never applies above 4 MiB (10 MiB here).
-        let mut all = runs("vayu", "clean", 0.022, 0.0001, 0.01, 4);
+        let mut all = runs("whoosh", "clean", 0.022, 0.0001, 0.01, 4);
         all.extend(runs("wget", "clean", 0.014, 0.0001, 0.01, 1));
-        let g = evaluate(&meta(&["clean"]), &all, "vayu").unwrap();
+        let g = evaluate(&meta(&["clean"]), &all, "whoosh").unwrap();
         assert!(
             matches!(g.rows[0].never_slower, Verdict::Fail(_)),
             "{:?}",
@@ -630,9 +633,9 @@ mod tests {
     #[test]
     fn fails_when_a_competitor_is_significantly_faster() {
         let m = meta(&["clean"]);
-        let mut all = runs("vayu", "clean", 0.30, 0.001, 0.01, 4);
+        let mut all = runs("whoosh", "clean", 0.30, 0.001, 0.01, 4);
         all.extend(runs("wget", "clean", 0.10, 0.001, 0.01, 1));
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         let r = &g.rows[0];
         match &r.never_slower {
             Verdict::Fail(d) => assert!(d.contains("wget 0.104 s vs 0.304 s (p<0.001)"), "{d}"),
@@ -653,9 +656,9 @@ mod tests {
     fn ties_pass_and_the_five_percent_margin() {
         // Overlapping samples: wget's median is lower but not significantly.
         let m = meta(&["flaky"]);
-        let mut all = runs("vayu", "flaky", 1.00, 0.02, 0.02, 8);
+        let mut all = runs("whoosh", "flaky", 1.00, 0.02, 0.02, 8);
         all.extend(runs("aria2c-tuned", "flaky", 0.98, 0.02, 0.01, 16));
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         let r = &g.rows[0];
         assert!(r.never_slower.passed(), "{r:?}");
         // 1.06 vs 1.04: +1.9 %, within 5 %.
@@ -669,9 +672,9 @@ mod tests {
             "{r:?}"
         );
 
-        let mut slow = runs("vayu", "flaky", 1.20, 0.02, 0.001, 8);
+        let mut slow = runs("whoosh", "flaky", 1.20, 0.02, 0.001, 8);
         slow.extend(runs("aria2c-tuned", "flaky", 1.00, 0.02, 0.01, 16));
-        let g = evaluate(&m, &slow, "vayu").unwrap();
+        let g = evaluate(&m, &slow, "whoosh").unwrap();
         assert!(
             matches!(&g.rows[0].fastest, Verdict::Fail(d) if d.contains("+18.9 %")),
             "{:?}",
@@ -682,15 +685,15 @@ mod tests {
     #[test]
     fn rules_3_and_4_judge_time_to_durability() {
         // wget's file appears first, but its sync is slow: to durability,
-        // vayu (which synced before reporting done) is the faster one.
+        // whoosh (which synced before reporting done) is the faster one.
         let m = meta(&["slow-drip"]);
-        let mut all = runs("vayu", "slow-drip", 0.30, 0.001, 0.01, 8);
+        let mut all = runs("whoosh", "slow-drip", 0.30, 0.001, 0.01, 8);
         let mut w = runs("wget", "slow-drip", 0.10, 0.001, 0.01, 1);
         for r in &mut w {
             r.durable_s = r.done_s.map(|d| d + 0.40);
         }
         all.extend(w);
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         let r = &g.rows[0];
         assert!(
             matches!(&r.never_slower, Verdict::Pass(d) if d.contains("no competitor has a lower median")),
@@ -707,7 +710,7 @@ mod tests {
         for r in &mut all {
             r.durable_s = None;
         }
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         assert!(!g.rows[0].never_slower.passed(), "{:?}", g.rows[0]);
         assert!(
             g.caveats
@@ -721,12 +724,12 @@ mod tests {
     #[test]
     fn correctness_and_caveats() {
         let mut m = meta(&["changing-file"]);
-        let mut all = runs("vayu", "changing-file", 0.2, 0.001, 0.01, 8);
+        let mut all = runs("whoosh", "changing-file", 0.2, 0.001, 0.01, 8);
         all[0].outcome = Outcome::Corrupt;
         all[1].name_check = Some(crate::names::NameCheck::UrlName);
         all[2].machine_busy = true;
         all.truncate(6);
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         match &g.rows[0].correct {
             Verdict::Fail(d) => {
                 assert!(d.starts_with("5/6 byte-exact (1× CORRUPT)"), "{d}");
@@ -746,7 +749,7 @@ mod tests {
         for r in &mut all {
             r.resident = None;
         }
-        let g = evaluate(&m, &all, "vayu").unwrap();
+        let g = evaluate(&m, &all, "whoosh").unwrap();
         assert!(
             g.caveats
                 .iter()

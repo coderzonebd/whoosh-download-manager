@@ -2,7 +2,7 @@
 // Playground: the shared UI on the mock daemon. Query parameters:
 //   ?bulk=10000  add N synthetic downloads (virtualisation stress test)
 //   ?lang=bn     start in Bangla        ?latency=40  simulated RPC latency (ms)
-import { createMockClient } from "@vayu/api-client/mock";
+import { createMockClient } from "@whoosh/api-client/mock";
 import { mount } from "svelte";
 import { App } from "../src/index.ts";
 import "../src/styles/global.css";

@@ -6,9 +6,9 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import { verifyHelloProof } from "./auth";
-import { VayuConnectionError, VayuRpcError } from "./errors";
+import { WhooshConnectionError, WhooshRpcError } from "./errors";
 import { ErrorCode } from "./types";
-import { connectWs, type ConnectionStatus, type WsClientOptions, type WsVayuClient } from "./ws";
+import { connectWs, type ConnectionStatus, type WsClientOptions, type WsWhooshClient } from "./ws";
 
 interface Req {
   jsonrpc: "2.0";
@@ -21,7 +21,7 @@ type Handler = (req: Req, sock: ServerSocket) => unknown;
 
 /** The daemon's side of PROTOCOL.md §1 authentication, computed independently with node:crypto. */
 const proofFor = (token: string, nonce: unknown) =>
-  createHmac("sha256", token).update(`vayu-hello-proof-v1\n${String(nonce)}`).digest("hex");
+  createHmac("sha256", token).update(`whoosh-hello-proof-v1\n${String(nonce)}`).digest("hex");
 
 class FakeDaemon {
   readonly wss: WebSocketServer;
@@ -85,7 +85,7 @@ class FakeDaemon {
 }
 
 let daemon: FakeDaemon;
-let client: WsVayuClient | undefined;
+let client: WsWhooshClient | undefined;
 
 beforeEach(async () => {
   daemon = new FakeDaemon();
@@ -98,7 +98,7 @@ afterEach(async () => {
   await daemon.close();
 });
 
-function connect(extra: Partial<WsClientOptions> = {}): WsVayuClient {
+function connect(extra: Partial<WsClientOptions> = {}): WsWhooshClient {
   client = connectWs({
     url: extra.url ?? daemon.url,
     token: daemon.token,
@@ -156,16 +156,16 @@ describe("WebSocket client", () => {
     expect(b.id).toBe("b");
   });
 
-  it("maps JSON-RPC errors to VayuRpcError with the daemon's code", async () => {
+  it("maps JSON-RPC errors to WhooshRpcError with the daemon's code", async () => {
     daemon.handlers.set("download.resume", () => {
       throw { code: ErrorCode.InvalidState, message: "already complete" };
     });
     const c = connect();
     const err = await c.call("download.resume", { ids: ["x"] }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(VayuRpcError);
-    expect((err as VayuRpcError).isInvalidState).toBe(true);
-    expect((err as VayuRpcError).method).toBe("download.resume");
-    expect((err as VayuRpcError).message).toBe("already complete");
+    expect(err).toBeInstanceOf(WhooshRpcError);
+    expect((err as WhooshRpcError).isInvalidState).toBe(true);
+    expect((err as WhooshRpcError).method).toBe("download.resume");
+    expect((err as WhooshRpcError).message).toBe("already complete");
   });
 
   it("dispatches events to subscribers and stops after unsubscribe", async () => {
@@ -197,8 +197,8 @@ describe("WebSocket client", () => {
     await until(() => daemon.received.some((r) => r.method === "download.probe"));
     daemon.dropAll();
     const err = await inflight.catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(VayuConnectionError);
-    expect((err as VayuConnectionError).reason).toBe("connection_lost");
+    expect(err).toBeInstanceOf(WhooshConnectionError);
+    expect((err as WhooshConnectionError).reason).toBe("connection_lost");
 
     await until(() => c.status.state === "open");
     expect(tokenReads).toBe(2); // re-read on reconnect
@@ -260,7 +260,7 @@ describe("WebSocket client", () => {
     expect(daemon.received.every((r) => r.method === "session.hello")).toBe(true);
     expect(c.status.state).not.toBe("open");
     c.close();
-    await expect(pending).rejects.toBeInstanceOf(VayuConnectionError);
+    await expect(pending).rejects.toBeInstanceOf(WhooshConnectionError);
   });
 
   it("does not act on notifications before the proof is checked", async () => {
@@ -306,7 +306,7 @@ describe("WebSocket client", () => {
     c.close();
     await expect(p).rejects.toMatchObject({ reason: "closed" });
     expect(c.status).toEqual({ state: "closed", reason: "closed" });
-    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(VayuConnectionError);
+    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(WhooshConnectionError);
   });
 
   it("gives up after maxAttempts when the daemon is unreachable", async () => {
@@ -326,7 +326,7 @@ describe("hello proof", () => {
   // The same vector as crates/proto/src/auth.rs.
   const token = "test-token";
   const nonce = "00112233445566778899aabbccddeeff";
-  const proof = "e24aa162373347d76ec158c8507ca1a4157a8c521990640275c6d6c50ad548e4";
+  const proof = "1805e28c9c7c1323eea89e2da42f497108e2f9b8af12eee4039c6d96164cbdcb";
 
   it("accepts the shared test vector", async () => {
     expect(proofFor(token, nonce)).toBe(proof);

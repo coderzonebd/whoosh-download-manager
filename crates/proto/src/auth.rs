@@ -14,7 +14,7 @@ use sha2::Sha256;
 
 /// Domain separation for the proof, so the token's HMAC is never reused for
 /// anything else.
-pub const PROOF_CONTEXT: &str = "vayu-hello-proof-v1\n";
+pub const PROOF_CONTEXT: &str = "whoosh-hello-proof-v1\n";
 
 /// Random bytes in a nonce made by [`new_nonce`] (hex-encoded: 32 characters).
 pub const NONCE_BYTES: usize = 16;
@@ -99,7 +99,7 @@ mod tests {
     /// Computed independently with Python's `hmac` module.
     const VECTOR_TOKEN: &str = "test-token";
     const VECTOR_NONCE: &str = "00112233445566778899aabbccddeeff";
-    const VECTOR_PROOF: &str = "e24aa162373347d76ec158c8507ca1a4157a8c521990640275c6d6c50ad548e4";
+    const VECTOR_PROOF: &str = "1805e28c9c7c1323eea89e2da42f497108e2f9b8af12eee4039c6d96164cbdcb";
 
     #[test]
     fn proof_matches_the_shared_vector() {

@@ -14,10 +14,10 @@ use std::time::Duration;
 use bytes::Bytes;
 use common::*;
 use futures::future::BoxFuture;
-use vayu_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
-use vayu_core::{Storage, StorageProvider};
-use vayu_engine::{Engine, EngineConfig, EngineDeps, Tuning};
-use vayu_proto::service::Service;
+use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
+use whoosh_core::{Storage, StorageProvider};
+use whoosh_engine::{Engine, EngineConfig, EngineDeps, Tuning};
+use whoosh_proto::service::Service;
 
 const LONG: Duration = Duration::from_secs(600);
 
@@ -222,7 +222,7 @@ async fn gathered_bytes_survive_a_hedge_takeover_and_a_pause() {
     );
     let id = r.engine.add(add_params(URL)).await.unwrap().id;
     tokio::time::sleep(Duration::from_millis(400)).await;
-    let ids = vayu_proto::IdsParams {
+    let ids = whoosh_proto::IdsParams {
         ids: vec![id.clone()],
     };
     r.engine.pause(ids.clone()).await.unwrap();

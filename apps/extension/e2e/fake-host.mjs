@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A stand-in for vayu-nmhost in end-to-end tests: speaks native messaging on
+// A stand-in for whoosh-nmhost in end-to-end tests: speaks native messaging on
 // stdio, logs every message, and answers as the control file says:
 //   { "mode": "accept" | "error" | "slow", "delayMs"?: number }
 
 import { appendFileSync, readFileSync } from "node:fs";
 import { endianness } from "node:os";
 
-const LOG = process.env.VAYU_FAKE_HOST_LOG;
-const CONTROL = process.env.VAYU_FAKE_HOST_CONTROL;
+const LOG = process.env.WHOOSH_FAKE_HOST_LOG;
+const CONTROL = process.env.WHOOSH_FAKE_HOST_CONTROL;
 const LE = endianness() === "LE";
 
 function control() {
@@ -42,7 +42,7 @@ function handle(msg) {
     case "download.add": {
       const c = control();
       if (c.mode === "error") {
-        return send({ jsonrpc: "2.0", id: msg.id, error: { code: -32007, message: "the vayu daemon is not running" } });
+        return send({ jsonrpc: "2.0", id: msg.id, error: { code: -32007, message: "the whoosh daemon is not running" } });
       }
       const accept = () => reply({ id: `dl_e2e_${msg.id}` });
       if (c.mode === "slow") setTimeout(accept, c.delayMs ?? 2000);

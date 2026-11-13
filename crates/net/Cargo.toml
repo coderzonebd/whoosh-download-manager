@@ -1,5 +1,5 @@
 [package]
-name = "vayu-net"
+name = "whoosh-net"
 description = "The engine's network layer: HTTP/1.1, HTTP/2 and HTTP/3 range sources"
 version.workspace = true
 edition.workspace = true
@@ -13,8 +13,8 @@ bytes.workspace = true
 futures.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-vayu-core.workspace = true
-vayu-proto.workspace = true
+whoosh-core.workspace = true
+whoosh-proto.workspace = true
 
 base64 = "0.23"
 # Only to look inside hyper's HTTP/2 errors (REFUSED_STREAM, GOAWAY).
@@ -38,8 +38,8 @@ h3 = "0.0.8"
 h3-quinn = "0.0.10"
 
 [dev-dependencies]
-vayu-labserver = { path = "../labserver" }
-vayu-core = { workspace = true, features = ["testing"] }
+whoosh-labserver = { path = "../labserver" }
+whoosh-core = { workspace = true, features = ["testing"] }
 hyper = { version = "1", features = ["client", "server", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server"] }
 # A hostile HTTP/3 server in tests/h3_limits.rs; same features as labserver.

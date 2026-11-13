@@ -1,11 +1,11 @@
 <div align="center">
 
-<img src="apps/desktop/src-tauri/icons/vayu.svg" width="112" alt="vayu logo">
+<img src="apps/desktop/src-tauri/icons/whoosh.svg" width="112" alt="Whoosh logo">
 
-# vayu
+# Whoosh Download Manager
 
-**The download manager that proves it is fast.**<br>
-বায়ু: open-source, crash-proof, and measured against every competitor in public.
+**WDM: the download manager that proves it is fast.**<br>
+Open-source, crash-proof, and measured against every competitor in public.
 
 [![License: Apache-2.0 / GPL-3.0](https://img.shields.io/badge/license-Apache--2.0%20%2F%20GPL--3.0-2f74ec)](LICENSE.md)
 [![Rust](https://img.shields.io/badge/engine-Rust-6a4bd8?logo=rust)](crates)
@@ -19,13 +19,13 @@
 
 ---
 
-> **Status: Phase 1 (the engine) is released as v0.1.0.** The engine, daemon and CLI work today on Linux. The desktop app and the browser extension arrive in Phase 2 (v1.0). `vayu` is a working codename.
+> **Status: Phase 1 (the engine) is released as v0.1.0.** The engine, daemon and CLI work today on Linux. The desktop app and the browser extension arrive in Phase 2 (v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
 
 ## Measured, not claimed
 
-Every number below comes from [`vayu-bench`](crates/bench). It runs vayu and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
+Every number below comes from [`whoosh-bench`](crates/bench). It runs Whoosh and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
 
-| | vayu | Best competitor |
+| | Whoosh | Best competitor |
 |---|---|---|
 | **Correct files** | **175 / 175 runs byte-exact**, 0 wrong names | Gopeed: 14 corrupt files · Surge: 1 corrupt file |
 | **Crash test**: 1,000 × `kill -9` mid-download | **0 corrupt, 0 duplicates** (1,584 downloads) | not measured by anyone else |
@@ -37,7 +37,7 @@ Every number below comes from [`vayu-bench`](crates/bench). It runs vayu and nin
 
 <sub>Run sets <a href="docs/bench/data/2026-11-13-pop-os-phase1-gate4/report.md">2026-11-13-pop-os-phase1-gate4</a>, <a href="docs/bench/data/2026-11-13-pop-os-phase1-hardkill-9665f1b">hardkill-9665f1b</a> and <a href="docs/bench/data/2026-11-13-pop-os-phase1-cdn3/report.md">cdn3</a>: Pop!_OS laptop, loopback and real internet. Times are to the file being safely on disk. Competitors: curl, wget, aria2c, aria2-next, Mister DM, Surge, Gopeed. Lower is better.</sub>
 
-vayu doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
+Whoosh doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
 
 ## What the engine does today
 
@@ -59,23 +59,23 @@ vayu doesn't call a download done until the bytes are synced to disk, so a power
   - Bangla and other Unicode file names (RFC 5987), with path-traversal protection.
 - **Download manager basics:** queues, categories, a global speed limit, pause and resume, checksums, mirrors.
 - **One daemon, many clients:**
-  - `vayu-daemon` with a local, token-protected JSON-RPC/WebSocket API ([protocol](docs/api/PROTOCOL.md));
-  - the `vayu` CLI;
+  - `whoosh-daemon` with a local, token-protected JSON-RPC/WebSocket API ([protocol](docs/api/PROTOCOL.md));
+  - the `whoosh` CLI;
   - a native-messaging host for the browser extension.
 
 ## Quick start
 
 ```bash
 # build (Rust toolchain pinned in rust-toolchain.toml)
-cargo build --release -p vayu-cli -p vayu-daemon
+cargo build --release -p whoosh-cli -p whoosh-daemon
 
 # download: the daemon starts on first use and keeps running
-target/release/vayu get https://example.com/big.iso -o ~/Downloads
+target/release/whoosh get https://example.com/big.iso -o ~/Downloads
 
 # queue a few, watch them, inspect one
-target/release/vayu add https://example.com/a.zip https://example.com/b.zip --queue night
-target/release/vayu watch
-target/release/vayu info <id>
+target/release/whoosh add https://example.com/a.zip https://example.com/b.zip --queue night
+target/release/whoosh watch
+target/release/whoosh info <id>
 ```
 
 All commands are listed in [`crates/cli`](crates/cli/README.md). To benchmark on your own machine, see [`docs/bench`](docs/bench/README.md).
@@ -84,13 +84,13 @@ All commands are listed in [`crates/cli`](crates/cli/README.md). To benchmark on
 
 ```mermaid
 flowchart LR
-  ext[Browser extension] -- native messaging --> nm[vayu-nmhost]
-  cli[vayu CLI] -- JSON-RPC / WebSocket --> d
+  ext[Browser extension] -- native messaging --> nm[whoosh-nmhost]
+  cli[whoosh CLI] -- JSON-RPC / WebSocket --> d
   ui[Desktop app · Phase 2] -- JSON-RPC / WebSocket --> d
-  nm --> d[vayu-daemon]
-  d --> e[vayu-engine<br/>scheduler · tuner · journal]
-  e --> n[vayu-net<br/>H1 · H2 · H3 · TLS]
-  e --> s[vayu-store<br/>files · journal · SQLite]
+  nm --> d[whoosh-daemon]
+  d --> e[whoosh-engine<br/>scheduler · tuner · journal]
+  e --> n[whoosh-net<br/>H1 · H2 · H3 · TLS]
+  e --> s[whoosh-store<br/>files · journal · SQLite]
 ```
 
 | Path | What |

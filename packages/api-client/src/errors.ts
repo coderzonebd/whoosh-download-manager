@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Typed errors shared by every VayuClient transport (WebSocket, mock, …).
+// Typed errors shared by every WhooshClient transport (WebSocket, mock, …).
 
 import { ErrorCode } from "./types";
 
@@ -27,8 +27,8 @@ export const CloseCode = {
 } as const;
 
 /** The daemon answered a request with a JSON-RPC error object. */
-export class VayuRpcError extends Error {
-  override readonly name = "VayuRpcError";
+export class WhooshRpcError extends Error {
+  override readonly name = "WhooshRpcError";
   readonly code: number;
   readonly data: unknown;
   /** The method that failed, when known. */
@@ -73,8 +73,8 @@ export type ConnectionErrorReason =
   | "gave_up";
 
 /** The request never got an answer because of the transport, not the daemon. */
-export class VayuConnectionError extends Error {
-  override readonly name = "VayuConnectionError";
+export class WhooshConnectionError extends Error {
+  override readonly name = "WhooshConnectionError";
   readonly reason: ConnectionErrorReason;
 
   constructor(reason: ConnectionErrorReason, message?: string) {
@@ -83,10 +83,10 @@ export class VayuConnectionError extends Error {
   }
 }
 
-export function isVayuRpcError(e: unknown): e is VayuRpcError {
-  return e instanceof VayuRpcError;
+export function isWhooshRpcError(e: unknown): e is WhooshRpcError {
+  return e instanceof WhooshRpcError;
 }
 
-export function isVayuConnectionError(e: unknown): e is VayuConnectionError {
-  return e instanceof VayuConnectionError;
+export function isWhooshConnectionError(e: unknown): e is WhooshConnectionError {
+  return e instanceof WhooshConnectionError;
 }

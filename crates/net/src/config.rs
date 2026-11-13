@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-/// `User-Agent` sent when the [`RequestContext`](vayu_proto::RequestContext)
+/// `User-Agent` sent when the [`RequestContext`](whoosh_proto::RequestContext)
 /// has none: an honest product token, like `curl/8.x` or `Wget/1.x`. When
 /// a download comes from the browser extension, the context carries the
 /// browser's own `User-Agent` and that is sent instead, so sites that
 /// serve different files per browser behave as they did in the browser.
-pub const DEFAULT_USER_AGENT: &str = concat!("vayu/", env!("CARGO_PKG_VERSION"));
+pub const DEFAULT_USER_AGENT: &str = concat!("whoosh/", env!("CARGO_PKG_VERSION"));
 
 /// Settings for [`HttpSourceFactory`](crate::HttpSourceFactory).
 ///

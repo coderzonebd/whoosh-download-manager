@@ -21,8 +21,8 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Role, WebSocketConfig};
-use vayu_proto::RPC_PATH;
-use vayu_proto::service::Service;
+use whoosh_proto::RPC_PATH;
+use whoosh_proto::service::Service;
 
 use crate::config::DaemonConfig;
 use crate::limit::{Budget, Limited};

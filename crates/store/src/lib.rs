@@ -1,20 +1,20 @@
-//! `vayu-store`: where the engine's bytes and state go.
+//! `whoosh-store`: where the engine's bytes and state go.
 //!
 //! | Type | Implements | What it is |
 //! |---|---|---|
-//! | [`FileStorageProvider`] / [`FileStorage`] | [`vayu_core::StorageProvider`] / [`vayu_core::Storage`] | preallocated in-progress files, positional writes through a bounded, coalescing per-file buffer, no-replace final move |
-//! | [`FileJournal`] | [`vayu_core::Journal`] | one two-slot, CRC32C-checksummed file per download |
-//! | [`SqliteStateStore`] | [`vayu_core::StateStore`] | SQLite (WAL) on a dedicated thread, batched writes, owner-only files |
+//! | [`FileStorageProvider`] / [`FileStorage`] | [`whoosh_core::StorageProvider`] / [`whoosh_core::Storage`] | preallocated in-progress files, positional writes through a bounded, coalescing per-file buffer, no-replace final move |
+//! | [`FileJournal`] | [`whoosh_core::Journal`] | one two-slot, CRC32C-checksummed file per download |
+//! | [`SqliteStateStore`] | [`whoosh_core::StateStore`] | SQLite (WAL) on a dedicated thread, batched writes, owner-only files |
 //!
 //! Callers choose every path: the daemon owns the data directory.
 //!
 //! ```no_run
 //! # async fn demo() -> std::io::Result<()> {
-//! use vayu_store::{FileJournal, FileStorageProvider, SqliteStateStore, StorageOptions};
+//! use whoosh_store::{FileJournal, FileStorageProvider, SqliteStateStore, StorageOptions};
 //!
 //! let files = FileStorageProvider::new(StorageOptions::default());
-//! let journal = FileJournal::open("/home/me/.local/share/vayu/journal")?;
-//! let state = SqliteStateStore::open("/home/me/.local/share/vayu/state.db").await?;
+//! let journal = FileJournal::open("/home/me/.local/share/whoosh/journal")?;
+//! let state = SqliteStateStore::open("/home/me/.local/share/whoosh/state.db").await?;
 //! # Ok(()) }
 //! ```
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 /** Native messaging host name (`docs/api/PROTOCOL.md` §1). */
-export const HOST_NAME = "com.coderzonebd.vayu";
+export const HOST_NAME = "com.coderzonebd.whoosh";
 
 /**
  * File types captured by default (lower-case extensions, no dot). Roughly the

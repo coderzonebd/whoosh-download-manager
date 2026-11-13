@@ -47,7 +47,7 @@ function setup(options: { idleMs?: number } = {}) {
   let clock = 0;
   const transport = new NativeMessagingTransport({
     connectNative: (name) => {
-      expect(name).toBe("com.coderzonebd.vayu");
+      expect(name).toBe("com.coderzonebd.whoosh");
       const port = new FakePort();
       ports.push(port);
       return port;
@@ -146,7 +146,7 @@ describe("NativeMessagingTransport", () => {
   it("reads Firefox's port.error", async () => {
     const { transport, port } = setup();
     const pending = transport.call("stats.get", undefined);
-    port().drop("No such native application com.coderzonebd.vayu");
+    port().drop("No such native application com.coderzonebd.whoosh");
     await expect(pending).rejects.toMatchObject({ kind: "host-missing" });
   });
 
@@ -240,9 +240,9 @@ describe("NativeMessagingTransport", () => {
 describe("classifyDisconnect", () => {
   it.each([
     ["Specified native messaging host not found.", "host-missing"],
-    ["No such native application com.coderzonebd.vayu", "host-missing"],
+    ["No such native application com.coderzonebd.whoosh", "host-missing"],
     ["Access to the specified native messaging host is forbidden.", "forbidden"],
-    ["This extension does not have permission to use native application com.coderzonebd.vayu", "forbidden"],
+    ["This extension does not have permission to use native application com.coderzonebd.whoosh", "forbidden"],
     ["Native host has exited.", "disconnected"],
     [undefined, "disconnected"],
   ])("%s → %s", (message, kind) => {

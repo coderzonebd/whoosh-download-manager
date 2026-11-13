@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use vayu_proto::{
+use whoosh_proto::{
     AddParams, AddResult, Checksum, DownloadDetail, DownloadSummary, Durability, Header, IdParams,
     IdsParams, ListParams, PreconnectParams, RemoveParams, RequestContext, Settings, method,
 };
@@ -45,7 +45,7 @@ impl Ctx {
     pub fn print_json(&self, v: &impl Serialize) {
         match serde_json::to_string_pretty(v) {
             Ok(text) => println!("{text}"),
-            Err(e) => eprintln!("vayu: cannot encode the result: {e}"),
+            Err(e) => eprintln!("whoosh: cannot encode the result: {e}"),
         }
     }
 }
@@ -103,7 +103,7 @@ pub fn request_context(opts: &DownloadOpts) -> Result<Option<RequestContext>> {
     Ok((request != RequestContext::default()).then_some(request))
 }
 
-/// The URLs of `vayu add`: the arguments, then `-i FILE`'s lines, with
+/// The URLs of `whoosh add`: the arguments, then `-i FILE`'s lines, with
 /// blank entries and `#` comments skipped (a list pasted with empty lines
 /// between links must not add empty downloads).
 pub fn url_list(
@@ -272,7 +272,7 @@ pub async fn add(ctx: &Ctx, urls: Vec<String>, opts: &DownloadOpts, paused: bool
             }
             Err(e) => {
                 if !ctx.json {
-                    eprintln!("vayu: {url}: {e}");
+                    eprintln!("whoosh: {url}: {e}");
                 }
                 results.push(json!({ "url": url, "error": e.to_json()["error"] }));
                 first_error.get_or_insert(e);
@@ -333,7 +333,7 @@ pub async fn info(ctx: &Ctx, id: String) -> Result<u8> {
             },
         ),
     ];
-    if s.state == vayu_proto::DownloadState::Downloading {
+    if s.state == whoosh_proto::DownloadState::Downloading {
         let eta = s
             .eta_secs
             .map(|e| format!(", ETA {}", format::duration(e)))
@@ -605,7 +605,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                     }));
                 } else {
                     println!(
-                        "vayu-daemon {} is running (pid {}, port {})",
+                        "whoosh-daemon {} is running (pid {}, port {})",
                         hello.daemon_version, info.pid, info.port
                     );
                     println!("data dir:     {}", ctx.data_dir.display());
@@ -619,7 +619,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                         &json!({ "running": false, "reason": why, "dataDir": ctx.data_dir }),
                     );
                 } else {
-                    println!("vayu-daemon is not running ({why})");
+                    println!("whoosh-daemon is not running ({why})");
                 }
                 Ok(exit::DAEMON_UNAVAILABLE)
             }
@@ -631,7 +631,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                 if ctx.json {
                     ctx.print_json(&json!({ "stopped": true, "pid": pid }));
                 } else {
-                    println!("vayu-daemon stopped");
+                    println!("whoosh-daemon stopped");
                 }
                 Ok(exit::OK)
             }
@@ -641,7 +641,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                 if ctx.json {
                     ctx.print_json(&json!({ "stopped": false, "running": false, "reason": why }));
                 } else {
-                    println!("vayu-daemon is not running ({why})");
+                    println!("whoosh-daemon is not running ({why})");
                 }
                 Ok(exit::OK)
             }
@@ -654,7 +654,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                     ctx.print_json(&json!({ "started": false, "running": true, "pid": info.pid, "port": info.port }));
                 } else {
                     println!(
-                        "vayu-daemon is already running (pid {}, port {})",
+                        "whoosh-daemon is already running (pid {}, port {})",
                         info.pid, info.port
                     );
                 }
@@ -669,7 +669,10 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
             if ctx.json {
                 ctx.print_json(&json!({ "started": true, "running": true, "pid": info.pid, "port": info.port }));
             } else {
-                println!("vayu-daemon started (pid {}, port {})", info.pid, info.port);
+                println!(
+                    "whoosh-daemon started (pid {}, port {})",
+                    info.pid, info.port
+                );
             }
             Ok(exit::OK)
         }
@@ -814,7 +817,7 @@ mod tests {
 
     #[test]
     fn cookie_and_header_files() {
-        let dir = std::env::temp_dir().join(format!("vayu-cli-files-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("whoosh-cli-files-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cookie = dir.join("cookie");
         std::fs::write(&cookie, "session=abc; theme=dark\n").unwrap();
@@ -882,7 +885,7 @@ mod tests {
 
     #[test]
     fn url_lists_skip_blank_lines_and_comments() {
-        let dir = std::env::temp_dir().join(format!("vayu-cli-urls-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("whoosh-cli-urls-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("links.txt");
         // Pasted with empty lines between links, a comment and CRLF endings.

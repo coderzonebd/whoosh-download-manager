@@ -1,9 +1,9 @@
-# vayu-nmhost
+# whoosh-nmhost
 
-The native messaging host for the vayu browser extension (Pro mode). Browsers start it when the extension calls `runtime.connectNative("com.coderzonebd.vayu")`; it relays the extension's JSON-RPC to the daemon.
+The native messaging host for the Whoosh browser extension (Pro mode). Browsers start it when the extension calls `runtime.connectNative("com.coderzonebd.whoosh")`; it relays the extension's JSON-RPC to the daemon.
 
 ```
-extension ──native messaging (stdio)──▶ vayu-nmhost ──WebSocket + token──▶ vayu daemon
+extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket + token──▶ whoosh daemon
 ```
 
 The extension never opens the daemon's WebSocket and never sees its token (ADR 0003). License: Apache-2.0.
@@ -34,21 +34,21 @@ Request ids beginning with `nmhost:` are reserved for the host's own `session.he
 
 ```bash
 export CARGO_BUILD_JOBS=2
-cargo build -p vayu-nmhost --release
+cargo build -p whoosh-nmhost --release
 ```
 
-The binary is `target/release/vayu-nmhost`.
+The binary is `target/release/whoosh-nmhost`.
 
 ## Register with your browsers (development)
 
 ```bash
-target/release/vayu-nmhost --register
+target/release/whoosh-nmhost --register
 ```
 
 writes a manifest for every browser this user has a profile for (Chrome, Chromium, Brave, Edge, Vivaldi, Firefox) pointing at the binary you ran, and allows:
 
 - the development Chromium extension ID `clhjgofaikdmabdnebgcmdffdjenagfl` (pinned by the `key` in `apps/extension/scripts/manifest.mjs`),
-- the Firefox extension ID `vayu@coderzonebd.com`.
+- the Firefox extension ID `whoosh@coderzonebd.com`.
 
 Options:
 
@@ -63,7 +63,7 @@ Options:
 Move the binary? Run `--register` again. Remove everything with:
 
 ```bash
-target/release/vayu-nmhost --unregister
+target/release/whoosh-nmhost --unregister
 ```
 
 `--print-manifest chromium|firefox` prints a manifest instead of installing it (for packagers).
@@ -72,7 +72,7 @@ target/release/vayu-nmhost --unregister
 
 | OS | Browser | Location |
 |---|---|---|
-| Linux | Chrome | `~/.config/google-chrome/NativeMessagingHosts/com.coderzonebd.vayu.json` |
+| Linux | Chrome | `~/.config/google-chrome/NativeMessagingHosts/com.coderzonebd.whoosh.json` |
 | | Chromium | `~/.config/chromium/NativeMessagingHosts/…` |
 | | Brave | `~/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts/…` |
 | | Edge | `~/.config/microsoft-edge/NativeMessagingHosts/…` |
@@ -80,7 +80,7 @@ target/release/vayu-nmhost --unregister
 | | Firefox | `~/.mozilla/native-messaging-hosts/…` (and `$XDG_CONFIG_HOME/mozilla/native-messaging-hosts/` if that directory exists) |
 | macOS | Chrome / Chromium / Brave / Edge / Vivaldi | `~/Library/Application Support/<Google/Chrome, Chromium, BraveSoftware/Brave-Browser, Microsoft Edge, Vivaldi>/NativeMessagingHosts/…` |
 | | Firefox | `~/Library/Application Support/Mozilla/NativeMessagingHosts/…` |
-| Windows | all | manifest in `%LOCALAPPDATA%\vayu\nmhost\com.coderzonebd.vayu.{chromium,firefox}.json`; key `HKCU\Software\<Google\Chrome, Chromium, BraveSoftware\Brave-Browser, Microsoft\Edge, Vivaldi, Mozilla>\NativeMessagingHosts\com.coderzonebd.vayu` |
+| Windows | all | manifest in `%LOCALAPPDATA%\whoosh\nmhost\com.coderzonebd.whoosh.{chromium,firefox}.json`; key `HKCU\Software\<Google\Chrome, Chromium, BraveSoftware\Brave-Browser, Microsoft\Edge, Vivaldi, Mozilla>\NativeMessagingHosts\com.coderzonebd.whoosh` |
 
 `$XDG_CONFIG_HOME` is honoured on Linux. Browsers installed as Flatpak or Snap cannot start native hosts outside their sandbox without extra setup; that is out of scope here.
 
@@ -91,22 +91,22 @@ target/release/vayu-nmhost --unregister
 
 The daemon writes `runtime.json` (`{ "port", "token", "pid", "version" }`) to:
 
-- Linux: `$XDG_DATA_HOME/vayu` (default `~/.local/share/vayu`)
-- macOS: `~/Library/Application Support/vayu`
-- Windows: `%LOCALAPPDATA%\vayu`
+- Linux: `$XDG_DATA_HOME/whoosh` (default `~/.local/share/whoosh`)
+- macOS: `~/Library/Application Support/whoosh`
+- Windows: `%LOCALAPPDATA%\whoosh`
 
-`VAYU_DATA_DIR` overrides it (tests, portable installs); the daemon has to honour the same variable.
+`WHOOSH_DATA_DIR` overrides it (tests, portable installs); the daemon has to honour the same variable.
 
 ## Logging
 
-Stdout is the protocol channel, so the host logs to stderr only. Warnings are always printed; set `VAYU_NMHOST_LOG=debug` for more. Chrome shows a host's stderr when started with `--enable-logging=stderr`; Firefox shows it in the Browser Console.
+Stdout is the protocol channel, so the host logs to stderr only. Warnings are always printed; set `WHOOSH_NMHOST_LOG=debug` for more. Chrome shows a host's stderr when started with `--enable-logging=stderr`; Firefox shows it in the Browser Console.
 
 ## Tests
 
 ```bash
 export CARGO_BUILD_JOBS=2
-cargo test -p vayu-nmhost
-cargo clippy -p vayu-nmhost --all-targets -- -D warnings
+cargo test -p whoosh-nmhost
+cargo clippy -p whoosh-nmhost --all-targets -- -D warnings
 ```
 
 - `src/framing.rs`: framing unit tests (partial reads, truncation, oversize drain, the exact 1 MiB limit).

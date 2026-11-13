@@ -1,6 +1,6 @@
-//! Built-in categories by file extension (`vayu_proto::category`).
+//! Built-in categories by file extension (`whoosh_proto::category`).
 
-use vayu_proto::category;
+use whoosh_proto::category;
 
 use crate::names::split_extension;
 

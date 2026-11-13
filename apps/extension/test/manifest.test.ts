@@ -39,7 +39,7 @@ describe("manifest", () => {
   it("builds a Firefox manifest with background scripts and the gecko ID", () => {
     const m = manifestFor("firefox", { version: "1.2.3", store: false });
     expect(m.background).toEqual({ scripts: ["background.js"] });
-    expect(m.browser_specific_settings.gecko.id).toBe("vayu@coderzonebd.com");
+    expect(m.browser_specific_settings.gecko.id).toBe("whoosh@coderzonebd.com");
     expect(m.key).toBeUndefined();
   });
 

@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
-use vayu_labserver::{LabConfig, LabServer, Scenario};
+use whoosh_labserver::{LabConfig, LabServer, Scenario};
 
 /// Starts a server with only these `(name, toml)` scenarios.
 pub async fn lab(scenarios: &[(&str, &str)]) -> LabServer {

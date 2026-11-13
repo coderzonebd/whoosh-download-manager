@@ -677,74 +677,74 @@ impl Adapter for Manual {
     }
 }
 
-// ---------------------------------------------------------------- vayu --
+// ---------------------------------------------------------------- whoosh --
 
 /// Runs the daemon in the foreground, waits for its runtime file, then
-/// `vayu --no-start get`, then stops the daemon. `sh` is the measured
+/// `whoosh --no-start get`, then stops the daemon. `sh` is the measured
 /// child and waits for both, so `RUSAGE_CHILDREN` counts the daemon's CPU
 /// and memory too, and the time includes the daemon's start (like Gopeed's
 /// server). Positional parameters avoid any quoting of URLs or headers.
-const VAYU_SCRIPT: &str = r#"vayu="$1"; daemon="$2"; shift 2
-"$daemon" >"$VAYU_DATA_DIR.log" 2>&1 &
+const WHOOSH_SCRIPT: &str = r#"whoosh="$1"; daemon="$2"; shift 2
+"$daemon" >"$WHOOSH_DATA_DIR.log" 2>&1 &
 d=$!
 i=0
-while [ ! -s "$VAYU_DATA_DIR/runtime.json" ]; do
+while [ ! -s "$WHOOSH_DATA_DIR/runtime.json" ]; do
   kill -0 "$d" 2>/dev/null || exit 3
   i=$((i + 1))
   if [ "$i" -gt 2000 ]; then kill "$d"; wait "$d"; exit 3; fi
   sleep 0.005
 done
-"$vayu" --no-start get "$@"
+"$whoosh" --no-start get "$@"
 rc=$?
 kill "$d"
 wait "$d"
 exit "$rc"
 "#;
 
-/// vayu, cold one-shot: the daemon starts inside the measured window and
+/// whoosh, cold one-shot: the daemon starts inside the measured window and
 /// stops at its end (Unix only: the wrapper is a POSIX shell script).
 /// Reported alongside, not gating (MASTER-PLAN §8, Phase 1 gate).
 #[derive(Debug, Default)]
-pub struct VayuCold;
+pub struct WhooshCold;
 
-impl Adapter for VayuCold {
+impl Adapter for WhooshCold {
     fn id(&self) -> &str {
-        "vayu-cold"
+        "whoosh-cold"
     }
     fn description(&self) -> &str {
-        "vayu (this project), cold one-shot: daemon start + `vayu get` + daemon stop, all timed"
+        "whoosh (this project), cold one-shot: daemon start + `whoosh get` + daemon stop, all timed"
     }
     fn tool(&self) -> &str {
-        "vayu"
+        "whoosh"
     }
     fn settings(&self) -> String {
-        "vayu-daemon (foreground) + vayu --no-start get -o <dir> [-c N]".into()
+        "whoosh-daemon (foreground) + whoosh --no-start get -o <dir> [-c N]".into()
     }
     fn invocation(&self, program: &Path, job: &Job) -> Invocation {
         let mut inv = base_invocation(program, job);
         inv.program = PathBuf::from("/bin/sh");
-        let data_dir = job.state_dir.join("vayu-data");
+        let data_dir = job.state_dir.join("whoosh-data");
         inv.env
-            .push((os("VAYU_DATA_DIR"), data_dir.into_os_string()));
+            .push((os("WHOOSH_DATA_DIR"), data_dir.into_os_string()));
         let mut args = vec![
             os("-c"),
-            os(VAYU_SCRIPT),
-            os("vayu-bench-wrapper"),
+            os(WHOOSH_SCRIPT),
+            os("whoosh-bench-wrapper"),
             program.as_os_str().to_owned(),
-            program.with_file_name("vayu-daemon").into_os_string(),
+            program.with_file_name("whoosh-daemon").into_os_string(),
             os(job.url),
         ];
-        args.extend(vayu_get_args(job));
+        args.extend(whoosh_get_args(job));
         inv.args = args;
         inv
     }
     fn is_control_file(&self, name: &str) -> bool {
-        name.ends_with(".vayu-part")
+        name.ends_with(".whoosh-part")
     }
 }
 
-/// `-o DIR [-c N] [-H "K: V"]...` after the URL, for both vayu adapters.
-fn vayu_get_args(job: &Job) -> Vec<OsString> {
+/// `-o DIR [-c N] [-H "K: V"]...` after the URL, for both whoosh adapters.
+fn whoosh_get_args(job: &Job) -> Vec<OsString> {
     let mut args = vec![os("-o"), job.out_dir.as_os_str().to_owned()];
     if let Conn::Fixed(n) = job.conn {
         args.push(os("-c"));
@@ -757,64 +757,64 @@ fn vayu_get_args(job: &Job) -> Vec<OsString> {
     args
 }
 
-/// vayu as a download manager runs: `vayu-daemon` is already resident (the
+/// whoosh as a download manager runs: `whoosh-daemon` is already resident (the
 /// harness starts it with a fresh data directory before the measured
 /// window, waits until it is ready, and stops it afterwards), and the
-/// measured process is `vayu --no-start get`. The daemon's CPU and peak
+/// measured process is `whoosh --no-start get`. The daemon's CPU and peak
 /// memory during the run are added to the CLI's. This is the Phase 1 gate's
 /// configuration (MASTER-PLAN §8).
 #[derive(Debug, Default)]
-pub struct Vayu;
+pub struct Whoosh;
 
-impl Vayu {
+impl Whoosh {
     fn data_dir(job: &Job) -> PathBuf {
-        job.state_dir.join("vayu-data")
+        job.state_dir.join("whoosh-data")
     }
 
     fn env(job: &Job) -> Vec<(OsString, OsString)> {
         let mut env = isolated_env(job.state_dir);
-        env.push((os("VAYU_DATA_DIR"), Self::data_dir(job).into_os_string()));
+        env.push((os("WHOOSH_DATA_DIR"), Self::data_dir(job).into_os_string()));
         env
     }
 }
 
-impl Adapter for Vayu {
+impl Adapter for Whoosh {
     fn id(&self) -> &str {
-        "vayu"
+        "whoosh"
     }
     fn description(&self) -> &str {
-        "vayu (this project), daemon resident: `vayu --no-start get` against a running \
-         vayu-daemon (daemon start/stop not timed; its CPU and memory during the run counted)"
+        "whoosh (this project), daemon resident: `whoosh --no-start get` against a running \
+         whoosh-daemon (daemon start/stop not timed; its CPU and memory during the run counted)"
     }
     fn tool(&self) -> &str {
-        "vayu"
+        "whoosh"
     }
     fn settings(&self) -> String {
-        "resident vayu-daemon --port 0; vayu --no-start get -o <dir> [-c N]".into()
+        "resident whoosh-daemon --port 0; whoosh --no-start get -o <dir> [-c N]".into()
     }
     fn invocation(&self, program: &Path, job: &Job) -> Invocation {
         let mut inv = base_invocation(program, job);
         inv.env = Self::env(job);
         let mut args = vec![os("--no-start"), os("get"), os(job.url)];
-        args.extend(vayu_get_args(job));
+        args.extend(whoosh_get_args(job));
         inv.args = args;
         inv
     }
     fn is_control_file(&self, name: &str) -> bool {
-        name.ends_with(".vayu-part")
+        name.ends_with(".whoosh-part")
     }
     fn resident(&self, program: &Path, job: &Job) -> Option<Resident> {
         Some(Resident {
             program: program.with_file_name(if cfg!(windows) {
-                "vayu-daemon.exe"
+                "whoosh-daemon.exe"
             } else {
-                "vayu-daemon"
+                "whoosh-daemon"
             }),
             args: vec![os("--port"), os("0")],
             env: Self::env(job),
             cwd: job.state_dir.to_owned(),
             ready_file: Self::data_dir(job).join("runtime.json"),
-            log: job.state_dir.join("vayu-daemon.log"),
+            log: job.state_dir.join("whoosh-daemon.log"),
         })
     }
 }
@@ -822,8 +822,8 @@ impl Adapter for Vayu {
 /// Every adapter the harness knows, in report order.
 pub fn all() -> Vec<Arc<dyn Adapter>> {
     vec![
-        Arc::new(Vayu),
-        Arc::new(VayuCold),
+        Arc::new(Whoosh),
+        Arc::new(WhooshCold),
         Arc::new(Curl),
         Arc::new(Wget),
         Arc::new(Aria2::aria2c()),
@@ -873,7 +873,7 @@ mod tests {
     }
 
     fn cookie() -> Vec<(String, String)> {
-        vec![("Cookie".into(), "vayu_session=lab-ok".into())]
+        vec![("Cookie".into(), "whoosh_session=lab-ok".into())]
     }
 
     #[test]
@@ -889,7 +889,7 @@ mod tests {
                 "-O",
                 "-J",
                 "-H",
-                "Cookie: vayu_session=lab-ok",
+                "Cookie: whoosh_session=lab-ok",
                 "http://127.0.0.1:1/s/clean/10m.bin?x=1"
             ]
         );
@@ -903,9 +903,9 @@ mod tests {
     }
 
     #[test]
-    fn vayu_cold_runs_daemon_and_cli_under_one_shell() {
+    fn whoosh_cold_runs_daemon_and_cli_under_one_shell() {
         let h = cookie();
-        let inv = VayuCold.invocation(Path::new("/opt/vayu/vayu"), &job(&h, Conn::Fixed(99)));
+        let inv = WhooshCold.invocation(Path::new("/opt/whoosh/whoosh"), &job(&h, Conn::Fixed(99)));
         assert_eq!(inv.program, Path::new("/bin/sh"));
         let a = strs(&inv);
         assert_eq!(a[0], "-c");
@@ -913,35 +913,36 @@ mod tests {
         assert_eq!(
             a[2..],
             [
-                "vayu-bench-wrapper",
-                "/opt/vayu/vayu",
-                "/opt/vayu/vayu-daemon",
+                "whoosh-bench-wrapper",
+                "/opt/whoosh/whoosh",
+                "/opt/whoosh/whoosh-daemon",
                 "http://127.0.0.1:1/s/clean/10m.bin?x=1",
                 "-o",
                 "/run/out",
                 "-c",
                 "64",
                 "-H",
-                "Cookie: vayu_session=lab-ok",
+                "Cookie: whoosh_session=lab-ok",
             ]
         );
-        assert!(inv.env.iter().any(
-            |(k, v)| k == "VAYU_DATA_DIR" && v == Path::new("/run/state/vayu-data").as_os_str()
-        ));
-        assert!(VayuCold.is_control_file("10m.bin.vayu-part"));
         assert!(
-            VayuCold
-                .resident(Path::new("/opt/vayu/vayu"), &job(&h, Conn::Default))
+            inv.env.iter().any(|(k, v)| k == "WHOOSH_DATA_DIR"
+                && v == Path::new("/run/state/whoosh-data").as_os_str())
+        );
+        assert!(WhooshCold.is_control_file("10m.bin.whoosh-part"));
+        assert!(
+            WhooshCold
+                .resident(Path::new("/opt/whoosh/whoosh"), &job(&h, Conn::Default))
                 .is_none()
         );
     }
 
     #[test]
-    fn vayu_resident_measures_only_the_cli() {
+    fn whoosh_resident_measures_only_the_cli() {
         let h = cookie();
         let j = job(&h, Conn::Fixed(8));
-        let prog = Path::new("/opt/vayu/vayu");
-        let inv = Vayu.invocation(prog, &j);
+        let prog = Path::new("/opt/whoosh/whoosh");
+        let inv = Whoosh.invocation(prog, &j);
         assert_eq!(inv.program, prog, "the CLI itself is the measured process");
         assert_eq!(
             strs(&inv),
@@ -954,25 +955,25 @@ mod tests {
                 "-c",
                 "8",
                 "-H",
-                "Cookie: vayu_session=lab-ok",
+                "Cookie: whoosh_session=lab-ok",
             ]
         );
-        let data = Path::new("/run/state/vayu-data");
+        let data = Path::new("/run/state/whoosh-data");
         let has_data_dir = |env: &[(OsString, OsString)]| {
             env.iter()
-                .any(|(k, v)| k == "VAYU_DATA_DIR" && v == data.as_os_str())
+                .any(|(k, v)| k == "WHOOSH_DATA_DIR" && v == data.as_os_str())
         };
         assert!(has_data_dir(&inv.env));
         assert_eq!(
-            Vayu.completion(),
+            Whoosh.completion(),
             Completion::Exit,
-            "`vayu get` exits when done"
+            "`whoosh get` exits when done"
         );
 
-        let r = Vayu
+        let r = Whoosh
             .resident(prog, &j)
-            .expect("vayu keeps its daemon resident");
-        assert_eq!(r.program, Path::new("/opt/vayu/vayu-daemon"));
+            .expect("whoosh keeps its daemon resident");
+        assert_eq!(r.program, Path::new("/opt/whoosh/whoosh-daemon"));
         assert_eq!(r.args, [os("--port"), os("0")]);
         assert!(
             has_data_dir(&r.env),
@@ -1017,7 +1018,7 @@ mod tests {
             "-x16",
             "-s16",
             "-k1M",
-            "--header=Cookie: vayu_session=lab-ok",
+            "--header=Cookie: whoosh_session=lab-ok",
         ] {
             assert!(t.contains(&f.to_string()), "{f} in {t:?}");
         }
@@ -1052,7 +1053,7 @@ mod tests {
                 "-c",
                 "16",
                 "-H",
-                "Cookie: vayu_session=lab-ok"
+                "Cookie: whoosh_session=lab-ok"
             ]
         );
     }
@@ -1098,7 +1099,7 @@ mod tests {
         assert_eq!(body["req"]["url"], "http://127.0.0.1:1/s/clean/10m.bin?x=1");
         assert_eq!(
             body["req"]["extra"]["header"]["Cookie"],
-            "vayu_session=lab-ok"
+            "whoosh_session=lab-ok"
         );
         assert_eq!(body["opts"]["path"], "/run/out");
         assert_eq!(body["opts"]["extra"]["connections"], 4);

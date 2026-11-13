@@ -5,7 +5,7 @@
   apply immediately because they never leave this window.
 -->
 <script lang="ts">
-  import type { Settings } from "@vayu/api-client";
+  import type { Settings } from "@whoosh/api-client";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Icon from "./Icon.svelte";
 

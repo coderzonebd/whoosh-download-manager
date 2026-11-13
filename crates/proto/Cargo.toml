@@ -1,5 +1,5 @@
 [package]
-name = "vayu-proto"
+name = "whoosh-proto"
 description = "The daemon's local API: JSON-RPC 2.0 method names, params, results and events"
 version.workspace = true
 edition.workspace = true

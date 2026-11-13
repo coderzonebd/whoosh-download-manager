@@ -7,7 +7,7 @@ use futures::future::BoxFuture;
 use http::header::{self, HeaderName, HeaderValue};
 use http::{StatusCode, Version};
 use url::Url;
-use vayu_core::{
+use whoosh_core::{
     ByteRange, ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, Validators,
 };
 

@@ -26,11 +26,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 
-vayu-core = { path = "crates/core" }
-vayu-engine = { path = "crates/engine" }
-vayu-net = { path = "crates/net" }
-vayu-proto = { path = "crates/proto" }
-vayu-store = { path = "crates/store" }
+whoosh-core = { path = "crates/core" }
+whoosh-engine = { path = "crates/engine" }
+whoosh-net = { path = "crates/net" }
+whoosh-proto = { path = "crates/proto" }
+whoosh-store = { path = "crates/store" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

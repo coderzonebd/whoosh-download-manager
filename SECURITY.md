@@ -7,7 +7,7 @@ security problem.**
 
 Report it privately through GitHub's security advisories:
 **Security → Report a vulnerability** on this repository
-(`https://github.com/coderzonebd/vayu/security/advisories/new`). Only the
+(`https://github.com/coderzonebd/whoosh/security/advisories/new`). Only the
 maintainers can see the report, and we can work on the fix and the advisory
 with you there.
 
@@ -35,13 +35,13 @@ Please include:
 In scope: everything in this repository, in particular
 
 - the engine and daemon, and its local API (token binding, origin checks);
-- the browser extension and the native messaging host `vayu-nmhost`
+- the browser extension and the native messaging host `whoosh-nmhost`
   (which extensions may start it, what it relays);
 - file handling: names from servers and web pages, paths, archive
   extraction, resume data;
 - installers, the update channel and release signing.
 
-Out of scope: `vayu-labserver` and the benchmark harness (test tools that are
+Out of scope: `whoosh-labserver` and the benchmark harness (test tools that are
 meant to misbehave; they must still not be exploitable when run on
 `127.0.0.1` as documented), vulnerabilities in third-party services, and
 reports that need an already-compromised machine or physical access.

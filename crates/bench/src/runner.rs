@@ -335,7 +335,7 @@ pub struct RunRecord {
     pub extra_files: Vec<String>,
     pub note: Option<String>,
     pub stderr_tail: Option<String>,
-    /// The client's resident helper (vayu's daemon) during this run; its
+    /// The client's resident helper (whoosh's daemon) during this run; its
     /// CPU is included in `cpu_*_s` and its peak RSS in `max_rss_mib`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resident: Option<ResidentUsage>,
@@ -593,7 +593,7 @@ impl IdleGuard {
     }
 }
 
-/// Options of `vayu-bench run`.
+/// Options of `whoosh-bench run`.
 #[derive(Debug, Clone)]
 pub struct RunOptions {
     pub clients: Vec<Arc<dyn Adapter>>,
@@ -733,7 +733,7 @@ pub fn run(opts: &RunOptions) -> Result<PathBuf> {
     for a in &opts.clients {
         if a.mode() == Mode::Manual {
             eprintln!(
-                "note: {} is manual-only; use `vayu-bench manual --client {}`",
+                "note: {} is manual-only; use `whoosh-bench manual --client {}`",
                 a.id(),
                 a.id()
             );
@@ -752,7 +752,7 @@ pub fn run(opts: &RunOptions) -> Result<PathBuf> {
                 client_metas.push(m);
             }
             None => eprintln!(
-                "skip   {:<18} not installed (see `vayu-bench fetch`)",
+                "skip   {:<18} not installed (see `whoosh-bench fetch`)",
                 a.id()
             ),
         }
@@ -826,7 +826,7 @@ pub fn run(opts: &RunOptions) -> Result<PathBuf> {
         started_utc: sys::datetime_utc(started),
         finished_utc: None,
         duration_s: None,
-        harness: format!("vayu-bench {}", env!("CARGO_PKG_VERSION")),
+        harness: format!("whoosh-bench {}", env!("CARGO_PKG_VERSION")),
         git_commit: measure::capture(
             Path::new("git"),
             &["rev-parse", "HEAD"],
@@ -1613,7 +1613,7 @@ fn drive_api(
 
 // ------------------------------------------------------------- manual --
 
-/// Options of `vayu-bench manual`.
+/// Options of `whoosh-bench manual`.
 #[derive(Debug, Clone)]
 pub struct ManualOptions {
     pub client: String,
@@ -1669,7 +1669,7 @@ pub fn manual(opts: &ManualOptions) -> Result<PathBuf> {
         started_utc: sys::datetime_utc(started),
         finished_utc: None,
         duration_s: None,
-        harness: format!("vayu-bench {}", env!("CARGO_PKG_VERSION")),
+        harness: format!("whoosh-bench {}", env!("CARGO_PKG_VERSION")),
         git_commit: None,
         command: opts.command.clone(),
         machine: Machine::detect(),
@@ -1854,7 +1854,7 @@ mod tests {
     fn default_matrix_covers_every_builtin_scenario() {
         let m = default_matrix();
         let names: HashSet<&str> = m.iter().map(|e| e.scenario.as_str()).collect();
-        for sc in vayu_labserver::scenario::builtin() {
+        for sc in whoosh_labserver::scenario::builtin() {
             assert!(
                 names.contains(sc.name.as_str()),
                 "{} missing from the matrix",
@@ -1865,7 +1865,7 @@ mod tests {
 
     #[test]
     fn find_output_ignores_control_files_and_spots_escapes() {
-        let base = std::env::temp_dir().join(format!("vayu-bench-find-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("whoosh-bench-find-{}", std::process::id()));
         let (root, out, _) = run_dirs(&base).unwrap();
         std::fs::write(out.join("f.bin"), vec![0u8; 10]).unwrap();
         std::fs::write(out.join("f.bin.aria2"), vec![0u8; 100]).unwrap();
@@ -1940,7 +1940,7 @@ mod tests {
 
     #[test]
     fn sync_forces_the_output_to_disk() {
-        let base = std::env::temp_dir().join(format!("vayu-bench-sync-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("whoosh-bench-sync-{}", std::process::id()));
         let (root, out, _) = run_dirs(&base).unwrap();
         let a = adapter::Aria2::aria2c();
         let s = sync_output(&a, &root, &out);
@@ -1977,7 +1977,7 @@ mod tests {
 
     #[test]
     fn final_file_detection() {
-        let base = std::env::temp_dir().join(format!("vayu-bench-final-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("whoosh-bench-final-{}", std::process::id()));
         let (_, out, _) = run_dirs(&base).unwrap();
         let s = adapter::Surge;
         assert!(!final_file_ready(&s, &out, Some(4)), "empty");

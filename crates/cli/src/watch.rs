@@ -1,11 +1,11 @@
-//! `vayu watch`: a live table on a terminal; one JSON event per line
+//! `whoosh watch`: a live table on a terminal; one JSON event per line
 //! otherwise (or with `--json`).
 
 use std::io::{IsTerminal, Write};
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use vayu_proto::{DownloadSummary, ListParams, ProgressItem, StateEvent, Stats, event, method};
+use whoosh_proto::{DownloadSummary, ListParams, ProgressItem, StateEvent, Stats, event, method};
 
 use crate::client::{Client, Event};
 use crate::commands::Ctx;
@@ -61,7 +61,7 @@ async fn stream(client: &Client) -> Result<u8> {
                     let mut out = std::io::stdout().lock();
                     let line = json!({ "method": method, "params": params });
                     if writeln!(out, "{line}").and_then(|()| out.flush()).is_err() {
-                        // The reader went away (`vayu watch | head`).
+                        // The reader went away (`whoosh watch | head`).
                         return Ok(exit::OK);
                     }
                 }
@@ -97,7 +97,7 @@ fn fold(rows: &mut Vec<DownloadSummary>, stats: &mut Stats, ev: Event) {
             {
                 r.state = st.state;
                 r.error = st.error;
-                if st.state != vayu_proto::DownloadState::Downloading {
+                if st.state != whoosh_proto::DownloadState::Downloading {
                     r.speed_bps = 0;
                     r.eta_secs = None;
                 }
@@ -154,7 +154,7 @@ impl Screen {
     fn render(&self, rows: &[DownloadSummary], stats: &Stats) {
         let height = format::terminal_height().saturating_sub(4).max(1);
         let mut text = format!(
-            "vayu  {} active, {} queued, {}   (Ctrl-C to quit)\n\n",
+            "whoosh  {} active, {} queued, {}   (Ctrl-C to quit)\n\n",
             stats.active,
             stats.queued,
             format::speed(stats.download_bps)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Public surface of @vayu/ui. Import "@vayu/ui/styles.css" once in the host.
+// Public surface of @whoosh/ui. Import "@whoosh/ui/styles.css" once in the host.
 
 export { default as App } from "./components/App.svelte";
 export { default as DownloadList } from "./components/DownloadList.svelte";

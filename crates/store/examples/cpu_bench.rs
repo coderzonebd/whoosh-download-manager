@@ -3,7 +3,7 @@
 //! download (not a disk-bound flood).
 //!
 //! ```text
-//! cargo run --release -p vayu-store --example cpu_bench -- \
+//! cargo run --release -p whoosh-store --example cpu_bench -- \
 //!     [--dir DIR] [--size-mib 1024] [--conns 16] [--chunk-kib 64] \
 //!     [--coalesce-kib 256] [--rate-mibs 800] [--flush-ms 2000] \
 //!     [--rounds 3] [--store true|false] [--inline true|false]
@@ -34,8 +34,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
-use vayu_core::StorageProvider;
-use vayu_store::{FileStorageProvider, StorageOptions};
+use whoosh_core::StorageProvider;
+use whoosh_store::{FileStorageProvider, StorageOptions};
 
 #[derive(Debug, Clone)]
 struct Args {
@@ -207,7 +207,7 @@ async fn round(a: &Args, dir: &std::path::Path, src: Bytes) -> Round {
         write_inline: a.inline,
         ..StorageOptions::default()
     });
-    let part = dir.join("f.vayu-part");
+    let part = dir.join("f.whoosh-part");
     let fin = dir.join("f");
     let sampler = Sampler::start();
     let (c0, f0, s0) = usage();
@@ -321,7 +321,7 @@ fn main() {
         .collect::<Vec<_>>()
         .into();
     let tmp = tempfile::Builder::new()
-        .prefix("vayu-cpu-bench-")
+        .prefix("whoosh-cpu-bench-")
         .tempdir_in(&a.dir)
         .unwrap();
     println!(

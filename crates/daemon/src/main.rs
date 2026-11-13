@@ -1,4 +1,4 @@
-//! `vayu-daemon` — see the crate README.
+//! `whoosh-daemon` — see the crate README.
 //!
 //! Exit codes: 0 clean shutdown, 1 error, 2 usage, 3 another daemon already
 //! runs for this data directory, 130 forced exit (second signal).
@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use clap::builder::BoolishValueParser;
 use clap::{ArgAction, Parser};
-use vayu_daemon::mock::{MockOptions, MockService, Scenario};
-use vayu_daemon::{DaemonConfig, ServeError, VERSION, logging, paths};
-use vayu_proto::service::Service;
+use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
+use whoosh_daemon::{DaemonConfig, ServeError, VERSION, logging, paths};
+use whoosh_proto::service::Service;
 
 const EXIT_ALREADY_RUNNING: u8 = 3;
 
@@ -22,25 +22,25 @@ const EXIT_ALREADY_RUNNING: u8 = 3;
 /// at about 1 GB/s; raise this only for multi-gigabit links.
 const DEFAULT_WORKER_THREADS: u16 = 1;
 
-/// The vayu download daemon: serves the local JSON-RPC API on 127.0.0.1.
+/// The whoosh download daemon: serves the local JSON-RPC API on 127.0.0.1.
 #[derive(Debug, Parser)]
-#[command(name = "vayu-daemon", version = VERSION)]
+#[command(name = "whoosh-daemon", version = VERSION)]
 struct Args {
     /// Serve the in-memory mock service (no network, no disk) instead of the
     /// download engine.
-    #[arg(long, env = "VAYU_DAEMON_MOCK", action = ArgAction::SetTrue,
+    #[arg(long, env = "WHOOSH_DAEMON_MOCK", action = ArgAction::SetTrue,
           value_parser = BoolishValueParser::new())]
     mock: bool,
 
     /// Initial downloads of the mock: `demo` or `empty`.
-    #[arg(long, env = "VAYU_DAEMON_MOCK_SCENARIO", default_value = "demo")]
+    #[arg(long, env = "WHOOSH_DAEMON_MOCK_SCENARIO", default_value = "demo")]
     mock_scenario: Scenario,
 
     /// Port on 127.0.0.1; a free one is used if it is taken. 0 = any.
-    #[arg(long, env = "VAYU_DAEMON_PORT", default_value_t = vayu_proto::DEFAULT_PORT)]
+    #[arg(long, env = "WHOOSH_DAEMON_PORT", default_value_t = whoosh_proto::DEFAULT_PORT)]
     port: u16,
 
-    /// Data directory (runtime.json, logs). Default: $VAYU_DATA_DIR, then the
+    /// Data directory (runtime.json, logs). Default: $WHOOSH_DATA_DIR, then the
     /// platform's data directory.
     #[arg(long)]
     data_dir: Option<PathBuf>,
@@ -48,11 +48,11 @@ struct Args {
     /// Worker threads of the async runtime (1–64). Few is better: idle
     /// workers parking and waking on every network burst cost more CPU than
     /// the downloads, and one core decrypts TLS far faster than real links.
-    #[arg(long, env = "VAYU_WORKER_THREADS", default_value_t = DEFAULT_WORKER_THREADS,
+    #[arg(long, env = "WHOOSH_WORKER_THREADS", default_value_t = DEFAULT_WORKER_THREADS,
           value_parser = clap::value_parser!(u16).range(1..=64))]
     worker_threads: u16,
 
-    /// Started in the background by `vayu`: no logging to stderr, and SIGHUP
+    /// Started in the background by `whoosh`: no logging to stderr, and SIGHUP
     /// is ignored.
     #[arg(long, hide = true)]
     detached: bool,
@@ -63,7 +63,7 @@ fn ms(since: Instant) -> f64 {
     (since.elapsed().as_secs_f64() * 1e4).round() / 10.0
 }
 
-/// How long each startup phase took (logged once, with "vayu-daemon ready").
+/// How long each startup phase took (logged once, with "whoosh-daemon ready").
 #[derive(Debug, Default)]
 struct Startup {
     logging: f64,
@@ -85,7 +85,7 @@ fn main() -> ExitCode {
         None => match paths::default_data_dir() {
             Ok(dir) => dir,
             Err(e) => {
-                eprintln!("vayu-daemon: {e}");
+                eprintln!("whoosh-daemon: {e}");
                 return ExitCode::FAILURE;
             }
         },
@@ -95,7 +95,7 @@ fn main() -> ExitCode {
         Ok(guard) => Some(guard),
         Err(e) => {
             eprintln!(
-                "vayu-daemon: logging to {} disabled: {e}",
+                "whoosh-daemon: logging to {} disabled: {e}",
                 data_dir.display()
             );
             logging::init(None, !args.detached).ok()
@@ -110,7 +110,7 @@ fn main() -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("vayu-daemon: cannot start the async runtime: {e}");
+            eprintln!("whoosh-daemon: cannot start the async runtime: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -123,7 +123,7 @@ fn main() -> ExitCode {
 
 fn serve_error(e: &ServeError) -> ExitCode {
     tracing::error!("{e}");
-    eprintln!("vayu-daemon: {e}");
+    eprintln!("whoosh-daemon: {e}");
     match e {
         ServeError::AlreadyRunning { .. } => ExitCode::from(EXIT_ALREADY_RUNNING),
         _ => ExitCode::FAILURE,
@@ -136,7 +136,7 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
     // Claim the data directory first: the engine loads and resumes the
     // downloads stored there, which must never happen in two daemons.
     let t = Instant::now();
-    let claim = match vayu_daemon::claim(config).await {
+    let claim = match whoosh_daemon::claim(config).await {
         Ok(claim) => claim,
         Err(e) => return serve_error(&e),
     };
@@ -153,7 +153,7 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
             Ok(engine) => engine,
             Err(e) => {
                 tracing::error!(error = %e, "cannot start the download engine");
-                eprintln!("vayu-daemon: cannot start the download engine: {e}");
+                eprintln!("whoosh-daemon: cannot start the download engine: {e}");
                 return ExitCode::FAILURE;
             }
         }
@@ -177,7 +177,7 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
         store_ms = startup.store,
         service_ms = (startup.service * 10.0).round() / 10.0,
         serve_ms = startup.serve,
-        "vayu-daemon ready"
+        "whoosh-daemon ready"
     );
 
     #[cfg(unix)]
@@ -190,22 +190,22 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
     };
 
     tokio::select! {
-        _ = vayu_daemon::shutdown_signal() => {}
+        _ = whoosh_daemon::shutdown_signal() => {}
         _ = daemon.stop_requested() => tracing::info!("stopping: daemon.shutdown"),
     }
     tokio::spawn(async {
-        vayu_daemon::shutdown_signal().await;
-        eprintln!("vayu-daemon: second signal, exiting immediately");
+        whoosh_daemon::shutdown_signal().await;
+        eprintln!("whoosh-daemon: second signal, exiting immediately");
         std::process::exit(130);
     });
     daemon.shutdown().await;
     ExitCode::SUCCESS
 }
 
-/// The real service: vayu-engine over vayu-net and vayu-store, with its state
+/// The real service: whoosh-engine over whoosh-net and whoosh-store, with its state
 /// in the data directory (`state.db`, `journal/`).
 async fn start_engine(data_dir: &Path, store_ms: &mut f64) -> std::io::Result<Arc<dyn Service>> {
-    let net = vayu_net::NetConfig::default();
+    let net = whoosh_net::NetConfig::default();
     let mut capabilities: Vec<String> = vec!["http".into(), "https".into(), "preconnect".into()];
     if net.http2 {
         capabilities.push("h2".into());
@@ -213,25 +213,25 @@ async fn start_engine(data_dir: &Path, store_ms: &mut f64) -> std::io::Result<Ar
     if net.http3 {
         capabilities.push("h3".into());
     }
-    let sources = vayu_net::HttpSourceFactory::new(net);
-    let storage = Arc::new(vayu_store::FileStorageProvider::new(
-        vayu_store::StorageOptions::default(),
+    let sources = whoosh_net::HttpSourceFactory::new(net);
+    let storage = Arc::new(whoosh_store::FileStorageProvider::new(
+        whoosh_store::StorageOptions::default(),
     ));
     // Both may fsync (creating the journal directory, a new database); do
     // them at the same time. The journal's open blocks, so not on a worker.
     let t = Instant::now();
     let journal_dir = data_dir.join("journal");
-    let journal = tokio::task::spawn_blocking(move || vayu_store::FileJournal::open(journal_dir));
-    let state = vayu_store::SqliteStateStore::open(data_dir.join("state.db"));
+    let journal = tokio::task::spawn_blocking(move || whoosh_store::FileJournal::open(journal_dir));
+    let state = whoosh_store::SqliteStateStore::open(data_dir.join("state.db"));
     let (journal, state) = tokio::join!(journal, state);
     let journal = Arc::new(journal.map_err(std::io::Error::other)??);
     let state = Arc::new(state?);
     *store_ms = ms(t);
 
-    let mut config = vayu_engine::EngineConfig::new(default_download_dir(data_dir));
+    let mut config = whoosh_engine::EngineConfig::new(default_download_dir(data_dir));
     config.capabilities = capabilities;
-    let engine = vayu_engine::Engine::start(
-        vayu_engine::EngineDeps {
+    let engine = whoosh_engine::Engine::start(
+        whoosh_engine::EngineDeps {
             sources,
             storage,
             journal,

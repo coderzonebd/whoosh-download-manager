@@ -21,7 +21,7 @@ docs/      adr/, api/, bench/
 ```
 
 - Package managers: Cargo for Rust, **pnpm** for TypeScript (pinned via `packageManager`).
-- Codename **`vayu`** is used in crate, package and binary names until the product name is chosen; renaming is a mechanical search-and-replace.
+- Codename **`whoosh`** is used in crate, package and binary names until the product name is chosen; renaming is a mechanical search-and-replace.
 
 ## Consequences
 - Contributors need Rust and Node 22+. Linux desktop builds also need the WebKitGTK/GTK development packages (see `CONTRIBUTING.md`).

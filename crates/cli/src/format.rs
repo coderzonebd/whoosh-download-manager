@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use vayu_proto::{DownloadState, DownloadSummary};
+use whoosh_proto::{DownloadState, DownloadSummary};
 
 /// `1536` → `1.5 KiB`.
 pub fn bytes(n: u64) -> String {

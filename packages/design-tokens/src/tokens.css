@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Generated from src/tokens.ts by `pnpm --filter @vayu/design-tokens build`. Do not edit. */
+/* Generated from src/tokens.ts by `pnpm --filter @whoosh/design-tokens build`. Do not edit. */
 
 :root {
   --vy-font-sans: "Inter Variable", Inter, "Noto Sans Bengali Variable", "Noto Sans Bengali", "Nirmala UI", "Kohinoor Bangla", "Bangla Sangam MN", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";

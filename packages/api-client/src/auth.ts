@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Mutual authentication in `session.hello` (PROTOCOL.md §1), the TypeScript
 // side of `crates/proto/src/auth.rs`. The client sends a fresh nonce; the
-// daemon answers with HMAC-SHA256(key = token, "vayu-hello-proof-v1\n" + nonce).
+// daemon answers with HMAC-SHA256(key = token, "whoosh-hello-proof-v1\n" + nonce).
 // A process squatting the port of a stale runtime file cannot compute it, so
 // the client sends nothing else to it.
 
-export const PROOF_CONTEXT = "vayu-hello-proof-v1\n";
+export const PROOF_CONTEXT = "whoosh-hello-proof-v1\n";
 export const NONCE_BYTES = 16;
 
 function subtle(): SubtleCrypto {

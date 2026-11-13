@@ -10,7 +10,7 @@ use std::time::Duration;
 use common::*;
 use serde_json::json;
 use tracing_subscriber::layer::SubscriberExt;
-use vayu_daemon::mock::{MockOptions, MockService, Scenario};
+use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
 
 #[derive(Clone, Default)]
 struct Capture(Arc<Mutex<Vec<u8>>>);

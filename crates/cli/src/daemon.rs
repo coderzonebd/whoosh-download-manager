@@ -1,8 +1,8 @@
 //! Finding, starting and stopping the daemon.
 //!
 //! Commands that need the daemon call [`ensure`]: it reads `runtime.json`
-//! and says hello; if nothing answers, it starts `vayu-daemon` detached
-//! (from `$VAYU_DAEMON_BIN`, else next to this `vayu` executable, else from
+//! and says hello; if nothing answers, it starts `whoosh-daemon` detached
+//! (from `$WHOOSH_DAEMON_BIN`, else next to this `whoosh` executable, else from
 //! `PATH`) and waits for it to answer.
 
 use std::path::{Path, PathBuf};
@@ -15,8 +15,8 @@ use crate::client::{Client, ConnectError};
 use crate::error::{CliError, Result};
 use crate::runtime::{self, Lookup, RuntimeInfo};
 
-pub const DAEMON_BIN_ENV: &str = "VAYU_DAEMON_BIN";
-/// `vayu-daemon`'s exit code when another daemon owns the data directory.
+pub const DAEMON_BIN_ENV: &str = "WHOOSH_DAEMON_BIN";
+/// `whoosh-daemon`'s exit code when another daemon owns the data directory.
 const DAEMON_EXIT_ALREADY_RUNNING: i32 = 3;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const START_TIMEOUT: Duration = Duration::from_secs(20);
@@ -68,7 +68,7 @@ pub async fn connect_running(data_dir: &Path) -> Result<Found> {
                 Some(4426) => {
                     return Err(CliError::Rejected(format!(
                         "the daemon speaks a different protocol version ({reason}); \
-                         use a vayu CLI of the same version as the daemon"
+                         use a whoosh CLI of the same version as the daemon"
                     )));
                 }
                 Some(4401) if attempt == 0 => {
@@ -99,19 +99,19 @@ pub async fn ensure(data_dir: &Path, autostart: bool) -> Result<Connected> {
     };
     if !autostart {
         return Err(CliError::DaemonUnavailable(format!(
-            "the vayu daemon is not running ({why}); start it with `vayu daemon start`"
+            "the whoosh daemon is not running ({why}); start it with `whoosh daemon start`"
         )));
     }
     let child = spawn_detached(data_dir, &[])?;
     wait_until_up(data_dir, child).await
 }
 
-/// The `vayu-daemon` executable to start.
+/// The `whoosh-daemon` executable to start.
 pub fn daemon_exe() -> PathBuf {
     if let Some(path) = std::env::var_os(DAEMON_BIN_ENV).filter(|p| !p.is_empty()) {
         return PathBuf::from(path);
     }
-    let name = format!("vayu-daemon{}", std::env::consts::EXE_SUFFIX);
+    let name = format!("whoosh-daemon{}", std::env::consts::EXE_SUFFIX);
     if let Ok(exe) = std::env::current_exe() {
         let sibling = exe.with_file_name(&name);
         if sibling.is_file() {
@@ -158,7 +158,7 @@ pub fn spawn_detached(data_dir: &Path, extra_args: &[String]) -> Result<Child> {
     }
     cmd.spawn().map_err(|e| {
         CliError::DaemonUnavailable(format!(
-            "cannot start {}: {e} (put vayu-daemon next to vayu or on PATH, \
+            "cannot start {}: {e} (put whoosh-daemon next to whoosh or on PATH, \
              or set {DAEMON_BIN_ENV})",
             exe.display()
         ))
@@ -213,7 +213,7 @@ pub async fn wait_until_up(data_dir: &Path, mut child: Child) -> Result<Connecte
                 let detail = std::fs::read_to_string(start_log(data_dir)).unwrap_or_default();
                 let detail = detail.trim();
                 return Err(CliError::DaemonUnavailable(format!(
-                    "vayu-daemon exited ({status}){}{}",
+                    "whoosh-daemon exited ({status}){}{}",
                     if detail.is_empty() { "" } else { ": " },
                     detail
                 )));
@@ -221,7 +221,7 @@ pub async fn wait_until_up(data_dir: &Path, mut child: Child) -> Result<Connecte
         }
         if Instant::now() > deadline {
             return Err(CliError::DaemonUnavailable(format!(
-                "vayu-daemon did not come up within {}s; see {}",
+                "whoosh-daemon did not come up within {}s; see {}",
                 START_TIMEOUT.as_secs(),
                 data_dir.join("logs").display()
             )));
@@ -245,7 +245,7 @@ fn poll_delay(waited: Duration) -> Duration {
 pub async fn stop(connected: Connected, data_dir: &Path) -> Result<()> {
     let Connected { client, info } = connected;
     client
-        .call_value(vayu_proto::method::DAEMON_SHUTDOWN, Value::Null)
+        .call_value(whoosh_proto::method::DAEMON_SHUTDOWN, Value::Null)
         .await?;
     client.close().await;
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -259,7 +259,7 @@ pub async fn stop(connected: Connected, data_dir: &Path) -> Result<()> {
         }
         if Instant::now() > deadline {
             return Err(CliError::Other(format!(
-                "vayu-daemon (pid {}) did not stop within 30 s",
+                "whoosh-daemon (pid {}) did not stop within 30 s",
                 info.pid
             )));
         }
