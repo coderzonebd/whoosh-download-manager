@@ -1,7 +1,11 @@
 //! yt-dlp and ffmpeg on this machine: found, fetched, checked, updated.
 //!
 //! Managed copies live in `<data dir>/media/bin` with their state in
-//! `<data dir>/media/tools.json`. A managed copy wins over a system one;
+//! `<data dir>/media/tools.json`. When the desktop installer shipped the
+//! tools ([`crate::bundle`]), they are copied from there into `bin` at
+//! start (each file checked against the bundle's manifest) and are managed
+//! copies from then on; an app update that ships newer ones replaces older
+//! managed copies. A managed copy wins over a system one;
 //! Linux (both tools) and macOS (ffmpeg) also use the system's program when
 //! there is no managed copy, so a distribution's package needs no download.
 //! Nothing is checked or fetched in the background unless the user turned
@@ -17,7 +21,8 @@ use serde::{Deserialize, Serialize};
 use whoosh_proto::media::{TOOL_FFMPEG, TOOL_YT_DLP};
 use whoosh_proto::{MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus, UnixMillis};
 
-use crate::fetch::Fetcher;
+use crate::bundle::{self, Manifest};
+use crate::fetch::{Fetcher, Progress};
 use crate::process::{self, Tool};
 use crate::upstream::{self, Archive, Asset, Upstreams};
 use crate::util::{now_ms, write_atomic};
@@ -100,6 +105,10 @@ struct Found {
     tool: Tool,
     source: MediaToolSource,
     version: Option<String>,
+    /// The installer's copy, not yet copied into `bin`. Shown as ready,
+    /// never run from the bundle: [`Tools::get`] does not return it and
+    /// [`Tools::ensure`] copies (and checks) it first.
+    bundled: bool,
 }
 
 #[derive(Debug, Default)]
@@ -121,6 +130,9 @@ pub struct ToolsConfig {
     /// Use these instead of finding or fetching anything (tests).
     pub yt_dlp: Option<Tool>,
     pub ffmpeg: Option<Tool>,
+    /// The tools shipped with the desktop app (a directory with
+    /// [`bundle::MANIFEST`]), if any.
+    pub bundled: Option<PathBuf>,
 }
 
 type Listener = Box<dyn Fn(MediaToolsStatus) + Send + Sync>;
@@ -129,6 +141,8 @@ type Listener = Box<dyn Fn(MediaToolsStatus) + Send + Sync>;
 pub struct Tools {
     cfg: ToolsConfig,
     fetcher: Arc<dyn Fetcher>,
+    /// The bundle directory and its manifest.
+    bundle: Option<(PathBuf, Manifest)>,
     saved: Mutex<Saved>,
     slots: Mutex<BTreeMap<Kind, Slot>>,
     /// One install at a time per tool.
@@ -152,7 +166,18 @@ impl Tools {
             }),
             Err(_) => Saved::default(),
         };
+        let bundle = match &cfg.bundled {
+            Some(dir) => match bundle::read(dir).await {
+                Ok(m) => Some((dir.clone(), m)),
+                Err(e) => {
+                    tracing::warn!("the installer's media tools are unusable: {e}");
+                    None
+                }
+            },
+            None => None,
+        };
         let tools = Arc::new(Self {
+            bundle,
             installs: Kind::ALL
                 .into_iter()
                 .map(|k| (k, tokio::sync::Mutex::new(())))
@@ -172,6 +197,16 @@ impl Tools {
         for kind in Kind::ALL {
             let found = tools.locate(kind);
             lock(&tools.slots).entry(kind).or_default().found = found;
+        }
+        // Copy the installer's tools into `bin` (a second or two for
+        // ffmpeg), not on the daemon's startup path.
+        if Kind::ALL.into_iter().any(|k| tools.bundle_wanted(k)) {
+            let t = Arc::clone(&tools);
+            tokio::spawn(async move {
+                for kind in Kind::ALL {
+                    t.install_from_bundle(kind).await;
+                }
+            });
         }
         // Asking a system program for its version can take a second
         // (yt-dlp is a Python program): not on the daemon's startup path.
@@ -233,6 +268,7 @@ impl Tools {
                 tool: tool.clone(),
                 source: MediaToolSource::System,
                 version: None,
+                bundled: false,
             });
         }
         let managed = self.managed_path(kind);
@@ -245,6 +281,15 @@ impl Tools {
                 tool: Tool::new(managed),
                 source: MediaToolSource::Managed,
                 version,
+                bundled: false,
+            });
+        }
+        if let Some(entry) = self.bundle_entry(kind) {
+            return Some(Found {
+                tool: Tool::new(self.bundle_dir()?.join(kind.file_name())),
+                source: MediaToolSource::Managed,
+                version: Some(entry.version.clone()),
+                bundled: true,
             });
         }
         if !self.cfg.system || !system_allowed(kind) {
@@ -255,7 +300,39 @@ impl Tools {
             tool: Tool::new(path),
             source: MediaToolSource::System,
             version: None,
+            bundled: false,
         })
+    }
+
+    fn bundle_dir(&self) -> Option<&Path> {
+        self.bundle.as_ref().map(|(dir, _)| dir.as_path())
+    }
+
+    /// The installer's copy of `kind`, if it ships one whose program is
+    /// there.
+    fn bundle_entry(&self, kind: Kind) -> Option<&bundle::BundledTool> {
+        let (dir, m) = self.bundle.as_ref()?;
+        let entry = m.tools.get(kind.name())?;
+        let main = kind.file_name();
+        (entry.files.contains_key(&main) && dir.join(&main).is_file()).then_some(entry)
+    }
+
+    /// Whether the installer's copy should go into `bin`: there is no
+    /// managed copy, or the installer's is newer (an app update).
+    fn bundle_wanted(&self, kind: Kind) -> bool {
+        if self.fixed(kind) {
+            return false;
+        }
+        let Some(entry) = self.bundle_entry(kind) else {
+            return false;
+        };
+        if !self.managed_path(kind).is_file() {
+            return true;
+        }
+        match lock(&self.saved).managed.get(kind.name()) {
+            Some(t) => upstream::is_newer(&entry.version, &t.version),
+            None => true,
+        }
     }
 
     pub fn status(&self) -> MediaToolsStatus {
@@ -315,19 +392,23 @@ impl Tools {
         Ok(())
     }
 
-    /// The tool, fetching it first if this machine has none (first use).
+    /// The tool, fetching it first if this machine has none (first use),
+    /// or copying it from the installer's bundle.
     pub async fn ensure(&self, kind: Kind) -> Result<Tool, String> {
-        if let Some(f) = lock(&self.slots).get(&kind).and_then(|s| s.found.clone()) {
-            return Ok(f.tool);
+        if let Some(tool) = self.get(kind) {
+            return Ok(tool);
         }
         self.install(kind, false).await
     }
 
-    /// The tool if it is here, without fetching it.
+    /// The tool if it is here, without fetching or copying it.
     pub fn get(&self, kind: Kind) -> Option<Tool> {
-        lock(&self.slots)
-            .get(&kind)
-            .and_then(|s| s.found.as_ref().map(|f| f.tool.clone()))
+        lock(&self.slots).get(&kind).and_then(|s| {
+            s.found
+                .as_ref()
+                .filter(|f| !f.bundled)
+                .map(|f| f.tool.clone())
+        })
     }
 
     /// Shows the tool as installing right away (the install itself runs
@@ -442,7 +523,20 @@ impl Tools {
             slot.error = None;
         }
         self.changed();
-        let result = self.install_inner(kind).await;
+        // First use: the installer's copy if it has one, else (or when it
+        // does not check out) the newest upstream build. An update always
+        // goes upstream.
+        let result = if !force && self.bundle_wanted(kind) {
+            match self.copy_bundled(kind).await {
+                Ok(found) => Ok(found),
+                Err(e) => {
+                    tracing::warn!(tool = kind.name(), error = %e, "the installer's copy is unusable; downloading instead");
+                    self.install_inner(kind).await
+                }
+            }
+        } else {
+            self.install_inner(kind).await
+        };
         {
             let mut slots = lock(&self.slots);
             let slot = slots.entry(kind).or_default();
@@ -463,6 +557,100 @@ impl Tools {
                 Err(e)
             }
         }
+    }
+
+    /// At start: puts the installer's copy into `bin` when it is wanted.
+    /// Quietly (the tool already shows as ready); a copy that does not
+    /// match the manifest is dropped, and the tool is downloaded on first
+    /// use instead.
+    async fn install_from_bundle(&self, kind: Kind) {
+        let _one = self.installs[&kind].lock().await;
+        if !self.bundle_wanted(kind) {
+            return;
+        }
+        let result = self.copy_bundled(kind).await;
+        {
+            let mut slots = lock(&self.slots);
+            let slot = slots.entry(kind).or_default();
+            match &result {
+                Ok(found) => {
+                    slot.found = Some(found.clone());
+                    slot.error = None;
+                }
+                Err(e) => {
+                    if slot.found.as_ref().is_some_and(|f| f.bundled) {
+                        slot.found = None;
+                    }
+                    slot.error = Some(e.clone());
+                }
+            }
+        }
+        match result {
+            Ok(found) => {
+                tracing::info!(tool = kind.name(), version = ?found.version, "media tool copied from the installer");
+            }
+            Err(e) => {
+                tracing::warn!(tool = kind.name(), error = %e, "the installer's copy is unusable");
+            }
+        }
+        self.changed();
+    }
+
+    /// Copies the installer's files into `bin`, each checked against the
+    /// manifest, and records them as the managed copy.
+    async fn copy_bundled(&self, kind: Kind) -> Result<Found, String> {
+        let dir = self
+            .bundle_dir()
+            .ok_or("the installer ships no media tools")?
+            .to_path_buf();
+        let entry = self
+            .bundle_entry(kind)
+            .ok_or_else(|| format!("the installer ships no {}", kind.name()))?
+            .clone();
+        let main = kind.file_name();
+        let bin = self.bin_dir();
+        tokio::fs::create_dir_all(&bin)
+            .await
+            .map_err(|e| format!("{}: {e}", bin.display()))?;
+        let work = bin.join(format!(".{}-{}", kind.name(), crate::util::random_hex(6)));
+        tokio::fs::create_dir_all(&work)
+            .await
+            .map_err(|e| format!("{}: {e}", work.display()))?;
+        let copied = async {
+            for (name, sha) in &entry.files {
+                bundle::copy_verified(&dir.join(name), &work.join(name), sha).await?;
+                make_executable(&work.join(name)).await?;
+            }
+            // The program last: it is what marks the tool as here.
+            for name in entry.files.keys().filter(|n| **n != main) {
+                replace_file(&work.join(name), &bin.join(name)).await?;
+            }
+            replace_file(&work.join(&main), &bin.join(&main)).await
+        };
+        let result = copied.await;
+        let _ = tokio::fs::remove_dir_all(&work).await;
+        result?;
+        let sha256 = entry.files.get(&main).cloned().unwrap_or_default();
+        lock(&self.saved).managed.insert(
+            kind.name().to_owned(),
+            SavedTool {
+                version: entry.version.clone(),
+                sha256,
+                url: entry
+                    .sources
+                    .first()
+                    .map(|s| s.url.clone())
+                    .unwrap_or_default(),
+                installed_at: now_ms(),
+            },
+        );
+        self.save().await?;
+        Ok(Found {
+            tool: Tool::new(bin.join(&main)),
+            source: MediaToolSource::Managed,
+            version: Some(entry.version),
+            bundled: false,
+        })
     }
 
     async fn install_inner(&self, kind: Kind) -> Result<Found, String> {
@@ -498,6 +686,7 @@ impl Tools {
             tool: Tool::new(installed),
             source: MediaToolSource::Managed,
             version: Some(asset.version),
+            bundled: false,
         })
     }
 
@@ -519,22 +708,7 @@ impl Tools {
                 self.changed();
             }
         };
-        let sha = self
-            .fetcher
-            .download(&asset.url, &download, MAX_DOWNLOAD, &progress)
-            .await?;
-        if asset.sha256.is_empty() || !sha.eq_ignore_ascii_case(&asset.sha256) {
-            let _ = tokio::fs::remove_file(&download).await;
-            return Err(format!(
-                "checksum mismatch for {}: upstream says {}, the download is {sha}; it was deleted",
-                asset.url,
-                if asset.sha256.is_empty() {
-                    "nothing"
-                } else {
-                    &asset.sha256
-                }
-            ));
-        }
+        download_verified(self.fetcher.as_ref(), asset, &download, &progress).await?;
         let mut programs: Vec<(PathBuf, String)> = Vec::new();
         match asset.archive {
             Archive::Raw => programs.push((download.clone(), kind.file_name())),
@@ -574,6 +748,32 @@ impl Tools {
             .await
             .map_err(|e| format!("media/tools.json: {e}"))
     }
+}
+
+/// Downloads `asset` to `dest` and checks it against the checksum upstream
+/// publishes; a mismatch deletes it.
+pub(crate) async fn download_verified(
+    fetcher: &dyn Fetcher,
+    asset: &Asset,
+    dest: &Path,
+    progress: Progress<'_>,
+) -> Result<(), String> {
+    let sha = fetcher
+        .download(&asset.url, dest, MAX_DOWNLOAD, progress)
+        .await?;
+    if asset.sha256.is_empty() || !sha.eq_ignore_ascii_case(&asset.sha256) {
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(format!(
+            "checksum mismatch for {}: upstream says {}, the download is {sha}; it was deleted",
+            asset.url,
+            if asset.sha256.is_empty() {
+                "nothing"
+            } else {
+                &asset.sha256
+            }
+        ));
+    }
+    Ok(())
 }
 
 /// Whether the system's copy may be used.
@@ -633,7 +833,7 @@ async fn version_of(kind: Kind, tool: &Tool) -> Option<String> {
 
 /// Unpacks with the system's `tar` (bsdtar on macOS and Windows 10+, which
 /// also reads zip; GNU tar on Linux, which detects xz).
-async fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
+pub(crate) async fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
     let tar = system_tar().ok_or("no `tar` program to unpack ffmpeg with")?;
     let out = process::run(
         &Tool::new(tar),
@@ -669,7 +869,7 @@ fn system_tar() -> Option<PathBuf> {
 
 /// The first regular file called `name` below `dir` (archives nest it in
 /// `ffmpeg-…/bin/`). Symlinks are not followed.
-fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
+pub(crate) fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&d) else {
@@ -687,7 +887,7 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
-async fn make_executable(path: &Path) -> Result<(), String> {
+pub(crate) async fn make_executable(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

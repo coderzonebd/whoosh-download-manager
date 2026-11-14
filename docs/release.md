@@ -14,7 +14,7 @@ laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 |---|---|---|
 | `Whoosh_<v>_x64-setup.exe`, `Whoosh_<v>_arm64-setup.exe` (NSIS, per-user) | windows-2025, windows-11-arm | SignPath (exe inside and installer) |
 | `Whoosh_<v>_x64_en-US.msi` (WiX, per-machine; x64 only, not for pre-releases) | windows-2025 | SignPath |
-| `Whoosh_<v>_{x64,arm64}_portable.zip` (the exe with `whoosh-daemon.exe` and `whoosh-nmhost.exe`) | windows-2025, windows-11-arm | SignPath (all three) |
+| `Whoosh_<v>_{x64,arm64}_portable.zip` (the exe with `whoosh-daemon.exe`, `whoosh-nmhost.exe` and `media-tools\` with yt-dlp and ffmpeg) | windows-2025, windows-11-arm | SignPath (all three) |
 | `Whoosh_<v>_universal.dmg` (Apple silicon + Intel) | macos-15 | Developer ID + notarization, stapled |
 | `Whoosh_<v>_universal.app.tar.gz` (updater archive) | macos-15 | updater key (below) |
 | `Whoosh_<v>_amd64.AppImage`, `Whoosh_<v>_amd64.deb`, `Whoosh-<v>-1.x86_64.rpm` | ubuntu-22.04 (glibc 2.35) | — (see *Not automated yet*) |
@@ -28,6 +28,23 @@ laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 | `whoosh-<v>-source.tar.gz` (`git archive` of the tag) | ubuntu-24.04 | covered by the attestation |
 | `*.sig`, `latest.json` (Tauri updater) | — | updater key (below) |
 | `SHA256SUMS` | ubuntu-24.04 | covered by the attestation |
+
+Every desktop installer and the portable zip also carry **yt-dlp and ffmpeg**
+(with ffprobe on Windows and Linux) in the app's resources, `media-tools/`, so
+video and audio sites work right after installation. The *Fetch yt-dlp and
+ffmpeg for the installers* step runs `whoosh-media-bundle` (crates/media): the
+newest yt-dlp release and the newest ffmpeg build for the target from the same
+upstreams, with the same checksum checks, as the first-use download (yt-dlp
+releases; BtbN LGPL builds for Windows and Linux, x64 and ARM64; Martin
+Riedl's GPL builds for macOS, arm64 and x86_64 joined with `lipo`). Nothing is
+pinned: each release takes what is newest, and the versions, source URLs and
+checksums are in `media-tools/manifest.json` and in the job summary. The
+licence texts, notice and written source offer next to them come from
+[packaging/media-tools](../packaging/media-tools). After bundling, *Check
+yt-dlp and ffmpeg inside the bundles* verifies the copies in the `.app`, the
+`.deb` and the AppImage against the manifest (Windows: the portable zip's).
+They add roughly 100–200 MB to each installed app (less to the compressed
+installers); the command-line archives do not include them.
 
 `whoosh-labserver` (the engine's fault-injecting test server) is not released;
 it is built in CI and as the `packaging/docker` image only.
@@ -98,6 +115,7 @@ run log.
 |---|---|---|
 | Windows exe, NSIS, MSI, `whoosh.exe`, `whoosh-daemon.exe`, `whoosh-autostart.exe`, `whoosh-nmhost.exe` | [SignPath](https://signpath.io) (free for OSS through the [SignPath Foundation](https://signpath.org)); the unsigned files are uploaded as a short-lived artifact, SignPath signs them and the signed files replace them | `desktop` (Windows): build `--no-bundle` → sign the app exe and the sidecars (`whoosh-daemon.exe`, `whoosh-nmhost.exe`) in one request → `tauri bundle --no-binary-patching` → sign installers; `binaries` (Windows) |
 | macOS `.app` | Tauri CLI with `APPLE_*` variables: Developer ID, hardened runtime, notarization, stapling | `desktop` (macOS) |
+| macOS yt-dlp and ffmpeg inside the `.app` | `codesign` before bundling: Developer ID (hardened runtime; yt-dlp with `packaging/media-tools/yt-dlp.entitlements`) when configured, else ad hoc like the app; then `whoosh-media-bundle rehash` | *Sign yt-dlp and ffmpeg (macOS)* |
 | macOS `.dmg` | `codesign` + `notarytool` + `stapler` | `.github/scripts/macos-sign.sh`, `macos-notarize.sh` |
 | macOS `whoosh`, `whoosh-daemon`, `whoosh-nmhost` | `codesign` (hardened runtime), zipped and notarized (bare binaries cannot be stapled; Gatekeeper checks online) | `binaries` (macOS) |
 | Updater artifacts | minisign key via `TAURI_SIGNING_PRIVATE_KEY`: `createUpdaterArtifacts` on macOS/Linux, `tauri signer sign` after SignPath on Windows; `latest.json` is generated from the `.sig` files | `desktop`, `release` |
@@ -326,5 +344,13 @@ Phase 4).
 - Linux package signing and apt/dnf repositories; Snap and Nix packaging;
   MSIX; an MSI for Windows ARM64.
 - Publishing the Docker image (it is only built in CI).
+- Notarizing the `.app` with the bundled yt-dlp and ffmpeg signed by our
+  Developer ID has not been tried yet (no certificate so far); the yt-dlp
+  entitlements in `packaging/media-tools/yt-dlp.entitlements` are untested.
+- Martin Riedl stops publishing Intel macOS release builds of ffmpeg in
+  January 2027; from then the universal macOS build cannot fetch the x86_64
+  ffmpeg and the *Fetch yt-dlp and ffmpeg* step fails. Decide before then
+  (another x86_64 source, or an arm64-only ffmpeg with the first-use download
+  on Intel Macs).
 - A "Get beta versions" setting (see *Updater key*); today everyone follows
   `latest.json`.

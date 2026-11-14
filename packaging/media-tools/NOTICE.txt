@@ -1,0 +1,46 @@
+Third-party programs shipped with Whoosh
+========================================
+
+The Whoosh desktop installers include two separate programs that Whoosh
+runs for video and audio sites. They are not part of Whoosh, are not
+linked with it, and keep their own licences. Their versions, download
+addresses and checksums are listed in manifest.json next to them.
+
+yt-dlp
+------
+From:     https://github.com/yt-dlp/yt-dlp/releases (the project's own
+          standalone builds, checked against SHA2-256SUMS of the release)
+Licence:  The Unlicense (public domain dedication), Unlicense.txt
+Source:   https://github.com/yt-dlp/yt-dlp at the release tag named in
+          manifest.json. The standalone build bundles a Python runtime and
+          libraries under their own licences, as listed by the yt-dlp
+          project for that release.
+
+ffmpeg (and ffprobe), Windows and Linux
+---------------------------------------
+From:     https://github.com/BtbN/FFmpeg-Builds/releases, the LGPL static
+          build, checked against checksums.sha256 of the release
+Licence:  GNU Lesser General Public License 2.1 or later, LGPL-2.1.txt;
+          the build's own licence file is LICENSES/ffmpeg-build-LICENSE.txt
+Source:   https://git.ffmpeg.org/ffmpeg.git at the version in manifest.json,
+          built with the scripts at https://github.com/BtbN/FFmpeg-Builds
+
+ffmpeg, macOS
+-------------
+From:     https://ffmpeg.martin-riedl.de, the release build for each
+          processor (joined into one universal program), checked against
+          the .sha256 file published next to each
+Licence:  GNU General Public License 3.0 or later, GPL-3.0.txt (the build
+          includes GPL components such as x264)
+Source:   https://git.ffmpeg.org/ffmpeg.git at the version in manifest.json,
+          built with the scripts at https://git.martin-riedl.de/ffmpeg/build-script
+
+Written offer
+-------------
+For at least three years after each Whoosh release, CoderZone BD will give
+anyone who asks the complete corresponding source code of the ffmpeg build
+shipped in that release, for no more than the cost of providing it. Ask
+through https://github.com/coderzonebd/whoosh-download-manager/issues.
+
+Whoosh copies these programs into its data directory and updates them from
+the same upstream releases when you ask (Settings, Video and audio sites).

@@ -8,6 +8,10 @@
 //!
 //! Every file is checked against the upstream checksum before it is
 //! unpacked or made executable; a mismatch deletes it.
+//!
+//! The same functions, for a release target instead of this machine
+//! (`*_for`, [`Platform`]), fetch the copies the desktop installers ship
+//! ([`crate::bundle`]).
 
 use crate::fetch::Fetcher;
 
@@ -54,8 +58,62 @@ pub struct Asset {
 pub const YT_DLP_UPSTREAM: &str = "github.com/yt-dlp/yt-dlp";
 pub const YT_DLP_LICENSE: &str = "Unlicense";
 
+/// An operating system and processor the tools are fetched for: this
+/// machine at run time, any release target when bundling them into an
+/// installer (`whoosh-media-bundle`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Platform {
+    /// `std::env::consts::OS` values: `linux`, `macos`, `windows`.
+    pub os: &'static str,
+    /// `std::env::consts::ARCH` values: `x86_64`, `aarch64`.
+    pub arch: &'static str,
+    pub musl: bool,
+}
+
+impl Platform {
+    /// This machine.
+    pub fn current() -> Self {
+        Self {
+            os: std::env::consts::OS,
+            arch: std::env::consts::ARCH,
+            musl: cfg!(target_env = "musl"),
+        }
+    }
+
+    /// From a Rust target triple, e.g. `aarch64-pc-windows-msvc`.
+    pub fn from_triple(triple: &str) -> Option<Self> {
+        let arch = match triple.split('-').next()? {
+            "x86_64" => "x86_64",
+            "aarch64" => "aarch64",
+            _ => return None,
+        };
+        let os = if triple.contains("-linux-") {
+            "linux"
+        } else if triple.contains("-apple-darwin") {
+            "macos"
+        } else if triple.contains("-windows-") {
+            "windows"
+        } else {
+            return None;
+        };
+        Some(Self {
+            os,
+            arch,
+            musl: triple.ends_with("-musl"),
+        })
+    }
+
+    pub fn exe_suffix(self) -> &'static str {
+        if self.os == "windows" { ".exe" } else { "" }
+    }
+}
+
 pub fn ffmpeg_upstream() -> &'static str {
-    if cfg!(target_os = "macos") {
+    ffmpeg_upstream_for(Platform::current())
+}
+
+pub fn ffmpeg_upstream_for(p: Platform) -> &'static str {
+    if p.os == "macos" {
         "ffmpeg.martin-riedl.de"
     } else {
         "github.com/BtbN/FFmpeg-Builds"
@@ -63,7 +121,11 @@ pub fn ffmpeg_upstream() -> &'static str {
 }
 
 pub fn ffmpeg_license() -> &'static str {
-    if cfg!(target_os = "macos") {
+    ffmpeg_license_for(Platform::current())
+}
+
+pub fn ffmpeg_license_for(p: Platform) -> &'static str {
+    if p.os == "macos" {
         "GPL-3.0-or-later"
     } else {
         "LGPL-2.1-or-later"
@@ -72,11 +134,13 @@ pub fn ffmpeg_license() -> &'static str {
 
 /// yt-dlp's standalone build for this platform.
 pub fn yt_dlp_asset_name() -> Option<&'static str> {
-    let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
-    let musl = cfg!(target_env = "musl");
-    Some(match (os, arch) {
-        ("linux", "x86_64") if musl => "yt-dlp_musllinux",
-        ("linux", "aarch64") if musl => "yt-dlp_musllinux_aarch64",
+    yt_dlp_asset_name_for(Platform::current())
+}
+
+pub fn yt_dlp_asset_name_for(p: Platform) -> Option<&'static str> {
+    Some(match (p.os, p.arch) {
+        ("linux", "x86_64") if p.musl => "yt-dlp_musllinux",
+        ("linux", "aarch64") if p.musl => "yt-dlp_musllinux_aarch64",
         ("linux", "x86_64") => "yt-dlp_linux",
         ("linux", "aarch64") => "yt-dlp_linux_aarch64",
         ("macos", _) => "yt-dlp_macos",
@@ -87,8 +151,8 @@ pub fn yt_dlp_asset_name() -> Option<&'static str> {
 }
 
 /// BtbN's platform name (Windows and Linux).
-fn btbn_platform() -> Option<&'static str> {
-    Some(match (std::env::consts::OS, std::env::consts::ARCH) {
+fn btbn_platform(p: Platform) -> Option<&'static str> {
+    Some(match (p.os, p.arch) {
         ("linux", "x86_64") => "linux64",
         ("linux", "aarch64") => "linuxarm64",
         ("windows", "x86_64") => "win64",
@@ -97,8 +161,8 @@ fn btbn_platform() -> Option<&'static str> {
     })
 }
 
-fn macos_arch() -> &'static str {
-    if std::env::consts::ARCH == "aarch64" {
+fn macos_arch(p: Platform) -> &'static str {
+    if p.arch == "aarch64" {
         "arm64"
     } else {
         "amd64"
@@ -134,7 +198,16 @@ fn tag_from_url(url: &str) -> Option<String> {
 
 /// The newest yt-dlp release for this platform.
 pub async fn latest_yt_dlp(fetcher: &dyn Fetcher, up: &Upstreams) -> Result<Asset, String> {
-    let name = yt_dlp_asset_name().ok_or("yt-dlp publishes no build for this platform")?;
+    latest_yt_dlp_for(fetcher, up, Platform::current()).await
+}
+
+/// The newest yt-dlp release for `p`.
+pub async fn latest_yt_dlp_for(
+    fetcher: &dyn Fetcher,
+    up: &Upstreams,
+    p: Platform,
+) -> Result<Asset, String> {
+    let name = yt_dlp_asset_name_for(p).ok_or("yt-dlp publishes no build for this platform")?;
     let latest = fetcher.resolve(&format!("{}/latest", up.yt_dlp)).await?;
     let tag = tag_from_url(&latest)
         .ok_or_else(|| format!("cannot tell yt-dlp's latest version from {latest}"))?;
@@ -190,8 +263,17 @@ pub fn pick_btbn(sums: &[(String, String)], platform: &str) -> Option<(String, S
 
 /// The newest ffmpeg build for this platform.
 pub async fn latest_ffmpeg(fetcher: &dyn Fetcher, up: &Upstreams) -> Result<Asset, String> {
-    if cfg!(target_os = "macos") {
-        let start = format!("{}/{}/release/ffmpeg.zip", up.ffmpeg_macos, macos_arch());
+    latest_ffmpeg_for(fetcher, up, Platform::current()).await
+}
+
+/// The newest ffmpeg build for `p`.
+pub async fn latest_ffmpeg_for(
+    fetcher: &dyn Fetcher,
+    up: &Upstreams,
+    p: Platform,
+) -> Result<Asset, String> {
+    if p.os == "macos" {
+        let start = format!("{}/{}/release/ffmpeg.zip", up.ffmpeg_macos, macos_arch(p));
         let url = fetcher.resolve(&start).await?;
         // …/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip
         let version = url
@@ -212,7 +294,7 @@ pub async fn latest_ffmpeg(fetcher: &dyn Fetcher, up: &Upstreams) -> Result<Asse
             archive: Archive::Packed,
         });
     }
-    let platform = btbn_platform().ok_or("no ffmpeg build is fetched for this platform")?;
+    let platform = btbn_platform(p).ok_or("no ffmpeg build is fetched for this platform")?;
     let base = format!("{}/download/latest", up.ffmpeg);
     let sums = parse_sums(&fetcher.text(&format!("{base}/checksums.sha256")).await?);
     let (name, version) = pick_btbn(&sums, platform)
@@ -303,6 +385,51 @@ mod tests {
             Some("master".into())
         );
         assert_eq!(pick_btbn(&only_master, "linux64"), None);
+    }
+
+    #[test]
+    fn platforms_come_from_target_triples() {
+        let p = |t| Platform::from_triple(t).unwrap();
+        assert_eq!(
+            yt_dlp_asset_name_for(p("x86_64-pc-windows-msvc")),
+            Some("yt-dlp.exe")
+        );
+        assert_eq!(
+            yt_dlp_asset_name_for(p("aarch64-pc-windows-msvc")),
+            Some("yt-dlp_arm64.exe")
+        );
+        assert_eq!(
+            yt_dlp_asset_name_for(p("aarch64-unknown-linux-gnu")),
+            Some("yt-dlp_linux_aarch64")
+        );
+        assert_eq!(
+            yt_dlp_asset_name_for(p("x86_64-unknown-linux-musl")),
+            Some("yt-dlp_musllinux")
+        );
+        assert_eq!(
+            yt_dlp_asset_name_for(p("x86_64-apple-darwin")),
+            Some("yt-dlp_macos")
+        );
+        assert_eq!(
+            btbn_platform(p("aarch64-pc-windows-msvc")),
+            Some("winarm64")
+        );
+        assert_eq!(
+            btbn_platform(p("x86_64-unknown-linux-gnu")),
+            Some("linux64")
+        );
+        assert_eq!(macos_arch(p("aarch64-apple-darwin")), "arm64");
+        assert_eq!(
+            ffmpeg_license_for(p("aarch64-apple-darwin")),
+            "GPL-3.0-or-later"
+        );
+        assert_eq!(
+            ffmpeg_license_for(p("x86_64-pc-windows-msvc")),
+            "LGPL-2.1-or-later"
+        );
+        assert_eq!(p("x86_64-pc-windows-msvc").exe_suffix(), ".exe");
+        assert_eq!(Platform::from_triple("universal-apple-darwin"), None);
+        assert_eq!(Platform::from_triple("riscv64gc-unknown-linux-gnu"), None);
     }
 
     #[test]

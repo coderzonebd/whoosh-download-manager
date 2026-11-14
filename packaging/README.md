@@ -16,6 +16,7 @@ those release assets. How a release is cut and signed: [docs/release.md](../docs
 | [`linux/`](linux) | shared | `.desktop` entry and AppStream metainfo (both validate) |
 | [`browsers/`](browsers) | every installer | the extension's store IDs (`extension-ids.json`) and the generator for the installers' browser integration |
 | [`signpath/`](signpath) | Windows signing | SignPath artifact configuration used by `release.yml` |
+| [`media-tools/`](media-tools) | every desktop installer | licence texts and notice shipped next to the bundled yt-dlp and ffmpeg |
 
 ## Filled in per release
 

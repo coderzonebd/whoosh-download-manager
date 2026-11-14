@@ -4,7 +4,7 @@ What the Whoosh desktop app, its background service (`whoosh-daemon`), the comma
 
 ## The app
 
-Whoosh downloads what you ask it to and keeps its settings, download list and history on your computer, in its data directory (Linux `~/.local/share/whoosh`, macOS `~/Library/Application Support/whoosh`, Windows `%LOCALAPPDATA%\whoosh`). It does not send usage data, analytics or identifiers anywhere. It talks to the network only to download what you asked for, and, on desktop builds, to fetch yt-dlp and ffmpeg from their official releases the first time you download from a video site (see [`crates/media/README.md`](../crates/media/README.md)).
+Whoosh downloads what you ask it to and keeps its settings, download list and history on your computer, in its data directory (Linux `~/.local/share/whoosh`, macOS `~/Library/Application Support/whoosh`, Windows `%LOCALAPPDATA%\whoosh`). It does not send usage data, analytics or identifiers anywhere. It talks to the network only to download what you asked for, and to fetch yt-dlp and ffmpeg from their official releases where the installer did not include them (the desktop installers do; the command line fetches them the first time you download from a video site) or when you ask for an update (see [`crates/media/README.md`](../crates/media/README.md)).
 
 ## The local API
 

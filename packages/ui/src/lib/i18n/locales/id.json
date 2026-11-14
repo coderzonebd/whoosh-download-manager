@@ -271,7 +271,7 @@
     "machineTranslated": "Diterjemahkan oleh mesin.",
     "helpTranslate": "Bantu sempurnakan terjemahan",
     "media": "Situs video dan audio",
-    "mediaHint": "Whoosh memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah, diunduh dari rilis resminya saat pertama kali dibutuhkan dan dicocokkan dengan checksum yang diterbitkan.",
+    "mediaHint": "Whoosh memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah dari rilis resminya, dicocokkan dengan checksum yang diterbitkan. Penginstal sudah menyertakannya; tanpa penginstal, keduanya diunduh saat pertama kali dibutuhkan.",
     "browsers": "Peramban",
     "browsersHint": "Hubungkan Chrome, Edge, Firefox, dan peramban lain agar unduhannya masuk ke Whoosh.",
     "browsersOpen": "Hubungkan peramban Anda…",

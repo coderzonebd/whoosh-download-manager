@@ -278,7 +278,7 @@
     "machineTranslated": "Makine çevirisi.",
     "helpTranslate": "Çeviriyi iyileştirmeye yardım edin",
     "media": "Video ve ses siteleri",
-    "mediaHint": "Whoosh, bir sayfadaki videoyu bulmak için yt-dlp'yi, video ile sesi birleştirmek için ffmpeg'i kullanır. İkisi de ayrı programlardır; ilk gerektiklerinde resmi sürümlerinden indirilir ve yayımlanan sağlama toplamıyla doğrulanır.",
+    "mediaHint": "Whoosh, bir sayfadaki videoyu bulmak için yt-dlp'yi, video ile sesi birleştirmek için ffmpeg'i kullanır. İkisi de resmi sürümlerinden gelen ayrı programlardır ve yayımlanan sağlama toplamıyla doğrulanır. Yükleyici ikisini de içerir; yükleyici olmadan ilk gerektiklerinde indirilirler.",
     "browsers": "Tarayıcılar",
     "browsersHint": "Chrome, Edge, Firefox ve diğer tarayıcıları bağlayın; indirmeleri Whoosh'a gelsin.",
     "browsersOpen": "Tarayıcınızı bağlayın…",

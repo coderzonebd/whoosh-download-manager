@@ -8,10 +8,15 @@
 //! `externalBin` puts it there), else `$WHOOSH_DAEMON_BIN`, else `PATH`; in a
 //! development build it is the sibling in `target/<profile>/` once
 //! `cargo build -p whoosh-daemon` has run.
+//!
+//! The installers ship yt-dlp and ffmpeg in the app's resources
+//! (`media-tools/`, see crates/media's `bundle` module); the daemon is told
+//! where with `--media-tools-dir` and copies them into its data directory.
 
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use tauri::{Manager, Runtime};
 use whoosh_client::daemon::{self, Found};
 use whoosh_proto::ClientInfo;
 
@@ -36,8 +41,31 @@ pub fn data_dir() -> Result<PathBuf, String> {
     whoosh_proto::runtime::default_data_dir().map_err(|e| e.to_string())
 }
 
-pub async fn connection(data_dir: &Path, exe: &Path) -> Result<Connection, String> {
-    let connected = daemon::ensure(data_dir, true, &client_info(), exe)
+/// Where the installer put yt-dlp and ffmpeg: `media-tools/` in the app's
+/// resources, when it has a manifest (development builds have none).
+pub fn media_tools_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
+    let dir = app.path().resource_dir().ok()?.join(MEDIA_TOOLS);
+    dir.join("manifest.json").is_file().then_some(dir)
+}
+
+/// The resource directory with the bundled media tools.
+const MEDIA_TOOLS: &str = "media-tools";
+
+/// The daemon's arguments for `media_tools`.
+fn daemon_args(media_tools: Option<&Path>) -> Vec<String> {
+    match media_tools {
+        Some(dir) => vec!["--media-tools-dir".into(), dir.display().to_string()],
+        None => Vec::new(),
+    }
+}
+
+pub async fn connection(
+    data_dir: &Path,
+    exe: &Path,
+    media_tools: Option<&Path>,
+) -> Result<Connection, String> {
+    let args = daemon_args(media_tools);
+    let connected = daemon::ensure_with_args(data_dir, true, &client_info(), exe, &args)
         .await
         .map_err(|e| e.to_string())?;
     let info = connected.info;
@@ -67,8 +95,9 @@ pub async fn shutdown(data_dir: &Path) -> Result<(), String> {
 
 /// Called by the UI before every (re)connection.
 #[tauri::command]
-pub async fn daemon_connection() -> Result<Connection, String> {
-    connection(&data_dir()?, &daemon::daemon_exe()).await
+pub async fn daemon_connection<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Connection, String> {
+    let media_tools = media_tools_dir(&app);
+    connection(&data_dir()?, &daemon::daemon_exe(), media_tools.as_deref()).await
 }
 
 #[cfg(test)]
@@ -80,6 +109,16 @@ mod tests {
         let who = client_info();
         assert_eq!(who.name, "desktop");
         assert!(!who.version.is_empty());
+    }
+
+    #[test]
+    fn media_tools_reach_the_daemon_only_when_bundled() {
+        assert!(daemon_args(None).is_empty());
+        let dir = Path::new("/opt/whoosh/media-tools");
+        assert_eq!(
+            daemon_args(Some(dir)),
+            vec!["--media-tools-dir".to_owned(), dir.display().to_string()]
+        );
     }
 
     #[test]

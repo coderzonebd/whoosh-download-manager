@@ -7,6 +7,8 @@
 #
 # Needs APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD and
 # APPLE_SIGNING_IDENTITY (written by apple-signing-env.sh).
+# MACOS_SIGN_ENTITLEMENTS (optional): an entitlements plist for the
+# programs signed by this call (not .dmg files).
 set -euo pipefail
 
 : "${APPLE_CERTIFICATE:?}" "${APPLE_SIGNING_IDENTITY:?}" "${RUNNER_TEMP:?}"
@@ -30,7 +32,8 @@ fi
 for f in "$@"; do
   case "$f" in
     *.dmg) codesign --force --timestamp --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$f" ;;
-    *) codesign --force --timestamp --options runtime --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$f" ;;
+    *) codesign --force --timestamp --options runtime --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" \
+         ${MACOS_SIGN_ENTITLEMENTS:+--entitlements "$MACOS_SIGN_ENTITLEMENTS"} "$f" ;;
   esac
   codesign --verify --strict --verbose=2 "$f"
 done
