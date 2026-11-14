@@ -1,0 +1,327 @@
+{
+  "extName": {
+    "message": "Whoosh"
+  },
+  "extDescription": {
+    "message": "Envía las descargas del navegador al gestor de descargas Whoosh, con las mismas cookies y la misma página de origen."
+  },
+  "optionsTitle": {
+    "message": "Configuración de Whoosh"
+  },
+  "optionsIntro": {
+    "message": "Los cambios se guardan al hacerlos y se aplican al instante."
+  },
+  "storeNote": {
+    "message": "Esta es la edición de la tienda del navegador. No captura, detecta ni descarga contenido multimedia de YouTube ni de sitios de streaming similares."
+  },
+  "captureLegend": {
+    "message": "Captura de descargas"
+  },
+  "captureEnabled": {
+    "message": "Enviar las descargas del navegador a Whoosh"
+  },
+  "captureEnabledHelp": {
+    "message": "Si está desactivado, todas las descargas se quedan en el navegador. El botón de la barra de herramientas muestra “OFF”."
+  },
+  "captureIncognito": {
+    "message": "También en ventanas privadas"
+  },
+  "captureIncognitoHelp": {
+    "message": "Desactivado de forma predeterminada. Las descargas de ventanas privadas nunca se recuerdan para reparar enlaces caducados."
+  },
+  "minSizeLegend": {
+    "message": "Tamaño mínimo de archivo"
+  },
+  "minSize": {
+    "message": "Dejar los archivos más pequeños al navegador"
+  },
+  "minSizeUnit": {
+    "message": "Unidad"
+  },
+  "minSizeHelp": {
+    "message": "0 significa sin mínimo. Los archivos cuyo tamaño no se conoce de antemano siempre se envían."
+  },
+  "minSizeInvalid": {
+    "message": "Escribe un número igual o mayor que 0."
+  },
+  "fileTypesLegend": {
+    "message": "Tipos de archivo"
+  },
+  "fileTypes": {
+    "message": "Extensiones que capturar"
+  },
+  "fileTypesHelp": {
+    "message": "Separadas por espacios o comas, sin el punto (zip iso mp4). Déjalo vacío para capturar todos los tipos."
+  },
+  "fileTypesReset": {
+    "message": "Restaurar la lista predeterminada"
+  },
+  "fileTypesEmpty": {
+    "message": "Se capturarán todos los tipos de archivo."
+  },
+  "sitesLegend": {
+    "message": "Sitios"
+  },
+  "excludedSites": {
+    "message": "No capturar nunca descargas de estos sitios"
+  },
+  "excludedSitesHelp": {
+    "message": "Uno por línea, p. ej., example.com. Un sitio incluye sus subdominios."
+  },
+  "excludedSitesInvalid": {
+    "message": "No es un nombre de sitio: $SITES$",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "Alt+clic en un enlace"
+  },
+  "altClickBrowser": {
+    "message": "Dejar que lo descargue el navegador"
+  },
+  "altClickWhoosh": {
+    "message": "Enviarlo a Whoosh, digan lo que digan las reglas de arriba"
+  },
+  "altClickOff": {
+    "message": "No hacer nada especial"
+  },
+  "extrasLegend": {
+    "message": "Multimedia y enlaces"
+  },
+  "sniffMedia": {
+    "message": "Detectar audio y video en las páginas"
+  },
+  "sniffMediaHelp": {
+    "message": "Muestra los archivos multimedia y las transmisiones en la ventana emergente de la barra de herramientas, listos para descargar."
+  },
+  "preconnect": {
+    "message": "Preparar la conexión cuando el puntero se detiene sobre un enlace de descarga"
+  },
+  "preconnectHelp": {
+    "message": "Solo se envía a Whoosh la dirección del sitio, nunca el enlace en sí."
+  },
+  "selfHealing": {
+    "message": "Reparar enlaces de descarga caducados"
+  },
+  "selfHealingHelp": {
+    "message": "Cuando la dirección de una descarga en pausa ha caducado, Whoosh busca la nueva en la página de la que vino y te pregunta si no está seguro."
+  },
+  "saved": {
+    "message": "Guardado."
+  },
+  "saveFailed": {
+    "message": "No se pudo guardar: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "Comprobando…"
+  },
+  "popupNotConnected": {
+    "message": "No conectado"
+  },
+  "popupNoHost": {
+    "message": "El host nativo de Whoosh no está instalado."
+  },
+  "popupAppNotRunning": {
+    "message": "La aplicación no está abierta"
+  },
+  "popupStartApp": {
+    "message": "Abre Whoosh; hasta entonces, las descargas se quedan en el navegador."
+  },
+  "popupConnected": {
+    "message": "Conectado"
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "Error"
+  },
+  "popupActive": {
+    "message": "Activas"
+  },
+  "popupQueued": {
+    "message": "En cola"
+  },
+  "popupCapture": {
+    "message": "Capturar descargas del navegador"
+  },
+  "popupCaptureSite": {
+    "message": "Capturar descargas en $SITE$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "Multimedia en esta página"
+  },
+  "popupMediaEmpty": {
+    "message": "Aún no se ha detectado nada."
+  },
+  "popupDownload": {
+    "message": "Descargar"
+  },
+  "popupSent": {
+    "message": "Enviado"
+  },
+  "popupFailed": {
+    "message": "Error"
+  },
+  "popupLast": {
+    "message": "Último: $NAME$ — $OUTCOME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "Configuración"
+  },
+  "altHintBrowser": {
+    "message": "Mantén pulsada la tecla $KEY$ al hacer clic en un enlace para que lo descargue el navegador.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "Mantén pulsada la tecla $KEY$ al hacer clic en un enlace para enviarlo a Whoosh, digan lo que digan las reglas.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "Whoosh de la tienda del navegador no funciona en este sitio."
+  },
+  "healTitle": {
+    "message": "Enlaces caducados"
+  },
+  "healOpenPage": {
+    "message": "Whoosh necesita abrir de nuevo la página de descarga de $FILE$.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "¿Es el mismo archivo que $FILE$?",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "Abrir página"
+  },
+  "healUseButton": {
+    "message": "Usar este enlace"
+  },
+  "healDismissButton": {
+    "message": "Descartar"
+  },
+  "menuLink": {
+    "message": "Descargar enlace con Whoosh"
+  },
+  "menuSelection": {
+    "message": "Descargar los enlaces seleccionados con Whoosh"
+  },
+  "menuPage": {
+    "message": "Descargar todos los enlaces con Whoosh"
+  },
+  "badgeOff": {
+    "message": "OFF"
+  },
+  "outcomeSent": {
+    "message": "enviado a Whoosh"
+  },
+  "outcomeHealed": {
+    "message": "continuó una descarga caducada de Whoosh"
+  },
+  "outcomeSkipped": {
+    "message": "dejado al navegador ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "conservado por el navegador ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "enlaces enviados a Whoosh: $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "error: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "no disponible en este sitio"
+  },
+  "outcomeNoLinks": {
+    "message": "no se pudieron leer los enlaces: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "Whoosh de la tienda del navegador no descarga de este sitio."
+  },
+  "errorRefused": {
+    "message": "Whoosh no aceptó esa dirección."
+  }
+}

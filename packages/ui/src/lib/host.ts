@@ -20,6 +20,11 @@ export interface Host {
     get(): Promise<DesktopPrefs>;
     set(prefs: DesktopPrefs): Promise<DesktopPrefs>;
   };
+  /**
+   * Open a web page in the user's browser (the app's own webview must not
+   * navigate away). Without it, links open the usual way.
+   */
+  openUrl?: (url: string) => Promise<void>;
   /** Start the app when the user logs in. */
   launchAtLogin?: {
     get(): Promise<boolean>;

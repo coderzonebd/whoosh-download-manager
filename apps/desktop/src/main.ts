@@ -20,6 +20,7 @@ import { App, type AppState } from "@whoosh/ui";
 import { mount } from "svelte";
 import { startDeepLinks } from "./deeplinks.ts";
 import { desktopHost } from "./host.ts";
+import { startShellLanguage } from "./shell-language.svelte.ts";
 import { startNotifications } from "./notify.ts";
 import { startTrayUpdates } from "./tray.ts";
 
@@ -74,9 +75,10 @@ mount(App, {
     // The folder picker, tray and login settings exist only in the app.
     ...(live ? { host: desktopHost() } : {}),
     onready: (app: AppState) => {
-      startTrayUpdates(client, (bps) => app.i18n.speed(bps), (n) => app.i18n.t("status.active", { count: n }));
+      startTrayUpdates(client, (bps, active) => app.i18n.t("tray.tooltip", { speed: app.i18n.speed(bps), active: app.i18n.t("status.active", { count: active }) }));
       if (live) {
         startNotifications(client, app);
+        startShellLanguage(app);
         void startDeepLinks(app);
       }
     },

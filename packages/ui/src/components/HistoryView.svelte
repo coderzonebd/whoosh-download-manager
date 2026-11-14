@@ -67,7 +67,7 @@
         }}
       />
     </div>
-    <div class="choice" role="radiogroup" aria-label={t("history.filter")}>
+    <div class="choice" role="radiogroup" aria-label={t("history.filter.label")}>
       {#each FILTERS as f (f)}
         <label class:on={filter === f}>
           <input type="radio" name="vy-history-filter" value={f} bind:group={filter} />

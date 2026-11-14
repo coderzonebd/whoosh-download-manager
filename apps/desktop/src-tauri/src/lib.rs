@@ -21,6 +21,7 @@ use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 mod daemon;
 mod deep_links;
 mod prefs;
+mod shell_i18n;
 mod window_size;
 
 /// Sent to the UI when closing the window hid it to the tray, so it can say
@@ -57,6 +58,40 @@ fn set_tray_tooltip<R: Runtime>(app: AppHandle<R>, text: String) -> Result<(), S
         Some(tray) => tray.set_tooltip(Some(text)).map_err(|e| e.to_string()),
         None => Ok(()),
     }
+}
+
+/// Where the language picker's "help improve the translation" link may go.
+const TRANSLATION_SITE: &str = "https://hosted.weblate.org/";
+
+/// Opens a page of the translation site in the user's browser. Only that
+/// site: the webview must not become a way to launch arbitrary URLs.
+#[tauri::command]
+fn open_translation_page(url: String) -> Result<(), String> {
+    let ok = url.starts_with(TRANSLATION_SITE)
+        && url
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-._~:/?#[]@!$&'()*+,;=%".contains(&b));
+    if !ok {
+        return Err(format!("not a translation page: {url}"));
+    }
+    open_in_browser(&url).map_err(|e| format!("could not open the browser: {e}"))
+}
+
+fn open_in_browser(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    // Not waited for here: reaped on a thread so no zombie is left behind.
+    let mut child = cmd.arg(url).spawn()?;
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 
 pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
@@ -129,9 +164,15 @@ fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, api: &tauri:
 }
 
 fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show Whoosh", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    // In the language the UI last used; the UI updates it (`shell_i18n`).
+    let text = shell_i18n::strings(&app.state::<prefs::PrefsState>().get().language);
+    let show = MenuItem::with_id(app, "show", &text.show, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", &text.quit, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
+    app.manage(shell_i18n::TrayItems {
+        show: show.clone(),
+        quit: quit.clone(),
+    });
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Whoosh")
@@ -214,6 +255,8 @@ pub fn run() {
             deep_links::take_deep_links,
             prefs::desktop_prefs,
             prefs::set_desktop_prefs,
+            shell_i18n::set_shell_language,
+            open_translation_page,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|err| {

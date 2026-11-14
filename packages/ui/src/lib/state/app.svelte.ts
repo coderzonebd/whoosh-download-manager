@@ -328,7 +328,7 @@ export class AppState {
     const name = this.store.get(ids[0])?.data.filename ?? "";
     try {
       await this.client.call("download.remove", { ids, deleteFiles });
-      this.toasts.push({ tone: "info", message: t("remove.done", { count: ids.length, name }) });
+      this.toasts.push({ tone: "info", message: ids.length === 1 ? t("remove.doneOne", { name }) : t("remove.done", { count: ids.length }) });
     } catch (e) {
       this.report(e);
     }
@@ -460,7 +460,7 @@ export class AppState {
       this.store.upsert(next);
     }
     const name = queue === MAIN_QUEUE ? this.i18n.t("queue.main") : queue;
-    this.toasts.push({ tone: "success", message: this.i18n.t("move.done", { count: ids.length, queue: name }) }, 3000);
+    this.toasts.push({ tone: "success", message: ids.length === 1 ? this.i18n.t("move.doneOne", { queue: name }) : this.i18n.t("move.done", { count: ids.length, queue: name }) }, 3000);
     return true;
   }
 

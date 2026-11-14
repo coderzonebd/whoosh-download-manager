@@ -40,13 +40,15 @@ export function manifestFor(target, { version, store }) {
   const icons = { 16: "icons/16.png", 32: "icons/32.png", 48: "icons/48.png", 128: "icons/128.png" };
   const manifest = {
     manifest_version: 3,
-    name: "Whoosh",
-    short_name: "Whoosh",
+    // Translated: _locales/<lang>/messages.json (extName, extDescription).
+    name: "__MSG_extName__",
+    short_name: "__MSG_extName__",
     version,
-    description: "Hands your browser downloads to the Whoosh download manager, with the same cookies and referrer.",
+    description: "__MSG_extDescription__",
+    default_locale: "en",
     icons,
     action: {
-      default_title: "Whoosh",
+      default_title: "__MSG_extName__",
       default_popup: "popup.html",
       default_icon: { 16: icons[16], 32: icons[32] },
     },

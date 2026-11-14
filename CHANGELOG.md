@@ -27,6 +27,14 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - Against a daemon without the `queues` capability, the queue and scheduler controls are hidden and no error is shown.
 - Saving Settings no longer drops fields the screen does not show (such as `durability`).
 
+### Languages
+- Strings moved to Weblate-friendly files: the UI's in `packages/ui/src/lib/i18n/locales/<lang>.json` (i18next JSON v4, CLDR plurals), the extension's in `apps/extension/_locales/<lang>/messages.json` (WebExtension i18n, including the store name and description). Translations will be done on hosted Weblate; see [docs/translating.md](docs/translating.md) for how to help, the glossary and the Weblate setup.
+- Ten more languages, seeded by machine translation and marked as such in the language picker with a link to help improve them: Arabic, Chinese (Simplified), Hindi, Indonesian, Portuguese (Brazil), Russian, Spanish, Turkish, Urdu and Vietnamese. English and Bangla are written by people; the Bangla was reviewed for consistent terms.
+- The tray menu follows the app's language.
+- Arabic and Urdu lay the app out right to left; context menus now open toward the reading direction.
+- Percentages are formatted for each language (`%42,3` in Turkish), and "Remove “name”?" versus "Remove 3 downloads?" no longer relies on the plural form "one", which in Russian also covers 21.
+- `scripts/i18n-import-ts.mjs` converts strings still written in the old `en.ts`/`bn.ts` format.
+
 ### Engine
 - Queues and the scheduler: named queues, each running up to its own `maxActive`, kept across restarts; queues started and stopped at local clock times on chosen days (DST, time-zone changes and a sleeping machine handled); speed-limit windows by time of day, also over midnight; after-done actions (sleep or shut down) announced with `event.queue.finished` and run 60 s later unless cancelled. The daemon now advertises the `queues` capability.
 

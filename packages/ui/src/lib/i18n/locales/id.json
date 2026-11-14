@@ -1,0 +1,453 @@
+{
+  "app": {
+    "name": "Whoosh"
+  },
+  "nav": {
+    "label": "Pustaka",
+    "downloads": "Unduhan",
+    "categories": "Kategori",
+    "queues": "Antrean",
+    "settings": "Pengaturan",
+    "history": "Riwayat",
+    "open": "Tampilkan navigasi",
+    "close": "Sembunyikan navigasi"
+  },
+  "group": {
+    "all": "Semua unduhan",
+    "active": "Sedang diunduh",
+    "queued": "Dalam antrean",
+    "paused": "Dijeda",
+    "completed": "Selesai",
+    "attention": "Perlu perhatian"
+  },
+  "category": {
+    "video": "Video",
+    "music": "Musik",
+    "documents": "Dokumen",
+    "compressed": "Arsip",
+    "programs": "Program",
+    "images": "Gambar",
+    "other": "Lainnya"
+  },
+  "queue": {
+    "main": "Antrean utama",
+    "new": "Antrean baru",
+    "create": "Buat antrean",
+    "createTitle": "Antrean baru",
+    "editTitle": "Pengaturan “{{name}}”",
+    "description": "Antrean mengunduh file-filenya sendiri, satu per satu kecuali Anda mengizinkan lebih, dan dapat dimulai serta dihentikan sesuai jadwal.",
+    "mainDescription": "Unduhan masuk ke antrean utama kecuali Anda memilih antrean lain.",
+    "name": "Nama",
+    "nameTaken": "Sudah ada antrean bernama “{{name}}”.",
+    "nameTooLong": "Gunakan paling banyak 64 karakter.",
+    "nameInvalid": "Nama tidak boleh berisi karakter kontrol.",
+    "maxActive": "Unduhan sekaligus",
+    "maxActiveHint": "Sisanya menunggu giliran, yang terlama lebih dulu.",
+    "created": "Antrean “{{name}}” dibuat",
+    "saved": "“{{name}}” disimpan",
+    "saveFailed": "Tidak dapat menyimpan antrean: {{message}}",
+    "removed": "Antrean “{{name}}” dihapus",
+    "remove": "Hapus antrean",
+    "removeNamed": "Hapus antrean “{{name}}”",
+    "removeTitle": "Hapus antrean “{{name}}”?",
+    "removeBody_other": "{{count}} unduhan di dalamnya dipindahkan ke antrean utama. Tidak ada yang dihapus dari disk.",
+    "removeBodyEmpty": "Antrean ini kosong. Tidak ada yang dihapus dari disk.",
+    "running": "Berjalan",
+    "stopped": "Berhenti",
+    "scheduled": "Memiliki jadwal",
+    "start": "Mulai",
+    "stop": "Hentikan",
+    "edit": "Pengaturan…",
+    "editSchedule": "Jadwal…",
+    "count_other": "{{count}} menunggu",
+    "mainSummary_other": "Menjalankan {{count}} unduhan sekaligus"
+  },
+  "toolbar": {
+    "label": "Tindakan unduhan",
+    "add": "Tambah unduhan",
+    "resume": "Lanjutkan",
+    "pause": "Jeda",
+    "remove": "Hapus",
+    "search": "Cari unduhan",
+    "searchPlaceholder": "Cari",
+    "layout": "Tata letak daftar",
+    "details": "Panel detail",
+    "shortcuts": "Pintasan keyboard"
+  },
+  "layout": {
+    "classic": "Klasik",
+    "modern": "Modern"
+  },
+  "list": {
+    "label": "Unduhan",
+    "loading": "Memuat unduhan…",
+    "loadError": "Tidak dapat memuat unduhan: {{message}}",
+    "empty": {
+      "title": "Belum ada unduhan di sini",
+      "body": "Tempel tautan dengan {{shortcut}}, atau biarkan ekstensi browser mengirimkannya.",
+      "action": "Tambah unduhan"
+    },
+    "noMatch": {
+      "title": "Tidak ada yang cocok dengan “{{query}}”",
+      "body": "Coba nama lain, atau hapus pencarian.",
+      "clear": "Hapus pencarian"
+    },
+    "selected_other": "{{count}} dipilih"
+  },
+  "col": {
+    "name": "Nama",
+    "size": "Ukuran",
+    "progress": "Kemajuan",
+    "status": "Status",
+    "speed": "Kecepatan",
+    "eta": "Sisa waktu",
+    "connections": "Koneksi",
+    "added": "Ditambahkan",
+    "resize": "Ubah ukuran kolom {{column}}"
+  },
+  "state": {
+    "queued": "Dalam antrean",
+    "probing": "Memulai",
+    "downloading": "Mengunduh",
+    "paused": "Dijeda",
+    "needs_refresh": "Tautan kedaluwarsa",
+    "verifying": "Memverifikasi",
+    "completed": "Selesai",
+    "failed": "Gagal"
+  },
+  "unit": {
+    "byte": "B",
+    "speed": "{{size}}/dtk"
+  },
+  "size": {
+    "unknown": "Ukuran tidak diketahui"
+  },
+  "eta": {
+    "unknown": "—",
+    "s": "{{s}} dtk",
+    "m": "{{m}} mnt",
+    "ms": "{{m}} mnt {{s}} dtk",
+    "hm": "{{h}} jam {{m}} mnt",
+    "dh": "{{d}} hr {{h}} jam",
+    "left": "{{eta}} lagi"
+  },
+  "progress": {
+    "of": "{{done}} dari {{total}}",
+    "value": "{{percent}} · {{done}} dari {{total}}",
+    "indeterminate": "{{done}} sejauh ini"
+  },
+  "connections": {
+    "count_other": "{{count}} koneksi"
+  },
+  "detail": {
+    "label": "Detail unduhan",
+    "close": "Tutup detail",
+    "empty": "Pilih unduhan untuk melihat detailnya.",
+    "speed": "Kecepatan",
+    "eta": "Sisa waktu",
+    "connections": "Koneksi",
+    "size": "Ukuran",
+    "downloaded": "Terunduh",
+    "resumable": {
+      "label": "Jeda dan lanjutkan",
+      "yes": "Didukung",
+      "no": "Tidak didukung — menjeda akan memulainya dari awal"
+    },
+    "savedTo": "Disimpan di",
+    "source": "Alamat",
+    "added": "Ditambahkan",
+    "finished": "Selesai",
+    "speedHistory": "Kecepatan, 30 detik terakhir",
+    "peak": "Puncak {{speed}}",
+    "segmentMap": "Peta segmen",
+    "segments": "Segmen",
+    "segment": "Segmen {{n}}",
+    "segmentRange": "{{from}} – {{to}}",
+    "segmentsNone": "Detail segmen muncul setelah unduhan dimulai.",
+    "copied": "Alamat disalin",
+    "errorCode": "Kode galat: {{code}}"
+  },
+  "action": {
+    "resume": "Lanjutkan",
+    "pause": "Jeda",
+    "retry": "Coba lagi",
+    "remove": "Hapus…",
+    "refreshLink": "Perbarui tautan…",
+    "copyLink": "Salin alamat",
+    "details": "Tampilkan detail",
+    "cancel": "Batal",
+    "close": "Tutup",
+    "save": "Simpan",
+    "revert": "Kembalikan",
+    "dismiss": "Tutup",
+    "show": "Tampilkan",
+    "browse": "Telusuri…",
+    "moveToQueue": "Pindahkan ke antrean…"
+  },
+  "menu": {
+    "label": "Tindakan untuk {{name}}"
+  },
+  "add": {
+    "title": "Tambah unduhan",
+    "description": "Tempel tautan. Whoosh memeriksanya lebih dulu agar Anda bisa melihat filenya sebelum unduhan dimulai.",
+    "url": "Alamat",
+    "urlPlaceholder": "https://example.com/file.zip",
+    "invalidUrl": "Masukkan alamat lengkap yang diawali http://, https:// atau ftp://",
+    "checking": "Memeriksa tautan…",
+    "probeFailed": "Tidak dapat memeriksa tautan ini: {{message}}",
+    "retry": "Periksa lagi",
+    "filename": "Nama file",
+    "folder": "Simpan ke folder",
+    "category": "Kategori",
+    "startNow": "Mulai mengunduh sekarang",
+    "submit": "Unduh",
+    "submitPaused": "Tambah dalam keadaan dijeda",
+    "unknownSize": "Ukuran tidak diketahui",
+    "resumable": "Dapat dijeda dan dilanjutkan",
+    "notResumable": "Menjeda akan memulai unduhan ini dari awal",
+    "added": "“{{name}}” ditambahkan",
+    "failed": "Tidak dapat menambahkan unduhan: {{message}}",
+    "chooseFolder": "Pilih lokasi penyimpanan file",
+    "queue": "Antrean",
+    "lookingForMedia": "Mencari video di halaman ini…",
+    "mediaFailed": "Tidak ada video di halaman ini: {{message}}",
+    "asFile": "Unduh halamannya saja",
+    "asMedia": "Pilih format video"
+  },
+  "remove": {
+    "titleOne": "Hapus “{{name}}”?",
+    "title_other": "Hapus {{count}} unduhan?",
+    "body": "Unduhan akan hilang dari daftar. File yang sudah selesai tetap ada di disk kecuali Anda memilih sebaliknya.",
+    "deleteFiles": "Hapus juga file dari disk",
+    "confirm": "Hapus",
+    "doneOne": "“{{name}}” dihapus",
+    "done_other": "{{count}} unduhan dihapus"
+  },
+  "refresh": {
+    "title": "Perbarui tautan",
+    "body": "Alamat untuk “{{name}}” sudah kedaluwarsa. Tempel tautan baru ke file yang sama dan unduhan akan berlanjut dari titik terakhirnya.",
+    "url": "Alamat baru",
+    "submit": "Lanjutkan unduhan"
+  },
+  "settings": {
+    "title": "Pengaturan",
+    "appearance": "Tampilan dan bahasa",
+    "language": "Bahasa",
+    "theme": "Tema",
+    "highContrast": "Kontras tinggi",
+    "highContrastHint": "Warna dan garis tepi yang lebih tegas. Hanya berlaku di perangkat ini.",
+    "layout": "Daftar unduhan",
+    "downloads": "Unduhan",
+    "defaultDirectory": "Folder bawaan",
+    "maxActive": "Unduhan sekaligus",
+    "maxActiveHint": "Unduhan berikutnya dalam antrean dimulai saat satu unduhan selesai.",
+    "maxConnections": "Koneksi per unduhan",
+    "maxConnectionsHint": "Lebih banyak koneksi biasanya lebih cepat. Beberapa server hanya mengizinkan sedikit.",
+    "speed": "Kecepatan",
+    "speedLimit": "Batasi kecepatan unduh total",
+    "speedLimitValue": "Kecepatan maksimum",
+    "range": "Masukkan bilangan bulat dari {{min}} sampai {{max}}.",
+    "required": "Kolom ini tidak boleh kosong.",
+    "unsaved": "Perubahan belum disimpan",
+    "saved": "Pengaturan disimpan",
+    "saveFailed": "Tidak dapat menyimpan pengaturan: {{message}}",
+    "loading": "Memuat pengaturan…",
+    "chooseFolder": "Pilih folder unduhan bawaan",
+    "desktop": "Komputer ini",
+    "desktopHint": "Langsung berlaku dan hanya untuk aplikasi ini.",
+    "launchAtLogin": "Jalankan Whoosh saat saya masuk",
+    "launchAtLoginHint": "Whoosh berjalan di baki sistem tanpa membuka jendela.",
+    "closeToTray": "Menutup jendela membiarkan Whoosh tetap di baki sistem",
+    "closeToTrayHint": "Unduhan tetap berjalan. Keluar melalui menu baki sistem.",
+    "stopDaemonOnQuit": "Keluar juga menghentikan unduhan",
+    "stopDaemonOnQuitHint": "Jika nonaktif: unduhan tetap berjalan di latar belakang untuk ekstensi browser dan baris perintah.",
+    "machineTranslated": "Diterjemahkan oleh mesin.",
+    "helpTranslate": "Bantu sempurnakan terjemahan",
+    "media": "Situs video dan audio",
+    "mediaHint": "Whoosh memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah, diunduh dari rilis resminya saat pertama kali dibutuhkan dan dicocokkan dengan checksum yang diterbitkan."
+  },
+  "theme": {
+    "system": "Ikuti sistem",
+    "light": "Terang",
+    "dark": "Gelap"
+  },
+  "status": {
+    "label": "Status",
+    "speed": "Kecepatan unduh total",
+    "active_other": "{{count}} aktif",
+    "queued_other": "{{count}} dalam antrean",
+    "limit": "Dibatasi hingga {{speed}}",
+    "noLimit": "Tanpa batas kecepatan"
+  },
+  "conn": {
+    "demo": "Data demo",
+    "open": "Terhubung",
+    "connecting": "Menghubungkan…",
+    "reconnecting": "Menghubungkan ulang…",
+    "closed": "Terputus"
+  },
+  "toast": {
+    "region": "Notifikasi",
+    "completed": "“{{name}}” selesai diunduh",
+    "failed": "“{{name}}” gagal",
+    "expired": "Tautan untuk “{{name}}” sudah kedaluwarsa"
+  },
+  "error": {
+    "generic": "Terjadi kesalahan: {{message}}"
+  },
+  "shortcuts": {
+    "title": "Pintasan keyboard",
+    "add": "Tambah unduhan",
+    "search": "Cari",
+    "settings": "Pengaturan",
+    "move": "Bergerak dalam daftar",
+    "extend": "Perluas pilihan",
+    "selectAll": "Pilih semua",
+    "toggle": "Jeda atau lanjutkan yang dipilih",
+    "details": "Buka detail",
+    "remove": "Hapus yang dipilih",
+    "menu": "Buka menu tindakan",
+    "escape": "Tutup panel atau hapus pilihan",
+    "help": "Tampilkan daftar ini"
+  },
+  "schedule": {
+    "title": "Jadwal",
+    "start": "Mulai pada",
+    "stop": "Berhenti pada",
+    "startTime": "Waktu mulai",
+    "stopTime": "Waktu berhenti",
+    "startDays": "Mulai pada hari",
+    "stopDays": "Berhenti pada hari",
+    "everyDay": "Jika tidak ada hari yang dicentang, berarti setiap hari.",
+    "someDays": "Hanya pada hari yang dicentang.",
+    "everyDayShort": "setiap hari",
+    "badTime": "Masukkan waktu seperti 23:30.",
+    "afterDone": "Saat antrean selesai",
+    "afterDoneHint": "Anda mendapat peringatan satu menit sebelumnya, dengan tombol untuk membatalkan.",
+    "localTime": "Waktu mengikuti jam komputer yang mengunduh.",
+    "none": "Tanpa jadwal",
+    "atOn": "{{time}}, {{days}}",
+    "startsAt": "Mulai {{when}}",
+    "stopsAt": "Berhenti {{when}}",
+    "thenSleep": "Lalu tidur",
+    "thenShutdown": "Lalu matikan"
+  },
+  "afterDone": {
+    "none": "Tidak melakukan apa pun",
+    "sleep": "Tidurkan komputer",
+    "shutdown": "Matikan komputer",
+    "sleepSoon": "Antrean “{{name}}” selesai. Komputer akan tidur dalam {{secs}} detik.",
+    "shutdownSoon": "Antrean “{{name}}” selesai. Komputer akan mati dalam {{secs}} detik.",
+    "now": "Sekarang",
+    "cancel": "Batal",
+    "cancelled": "Dibatalkan. Komputer tetap menyala."
+  },
+  "move": {
+    "titleOne": "Pindahkan “{{name}}” ke antrean",
+    "title_other": "Pindahkan {{count}} unduhan ke antrean",
+    "description": "Unduhan dalam antrean menunggu giliran dan jadwal antrean tersebut.",
+    "queue": "Antrean",
+    "current": "Saat ini",
+    "submit": "Pindahkan",
+    "doneOne": "Dipindahkan ke “{{queue}}”",
+    "done_other": "{{count}} unduhan dipindahkan ke “{{queue}}”"
+  },
+  "history": {
+    "title": "Riwayat",
+    "search": "Cari riwayat",
+    "filter": {
+      "label": "Tampilkan",
+      "all": "Semua",
+      "completed": "Selesai",
+      "failed": "Gagal"
+    },
+    "count_other": "{{count}} entri",
+    "clear": "Hapus riwayat…",
+    "clearShown": "Hapus yang ditampilkan…",
+    "clearTitle_other": "Hapus {{count}} entri dari riwayat?",
+    "clearBody": "Entri akan hilang dari daftar. File yang sudah diunduh tetap ada di disk.",
+    "clearConfirm": "Hapus",
+    "cleared_other": "{{count}} entri dihapus",
+    "removeOne": "Hapus “{{name}}” dari riwayat",
+    "showInList": "Tampilkan",
+    "more_other": "Tampilkan {{count}} lagi",
+    "empty": {
+      "title": "Belum ada yang selesai",
+      "body": "Unduhan yang selesai dan gagal muncul di sini."
+    },
+    "noMatch": "Tidak ada entri yang cocok"
+  },
+  "speedSchedule": {
+    "title": "Kecepatan menurut waktu",
+    "hint": "Selama rentang waktu aktif, batasnya menggantikan batas di atas. Jika rentang waktu tumpang tindih, batas terendah yang berlaku. Rentang yang berakhir sebelum dimulai akan berlanjut melewati tengah malam.",
+    "window": "Rentang waktu {{n}}",
+    "from": "Dari",
+    "to": "Sampai",
+    "limit": "Batas",
+    "unit": "Satuan",
+    "days": "Hari",
+    "add": "Tambah rentang waktu",
+    "remove": "Hapus rentang waktu {{n}}",
+    "same": "Waktu mulai dan selesai tidak boleh sama."
+  },
+  "desktop": {
+    "trayNotice": "Whoosh masih berjalan di baki sistem, jadi unduhan tetap berjalan. Keluar melalui menu baki sistem."
+  },
+  "tray": {
+    "show": "Tampilkan Whoosh",
+    "quit": "Keluar",
+    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "Video di halaman ini",
+    "length": "Durasi {{time}}",
+    "by": "Dari {{name}}",
+    "kind": "Unduh sebagai",
+    "video": "Video",
+    "audio": "Audio saja",
+    "quality": "Kualitas",
+    "qualityBest": "Terbaik yang tersedia",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (sekitar {{size}})",
+    "audioFormat": "Format audio",
+    "audioOriginal": "Apa adanya (tanpa konversi)",
+    "audioMp3": "MP3 (dikonversi)",
+    "subtitles": "Subtitel",
+    "subtitlesHint": "Disimpan sebagai file terpisah di samping video.",
+    "subtitleAuto": "{{name}} (dibuat otomatis)",
+    "size": "Sekitar {{size}}",
+    "sizeUnknown": "Ukuran belum diketahui",
+    "viaEngine": "Whoosh mengunduhnya dengan beberapa koneksi; bisa dijeda dan dilanjutkan.",
+    "viaYtDlp": "Format streaming: yt-dlp mengunduhnya dengan satu koneksi.",
+    "filenameHint": "Tanpa ekstensi; Whoosh menambahkannya.",
+    "live": "Ini siaran langsung."
+  },
+  "mediaStep": {
+    "preparingTools": "Mengambil alat",
+    "refreshing": "Memperbarui tautan",
+    "downloading": "Mengunduh",
+    "subtitles": "Subtitel",
+    "merging": "Menggabungkan",
+    "converting": "Mengonversi"
+  },
+  "mediaTools": {
+    "ready": "Siap",
+    "missing": "Diunduh saat pertama kali dibutuhkan",
+    "installing": "Mengunduh…",
+    "installingProgress": "Mengunduh… {{percent}}",
+    "version": "Versi {{version}}",
+    "managed": "Diperbarui oleh Whoosh",
+    "system": "Terpasang di komputer ini",
+    "updateAvailable": "Versi {{version}} tersedia",
+    "upToDate": "Terbaru",
+    "source": "Dari {{upstream}} · {{license}}",
+    "check": "Periksa pembaruan",
+    "lastCheck": "Terakhir diperiksa {{time}}",
+    "install": "Unduh {{name}}",
+    "update": "Perbarui {{name}}",
+    "autoUpdate": "Periksa pembaruan sekali sehari",
+    "autoUpdateHint": "Jika tidak, Whoosh hanya memeriksa saat Anda minta.",
+    "error": "Percobaan terakhir gagal: {{message}}",
+    "checkFailed": "Tidak bisa memeriksa pembaruan: {{message}}"
+  }
+}

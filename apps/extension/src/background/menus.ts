@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { CollectLinksMessage, CollectLinksReply, LinkInfo } from "../shared/messages";
+import { t } from "../shared/i18n";
 import type { Api } from "./browser";
 
 export const MENU = {
@@ -13,14 +14,14 @@ export const MENU = {
 export async function createMenus(api: Api): Promise<void> {
   await api.contextMenus.removeAll();
   const documentUrlPatterns = ["http://*/*", "https://*/*"];
-  api.contextMenus.create({ id: MENU.link, title: "Download link with Whoosh", contexts: ["link"], documentUrlPatterns });
+  api.contextMenus.create({ id: MENU.link, title: t("menuLink"), contexts: ["link"], documentUrlPatterns });
   api.contextMenus.create({
     id: MENU.selection,
-    title: "Download selected links with Whoosh",
+    title: t("menuSelection"),
     contexts: ["selection"],
     documentUrlPatterns,
   });
-  api.contextMenus.create({ id: MENU.page, title: "Download all links with Whoosh", contexts: ["page"], documentUrlPatterns });
+  api.contextMenus.create({ id: MENU.page, title: t("menuPage"), contexts: ["page"], documentUrlPatterns });
 }
 
 function isReply(value: unknown): value is CollectLinksReply {

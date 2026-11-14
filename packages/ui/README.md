@@ -93,12 +93,23 @@ app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 
 ## Internationalisation
 
-`src/lib/i18n/en.ts` is the source; `bn.ts` is a native-written Bangla table
-(typed against English, so a missing key fails `typecheck`; a test also fails
-if a Bangla string is left in English or invents a placeholder). Bangla uses
-Bangla digits via `Intl` (`bn-BD`). Plurals use `Intl.PluralRules`.
-`I18n.register(tag, …)` adds locales at runtime; Arabic, Persian, Urdu,
-Hebrew… switch the whole UI to RTL (every style uses logical properties).
+Strings live in `src/lib/i18n/locales/<lang>.json`, one file per language
+in i18next JSON v4 (nested keys, `{{name}}` placeholders, `key_one` /
+`key_other` / … plurals chosen with `Intl.PluralRules`), translated on
+hosted Weblate ([docs/translating.md](../../docs/translating.md)).
+`en.json` is the source, and `t()` keys are type-checked against it
+(`MessageKey`). `bn.json` is native-written Bangla; ten more languages are
+seeded by machine translation and flagged `machine: true` in
+`src/lib/i18n/languages.ts`, which the language picker shows with a link to
+Weblate. A missing or empty string falls back to English. Tests check that
+every locale has the source's keys, placeholders and CLDR plural forms
+(`test/i18n.test.ts`); `pnpm i18n:sync` adds new English keys to the other
+locales, and `scripts/i18n-import-ts.mjs` converts strings still written in
+the old `en.ts`/`bn.ts` format. Numbers, sizes and percentages come from
+`Intl` (Bangla digits via `bn-BD`, `%42,3` in Turkish).
+`I18n.register(tag, …)` adds locales at runtime. Arabic and Urdu switch the
+whole UI to RTL (every style uses logical properties; `test/rtl.test.ts`
+renders the app in both and refuses physical `left`/`right` styles).
 
 ## Performance (10 000 downloads)
 

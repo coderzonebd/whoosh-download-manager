@@ -63,7 +63,14 @@ GPL-3.0-or-later.
 - Tray icon with *Show Whoosh* / *Quit*; left-click shows the window (and
   on macOS, so does the Dock icon). The UI pushes "Whoosh — ↓ 12.5 MB/s ·
   3 active" from the daemon's stats into the tooltip once a second
-  (`set_tray_tooltip` command). Linux app indicators do not display
+  (`set_tray_tooltip` command). The menu is in the UI's language: Rust
+  embeds the UI's locale files at build time (`build.rs`) and reads the
+  `tray.*` strings; the UI calls `set_shell_language` whenever its language
+  (the daemon's `Settings.language`) changes, and the shell remembers it in
+  `desktop.json` so the tray starts translated (`src-tauri/src/shell_i18n.rs`).
+  The language picker's "help improve the translation" link opens the
+  browser through `open_translation_page`, which only accepts
+  `https://hosted.weblate.org/` pages. Linux app indicators do not display
   tooltips, so on Linux the text is set but not visible yet.
 - Fonts (Inter, Noto Sans Bengali) are bundled, so Bangla renders the same on
   every OS and nothing is fetched at runtime. CSP allows only `self`, IPC and

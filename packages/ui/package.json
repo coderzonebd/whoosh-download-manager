@@ -16,7 +16,9 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
-    "test": "vitest run"
+    "test": "vitest run",
+    "i18n:sync": "node scripts/i18n-import-ts.mjs",
+    "i18n:check": "node scripts/i18n-import-ts.mjs --check"
   },
   "dependencies": {
     "@whoosh/api-client": "workspace:*",

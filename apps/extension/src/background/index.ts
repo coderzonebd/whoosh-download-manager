@@ -4,6 +4,7 @@
 // Every listener is registered synchronously at the top level so the browser
 // can wake the script for it.
 
+import { t } from "../shared/i18n";
 import { PreconnectThrottle, selectLinks } from "../shared/links";
 import {
   asContentMessage,
@@ -75,7 +76,7 @@ async function updateBadge(s: Settings): Promise<void> {
     return;
   }
   await api.action.setBadgeBackgroundColor({ color: "#6b7280" });
-  await api.action.setBadgeText({ text: s.captureEnabled ? "" : "off" });
+  await api.action.setBadgeText({ text: s.captureEnabled ? "" : t("badgeOff") });
 }
 
 // ------------------------------------------------------------------ self-healing
@@ -133,17 +134,17 @@ const clicks = new RecentClicks();
 let lastCapture: PopupState["lastCapture"];
 
 function describe(result: CaptureResult): string {
-  if (result.outcome === "sent") return "sent to whoosh";
-  if (result.outcome === "healed") return "continued an expired whoosh download";
-  if (result.outcome === "skipped") return `left to the browser (${result.reason})`;
-  return `kept by the browser (${result.reason})`;
+  if (result.outcome === "sent") return t("outcomeSent");
+  if (result.outcome === "healed") return t("outcomeHealed");
+  if (result.outcome === "skipped") return t("outcomeSkipped", result.reason);
+  return t("outcomeKept", result.reason);
 }
 
 function report(candidate: CandidateDownload, result: CaptureResult): void {
   if (result.outcome !== "skipped") {
     lastCapture = { url: candidate.url, outcome: describe(result), at: Date.now() };
   }
-  console.debug("whoosh: download", candidate.id, describe(result));
+  console.debug("whoosh: download", candidate.id, result.outcome, "reason" in result ? result.reason : "");
   if (result.outcome === "sent" && !candidate.incognito) {
     // Private-window downloads are never remembered.
     const now = Date.now();
@@ -219,7 +220,7 @@ interface SendOptions {
 
 async function sendLinks(urls: readonly string[], opts: SendOptions): Promise<ActionReply> {
   if (blockedByStorePolicy(opts.referrer, ...urls)) {
-    return { ok: false, error: "Whoosh from the browser store does not download from this site." };
+    return { ok: false, error: t("errorStoreBlocked") };
   }
   const storeId = opts.cookieStoreId ?? (opts.incognito ? privateCookieStore(firefox) : undefined);
   let failed = 0;
@@ -252,7 +253,7 @@ async function sendLinks(urls: readonly string[], opts: SendOptions): Promise<Ac
   if (urls.length > 0) {
     lastCapture = {
       url: urls[0] ?? "",
-      outcome: failed === 0 ? `sent ${urls.length} link(s) to whoosh` : `failed: ${lastError}`,
+      outcome: failed === 0 ? t("outcomeLinksSent", String(urls.length)) : t("outcomeFailed", lastError),
       at: Date.now(),
     };
   }
@@ -284,7 +285,7 @@ async function onMenu(info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Ta
     cookieStoreId: tabStore,
   };
   if (blockedByStorePolicy(info.pageUrl, info.frameUrl, info.linkUrl)) {
-    lastCapture = { url: info.linkUrl ?? info.pageUrl ?? "", outcome: "not available on this site", at: Date.now() };
+    lastCapture = { url: info.linkUrl ?? info.pageUrl ?? "", outcome: t("outcomeBlocked"), at: Date.now() };
     return;
   }
   if (info.menuItemId === MENU.link && info.linkUrl) {
@@ -298,7 +299,7 @@ async function onMenu(info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Ta
       const urls = selectLinks(links, scope, (await settings()).fileTypes);
       await sendLinks(urls, { ...base, fallbackToBrowser: false });
     } catch (error) {
-      lastCapture = { url: tab.url ?? "", outcome: `could not read links: ${String(error)}`, at: Date.now() };
+      lastCapture = { url: tab.url ?? "", outcome: t("outcomeNoLinks", String(error)), at: Date.now() };
     }
   }
 }
@@ -383,7 +384,7 @@ async function onPopupMessage(message: PopupMessage): Promise<PopupState | Actio
     case "whoosh/heal-answer": {
       const outcome = await healer.act(message.id, message.answer);
       if (outcome?.status === "failed" && outcome.reason === "daemon-refused") {
-        return { ok: false, error: "Whoosh did not accept that address." };
+        return { ok: false, error: t("errorRefused") };
       }
       return { ok: true };
     }

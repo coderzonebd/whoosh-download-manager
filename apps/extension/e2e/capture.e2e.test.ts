@@ -248,7 +248,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     await expect
       .poll(async () => `${await page.textContent("#status")}: ${await page.textContent("#detail")}`, { timeout: 10_000 })
       .toMatch(/^Connected/);
-    expect(await page.textContent("#detail")).toBe("whoosh e2e");
+    expect(await page.textContent("#detail")).toBe("Whoosh e2e");
     expect(await page.textContent("#active")).toBe("3");
     expect(hostCalls("nm.status").length).toBeGreaterThan(0);
     // Chrome passes the caller's origin to the host.

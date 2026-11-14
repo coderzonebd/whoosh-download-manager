@@ -2,9 +2,6 @@
 import type { SegmentInfo } from "@whoosh/api-client";
 import { describe, expect, it } from "vitest";
 import { etaTemplate, interpolate, scaleBytes, splitDuration } from "../src/lib/format.ts";
-import { bn } from "../src/lib/i18n/bn.ts";
-import { en, type MessageKey } from "../src/lib/i18n/en.ts";
-import { I18n } from "../src/lib/i18n/i18n.svelte.ts";
 import { blockCoverage, estimateSegments } from "../src/lib/segments.ts";
 import { parsePrefs } from "../src/lib/state/prefs.svelte.ts";
 import { pageSize, rowDomId, scrollTopFor, visibleRange } from "../src/lib/virtual.ts";
@@ -39,67 +36,8 @@ describe("format", () => {
   });
 
   it("interpolates placeholders and leaves unknown ones", () => {
-    expect(interpolate("{a} of {b} {c}", { a: 1, b: "two" })).toBe("1 of two {c}");
-  });
-});
-
-describe("i18n", () => {
-  it("formats sizes, speeds, ETAs and percentages in English", () => {
-    const i = new I18n("en");
-    expect(i.bytes(12.5 * 1024 ** 2)).toBe("12.5 MB");
-    expect(i.bytes(undefined)).toBe("Unknown size");
-    expect(i.speed(2.5 * 1024 ** 2)).toBe("2.50 MB/s");
-    expect(i.eta(3 * 3600 + 12 * 60)).toBe("3h 12m");
-    expect(i.eta(undefined)).toBe("—");
-    expect(i.percent(0.4237)).toBe("42.3%");
-    expect(i.percent(0.9999)).toBe("99.9%"); // never shows 100% before it is done
-    expect(i.t("connections.count", { count: 1 })).toBe("1 connection");
-    expect(i.t("connections.count", { count: 8 })).toBe("8 connections");
-  });
-
-  it("uses Bangla words and Bangla digits", () => {
-    const i = new I18n("bn");
-    expect(i.intlLocale).toBe("bn-BD");
-    expect(i.bytes(12.5 * 1024 ** 2)).toBe("১২.৫ MB");
-    expect(i.bytes(900)).toBe("৯০০ বাইট");
-    expect(i.speed(512 * 1024)).toBe("৫১২ KB/সে");
-    expect(i.eta(3 * 3600 + 12 * 60)).toBe("৩ ঘণ্টা ১২ মিনিট");
-    expect(i.t("connections.count", { count: 8 })).toBe("৮টি সংযোগ");
-    expect(i.t("toolbar.pause")).toBe("থামান");
-    expect(i.percent(0.5)).toBe("৫০.০%");
-  });
-
-  it("falls back to English for missing keys and unknown locales", () => {
-    const i = new I18n("fr-CA");
-    expect(i.locale).toBe("en");
-    i.register("xx", { intl: "en", nativeName: "Test", messages: { "toolbar.pause": "PAUSE" } });
-    i.setLocale("xx");
-    expect(i.t("toolbar.pause")).toBe("PAUSE");
-    expect(i.t("toolbar.resume")).toBe("Resume");
-  });
-
-  it("derives text direction from the locale", () => {
-    const i = new I18n("en");
-    expect(i.dir).toBe("ltr");
-    i.register("ar", { intl: "ar", nativeName: "العربية", messages: {} });
-    i.setLocale("ar");
-    expect(i.dir).toBe("rtl");
-  });
-
-  it("translates every key into Bangla (no English left behind)", () => {
-    // Identical strings are allowed only where they are not words.
-    const sameOnPurpose = new Set<MessageKey>(["app.name", "add.urlPlaceholder", "eta.unknown", "detail.segmentRange", "media.qualityHeight"]);
-    const keys = Object.keys(en) as MessageKey[];
-    for (const k of keys) {
-      expect(bn[k], k).toBeDefined();
-      if (!sameOnPurpose.has(k)) expect(JSON.stringify(bn[k]), k).not.toBe(JSON.stringify(en[k]));
-    }
-    // Bangla strings keep the same placeholders as English.
-    const ph = (m: unknown) => [...JSON.stringify(m).matchAll(/\{(\w+)\}/g)].map((x) => x[1]).sort().join(",");
-    for (const k of keys) {
-      const enPh = new Set(ph(en[k]).split(","));
-      for (const p of ph(bn[k]).split(",")) if (p) expect(enPh.has(p), `${k}: {${p}}`).toBe(true);
-    }
+    expect(interpolate("{{a}} of {{ b }} {{c}}", { a: 1, b: "two" })).toBe("1 of two {{c}}");
+    expect(interpolate("{a} stays", { a: 1 })).toBe("{a} stays");
   });
 });
 

@@ -1,0 +1,327 @@
+{
+  "extName": {
+    "message": "Whoosh"
+  },
+  "extDescription": {
+    "message": "آپ کے براؤزر ڈاؤن لوڈز کو انہی کوکیز اور ریفرر کے ساتھ Whoosh ڈاؤن لوڈ مینیجر کے حوالے کرتا ہے۔"
+  },
+  "optionsTitle": {
+    "message": "Whoosh کی ترتیبات"
+  },
+  "optionsIntro": {
+    "message": "تبدیلیاں کرتے ہی محفوظ ہو جاتی ہیں اور فوراً لاگو ہوتی ہیں۔"
+  },
+  "storeNote": {
+    "message": "یہ براؤزر اسٹور والا ایڈیشن ہے۔ یہ YouTube اور اس جیسی اسٹریمنگ سائٹس پر میڈیا نہ پکڑتا ہے، نہ پہچانتا ہے اور نہ ڈاؤن لوڈ کرتا ہے۔"
+  },
+  "captureLegend": {
+    "message": "ڈاؤن لوڈز پکڑنا"
+  },
+  "captureEnabled": {
+    "message": "براؤزر ڈاؤن لوڈز Whoosh کو بھیجیں"
+  },
+  "captureEnabledHelp": {
+    "message": "بند ہونے پر ہر ڈاؤن لوڈ براؤزر میں ہی رہتا ہے۔ ٹول بار بٹن پر “بند” دکھائی دیتا ہے۔"
+  },
+  "captureIncognito": {
+    "message": "نجی ونڈوز میں بھی"
+  },
+  "captureIncognitoHelp": {
+    "message": "طے شدہ طور پر بند۔ نجی ونڈوز کے ڈاؤن لوڈز، لنکس کی خودکار مرمت کے لیے کبھی یاد نہیں رکھے جاتے۔"
+  },
+  "minSizeLegend": {
+    "message": "کم از کم فائل سائز"
+  },
+  "minSize": {
+    "message": "چھوٹی فائلیں براؤزر پر چھوڑ دیں"
+  },
+  "minSizeUnit": {
+    "message": "اکائی"
+  },
+  "minSizeHelp": {
+    "message": "0 کا مطلب ہے کوئی کم از کم حد نہیں۔ جن فائلوں کا سائز پہلے سے معلوم نہ ہو، وہ ہمیشہ بھیجی جاتی ہیں۔"
+  },
+  "minSizeInvalid": {
+    "message": "0 یا اس سے بڑا عدد درج کریں۔"
+  },
+  "fileTypesLegend": {
+    "message": "فائل کی اقسام"
+  },
+  "fileTypes": {
+    "message": "پکڑنے کے لیے ایکسٹینشنز"
+  },
+  "fileTypesHelp": {
+    "message": "اسپیس یا کوما سے الگ کریں، نقطے کے بغیر (zip iso mp4)۔ ہر قسم پکڑنے کے لیے خالی چھوڑیں۔"
+  },
+  "fileTypesReset": {
+    "message": "طے شدہ فہرست بحال کریں"
+  },
+  "fileTypesEmpty": {
+    "message": "ہر قسم کی فائل پکڑی جائے گی۔"
+  },
+  "sitesLegend": {
+    "message": "سائٹس"
+  },
+  "excludedSites": {
+    "message": "ان سائٹس سے ڈاؤن لوڈز کبھی نہ پکڑیں"
+  },
+  "excludedSitesHelp": {
+    "message": "ہر سطر میں ایک، مثلاً example.com۔ کسی سائٹ میں اس کے سب ڈومینز بھی شامل ہیں۔"
+  },
+  "excludedSitesInvalid": {
+    "message": "سائٹ کا نام نہیں: $SITES$",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "لنک پر Alt+کلک"
+  },
+  "altClickBrowser": {
+    "message": "براؤزر کو اسے ڈاؤن لوڈ کرنے دیں"
+  },
+  "altClickWhoosh": {
+    "message": "اسے Whoosh کو بھیجیں، اوپر کے اصول کچھ بھی کہیں"
+  },
+  "altClickOff": {
+    "message": "کچھ خاص نہ کریں"
+  },
+  "extrasLegend": {
+    "message": "میڈیا اور لنکس"
+  },
+  "sniffMedia": {
+    "message": "صفحات پر آڈیو اور ویڈیو کا پتہ لگائیں"
+  },
+  "sniffMediaHelp": {
+    "message": "میڈیا فائلیں اور اسٹریمز ٹول بار پاپ اپ میں دکھاتا ہے، ڈاؤن لوڈ کے لیے تیار۔"
+  },
+  "preconnect": {
+    "message": "جب پوائنٹر کسی ڈاؤن لوڈ لنک پر رکے تو کنکشن تیار کریں"
+  },
+  "preconnectHelp": {
+    "message": "Whoosh کو صرف سائٹ کا پتہ بھیجا جاتا ہے، خود لنک کبھی نہیں۔"
+  },
+  "selfHealing": {
+    "message": "میعاد ختم ہونے والے ڈاؤن لوڈ لنکس کی مرمت کریں"
+  },
+  "selfHealingHelp": {
+    "message": "جب کسی رکے ہوئے ڈاؤن لوڈ کے پتے کی میعاد ختم ہو جائے تو Whoosh اسی صفحے پر نیا پتہ تلاش کرتا ہے جہاں سے وہ آیا تھا، اور یقین نہ ہو تو آپ سے پوچھتا ہے۔"
+  },
+  "saved": {
+    "message": "محفوظ ہو گیا۔"
+  },
+  "saveFailed": {
+    "message": "محفوظ نہیں ہو سکا: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "جانچ ہو رہی ہے…"
+  },
+  "popupNotConnected": {
+    "message": "منسلک نہیں"
+  },
+  "popupNoHost": {
+    "message": "Whoosh کا نیٹو ہوسٹ انسٹال نہیں ہے۔"
+  },
+  "popupAppNotRunning": {
+    "message": "ایپ نہیں چل رہی"
+  },
+  "popupStartApp": {
+    "message": "Whoosh شروع کریں؛ تب تک ڈاؤن لوڈز براؤزر میں ہی رہیں گے۔"
+  },
+  "popupConnected": {
+    "message": "منسلک"
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "خرابی"
+  },
+  "popupActive": {
+    "message": "فعال"
+  },
+  "popupQueued": {
+    "message": "قطار میں"
+  },
+  "popupCapture": {
+    "message": "براؤزر ڈاؤن لوڈز پکڑیں"
+  },
+  "popupCaptureSite": {
+    "message": "$SITE$ پر ڈاؤن لوڈز پکڑیں",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "اس صفحے پر میڈیا"
+  },
+  "popupMediaEmpty": {
+    "message": "ابھی تک کچھ نہیں ملا۔"
+  },
+  "popupDownload": {
+    "message": "ڈاؤن لوڈ کریں"
+  },
+  "popupSent": {
+    "message": "بھیج دیا"
+  },
+  "popupFailed": {
+    "message": "ناکام"
+  },
+  "popupLast": {
+    "message": "آخری: $NAME$ — $OUTCOME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "ترتیبات"
+  },
+  "altHintBrowser": {
+    "message": "براؤزر سے ڈاؤن لوڈ کروانے کے لیے لنک پر کلک کرتے وقت $KEY$ دبائے رکھیں۔",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "اصول کچھ بھی کہیں، لنک Whoosh کو بھیجنے کے لیے کلک کرتے وقت $KEY$ دبائے رکھیں۔",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "براؤزر اسٹور والا Whoosh اس سائٹ پر کام نہیں کرتا۔"
+  },
+  "healTitle": {
+    "message": "میعاد ختم شدہ لنکس"
+  },
+  "healOpenPage": {
+    "message": "Whoosh کو $FILE$ کے لیے ڈاؤن لوڈ صفحہ ایک بار پھر چاہیے۔",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "کیا یہ $FILE$ والی ہی فائل ہے؟",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "صفحہ کھولیں"
+  },
+  "healUseButton": {
+    "message": "یہ لنک استعمال کریں"
+  },
+  "healDismissButton": {
+    "message": "نظر انداز کریں"
+  },
+  "menuLink": {
+    "message": "Whoosh سے لنک ڈاؤن لوڈ کریں"
+  },
+  "menuSelection": {
+    "message": "منتخب لنکس Whoosh سے ڈاؤن لوڈ کریں"
+  },
+  "menuPage": {
+    "message": "تمام لنکس Whoosh سے ڈاؤن لوڈ کریں"
+  },
+  "badgeOff": {
+    "message": "بند"
+  },
+  "outcomeSent": {
+    "message": "Whoosh کو بھیج دیا گیا"
+  },
+  "outcomeHealed": {
+    "message": "میعاد ختم شدہ Whoosh ڈاؤن لوڈ جاری کیا"
+  },
+  "outcomeSkipped": {
+    "message": "براؤزر پر چھوڑ دیا گیا ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "براؤزر نے رکھا ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "Whoosh کو بھیجے گئے لنکس: $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "ناکام: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "اس سائٹ پر دستیاب نہیں"
+  },
+  "outcomeNoLinks": {
+    "message": "لنکس پڑھے نہیں جا سکے: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "براؤزر اسٹور والا Whoosh اس سائٹ سے ڈاؤن لوڈ نہیں کرتا۔"
+  },
+  "errorRefused": {
+    "message": "Whoosh نے وہ پتہ قبول نہیں کیا۔"
+  }
+}

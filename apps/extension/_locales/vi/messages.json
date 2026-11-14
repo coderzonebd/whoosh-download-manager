@@ -1,0 +1,327 @@
+{
+  "extName": {
+    "message": "Whoosh"
+  },
+  "extDescription": {
+    "message": "Chuyển các tải xuống của trình duyệt sang trình quản lý tải xuống Whoosh, kèm cùng cookie và trang giới thiệu."
+  },
+  "optionsTitle": {
+    "message": "Cài đặt Whoosh"
+  },
+  "optionsIntro": {
+    "message": "Thay đổi được lưu ngay khi bạn thực hiện và có hiệu lực tức thì."
+  },
+  "storeNote": {
+    "message": "Đây là phiên bản từ cửa hàng trình duyệt. Phiên bản này không bắt, phát hiện hay tải xuống nội dung đa phương tiện trên YouTube và các trang phát trực tuyến tương tự."
+  },
+  "captureLegend": {
+    "message": "Bắt tải xuống"
+  },
+  "captureEnabled": {
+    "message": "Gửi các tải xuống của trình duyệt sang Whoosh"
+  },
+  "captureEnabledHelp": {
+    "message": "Khi tắt, mọi tải xuống đều ở lại trong trình duyệt. Nút trên thanh công cụ sẽ hiện “tắt”."
+  },
+  "captureIncognito": {
+    "message": "Cả trong cửa sổ riêng tư"
+  },
+  "captureIncognitoHelp": {
+    "message": "Mặc định tắt. Tải xuống từ cửa sổ riêng tư không bao giờ được ghi nhớ để tự sửa liên kết."
+  },
+  "minSizeLegend": {
+    "message": "Kích thước tệp tối thiểu"
+  },
+  "minSize": {
+    "message": "Để trình duyệt tải các tệp nhỏ hơn"
+  },
+  "minSizeUnit": {
+    "message": "Đơn vị"
+  },
+  "minSizeHelp": {
+    "message": "0 nghĩa là không có mức tối thiểu. Tệp không biết trước kích thước luôn được gửi đi."
+  },
+  "minSizeInvalid": {
+    "message": "Nhập một số từ 0 trở lên."
+  },
+  "fileTypesLegend": {
+    "message": "Loại tệp"
+  },
+  "fileTypes": {
+    "message": "Phần mở rộng cần bắt"
+  },
+  "fileTypesHelp": {
+    "message": "Phân tách bằng dấu cách hoặc dấu phẩy, không có dấu chấm (zip iso mp4). Để trống để bắt mọi loại."
+  },
+  "fileTypesReset": {
+    "message": "Khôi phục danh sách mặc định"
+  },
+  "fileTypesEmpty": {
+    "message": "Mọi loại tệp sẽ được bắt."
+  },
+  "sitesLegend": {
+    "message": "Trang web"
+  },
+  "excludedSites": {
+    "message": "Không bao giờ bắt tải xuống từ các trang này"
+  },
+  "excludedSitesHelp": {
+    "message": "Mỗi dòng một trang, ví dụ example.com. Một trang bao gồm cả các tên miền con của nó."
+  },
+  "excludedSitesInvalid": {
+    "message": "Không phải tên trang web: $SITES$",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "Alt+nhấp vào liên kết"
+  },
+  "altClickBrowser": {
+    "message": "Để trình duyệt tải xuống"
+  },
+  "altClickWhoosh": {
+    "message": "Gửi sang Whoosh, bất kể các quy tắc ở trên"
+  },
+  "altClickOff": {
+    "message": "Không làm gì đặc biệt"
+  },
+  "extrasLegend": {
+    "message": "Đa phương tiện và liên kết"
+  },
+  "sniffMedia": {
+    "message": "Phát hiện âm thanh và video trên trang"
+  },
+  "sniffMediaHelp": {
+    "message": "Liệt kê các tệp và luồng đa phương tiện trong cửa sổ bật lên của thanh công cụ, sẵn sàng để tải xuống."
+  },
+  "preconnect": {
+    "message": "Chuẩn bị kết nối khi con trỏ dừng trên liên kết tải xuống"
+  },
+  "preconnectHelp": {
+    "message": "Chỉ địa chỉ của trang web được chuyển cho Whoosh, không bao giờ là chính liên kết."
+  },
+  "selfHealing": {
+    "message": "Sửa liên kết tải xuống đã hết hạn"
+  },
+  "selfHealingHelp": {
+    "message": "Khi địa chỉ của một tải xuống đang tạm dừng đã hết hạn, Whoosh sẽ tìm địa chỉ mới trên trang gốc và hỏi bạn khi không chắc chắn."
+  },
+  "saved": {
+    "message": "Đã lưu."
+  },
+  "saveFailed": {
+    "message": "Không thể lưu: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "Đang kiểm tra…"
+  },
+  "popupNotConnected": {
+    "message": "Chưa kết nối"
+  },
+  "popupNoHost": {
+    "message": "Chưa cài thành phần gốc (native host) của Whoosh."
+  },
+  "popupAppNotRunning": {
+    "message": "Ứng dụng chưa chạy"
+  },
+  "popupStartApp": {
+    "message": "Hãy mở Whoosh; cho đến lúc đó, các tải xuống vẫn ở trong trình duyệt."
+  },
+  "popupConnected": {
+    "message": "Đã kết nối"
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "Lỗi"
+  },
+  "popupActive": {
+    "message": "Đang chạy"
+  },
+  "popupQueued": {
+    "message": "Đang chờ"
+  },
+  "popupCapture": {
+    "message": "Bắt tải xuống của trình duyệt"
+  },
+  "popupCaptureSite": {
+    "message": "Bắt tải xuống trên $SITE$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "Đa phương tiện trên trang này"
+  },
+  "popupMediaEmpty": {
+    "message": "Chưa phát hiện được gì."
+  },
+  "popupDownload": {
+    "message": "Tải xuống"
+  },
+  "popupSent": {
+    "message": "Đã gửi"
+  },
+  "popupFailed": {
+    "message": "Thất bại"
+  },
+  "popupLast": {
+    "message": "Gần nhất: $NAME$ — $OUTCOME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "Cài đặt"
+  },
+  "altHintBrowser": {
+    "message": "Giữ $KEY$ khi nhấp vào liên kết để trình duyệt tải xuống.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "Giữ $KEY$ khi nhấp vào liên kết để gửi sang Whoosh bất kể quy tắc.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "Whoosh từ cửa hàng trình duyệt không hoạt động trên trang này."
+  },
+  "healTitle": {
+    "message": "Liên kết hết hạn"
+  },
+  "healOpenPage": {
+    "message": "Whoosh cần mở lại trang tải xuống một lần nữa cho $FILE$.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "Đây có phải cùng tệp với $FILE$ không?",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "Mở trang"
+  },
+  "healUseButton": {
+    "message": "Dùng liên kết này"
+  },
+  "healDismissButton": {
+    "message": "Bỏ qua"
+  },
+  "menuLink": {
+    "message": "Tải liên kết bằng Whoosh"
+  },
+  "menuSelection": {
+    "message": "Tải các liên kết đã chọn bằng Whoosh"
+  },
+  "menuPage": {
+    "message": "Tải tất cả liên kết bằng Whoosh"
+  },
+  "badgeOff": {
+    "message": "tắt"
+  },
+  "outcomeSent": {
+    "message": "đã gửi sang Whoosh"
+  },
+  "outcomeHealed": {
+    "message": "đã tiếp tục một tải xuống Whoosh bị hết hạn"
+  },
+  "outcomeSkipped": {
+    "message": "để trình duyệt tải ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "trình duyệt giữ lại ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "liên kết đã gửi sang Whoosh: $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "thất bại: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "không khả dụng trên trang này"
+  },
+  "outcomeNoLinks": {
+    "message": "không đọc được liên kết: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "Whoosh từ cửa hàng trình duyệt không tải xuống từ trang này."
+  },
+  "errorRefused": {
+    "message": "Whoosh không chấp nhận địa chỉ đó."
+  }
+}
