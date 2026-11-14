@@ -11,6 +11,7 @@
   import type { Host } from "../lib/host.ts";
   import AddDownloadDialog from "./AddDownloadDialog.svelte";
   import AfterDoneBanner from "./AfterDoneBanner.svelte";
+  import BrowsersView from "./BrowsersView.svelte";
   import ClearHistoryDialog from "./ClearHistoryDialog.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import DetailPanel from "./DetailPanel.svelte";
@@ -133,6 +134,8 @@
       <div class="content">
         {#if app.view === "settings"}
           <SettingsView />
+        {:else if app.view === "browsers"}
+          <BrowsersView />
         {:else if app.view === "history"}
           <HistoryView />
         {:else}

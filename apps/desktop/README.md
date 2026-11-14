@@ -98,10 +98,26 @@ builds and CI do not need them:
 
 ```bash
 node apps/desktop/scripts/sidecars.mjs [--target <triple>]   # → src-tauri/binaries/
-cd apps/desktop && pnpm tauri build --config src-tauri/tauri.sidecars.conf.json
+cd apps/desktop && pnpm tauri build --config src-tauri/tauri.sidecars.conf.json \
+  --config src-tauri/tauri.browsers.conf.json                # Windows: tauri.browsers.windows.conf.json
 ```
 
-`release.yml` does both.
+`release.yml` does both. `tauri.browsers*.conf.json` and `src-tauri/installer/`
+are the installers' browser integration, generated from
+`packaging/browsers/extension-ids.json` (see `packaging/browsers/README.md`,
+except `installer/windows/hooks.nsh`, which is written by hand).
+
+## Connecting the browsers and updates
+
+- **Connect your browser** opens on the first run and from Settings →
+  Browsers: per browser in use, whether `whoosh-nmhost` is registered and the
+  extension installed, with *Link to Whoosh* or a store link (`browsers.rs`).
+  At every start the app registers the host for this user in browsers that
+  lack it (macOS and AppImage have no installer to do it).
+- **Updates** (`updates.rs`, `tauri-plugin-updater`): signed with the minisign
+  key whose public half is in `tauri.conf.json`; *Check for a new version* in
+  Settings → Updates, and a quiet daily check (off in Settings) that only
+  shows a notice. Release builds only; see `docs/release.md`, *Updater key*.
 
 ## Check
 

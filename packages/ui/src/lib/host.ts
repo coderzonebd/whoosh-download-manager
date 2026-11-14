@@ -10,6 +10,33 @@ export interface DesktopPrefs {
   closeToTray: boolean;
   /** Quit also stops the daemon. */
   stopDaemonOnQuit: boolean;
+  /** Look for a new version once a day (never installs on its own). */
+  autoUpdateCheck: boolean;
+}
+
+/** Browsers the "Connect your browser" page knows. */
+export type BrowserId = "chrome" | "chromium" | "brave" | "edge" | "vivaldi" | "firefox";
+
+/** Where the extension for a browser comes from. */
+export type ExtensionStore = "edgeAddOns" | "chromeWebStore" | "amo" | "github";
+
+/** One browser on the "Connect your browser" page. */
+export interface BrowserState {
+  browser: BrowserId;
+  /** This user has used the browser (its profile exists). */
+  inUse: boolean;
+  /** The native messaging host is registered for it. */
+  hostRegistered: boolean;
+  /** The extension appears in one of its profiles. */
+  extensionFound: boolean;
+  store: ExtensionStore;
+}
+
+/** A newer version the app can install. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes?: string | null;
 }
 
 export interface Host {
@@ -29,6 +56,23 @@ export interface Host {
   launchAtLogin?: {
     get(): Promise<boolean>;
     set(on: boolean): Promise<void>;
+  };
+  /** The "Connect your browser" page (desktop app). */
+  browsers?: {
+    status(): Promise<BrowserState[]>;
+    /** Register the native messaging host for one browser, or every browser in use. */
+    connect(browser?: BrowserId): Promise<void>;
+    /** Open the page that installs the extension in this browser. */
+    openStore(browser: BrowserId): Promise<void>;
+    /** True once, on the first run: the page opens by itself. */
+    firstRun(): Promise<boolean>;
+  };
+  /** Signed in-app updates (desktop app). */
+  updates?: {
+    /** undefined when this is the newest version. */
+    check(): Promise<UpdateInfo | undefined>;
+    /** Download, install and restart. */
+    install(): Promise<void>;
   };
 }
 

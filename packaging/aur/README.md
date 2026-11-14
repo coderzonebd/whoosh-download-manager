@@ -8,11 +8,18 @@ package guidelines: dependencies are fetched in `prepare()`, `build()` runs
 offline (`--frozen`), Arch's stable Rust is used (`RUSTUP_TOOLCHAIN=stable`)
 instead of the toolchain pinned in `rust-toolchain.toml`.
 
-It installs `whoosh-desktop`, `whoosh-nmhost`, the desktop entry, AppStream
-metainfo and icons from [`../linux`](../linux), and system-wide native
-messaging manifests for Firefox, Chromium and Google Chrome.
+It installs `whoosh-desktop`, `whoosh-daemon`, the command line `whoosh`,
+`whoosh-nmhost`, the desktop entry, AppStream metainfo and icons from
+[`../linux`](../linux), and the same system-wide native messaging manifests
+(with the store extension IDs) and store offers as the `.deb`, listed in
+`apps/desktop/src-tauri/installer/linux/files.txt` (see
+[`../browsers`](../browsers)).
 
 ## Per release
+
+The release's `whoosh-<version>-package-manifests.tar.gz` has `aur/PKGBUILD`
+and `aur/.SRCINFO` filled in (version, checksum of the source archive). Copy
+both into the AUR clone, test-build, and push:
 
 ```bash
 # in a clone of ssh://aur@aur.archlinux.org/whoosh.git

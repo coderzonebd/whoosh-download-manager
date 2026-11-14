@@ -47,8 +47,11 @@ target/release/whoosh-nmhost --register
 
 writes a manifest for every browser this user has a profile for (Chrome, Chromium, Brave, Edge, Vivaldi, Firefox) pointing at the binary you ran, and allows:
 
-- the development Chromium extension ID `clhjgofaikdmabdnebgcmdffdjenagfl` (pinned by the `key` in `apps/extension/scripts/manifest.mjs`),
+- the GitHub/development Chromium extension ID `clhjgofaikdmabdnebgcmdffdjenagfl` (pinned by the `key` in `apps/extension/scripts/manifest.mjs`; the Chromium zip on GitHub Releases keeps that key, so an unpacked install of it has this ID),
+- the store IDs compiled in from [`packaging/browsers/extension-ids.json`](../../packaging/browsers/extension-ids.json) (Edge Add-ons, Chrome Web Store; none yet),
 - the Firefox extension ID `whoosh@coderzonebd.com`.
+
+The installers run it for you (the NSIS installer per user, the MSI and the `.deb`/`.rpm` with system-wide manifests), and the desktop app registers it for the user where no installer could (macOS, AppImage): see [`packaging/browsers/README.md`](../../packaging/browsers/README.md).
 
 Options:
 
@@ -56,9 +59,14 @@ Options:
 --browser <NAME>       chrome, chromium, brave, edge, vivaldi, firefox or all (repeatable)
 --extension-id <ID>    also allow another Chromium extension ID (e.g. a store ID)
 --firefox-id <ID>      also allow another Firefox extension ID
---no-dev-id            do not allow the development ID (release installs should pass this)
+--no-dev-id            do not allow the GitHub/development ID
 --host-path <FILE>     executable path to put in the manifests (default: this executable)
+--offer-extension      also ask the browsers to offer the extension from their store
+                       ("external extensions": Edge Add-ons once its ID exists; the
+                       Chrome Web Store once its ID exists and externalInstall is on)
 ```
+
+Store offers go to `HKCU\Software\Microsoft\Edge\Extensions\<id>` and `HKCU\Software\Google\Chrome\Extensions\<id>` (value `update_url`) on Windows, and to `~/Library/Application Support/<browser>/External Extensions/<id>.json` on macOS; Linux gets them from the packages. `--unregister` removes them too.
 
 Move the binary? Run `--register` again. Remove everything with:
 

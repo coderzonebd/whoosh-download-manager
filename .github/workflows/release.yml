@@ -103,6 +103,11 @@ jobs:
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb,rpm
+          - platform: linux-arm64
+            # GitHub's free arm64 runner (public repositories), same glibc.
+            os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundles: appimage,deb,rpm
           - platform: macos-universal
             os: macos-15
             target: universal-apple-darwin
@@ -110,13 +115,22 @@ jobs:
           - platform: windows-x64
             os: windows-2025
             target: x86_64-pc-windows-msvc
+            arch: x64
             bundles: "" # from meta: nsis,msi (nsis only for pre-releases)
+          - platform: windows-arm64
+            # GitHub's free Windows on Arm runner (public repositories).
+            # NSIS only: Tauri's WiX (MSI) bundler does not target ARM64.
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: arm64
+            bundles: nsis
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     env:
       VERSION: ${{ needs.meta.outputs.version }}
       SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
       TARGET: ${{ matrix.target }}
+      WINDOWS_ARCH: ${{ matrix.arch }}
       BUNDLES: ${{ matrix.bundles || needs.meta.outputs.windows-bundles }}
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
       APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
@@ -133,8 +147,9 @@ jobs:
           cache: "false" # release builds start clean
       - name: Decide on updater artifacts
         # The Tauri CLI refuses createUpdaterArtifacts without plugins.updater
-        # in tauri.conf.json, so both the key and the configured public key
-        # must exist (the app has no updater plugin yet).
+        # in tauri.conf.json, so both the key secret and the pinned public key
+        # must exist. The public key is in the repository; the secret is the
+        # owner's (docs/release.md, "Updater key").
         run: |
           has_pubkey=$(node -p "Boolean(require('./apps/desktop/src-tauri/tauri.conf.json').plugins?.updater?.pubkey)")
           if [ "$UPDATER_KEY_PRESENT" = true ] && [ "$has_pubkey" = true ]; then
@@ -144,6 +159,14 @@ jobs:
               echo "::warning::TAURI_SIGNING_PRIVATE_KEY is set but tauri.conf.json has no plugins.updater.pubkey; no updater artifacts."
             fi
             echo "UPDATER_ARTIFACTS=false" >> "$GITHUB_ENV"
+          fi
+      - name: rustup (the Windows on Arm image lacks it)
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        run: |
+          if ! command -v rustup > /dev/null; then
+            curl -fsSLo "$RUNNER_TEMP/rustup-init.exe" https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe
+            "$RUNNER_TEMP/rustup-init.exe" -y --default-toolchain none --profile minimal
+            echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
           fi
       - name: Rust toolchain (rust-toolchain.toml) and targets
         run: |
@@ -191,7 +214,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          args=(--ci --target "$TARGET" --bundles "$BUNDLES" --config src-tauri/tauri.sidecars.conf.json)
+          # Sidecars (daemon, native host) and the browser integration
+          # (packaging/browsers/README.md).
+          args=(--ci --target "$TARGET" --bundles "$BUNDLES" --config src-tauri/tauri.sidecars.conf.json
+                --config src-tauri/tauri.browsers.conf.json)
           if [ "$UPDATER_ARTIFACTS" = true ]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           fi
@@ -208,7 +234,9 @@ jobs:
       - name: Build the executable
         if: runner.os == 'Windows'
         working-directory: apps/desktop
-        run: pnpm tauri build --ci --target "$TARGET" --no-bundle --config src-tauri/tauri.sidecars.conf.json
+        run: |
+          pnpm tauri build --ci --target "$TARGET" --no-bundle \
+            --config src-tauri/tauri.sidecars.conf.json --config src-tauri/tauri.browsers.windows.conf.json
       - name: Stage the executable for signing
         if: runner.os == 'Windows'
         run: |
@@ -241,7 +269,9 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: apps/desktop
         # --no-binary-patching: patching would rewrite (and unsign) the exe.
-        run: pnpm tauri bundle --ci --target "$TARGET" --bundles "$BUNDLES" --no-binary-patching --config src-tauri/tauri.sidecars.conf.json
+        run: |
+          pnpm tauri bundle --ci --target "$TARGET" --bundles "$BUNDLES" --no-binary-patching \
+            --config src-tauri/tauri.sidecars.conf.json --config src-tauri/tauri.browsers.windows.conf.json
       - name: Stage the installers for signing
         if: runner.os == 'Windows'
         run: |
@@ -303,8 +333,14 @@ jobs:
               done ;;
             Windows)
               cp staging/installers/* out/
-              # Portable build: the (signed) executable alone; needs the WebView2 runtime.
-              7z a -tzip -mx=9 "out/Whoosh_${VERSION}_x64_portable.zip" "./target/$TARGET/release/whoosh-desktop.exe" >/dev/null ;;
+              # Portable build: the (signed) app with its daemon and native
+              # host next to it; needs the WebView2 runtime.
+              mkdir -p portable
+              cp "target/$TARGET/release/whoosh-desktop.exe" portable/
+              for b in whoosh-daemon whoosh-nmhost; do
+                cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" "portable/$b.exe"
+              done
+              (cd portable && 7z a -tzip -mx=9 "../out/Whoosh_${VERSION}_${WINDOWS_ARCH}_portable.zip" . >/dev/null) ;;
           esac
           ls -l out
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -315,7 +351,7 @@ jobs:
           retention-days: 7
 
   binaries:
-    name: Binaries (${{ matrix.platform }})
+    name: CLI and native host (${{ matrix.platform }})
     needs: meta
     environment: release
     strategy:
@@ -334,6 +370,9 @@ jobs:
           - platform: windows-x64
             os: windows-2025
             targets: x86_64-pc-windows-msvc
+          - platform: windows-arm64
+            os: windows-11-arm
+            targets: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -341,7 +380,10 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
       TARGETS: ${{ matrix.targets }}
       PLATFORM: ${{ matrix.platform }}
-      BINARIES: whoosh-nmhost whoosh-labserver
+      # The command line (whoosh + whoosh-daemon, and on Windows the
+      # console-less autostart helper) and the native messaging host.
+      # whoosh-labserver is a test server and is not released.
+      BINARIES: whoosh whoosh-daemon whoosh-autostart whoosh-nmhost
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
       APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
     steps:
@@ -350,6 +392,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: rustup (the Windows on Arm image lacks it)
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        run: |
+          if ! command -v rustup > /dev/null; then
+            curl -fsSLo "$RUNNER_TEMP/rustup-init.exe" https://static.rust-lang.org/rustup/dist/aarch64-pc-windows-msvc/rustup-init.exe
+            "$RUNNER_TEMP/rustup-init.exe" -y --default-toolchain none --profile minimal
+            echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
+          fi
       - name: Rust toolchain (rust-toolchain.toml) and targets
         run: |
           rustup toolchain install
@@ -359,13 +409,15 @@ jobs:
       - name: Build
         run: |
           for t in $TARGETS; do
-            cargo build --release --locked --target "$t" -p whoosh-nmhost -p whoosh-labserver
+            cargo build --release --locked --target "$t" -p whoosh-cli -p whoosh-daemon -p whoosh-nmhost
           done
       - name: Stage the binaries
         run: |
           set -euo pipefail
           mkdir -p staging/bin
           for b in $BINARIES; do
+            # The autostart helper exists for Windows only (no console window).
+            if [ "$b" = whoosh-autostart ] && [ "$RUNNER_OS" != Windows ]; then continue; fi
             case "$PLATFORM" in
               macos-universal)
                 lipo -create -output "staging/bin/$b" \
@@ -426,11 +478,22 @@ jobs:
           mkdir -p out
           # GNU tar for --sort/--owner/--mtime (macOS runners ship it as gtar).
           tar=tar; if command -v gtar > /dev/null; then tar=gtar; fi
-          for b in $BINARIES; do
-            dir="$b-$VERSION-$PLATFORM"
+          # Two archives: whoosh-<v>-<platform> (the CLI and the daemon) and
+          # whoosh-nmhost-<v>-<platform>.
+          for name in whoosh whoosh-nmhost; do
+            dir="$name-$VERSION-$PLATFORM"
             mkdir -p "pkg/$dir"
-            cp staging/bin/"$b"* LICENSE-APACHE "pkg/$dir/"
-            cp "crates/${b#whoosh-}/README.md" "pkg/$dir/README.md"
+            case "$name" in
+              whoosh)
+                for f in staging/bin/*; do
+                  case "$(basename "$f")" in whoosh-nmhost*) ;; *) cp "$f" "pkg/$dir/" ;; esac
+                done
+                cp crates/cli/README.md "pkg/$dir/README.md" ;;
+              whoosh-nmhost)
+                cp staging/bin/whoosh-nmhost* "pkg/$dir/"
+                cp crates/nmhost/README.md "pkg/$dir/README.md" ;;
+            esac
+            cp LICENSE-APACHE "pkg/$dir/"
             if [ "$RUNNER_OS" = Windows ]; then
               (cd pkg && 7z a -tzip -mx=9 "../out/$dir.zip" "$dir" >/dev/null)
             else
@@ -463,6 +526,14 @@ jobs:
       - name: Build the store zips (no development key)
         working-directory: apps/extension
         run: node scripts/build.mjs --store --zip
+      - name: Build the GitHub Chromium zip (keeps the key)
+        # For Chrome, Brave and Vivaldi until the Chrome Web Store listing:
+        # loaded unpacked, the public key gives it the ID the native host
+        # allows (packaging/browsers/extension-ids.json, github.chromiumId).
+        working-directory: apps/extension
+        run: |
+          node scripts/build.mjs --target chromium --zip --out dist-github
+          jq -e 'has("key")' dist-github/chromium/manifest.json > /dev/null
       - name: Store manifests carry no key
         run: |
           for t in chromium firefox; do
@@ -470,7 +541,7 @@ jobs:
               || { echo "::error::dist/$t/manifest.json still has a key"; exit 1; }
           done
           mkdir -p out
-          cp apps/extension/dist/*-store.zip out/
+          cp apps/extension/dist/*-store.zip apps/extension/dist-github/whoosh-chromium-*.zip out/
           ls -l out
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -522,9 +593,49 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  manifests:
+    name: Package manifests and source archive
+    needs: [meta, desktop, binaries]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-desktop-*
+          merge-multiple: true
+          path: assets
+      - name: Source archive
+        run: |
+          mkdir -p out
+          git archive --format=tar --prefix="whoosh-$VERSION/" "$GITHUB_SHA" \
+            | gzip -n -9 > "out/whoosh-$VERSION-source.tar.gz"
+          cp "out/whoosh-$VERSION-source.tar.gz" assets/
+      - name: Fill in the winget, Scoop, Homebrew, Flathub and AUR manifests
+        # Real version, URLs and SHA-256s; attached to the release, submitted
+        # by hand (packaging/<channel>/README.md). Nothing is submitted here.
+        run: |
+          set -euo pipefail
+          dir="whoosh-$VERSION-package-manifests"
+          node .github/scripts/package-manifests.mjs assets "$VERSION" "$RUNNER_TEMP/$dir"
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
+            -C "$RUNNER_TEMP" -cf - "$dir" | gzip -n -9 > "out/$dir.tar.gz"
+          tar -tzf "out/$dir.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-manifests
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Draft GitHub release
-    needs: [meta, desktop, binaries, extension, sbom]
+    needs: [meta, desktop, binaries, extension, sbom, manifests]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -545,10 +656,6 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: dist
-      - name: Source archive
-        run: |
-          git archive --format=tar --prefix="whoosh-$VERSION/" "$GITHUB_SHA" \
-            | gzip -n -9 > "dist/whoosh-$VERSION-source.tar.gz"
       - name: Updater manifest (latest.json)
         run: |
           node .github/scripts/updater-manifest.mjs dist "$VERSION" \

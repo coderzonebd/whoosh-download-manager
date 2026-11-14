@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "files": {
+          "/etc/opt/chrome/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
+          "/etc/chromium/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
+          "/etc/opt/edge/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
+          "/usr/lib/mozilla/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-firefox.json"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/etc/opt/chrome/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
+          "/etc/chromium/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
+          "/etc/opt/edge/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
+          "/usr/lib/mozilla/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-firefox.json"
+        }
+      }
+    }
+  }
+}

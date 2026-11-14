@@ -21,6 +21,7 @@ import { App, type AppState } from "@whoosh/ui";
 import { mount } from "svelte";
 import { startDeepLinks } from "./deeplinks.ts";
 import { desktopHost } from "./host.ts";
+import { startUpdateNotices } from "./updates.ts";
 import { startShellLanguage } from "./shell-language.svelte.ts";
 import { startNotifications } from "./notify.ts";
 import { startTrayUpdates } from "./tray.ts";
@@ -81,6 +82,7 @@ mount(App, {
         startNotifications(client, app);
         startShellLanguage(app);
         void startDeepLinks(app);
+        void startUpdateNotices(app);
       }
     },
   },

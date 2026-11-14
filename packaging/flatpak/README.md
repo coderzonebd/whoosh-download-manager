@@ -6,6 +6,10 @@ plus libayatana-appindicator for the tray icon. Desktop entry and AppStream
 metainfo come from [`../linux`](../linux) (both pass `desktop-file-validate`
 and `appstreamcli validate`).
 
+Each release carries `whoosh-<version>-package-manifests.tar.gz`; its `flatpak/`
+folder holds this manifest with the release's version, URLs and SHA-256s
+filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
+
 ## Try it locally
 
 ```bash

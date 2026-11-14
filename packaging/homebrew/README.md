@@ -13,6 +13,11 @@ GitHub release.
 
 ## Per release
 
+Each release carries `whoosh-<version>-package-manifests.tar.gz`; its `homebrew/`
+folder holds this manifest with the release's version, URLs and SHA-256s
+filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
+
+
 ```bash
 shasum -a 256 Whoosh_0.1.0_universal.dmg            # or take it from SHA256SUMS
 brew bump-cask-pr --version 0.1.0 whoosh            # in the tap or homebrew/cask

@@ -303,7 +303,21 @@
     "machineTranslated": "ترجمة آلية.",
     "helpTranslate": "ساعد في تحسين الترجمة",
     "media": "مواقع الفيديو والصوت",
-    "mediaHint": "يستخدم Whoosh أداة yt-dlp للعثور على الفيديو في الصفحة وffmpeg لدمج الفيديو والصوت. كلاهما برنامج مستقل يُنزَّل من إصداراته الرسمية عند الحاجة إليه أول مرة ويُطابَق مع المجموع الاختباري المنشور."
+    "mediaHint": "يستخدم Whoosh أداة yt-dlp للعثور على الفيديو في الصفحة وffmpeg لدمج الفيديو والصوت. كلاهما برنامج مستقل يُنزَّل من إصداراته الرسمية عند الحاجة إليه أول مرة ويُطابَق مع المجموع الاختباري المنشور.",
+    "browsers": "المتصفحات",
+    "browsersHint": "اربط Chrome وEdge وFirefox وغيرها من المتصفحات لتصل تنزيلاتها إلى Whoosh.",
+    "browsersOpen": "اربط متصفحك…",
+    "updates": "التحديثات",
+    "autoUpdateCheck": "البحث عن إصدار جديد من Whoosh مرة يوميًا",
+    "autoUpdateCheckHint": "يكتفي Whoosh بإخبارك بوجود إصدار جديد، ولا يثبّته أبدًا دون أن يسألك.",
+    "checkNow": "التحقق من وجود إصدار جديد",
+    "checking": "جارٍ التحقق…",
+    "upToDate": "لديك أحدث إصدار.",
+    "updateAvailable": "الإصدار {{version}} متاح.",
+    "installUpdate": "التثبيت وإعادة التشغيل",
+    "installing": "جارٍ التثبيت…",
+    "updateFailed": "تعذّر التحقق من التحديثات: {{message}}",
+    "installFailed": "تعذّر تثبيت التحديث: {{message}}"
   },
   "theme": {
     "system": "مطابقة النظام",
@@ -339,7 +353,8 @@
     "region": "الإشعارات",
     "completed": "اكتمل تنزيل «{{name}}»",
     "failed": "فشل تنزيل «{{name}}»",
-    "expired": "انتهت صلاحية رابط «{{name}}»"
+    "expired": "انتهت صلاحية رابط «{{name}}»",
+    "updateAvailable": "Whoosh {{version}} متاح."
   },
   "error": {
     "generic": "حدث خطأ ما: {{message}}"
@@ -528,5 +543,34 @@
     "autoUpdateHint": "وإلا فلن يتحقق Whoosh إلا عندما تطلب.",
     "error": "فشلت المحاولة الأخيرة: {{message}}",
     "checkFailed": "تعذّر التحقق من التحديثات: {{message}}"
+  },
+  "browsers": {
+    "title": "اربط متصفحك",
+    "intro": "يتولى Whoosh التنزيلات من متصفحك عبر إضافة Whoosh. يحتاج كل متصفح إلى الإضافة وإلى ربطه بهذا التطبيق، ويتولى Whoosh إعداد الربط عنك.",
+    "loading": "جارٍ البحث عن متصفحاتك…",
+    "none": "لم يُعثر على أي متصفح مدعوم لهذا المستخدم. يعمل Whoosh مع Google Chrome وChromium وBrave وMicrosoft Edge وVivaldi وFirefox.",
+    "notFound": "غير موجودة على هذا الحاسوب: {{names}}.",
+    "state": {
+      "ready": "جاهز: تصل تنزيلات هذا المتصفح إلى Whoosh",
+      "noHost": "غير مرتبط بـ Whoosh بعد",
+      "noExtension": "الإضافة غير مثبّتة"
+    },
+    "connect": "الربط بـ Whoosh",
+    "connected": "تم ربط {{browser}} بـ Whoosh.",
+    "connectFailed": "تعذّر ربط {{browser}}: {{message}}",
+    "store": {
+      "edgeAddOns": "احصل عليها من Edge Add-ons",
+      "chromeWebStore": "احصل عليها من Chrome Web Store",
+      "amo": "احصل عليها من Firefox Add-ons",
+      "github": "تنزيل الإضافة"
+    },
+    "hint": {
+      "store": "أضف الإضافة من هناك. إذا سألك المتصفح عن تفعيلها فاختر «تفعيل».",
+      "github": "الإضافة غير موجودة في متجر هذا المتصفح بعد. نزّل ملف zip الخاص بـ Chromium من صفحة الإصدار وفك ضغطه، ثم افتح صفحة الإضافات في المتصفح وفعّل وضع المطوّر واختر «تحميل إضافة غير مضغوطة».",
+      "githubFirefox": "الإضافة غير موجودة في Firefox Add-ons بعد. ستذكر صفحة الإصدار ذلك عند توفرها."
+    },
+    "recheck": "تحقق مجددًا",
+    "done": "تم",
+    "later": "يمكنك العودة إلى هذه الصفحة من الإعدادات ← المتصفحات."
   }
 }

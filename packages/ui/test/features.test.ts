@@ -7,7 +7,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/components/App.svelte";
-import type { DesktopPrefs, Host } from "../src/lib/host.ts";
+import type { BrowserId, BrowserState, DesktopPrefs, Host, UpdateInfo } from "../src/lib/host.ts";
 import type { AppState } from "../src/lib/state/app.svelte.ts";
 import { withEvents, withoutQueues } from "./helpers.ts";
 
@@ -286,7 +286,7 @@ describe("settings", () => {
   });
 
   it("applies desktop settings right away and fills the folder from the picker", async () => {
-    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false };
+    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: true };
     let atLogin = false;
     const host: Host = {
       pickFolder: vi.fn(async () => "/home/me/Videos"),
@@ -311,7 +311,7 @@ describe("settings", () => {
     expect(tray).toBeChecked();
     await user.click(tray);
     await user.click(screen.getByRole("checkbox", { name: "Quitting also stops downloads" }));
-    expect(prefs).toEqual({ closeToTray: false, stopDaemonOnQuit: true });
+    expect(prefs).toEqual({ closeToTray: false, stopDaemonOnQuit: true, autoUpdateCheck: true });
 
     await user.click(screen.getByRole("button", { name: "Browse…" }));
     expect(screen.getByRole("textbox", { name: "Default folder" })).toHaveValue("/home/me/Videos");
@@ -352,4 +352,86 @@ describe("Bangla", () => {
     await user.click(within(nav()).getByRole("button", { name: "ইতিহাস" }));
     expect(await screen.findByRole("heading", { name: "ইতিহাস" })).toBeInTheDocument();
   });
+});
+
+describe("connect your browser and updates (desktop)", () => {
+  function browsersHost(first = false) {
+    let rows: BrowserState[] = [
+      { browser: "chrome", inUse: true, hostRegistered: false, extensionFound: false, store: "github" },
+      { browser: "edge", inUse: true, hostRegistered: true, extensionFound: false, store: "edgeAddOns" },
+      { browser: "firefox", inUse: true, hostRegistered: true, extensionFound: true, store: "github" },
+      { browser: "vivaldi", inUse: false, hostRegistered: false, extensionFound: false, store: "github" },
+    ];
+    const browsers = {
+      status: vi.fn(async () => rows),
+      connect: vi.fn(async (b?: BrowserId) => {
+        rows = rows.map((r) => (r.browser === b ? { ...r, hostRegistered: true } : r));
+      }),
+      openStore: vi.fn(async (_b: BrowserId) => {}),
+      firstRun: vi.fn(async () => first),
+    };
+    return browsers;
+  }
+
+  it("lists the browsers in use with the next step for each", async () => {
+    const browsers = browsersHost();
+    const { user } = await setup({ host: { browsers } });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    await user.click(await screen.findByRole("button", { name: "Connect your browser…" }));
+    expect(await screen.findByRole("heading", { name: "Connect your browser" })).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: "Connect your browser" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items.map((i) => within(i).getByText(/^(Google Chrome|Microsoft Edge|Firefox)$/).textContent)).toEqual(["Google Chrome", "Microsoft Edge", "Firefox"]);
+    expect(screen.getByText("Not found on this computer: Vivaldi.")).toBeInTheDocument();
+    expect(within(items[2]!).getByText("Ready: downloads from this browser come to Whoosh")).toBeInTheDocument();
+
+    await user.click(within(items[1]!).getByRole("button", { name: "Get it from Edge Add-ons" }));
+    expect(browsers.openStore).toHaveBeenCalledWith("edge");
+
+    await user.click(within(items[0]!).getByRole("button", { name: "Link to Whoosh" }));
+    expect(browsers.connect).toHaveBeenCalledWith("chrome");
+    expect((await screen.findAllByText("Google Chrome is linked to Whoosh.")).length).toBeGreaterThan(0);
+    const chrome = within(await screen.findByRole("list", { name: "Connect your browser" })).getAllByRole("listitem")[0]!;
+    expect(await within(chrome).findByRole("button", { name: "Download the extension" })).toBeInTheDocument();
+    expect(within(chrome).getByText(/not in this browser's store yet/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(await screen.findByRole("grid")).toBeInTheDocument();
+  }, 20_000);
+
+  it("opens by itself on the first run", async () => {
+    const browsers = browsersHost(true);
+    const client = createMockClient({ autoTick: false });
+    closeClient = () => client.close();
+    render(App, { props: { client, mode: "mock", storage: null, locale: "en", host: { browsers } } });
+    expect(await screen.findByRole("heading", { name: "Connect your browser" })).toBeInTheDocument();
+    expect(browsers.firstRun).toHaveBeenCalledTimes(1);
+  }, 20_000);
+
+  it("checks for an update and installs it", async () => {
+    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: true };
+    const updates = {
+      check: vi.fn(async (): Promise<UpdateInfo | undefined> => undefined),
+      install: vi.fn(async () => {}),
+    };
+    const host: Host = {
+      desktopPrefs: { get: async () => prefs, set: vi.fn(async (p: DesktopPrefs) => (prefs = p)) },
+      updates,
+    };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Updates" })).toBeInTheDocument();
+    const daily = await screen.findByRole("checkbox", { name: "Look for a new version of Whoosh once a day" });
+    await waitFor(() => expect(daily).toBeChecked());
+    await user.click(daily);
+    expect(prefs.autoUpdateCheck).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Check for a new version" }));
+    expect(await screen.findByText("You have the newest version.")).toBeInTheDocument();
+    updates.check.mockResolvedValueOnce({ version: "1.2.0", currentVersion: "1.1.0" });
+    await user.click(screen.getByRole("button", { name: "Check for a new version" }));
+    expect(await screen.findByText("Version 1.2.0 is available.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Install and restart" }));
+    expect(updates.install).toHaveBeenCalledTimes(1);
+  }, 20_000);
 });

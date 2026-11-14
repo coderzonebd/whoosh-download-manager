@@ -1,0 +1,9 @@
+{
+  "name": "com.coderzonebd.whoosh",
+  "description": "whoosh download manager — browser integration",
+  "path": "/usr/bin/whoosh-nmhost",
+  "type": "stdio",
+  "allowed_extensions": [
+    "whoosh@coderzonebd.com"
+  ]
+}
