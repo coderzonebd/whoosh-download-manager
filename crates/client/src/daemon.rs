@@ -202,7 +202,8 @@ fn keep_std_handles_to_ourselves() {
     }
 }
 
-/// Truncates or creates `path`, owner-only (0600) on Unix.
+/// Truncates or creates `path`, owner-only (0600 on Unix, an owner-only
+/// DACL on Windows).
 fn private_log(path: &Path) -> std::io::Result<std::fs::File> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -217,18 +218,31 @@ fn private_log(path: &Path) -> std::io::Result<std::fs::File> {
         use std::os::unix::fs::PermissionsExt;
         file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
+    #[cfg(windows)]
+    {
+        use whoosh_proto::winacl;
+        if winacl::access(path)?.is_loose() {
+            winacl::make_private(path)?;
+        }
+    }
     Ok(file)
 }
 
 fn create_private_dirs(dir: &Path) -> Result<()> {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(dir).map_err(|e| {
+    #[cfg(windows)]
+    let created = whoosh_proto::winacl::create_private_dir(dir);
+    #[cfg(not(windows))]
+    let created = {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(dir)
+    };
+    created.map_err(|e| {
         ClientError::DaemonUnavailable(format!("cannot create {}: {e}", dir.display()))
     })
 }

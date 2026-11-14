@@ -7,6 +7,7 @@ mod daemon;
 mod error;
 mod format;
 mod get;
+mod interrupt;
 mod runtime;
 mod watch;
 

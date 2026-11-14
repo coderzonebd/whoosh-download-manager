@@ -117,6 +117,15 @@ impl DailyFile {
                     file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
                 }
             }
+            #[cfg(windows)]
+            {
+                // New files inherit the private logs directory's entries; a
+                // file left by an older build may be wider; tighten it.
+                use whoosh_proto::winacl;
+                if winacl::access(&path)?.is_loose() {
+                    winacl::make_private(&path)?;
+                }
+            }
             prune(&self.dir);
             self.current = Some((day, file));
         }
@@ -222,6 +231,11 @@ mod tests {
                 .permissions()
                 .mode();
             assert_eq!(mode & 0o777, 0o600);
+        }
+        #[cfg(windows)]
+        {
+            let today = names.iter().rev().find(|n| n.ends_with(".log")).unwrap();
+            whoosh_proto::runtime::check_private_file(&dir.join(today)).unwrap();
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }

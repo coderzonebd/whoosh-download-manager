@@ -744,6 +744,26 @@ mod tests {
         assert_eq!(mode(&j.path_for("x").unwrap()), 0o600);
     }
 
+    /// Windows: the journal directory gets an owner-only DACL, and journal
+    /// files inherit it, even under a directory everyone may write to.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn files_are_owner_only() {
+        use whoosh_proto::runtime::{check_private_dir, check_private_file};
+        let d = tempfile::tempdir().unwrap();
+        let out = std::process::Command::new("icacls")
+            .arg(d.path())
+            .args(["/grant", "*S-1-1-0:(OI)(CI)M"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let dir = d.path().join("j");
+        let j = FileJournal::open(&dir).unwrap();
+        j.commit(&"x".to_string(), &cp(1, 1)).await.unwrap();
+        check_private_dir(&dir).unwrap();
+        check_private_file(&j.path_for("x").unwrap()).unwrap();
+    }
+
     #[tokio::test]
     async fn commits_of_many_ids_run_concurrently() {
         let d = tempfile::tempdir().unwrap();

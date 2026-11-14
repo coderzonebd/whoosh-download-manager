@@ -59,12 +59,7 @@ fn answers_nm_status_over_stdio_and_exits_on_eof() {
 #[test]
 fn prints_manifests() {
     let out = Command::new(EXE)
-        .args([
-            "--print-manifest",
-            "chromium",
-            "--host-path",
-            HOST,
-        ])
+        .args(["--print-manifest", "chromium", "--host-path", HOST])
         .output()
         .unwrap();
     assert!(out.status.success());

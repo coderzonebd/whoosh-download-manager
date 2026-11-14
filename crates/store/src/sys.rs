@@ -447,9 +447,12 @@ pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
 /// Who may read the directories [`create_dirs`] makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DirMode {
-    /// The process's default (0777 minus umask on Unix).
+    /// The process's default (0777 minus umask on Unix; the inherited ACL
+    /// on Windows).
     Default,
-    /// Owner-only (0700 on Unix).
+    /// Owner-only: 0700 on Unix; on Windows a protected DACL for the user,
+    /// `SYSTEM` and `Administrators`, which files created inside inherit
+    /// (see `whoosh_proto::winacl`).
     Private,
 }
 
@@ -465,14 +468,23 @@ pub(crate) fn create_dirs(dir: &Path, mode: DirMode) -> io::Result<Vec<PathBuf>>
     if missing.is_empty() {
         return Ok(Vec::new());
     }
-    let mut b = std::fs::DirBuilder::new();
-    b.recursive(true);
-    #[cfg(unix)]
+    #[cfg(windows)]
     if mode == DirMode::Private {
-        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        whoosh_proto::winacl::create_private_dir(dir)?;
     }
-    let _ = mode;
-    b.create(dir)?;
+    #[cfg(windows)]
+    let done = mode == DirMode::Private;
+    #[cfg(not(windows))]
+    let done = false;
+    if !done {
+        let mut b = std::fs::DirBuilder::new();
+        b.recursive(true);
+        #[cfg(unix)]
+        if mode == DirMode::Private {
+            std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        }
+        b.create(dir)?;
+    }
     let mut changed: Vec<PathBuf> = missing.iter().map(|d| parent_or_cwd(d)).collect();
     changed.dedup();
     Ok(changed)
@@ -543,7 +555,9 @@ pub(crate) fn open_nofollow(opts: &mut std::fs::OpenOptions, path: &Path) -> io:
     }
 }
 
-/// Open options for a file only the user may read (0600 on Unix).
+/// Open options for a file only the user may read: 0600 on Unix. On
+/// Windows the file inherits the ACL of its directory, which
+/// [`create_dirs`] with [`DirMode::Private`] makes owner-only.
 pub(crate) fn private_file_options() -> std::fs::OpenOptions {
     #[allow(unused_mut)]
     let mut o = std::fs::OpenOptions::new();

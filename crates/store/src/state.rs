@@ -836,7 +836,8 @@ fn prepare_files(path: &Path) -> io::Result<Prepared> {
 }
 
 /// Refuse symbolic links for the database, `-wal` and `-shm`, and narrow
-/// any of them that others can read to 0600. Opens nothing.
+/// any of them that others can read to the owner (0600 on Unix, an
+/// owner-only DACL on Windows). Opens nothing.
 fn check_files(path: &Path) -> io::Result<()> {
     for p in [
         path.to_path_buf(),
@@ -861,6 +862,14 @@ fn check_files(path: &Path) -> io::Result<()> {
             if mode & 0o077 != 0 {
                 tracing::warn!(path = %p.display(), mode = format!("{:o}", mode & 0o777), "state file was readable by others; restricting it to the owner");
                 std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+            }
+        }
+        #[cfg(windows)]
+        {
+            use whoosh_proto::winacl;
+            if winacl::access(&p)?.is_loose() {
+                tracing::warn!(path = %p.display(), "state file was open to others; restricting it to the owner");
+                winacl::make_private(&p)?;
             }
         }
     }

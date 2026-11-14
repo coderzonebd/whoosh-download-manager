@@ -210,6 +210,44 @@ async fn files_are_owner_only() {
     assert_eq!(s.load_downloads().await.unwrap(), vec![record(1)]);
 }
 
+/// Windows: the same with access control lists. The data directory sits
+/// in one everyone may modify; "world-readable" is Everyone granted access
+/// to the database itself.
+#[cfg(windows)]
+#[tokio::test]
+async fn files_are_owner_only() {
+    use whoosh_proto::runtime::{check_private_dir, check_private_file};
+    let icacls = |p: &Path, grant: &str| {
+        let out = std::process::Command::new("icacls")
+            .arg(p)
+            .args(["/grant", grant])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+    };
+    let d = tempfile::tempdir().unwrap();
+    icacls(d.path(), "*S-1-1-0:(OI)(CI)M");
+    let dir = d.path().join("whoosh");
+    let path = dir.join("state.db");
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    s.save_download(&record(1)).await.unwrap();
+    check_private_dir(&dir).unwrap();
+    check_private_file(&path).unwrap();
+    let wal = PathBuf::from(format!("{}-wal", path.display()));
+    let shm = PathBuf::from(format!("{}-shm", path.display()));
+    assert!(wal.exists() && shm.exists(), "{:?}", siblings(&path));
+    check_private_file(&wal).unwrap();
+    check_private_file(&shm).unwrap();
+    s.close().await.unwrap();
+
+    // A database someone opened to everyone is narrowed on open.
+    icacls(&path, "*S-1-1-0:R");
+    assert!(check_private_file(&path).is_err());
+    let s = SqliteStateStore::open(&path).await.unwrap();
+    check_private_file(&path).unwrap();
+    assert_eq!(s.load_downloads().await.unwrap(), vec![record(1)]);
+}
+
 #[tokio::test]
 async fn garbage_is_moved_aside_with_its_wal() {
     let d = tempfile::tempdir().unwrap();

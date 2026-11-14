@@ -737,6 +737,12 @@ async fn runtime_file_contents_and_permissions() {
         assert_eq!(mode(&data.join("runtime.json")), 0o600);
         assert_eq!(mode(&data), 0o700, "a new data dir is owner-only");
     }
+    #[cfg(windows)]
+    {
+        use whoosh_proto::runtime::{check_private_dir, check_private_file};
+        check_private_file(&data.join("runtime.json")).unwrap();
+        check_private_dir(&data).expect("a new data dir is owner-only");
+    }
     // Every start gets a new token.
     d.shutdown().await;
     let d2 = start(ScriptedService::new(), &data).await;
@@ -1093,6 +1099,43 @@ async fn the_data_dir_is_made_private_or_refused() {
             assert!(reason.contains("symlink"), "{reason}")
         }
         other => panic!("a symlinked data dir was accepted: {other:?}"),
+    }
+}
+
+/// Windows: the same with access control lists. "Others may write" is
+/// Everyone granted modify access; a junction stands in for the symlink
+/// (it needs no privilege to create).
+#[cfg(windows)]
+#[tokio::test]
+async fn the_data_dir_is_made_private_or_refused() {
+    use whoosh_proto::runtime::check_private_dir;
+    let base = TempDir::new("private");
+    let data = base.path().join("data");
+    std::fs::create_dir(&data).unwrap();
+    let out = std::process::Command::new("icacls")
+        .arg(&data)
+        .args(["/grant", "*S-1-1-0:(OI)(CI)M"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(check_private_dir(&data).is_err());
+    let d = start(ScriptedService::new(), &data).await;
+    check_private_dir(&data).expect("tightened");
+    d.shutdown().await;
+
+    let link = base.path().join("link");
+    let out = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&data)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    match whoosh_daemon::serve(ScriptedService::new(), config(&link)).await {
+        Err(ServeError::InsecureDataDir(_, reason)) => {
+            assert!(reason.contains("junction"), "{reason}")
+        }
+        other => panic!("a data dir behind a junction was accepted: {other:?}"),
     }
 }
 
