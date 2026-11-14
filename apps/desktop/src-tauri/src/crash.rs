@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Opt-in crash reports for the shell and its web view ([`whoosh_crash`]).
+//! Crash reports for the shell and its web view ([`whoosh_crash`]), on by
+//! default and easy to turn off.
 //!
-//! The choice ("Send crash reports" in Settings, off by default) lives in
+//! The choice ("Send crash reports" in Settings, on unless the user turned
+//! it off) and whether the first-run notice was dismissed live in
 //! the daemon's data directory, so the daemon honours the same switch the
 //! next time it starts. The web view never talks to the crash-report
 //! service itself (its CSP allows only the local API): uncaught errors come
@@ -25,7 +27,8 @@ fn reporter() -> MutexGuard<'static, Option<whoosh_crash::Reporter>> {
     REPORTER.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// At startup: starts reporting when this build can and the user opted in.
+/// At startup: starts reporting when this build can and the user has not
+/// turned it off.
 pub fn init() {
     if let Ok(dir) = daemon::data_dir() {
         *reporter() = whoosh_crash::init("desktop", env!("CARGO_PKG_VERSION"), &dir);
@@ -38,6 +41,8 @@ pub struct CrashReports {
     /// This build has a DSN; without one the switch is hidden.
     available: bool,
     enabled: bool,
+    /// The first-run notice was dismissed (or the user chose in Settings).
+    notice_shown: bool,
 }
 
 fn state() -> Result<CrashReports, String> {
@@ -45,6 +50,7 @@ fn state() -> Result<CrashReports, String> {
     Ok(CrashReports {
         available: whoosh_crash::available(),
         enabled: whoosh_crash::consent(&dir),
+        notice_shown: whoosh_crash::notice_shown(&dir),
     })
 }
 
@@ -68,6 +74,15 @@ pub fn set_crash_reports(enabled: bool) -> Result<CrashReports, String> {
         current.take();
     }
     drop(current);
+    state()
+}
+
+/// The first-run notice was dismissed: it is not shown again.
+#[tauri::command]
+pub fn dismiss_crash_notice() -> Result<CrashReports, String> {
+    let dir = daemon::data_dir()?;
+    whoosh_crash::mark_notice_shown(&dir)
+        .map_err(|e| format!("could not save the setting: {e}"))?;
     state()
 }
 

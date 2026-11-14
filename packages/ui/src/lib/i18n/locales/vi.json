@@ -267,11 +267,15 @@
     "stopDaemonOnQuitHint": "Khi tắt: các tải xuống vẫn chạy nền cho tiện ích trình duyệt và dòng lệnh.",
     "privacy": "Quyền riêng tư",
     "crashReports": "Gửi báo cáo sự cố",
-    "crashReportsHint": "Khi Whoosh gặp sự cố, một báo cáo kỹ thuật (lỗi, vị trí xảy ra trong Whoosh, phiên bản ứng dụng và hệ điều hành) sẽ được gửi cho nhà phát triển. Tên tệp, liên kết và tên người dùng của bạn được xóa trước. Dịch vụ chạy nền sẽ áp dụng lựa chọn này vào lần khởi động tiếp theo.",
+    "crashReportsHint": "Whoosh gửi báo cáo sự cố ẩn danh để giúp sửa lỗi: lỗi, vị trí xảy ra trong Whoosh, phiên bản ứng dụng và hệ điều hành. Không có tên tệp, liên kết hay tên người dùng. Bật trừ khi bạn tắt; dịch vụ chạy nền sẽ áp dụng thay đổi vào lần khởi động tiếp theo.",
     "machineTranslated": "Bản dịch máy.",
     "helpTranslate": "Giúp cải thiện bản dịch",
     "media": "Trang video và âm thanh",
     "mediaHint": "Whoosh dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng, được tải từ bản phát hành chính thức khi cần lần đầu và được kiểm tra với mã băm đã công bố."
+  },
+  "crashNotice": {
+    "text": "Whoosh gửi báo cáo sự cố ẩn danh để giúp sửa lỗi. Không có tên tệp hay liên kết. Tắt trong Cài đặt.",
+    "open": "Mở Cài đặt"
   },
   "theme": {
     "system": "Theo hệ thống",

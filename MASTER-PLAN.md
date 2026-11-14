@@ -166,7 +166,7 @@ Scoped honestly: a **companion + HTTP downloader**, not parity. Background downl
 - Local API bound to localhost with a per-install token; extension IDs allow-listed in the native-messaging manifest; origin checks on WebSocket.
 - Web pages can never choose a local path. Filenames sanitized (RFC 6266/5987, non-UTF-8, path traversal). Zip-slip protection in extraction.
 - Signed updates (minisign) with a public key pinned in the binary; reproducible builds; SBOM per release; GitHub Actions builds every artifact.
-- No telemetry by default. Opt-in crash reports (self-hosted Sentry/GlitchTip). Hash-only external lookups, only if the user turns them on.
+- No telemetry by default. Crash reports are on by default and can be turned off in Settings (hosted GlitchTip, Sentry protocol), scrubbed of file names, links, paths and user names; the app says so once on first run. *Amended by the owner on 2026-11-14: crash reports were opt-in before.* Hash-only external lookups, only if the user turns them on.
 - Downloads written with mark-of-the-web (Windows Zone.Identifier, macOS quarantine) so OS protections still apply.
 - Threat model doc in the repo; security.txt; coordinated disclosure policy.
 
@@ -218,7 +218,7 @@ Public report.
 
 ### Phase 2 — Desktop + Extension Pro → **v1.0** (months 4–6)
 Tauri desktop (Win/mac/Linux), tray, Classic + Modern layouts, categories/queues/scheduler UI, history. Extension (Chromium + Firefox) Pro mode: capture, cookie/referer forwarding, context menus, media sniffer, predictive preconnect, self-healing links. yt-dlp/ffmpeg integration (desktop build). Signed installers on the v1.0 channels (amended 2026-11-14, [ADR 0007](docs/adr/0007-phase2-plan.md): GitHub Releases, winget, scoop, Homebrew cask, Flathub, AUR; MSIX/Microsoft Store, Snap, Nix, Chocolatey and apt/dnf repositories follow in v1.x). Bangla + English + ~10 machine-seeded languages via Weblate. Accessibility pass.
-**Gate:** 2 weeks public beta, crash-free rate > 99.5% (from opt-in crash reports), extension approved in both stores. Work streams and order: [ADR 0007](docs/adr/0007-phase2-plan.md). The road to v1.0 at no cost (public pre-release beta, free signing and channels): [ADR 0007, Amendment 1](docs/adr/0007-phase2-plan.md#amendment-1-the-road-to-v10-at-no-cost-2026-11-14).
+**Gate:** 2 weeks public beta, crash-free rate > 99.5% (from crash reports, on by default since the owner's amendment of 2026-11-14), extension approved in both stores. Work streams and order: [ADR 0007](docs/adr/0007-phase2-plan.md). The road to v1.0 at no cost (public pre-release beta, free signing and channels): [ADR 0007, Amendment 1](docs/adr/0007-phase2-plan.md#amendment-1-the-road-to-v10-at-no-cost-2026-11-14).
 
 ### Phase 3 — Protocol & power features → **v1.5** (months 7–9)
 BitTorrent (librqbit), ed2k, FTP/SFTP/WebDAV, HLS/DASH, Metalink + multi-source + LAN peers, archive extraction, batch/site grabber/link crawler, RSS, debrid, proxy/VPN bind/kill switch, polite mode, content verification, headless Docker, web remote, MCP, portable mode, BDIX/local-FTP mode.

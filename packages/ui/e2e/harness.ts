@@ -45,7 +45,8 @@ function client(): WhooshClient {
 
 // On the mock, a host with the desktop-only settings, so the accessibility
 // suite sees them too.
-let crashOn = false;
+// The crash-report notice shows as on a first run.
+const crash = { enabled: true, noticeShown: false };
 const mockHost: Host = {
   desktopPrefs: {
     get: async () => ({ closeToTray: true, stopDaemonOnQuit: false }),
@@ -53,8 +54,9 @@ const mockHost: Host = {
   },
   launchAtLogin: { get: async () => false, set: async () => {} },
   crashReports: {
-    get: async () => crashOn,
-    set: async (on) => void (crashOn = on),
+    get: async () => ({ ...crash }),
+    set: async (on) => void Object.assign(crash, { enabled: on, noticeShown: true }),
+    dismissNotice: async () => void (crash.noticeShown = true),
   },
 };
 

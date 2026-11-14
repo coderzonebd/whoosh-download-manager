@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Uncaught errors in the web view go to the shell (`report_ui_error` in
 // crash.rs), which sends them, scrubbed, only when this build has a
-// crash-report address and the user turned on "Send crash reports". The web
+// crash-report address and the user has not turned off "Send crash reports"
+// (on by default). The web
 // view itself never contacts the crash-report service.
 
 async function forward(kind: string, message: string, stack: string): Promise<void> {

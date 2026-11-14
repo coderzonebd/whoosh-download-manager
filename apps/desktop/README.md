@@ -48,8 +48,9 @@ GPL-3.0-or-later.
 - **What the UI gets from the shell** is in `src/host.ts` (the `Host`
   interface of `@whoosh/ui`); in a plain browser none of it is passed, so
   those controls are hidden.
-- **Crash reports (opt-in).** Settings → Privacy → *Send crash reports*,
-  off by default and shown only in builds made with `WHOOSH_CRASH_DSN`.
+- **Crash reports (on by default, can be turned off).** Settings → Privacy
+  → *Send crash reports*, shown only in builds made with `WHOOSH_CRASH_DSN`;
+  a one-time first-run notice links to it (`dismiss_crash_notice`).
   The shell's own panics and uncaught errors in the web view (forwarded over
   IPC by `src/crash.ts`; the CSP keeps the web view off the network) are
   sent, scrubbed, by `src-tauri/src/crash.rs` through

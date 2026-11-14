@@ -13,6 +13,7 @@
   import AfterDoneBanner from "./AfterDoneBanner.svelte";
   import ClearHistoryDialog from "./ClearHistoryDialog.svelte";
   import ContextMenu from "./ContextMenu.svelte";
+  import CrashNotice from "./CrashNotice.svelte";
   import DetailPanel from "./DetailPanel.svelte";
   import DownloadList from "./DownloadList.svelte";
   import HistoryView from "./HistoryView.svelte";
@@ -137,6 +138,7 @@
     <main class="main">
       <Toolbar />
       <AfterDoneBanner />
+      <CrashNotice />
       <div class="content">
         {#if app.view === "settings"}
           <SettingsView />

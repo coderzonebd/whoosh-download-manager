@@ -274,11 +274,15 @@
     "stopDaemonOnQuitHint": "Off: downloads keep going in the background for the browser extension and the command line.",
     "privacy": "Privacy",
     "crashReports": "Send crash reports",
-    "crashReportsHint": "When Whoosh crashes, send a technical report (the error, where in Whoosh it happened, the app version and the operating system) to the developers. File names, links and your user name are removed first. The background service follows this choice the next time it starts.",
+    "crashReportsHint": "Whoosh sends anonymous crash reports to help fix bugs: the error, where in Whoosh it happened, the app version and the operating system. No file names, links or user name. On unless you turn it off; the background service follows a change the next time it starts.",
     "machineTranslated": "Machine translated.",
     "helpTranslate": "Help improve the translation",
     "media": "Video and audio sites",
     "mediaHint": "Whoosh uses yt-dlp to find the video on a page and ffmpeg to join video and audio. Both are separate programs, downloaded from their official releases the first time they are needed and checked against the published checksum."
+  },
+  "crashNotice": {
+    "text": "Whoosh sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.",
+    "open": "Open Settings"
   },
   "theme": {
     "system": "Match system",

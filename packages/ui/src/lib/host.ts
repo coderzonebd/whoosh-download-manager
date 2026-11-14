@@ -12,6 +12,12 @@ export interface DesktopPrefs {
   stopDaemonOnQuit: boolean;
 }
 
+export interface CrashReportsState {
+  enabled: boolean;
+  /** The first-run notice was dismissed, or the user chose in Settings. */
+  noticeShown: boolean;
+}
+
 export interface Host {
   /** Ask the user for a folder; undefined when they cancel. */
   pickFolder?: (opts: { title: string; defaultPath?: string | undefined }) => Promise<string | undefined>;
@@ -26,13 +32,15 @@ export interface Host {
    */
   openUrl?: (url: string) => Promise<void>;
   /**
-   * "Send crash reports" (off by default). `get` resolves undefined when
-   * this build cannot send any (no crash-report address), and the switch is
-   * hidden.
+   * "Send crash reports": on by default, can be turned off. `get` resolves
+   * undefined when this build cannot send any (no crash-report address):
+   * then the switch and the first-run notice are hidden.
    */
   crashReports?: {
-    get(): Promise<boolean | undefined>;
+    get(): Promise<CrashReportsState | undefined>;
     set(on: boolean): Promise<void>;
+    /** The first-run notice was dismissed; it is not shown again. */
+    dismissNotice(): Promise<void>;
   };
   /** Start the app when the user logs in. */
   launchAtLogin?: {

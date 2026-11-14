@@ -48,11 +48,14 @@ export function desktopHost(): Host {
     },
     crashReports: {
       async get() {
-        const s = await invoke<{ available: boolean; enabled: boolean }>("crash_reports");
-        return s.available ? s.enabled : undefined;
+        const s = await invoke<{ available: boolean; enabled: boolean; noticeShown: boolean }>("crash_reports");
+        return s.available ? { enabled: s.enabled, noticeShown: s.noticeShown } : undefined;
       },
       async set(on) {
         await invoke("set_crash_reports", { enabled: on });
+      },
+      async dismissNotice() {
+        await invoke("dismiss_crash_notice");
       },
     },
     launchAtLogin: {

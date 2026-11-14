@@ -35,7 +35,7 @@ When a download's address expires, the extension may open the page that download
 
 ## The Whoosh app
 
-The extension does nothing on its own: it hands downloads to the Whoosh desktop app, which must be installed separately and which registers itself as the extension's native messaging host. The app runs entirely on your computer. It has its own privacy notes in its documentation; by default it sends nothing to the developers either (crash reports are opt-in and off by default).
+The extension does nothing on its own: it hands downloads to the Whoosh desktop app, which must be installed separately and which registers itself as the extension's native messaging host. The app runs entirely on your computer. It has its own privacy notes in its documentation ([docs/privacy.md](../../docs/privacy.md)): apart from anonymous crash reports, which are on by default in release builds, leave out file names and links, and can be turned off in its settings, it sends nothing to the developers.
 
 ## Permissions
 

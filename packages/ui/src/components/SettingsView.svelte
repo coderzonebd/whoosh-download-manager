@@ -227,7 +227,7 @@
   $effect(() => {
     host.crashReports
       ?.get()
-      .then((on) => (crash = on))
+      .then((s) => (crash = s?.enabled))
       .catch(() => (crash = undefined));
   });
 
@@ -235,6 +235,8 @@
     if (!host.crashReports) return;
     const before = crash;
     crash = on;
+    // Choosing here counts as having seen the first-run notice.
+    app.crashNotice = false;
     try {
       await host.crashReports.set(on);
     } catch (e) {
@@ -523,7 +525,7 @@
           <div class="checks">
             <div class="vy-field">
               <label class="vy-check">
-                <input type="checkbox" checked={crash} onchange={(e) => setCrash(e.currentTarget.checked)} aria-describedby="vy-set-crash-hint" />
+                <input id="vy-set-crash" type="checkbox" checked={crash} onchange={(e) => setCrash(e.currentTarget.checked)} aria-describedby="vy-set-crash-hint" />
                 {t("settings.crashReports")}
               </label>
               <span id="vy-set-crash-hint" class="vy-hint">{t("settings.crashReportsHint")}</span>

@@ -1,6 +1,6 @@
 [package]
 name = "whoosh-crash"
-description = "Opt-in crash reports (Sentry protocol, hosted GlitchTip) with a scrubber that removes links, file names, paths and user names"
+description = "Crash reports, on by default and can be turned off (Sentry protocol, hosted GlitchTip), with a scrubber that removes links, file names, paths and user names"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

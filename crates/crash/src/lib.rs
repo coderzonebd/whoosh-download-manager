@@ -1,10 +1,13 @@
-//! Opt-in crash reports for the daemon and the desktop app (ADR 0007,
-//! Amendment 1; MASTER-PLAN §5).
+//! Crash reports for the daemon and the desktop app, on by default and easy
+//! to turn off (ADR 0007, Amendment 1; MASTER-PLAN §5, both amended by the
+//! owner on 2026-11-14).
 //!
-//! - **Off by default.** Nothing is sent unless the user turned on "Send
-//!   crash reports" in the desktop app's settings, which writes
-//!   [`CONSENT_FILE`] in the daemon's data directory. The choice is checked
-//!   again before every report, so turning it off stops reports at once.
+//! - **On by default, can be turned off.** In a build with a DSN, reports
+//!   are sent unless the user turned off "Send crash reports" in the desktop
+//!   app's settings, which writes [`CONSENT_FILE`] in the daemon's data
+//!   directory. A saved choice is always kept. The choice is checked again
+//!   before every report, so turning it off stops reports at once. The app
+//!   tells the user once, on first run ([`notice_shown`]).
 //! - **Inert without a DSN.** The address of the crash-report service comes
 //!   from the build-time variable `WHOOSH_CRASH_DSN` (a release secret). A
 //!   build without it never starts a client, opens no connection and sends
@@ -27,7 +30,8 @@ pub mod scrub;
 /// Build-time variable holding the DSN; see the crate docs.
 pub const DSN_ENV: &str = "WHOOSH_CRASH_DSN";
 
-/// In the daemon's data directory: `{"enabled": true}` when the user opted in.
+/// In the daemon's data directory: `{"enabled": false}` when the user turned
+/// reports off (absent or without `enabled`: the default, on).
 pub const CONSENT_FILE: &str = "crash-reports.json";
 
 /// The DSN this build was made with, if any.
@@ -42,32 +46,87 @@ pub fn available() -> bool {
     build_dsn().is_some()
 }
 
+/// `crash-reports.json`. `enabled` is absent until the user chooses (then
+/// the default, on, applies); `noticeShown` records that the first-run
+/// notice was dismissed. Files written by earlier builds (`{"enabled":
+/// false}`) read the same way, so a saved choice is kept.
 #[derive(serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct Consent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
     #[serde(default)]
-    enabled: bool,
+    notice_shown: bool,
 }
 
 pub fn consent_path(data_dir: &Path) -> PathBuf {
     data_dir.join(CONSENT_FILE)
 }
 
-/// The user's choice; false when the file is missing or unreadable.
-pub fn consent(data_dir: &Path) -> bool {
-    std::fs::read(consent_path(data_dir))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Consent>(&b).ok())
-        .is_some_and(|c| c.enabled)
+/// What the file says: `Ok(None)` when there is no file yet, `Err` when it
+/// exists but cannot be read or parsed.
+fn read(data_dir: &Path) -> Result<Option<Consent>, ()> {
+    match std::fs::read(consent_path(data_dir)) {
+        Ok(b) => serde_json::from_slice::<Consent>(&b)
+            .map(Some)
+            .map_err(|_| ()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(()),
+    }
 }
 
-/// Saves the user's choice (written to a temporary file, then renamed).
-pub fn set_consent(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
+/// Whether reports may be sent: the user's saved choice, else on (the
+/// default). A file that exists but cannot be read counts as off: it may
+/// hold a choice we cannot see.
+pub fn consent(data_dir: &Path) -> bool {
+    match read(data_dir) {
+        Ok(Some(c)) => c.enabled.unwrap_or(true),
+        Ok(None) => true,
+        Err(()) => false,
+    }
+}
+
+/// Whether the first-run notice ("Whoosh sends anonymous crash reports…")
+/// was dismissed, or the user already made a choice in Settings.
+pub fn notice_shown(data_dir: &Path) -> bool {
+    match read(data_dir) {
+        Ok(Some(c)) => c.notice_shown || c.enabled.is_some(),
+        Ok(None) => false,
+        Err(()) => true,
+    }
+}
+
+fn write(data_dir: &Path, c: &Consent) -> std::io::Result<()> {
     std::fs::create_dir_all(data_dir)?;
     let path = consent_path(data_dir);
     let tmp = path.with_extension("json.tmp");
-    let json = serde_json::to_vec(&Consent { enabled }).map_err(std::io::Error::other)?;
+    let json = serde_json::to_vec(c).map_err(std::io::Error::other)?;
     std::fs::write(&tmp, json)?;
     std::fs::rename(&tmp, &path)
+}
+
+/// Saves the user's choice (written to a temporary file, then renamed).
+/// Choosing also counts as having seen the notice.
+pub fn set_consent(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
+    write(
+        data_dir,
+        &Consent {
+            enabled: Some(enabled),
+            notice_shown: true,
+        },
+    )
+}
+
+/// Records that the first-run notice was dismissed; keeps the choice.
+pub fn mark_notice_shown(data_dir: &Path) -> std::io::Result<()> {
+    let enabled = read(data_dir).ok().flatten().and_then(|c| c.enabled);
+    write(
+        data_dir,
+        &Consent {
+            enabled,
+            notice_shown: true,
+        },
+    )
 }
 
 /// Keeps the client alive; dropping it flushes queued reports (up to two
@@ -83,7 +142,7 @@ impl std::fmt::Debug for Reporter {
 }
 
 /// Starts crash reporting for `component` ("daemon", "desktop") when this
-/// build has a DSN and the user opted in. Otherwise returns `None` and does
+/// build has a DSN and the user has not turned reports off. Otherwise returns `None` and does
 /// nothing: no client, no thread, no connection.
 pub fn init(component: &'static str, release: &str, data_dir: &Path) -> Option<Reporter> {
     let dsn = build_dsn()?;
@@ -220,16 +279,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn consent_is_off_until_saved() {
+    fn consent_is_on_by_default_and_a_saved_choice_is_kept() {
         let dir = std::env::temp_dir().join(format!("whoosh-crash-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        // No file: on, and the notice is still to be shown.
+        assert!(consent(&dir));
+        assert!(!notice_shown(&dir));
+        // Dismissing the notice keeps the default.
+        mark_notice_shown(&dir).unwrap();
+        assert!(consent(&dir) && notice_shown(&dir));
+        set_consent(&dir, false).unwrap();
+        assert!(!consent(&dir));
+        // Dismissing again does not turn it back on.
+        mark_notice_shown(&dir).unwrap();
         assert!(!consent(&dir));
         set_consent(&dir, true).unwrap();
         assert!(consent(&dir));
-        set_consent(&dir, false).unwrap();
-        assert!(!consent(&dir));
+        // A file from an earlier (opt-in) build keeps its choice.
+        std::fs::write(consent_path(&dir), br#"{"enabled":false}"#).unwrap();
+        assert!(!consent(&dir) && notice_shown(&dir));
+        std::fs::write(consent_path(&dir), br#"{"enabled":true}"#).unwrap();
+        assert!(consent(&dir));
+        // Unreadable: off, and no notice.
         std::fs::write(consent_path(&dir), b"not json").unwrap();
-        assert!(!consent(&dir));
+        assert!(!consent(&dir) && notice_shown(&dir));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -240,7 +313,9 @@ mod tests {
             return;
         }
         let dir = std::env::temp_dir().join(format!("whoosh-crash-nodsn-{}", std::process::id()));
-        set_consent(&dir, true).unwrap();
+        // Even with the default (on) in place.
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
         assert!(init("test", "0.0.0", &dir).is_none());
         assert!(!active());
         report_ui_error("error", "x", ""); // a no-op

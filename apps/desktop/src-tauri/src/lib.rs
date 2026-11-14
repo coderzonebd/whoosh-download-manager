@@ -204,7 +204,7 @@ fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
 
 /// Entry point shared by the binary (and, later, the mobile targets).
 pub fn run() {
-    // Opt-in crash reports, before anything that could panic.
+    // Crash reports (on unless turned off), before anything that could panic.
     crash::init();
     let app = tauri::Builder::default()
         // First, so a second launch hands over before anything else starts.
@@ -262,6 +262,7 @@ pub fn run() {
             open_translation_page,
             crash::crash_reports,
             crash::set_crash_reports,
+            crash::dismiss_crash_notice,
             crash::report_ui_error,
         ])
         .build(tauri::generate_context!())

@@ -83,6 +83,8 @@ export class AppState {
   moveIds = $state.raw<string[] | undefined>(undefined);
   /** History entries awaiting the clear confirmation. */
   clearIds = $state.raw<string[] | undefined>(undefined);
+  /** Show the one-time crash-report notice (first run, builds that send them). */
+  crashNotice = $state(false);
   /** Capabilities from the last hello, when the client reports them. */
   #capabilities: string[] | undefined;
 
@@ -91,6 +93,10 @@ export class AppState {
   constructor(client: WhooshClient, opts: AppOptions = {}) {
     this.client = client;
     this.host = opts.host ?? {};
+    this.host.crashReports
+      ?.get()
+      .then((s) => (this.crashNotice = s !== undefined && !s.noticeShown))
+      .catch(() => undefined);
     this.prefs = new Prefs(opts.storage === undefined ? defaultStorage() : opts.storage);
     this.i18n = new I18n(opts.locale ?? (typeof navigator === "undefined" ? "en" : navigator.language));
     this.store.sort = this.prefs.initialSort;
@@ -253,6 +259,25 @@ export class AppState {
   }
 
   /** Open the add dialog, optionally with an address filled in. */
+  /** Hide the crash-report notice for good. */
+  dismissCrashNotice(): void {
+    if (!this.crashNotice) return;
+    this.crashNotice = false;
+    this.host.crashReports?.dismissNotice().catch((e: unknown) => this.report(e));
+  }
+
+  /** The notice's link: Settings, with focus on the crash-report switch. */
+  openCrashSetting(): void {
+    this.dismissCrashNotice();
+    this.view = "settings";
+    const focus = (tries: number): void => {
+      const el = document.getElementById("vy-set-crash");
+      if (el) el.focus();
+      else if (tries > 0) setTimeout(() => focus(tries - 1), 50);
+    };
+    setTimeout(() => focus(40), 0);
+  }
+
   openAdd(url = ""): void {
     this.addUrl = url;
     this.view = this.view === "settings" ? "downloads" : this.view;

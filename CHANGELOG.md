@@ -10,10 +10,11 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - End-to-end tests drive the UI against a real `whoosh-daemon` on a temporary data directory, downloading from the labserver: add, pause and resume, bulk remove with the row checkboxes, creating a queue, and a media probe through a fake yt-dlp (`pnpm --filter @whoosh/ui test:e2e`; a CI job, non-blocking for now). The page connects through a relay in the test process that drops the browser's `Origin`; the daemon's origin check is unchanged and nothing test-only ships.
 - A manual screen-reader checklist for NVDA, VoiceOver and Orca: [docs/qa/screen-reader.md](docs/qa/screen-reader.md). Not run yet.
 
-### Crash reports (opt-in)
-- Settings → Privacy → *Send crash reports*, **off by default**, in the desktop app. When on, panics in the app or the daemon and uncaught errors in the app's window are reported to the project's hosted GlitchTip (Sentry protocol), so the beta can measure its crash-free rate.
+### Crash reports
+- Crash reports are **on by default and can be turned off** (Settings → Privacy → *Send crash reports* in the desktop app; the owner's decision of 2026-11-14, amending MASTER-PLAN §5 and ADR 0007). Panics in the app or the daemon and uncaught errors in the app's window are reported to the project's hosted GlitchTip (Sentry protocol), to help fix bugs and so the beta can measure its crash-free rate.
+- Told once: on first run a short, dismissable notice ("Whoosh sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.") links to the switch. A choice the user saved is always kept.
 - A scrubber runs on every report and breadcrumb before it is sent and removes links, query strings, file names and paths, cookies, headers, tokens, e-mail and IP addresses, and the user and computer names; stack frames keep only `crate/src/file.rs` and the line. No performance tracing, no sessions, no default PII. See [docs/privacy.md](docs/privacy.md).
-- The service's address comes from the build-time `WHOOSH_CRASH_DSN`. Builds without it contain no active reporter, hide the switch, and send nothing.
+- The service's address comes from the build-time `WHOOSH_CRASH_DSN`. Builds without it contain no active reporter, hide the switch and the notice, and send nothing.
 
 ### Video and audio sites (yt-dlp, ffmpeg)
 - Desktop and GitHub builds download from video and audio sites. The add dialog notices a video page and offers a format picker: video at a chosen quality (or the best), audio only (as it is, or MP3), and subtitles. Store builds of the extension never offer it.

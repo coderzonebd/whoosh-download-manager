@@ -24,8 +24,9 @@ can't do. Every part is optional and its controls are hidden without it:
 `pickFolder` (Browse… buttons), `desktopPrefs` (close to tray, Quit also
 stops downloads) and `launchAtLogin` (both under Settings → *This
 computer*), and `crashReports` (Settings → *Privacy* → "Send crash reports",
-off by default; hidden when `get()` resolves `undefined`, i.e. a build with
-no crash-report address). `app.openAdd(url)` opens the add dialog prefilled; the desktop
+on by default, plus a one-time dismissable notice under the toolbar with a
+link to the switch; both hidden when `get()` resolves `undefined`, i.e. a
+build with no crash-report address). `app.openAdd(url)` opens the add dialog prefilled; the desktop
 app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 
 ## What is in it

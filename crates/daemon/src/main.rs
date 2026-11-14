@@ -108,8 +108,9 @@ fn main() -> ExitCode {
         }
     };
     startup.logging = ms(t);
-    // Opt-in crash reports (panics): only with a DSN in this build and the
-    // user's consent in the data directory. Held until the daemon exits.
+    // Crash reports (panics): only with a DSN in this build, and unless the
+    // user turned them off (choice in the data directory; on by default).
+    // Held until the daemon exits.
     let _crash = whoosh_crash::init("daemon", VERSION, &data_dir);
     let t = Instant::now();
     let runtime = match tokio::runtime::Builder::new_multi_thread()

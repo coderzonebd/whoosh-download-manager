@@ -267,11 +267,15 @@
     "stopDaemonOnQuitHint": "关闭时：下载会在后台继续，供浏览器扩展和命令行使用。",
     "privacy": "隐私",
     "crashReports": "发送崩溃报告",
-    "crashReportsHint": "Whoosh 崩溃时，会向开发者发送一份技术报告（错误内容、发生在 Whoosh 的哪个位置、应用版本和操作系统）。文件名、链接和你的用户名会先被移除。后台服务会在下次启动时遵循此选择。",
+    "crashReportsHint": "Whoosh 会发送匿名崩溃报告以帮助修复错误：错误内容、发生在 Whoosh 的哪个位置、应用版本和操作系统。不含文件名、链接或用户名。除非你关闭，否则保持开启；后台服务会在下次启动时应用更改。",
     "machineTranslated": "机器翻译。",
     "helpTranslate": "帮助改进翻译",
     "media": "视频和音频网站",
     "mediaHint": "Whoosh 用 yt-dlp 查找页面上的视频，用 ffmpeg 合并视频和音频。两者都是独立程序，首次需要时从官方发布页下载，并用公布的校验和核对。"
+  },
+  "crashNotice": {
+    "text": "Whoosh 会发送匿名崩溃报告以帮助修复错误。不含文件名或链接。可在设置中关闭。",
+    "open": "打开设置"
   },
   "theme": {
     "system": "跟随系统",
