@@ -11,6 +11,7 @@ dist/
 
 # Tauri
 apps/*/src-tauri/gen/
+apps/desktop/src-tauri/binaries/
 
 # Bench / labserver output
 /bench-results/
