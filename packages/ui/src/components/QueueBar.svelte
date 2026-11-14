@@ -43,16 +43,16 @@
     <div class="actions">
       {#if !isMain}
         {#if queue.running}
-          <button class="vy-btn" onclick={() => app.stopQueue(name)}>
+          <button class="vy-btn vy-btn--secondary" onclick={() => app.stopQueue(name)}>
             <Icon name="stop" size={14} /><span class="label">{t("queue.stop")}</span>
           </button>
         {:else}
-          <button class="vy-btn" onclick={() => app.startQueue(name)}>
+          <button class="vy-btn vy-btn--secondary" onclick={() => app.startQueue(name)}>
             <Icon name="play" size={14} /><span class="label">{t("queue.start")}</span>
           </button>
         {/if}
       {/if}
-      <button class="vy-btn" onclick={() => (app.queueDialog = { mode: "edit", name })}>
+      <button class="vy-btn vy-btn--secondary" onclick={() => (app.queueDialog = { mode: "edit", name })}>
         <Icon name={isMain ? "settings" : "calendar"} size={14} /><span class="label">{isMain ? t("queue.edit") : t("queue.editSchedule")}</span>
       </button>
       {#if !isMain}

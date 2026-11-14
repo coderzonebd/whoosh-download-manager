@@ -67,7 +67,16 @@
 //!
 //! `Throttled` (429/503, refused under load), or connections failing before
 //! their first byte while others work, set a ceiling at the number of
-//! accepted connections and settle. Learning pauses while a global speed
+//! accepted connections and settle. So do connections the server accepts
+//! but starves (`starved`): headers, perhaps a few bytes, then a trickle
+//! under `starved_share` (5 %) of what the streaming ones deliver, both
+//! since their headers and recently, for `starved_after` (several TTFBs,
+//! at least a second) while others stream. A server that streams only so
+//! many connections per client and parks the rest looks like that; a
+//! shared bottleneck does not (it shares out evenly, and "Back to one" is
+//! left to the windows above), nor does a slow but real connection on a
+//! noisy link (far above 5 %), nor one that streamed and then stalled
+//! (stall hedging deals with those). Learning pauses while a global speed
 //! limit is set and when too little is left to measure. A count pinned by
 //! `AddParams::connections` or `Tuning::fixed_connections` is not learned
 //! (but still lowered by throttling).
@@ -190,6 +199,53 @@ struct Knobs {
     reprobe: Duration,
     collapse_gain: f64,
     collapse_slack: f64,
+    starved_share: f64,
+    starved_time: Duration,
+    starved_rtts: f64,
+}
+
+/// One owning connection whose response headers arrived, as the starved
+/// check sees it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Look {
+    /// Recent rate (EWMA), bytes/s; 0 before its first byte.
+    pub rate: f64,
+    /// Average rate since its response headers, bytes/s.
+    pub since_headers: f64,
+}
+
+/// Which connections are starved while others stream, and how many stream.
+///
+/// The yardstick is the median recent rate of the connections streaming at
+/// least `share` of the fastest one, so a crowd of starved connections does
+/// not drag it down. A connection is starved when both its recent rate and
+/// its average since its headers are under `share` of that yardstick (one
+/// that streamed and then stalled still has a high average). Nothing is
+/// starved when nothing streams.
+pub(crate) fn starved(looks: &[Look], share: f64) -> (Vec<bool>, u16) {
+    let top = looks.iter().map(|l| l.rate).fold(0.0, f64::max);
+    if top <= 0.0 {
+        return (vec![false; looks.len()], 0);
+    }
+    let mut fast: Vec<f64> = looks
+        .iter()
+        .map(|l| l.rate)
+        .filter(|r| *r >= share * top)
+        .collect();
+    fast.sort_by(f64::total_cmp);
+    let m = fast.len();
+    let yardstick = if m % 2 == 1 {
+        fast[m / 2]
+    } else {
+        (fast[m / 2 - 1] + fast[m / 2]) / 2.0
+    };
+    let floor = share * yardstick;
+    let flags: Vec<bool> = looks
+        .iter()
+        .map(|l| l.rate < floor && l.since_headers < floor)
+        .collect();
+    let streaming = looks.iter().filter(|l| l.rate >= floor).count();
+    (flags, u16::try_from(streaming).unwrap_or(u16::MAX))
 }
 
 #[derive(Debug)]
@@ -346,6 +402,9 @@ impl Tuner {
                 reprobe: t.tune_reprobe,
                 collapse_gain: t.solo_collapse_gain,
                 collapse_slack: t.solo_collapse_slack,
+                starved_share: t.starved_share,
+                starved_time: t.starved_time,
+                starved_rtts: t.starved_rtts,
             },
             state: if fixed {
                 State::Settled { since: None }
@@ -894,6 +953,33 @@ impl Tuner {
         self.collapsing = false;
     }
 
+    /// Share of the streaming connections' rate under which a connection
+    /// is starved (see `starved`).
+    pub(crate) fn starved_share(&self) -> f64 {
+        self.k.starved_share
+    }
+
+    /// How long a connection must stay starved to count as refused:
+    /// `max(starved_time, starved_rtts × median TTFB)` (a new connection's
+    /// slow start is long over), at most `max(starved_time,
+    /// tune_window_max)`, so it is seen before the first window at the
+    /// starting count is judged.
+    pub(crate) fn starved_after(&self, ttfb: Option<f64>) -> Duration {
+        let k = &self.k;
+        k.starved_time
+            .max(scaled(ttfb, k.starved_rtts))
+            .min(k.starved_time.max(k.window_max))
+    }
+
+    /// Connections the server accepted are starved while `streaming` others
+    /// stream: a per-client limit, like refused connections. The ceiling
+    /// goes to the connections streaming, and learning settles.
+    pub(crate) fn on_starved(&mut self, streaming: u16) {
+        if streaming > 0 {
+            self.on_throttle(streaming, false);
+        }
+    }
+
     /// The server limited us while `working` connections were accepted.
     /// `repeat` is set for further failures of the same backoff round:
     /// with nothing working they do not halve the count again.
@@ -1015,6 +1101,99 @@ mod tests {
         assert_eq!(t.target(), 2, "same round: no second halving");
         t.on_throttle(0, false);
         assert_eq!(t.target(), 1);
+    }
+
+    fn look(rate: f64, since_headers: f64) -> Look {
+        Look {
+            rate,
+            since_headers,
+        }
+    }
+
+    #[test]
+    fn starved_connections_are_told_from_slow_ones() {
+        // Two stream at 5 MB/s, six trickle 200 B/s (a per-client limit
+        // that parks the rest): the six are starved, two stream.
+        let mut v = vec![look(5e6, 4e6), look(4.6e6, 4.5e6)];
+        v.extend(std::iter::repeat_n(look(200.0, 300.0), 6));
+        let (flags, streaming) = starved(&v, 0.05);
+        assert_eq!(flags, [vec![false; 2], vec![true; 6]].concat());
+        assert_eq!(streaming, 2);
+        // One streams, seven trickle: the crowd does not drag the
+        // yardstick down.
+        let mut v = vec![look(5e6, 5e6)];
+        v.extend(std::iter::repeat_n(look(100.0, 100.0), 7));
+        assert_eq!(
+            starved(&v, 0.05),
+            ([vec![false], vec![true; 7]].concat(), 1)
+        );
+        // A shared bottleneck shares out evenly: nobody is starved.
+        let v = vec![look(2.5e6, 2.5e6); 8];
+        assert_eq!(starved(&v, 0.05), (vec![false; 8], 8));
+        // A noisy link: slow but real connections are not starved (8 % of
+        // the median is still far above 5 %).
+        let v = [5e6, 3e6, 1e6, 0.24e6].map(|r| look(r, r));
+        assert_eq!(starved(&v, 0.05), (vec![false; 4], 4));
+        // One that streamed and then stalled (stall hedging's business),
+        // and one still in slow start, are not starved either.
+        let v = [look(5e6, 5e6), look(0.0, 2e6), look(0.1e6, 2e6)];
+        assert_eq!(starved(&v, 0.05).0, vec![false; 3]);
+        // Accepted but silent, while another streams: starved.
+        let v = [look(5e6, 5e6), look(0.0, 0.0)];
+        assert_eq!(starved(&v, 0.05), (vec![false, true], 1));
+        // Nothing streams: nothing to compare with.
+        let v = [look(0.0, 0.0), look(0.0, 0.0)];
+        assert_eq!(starved(&v, 0.05), (vec![false; 2], 0));
+        assert_eq!(starved(&[], 0.05), (vec![], 0));
+    }
+
+    #[test]
+    fn starved_connections_must_stay_starved_for_several_ttfbs() {
+        let t = tuner(16);
+        assert_eq!(t.starved_after(None), Duration::from_secs(1));
+        assert_eq!(t.starved_after(Some(0.001)), Duration::from_secs(1));
+        assert_eq!(t.starved_after(Some(0.3)), Duration::from_millis(2400));
+        // Never later than the longest window: seen before the first
+        // window at the starting count is judged.
+        assert_eq!(t.starved_after(Some(1.0)), Duration::from_secs(4));
+    }
+
+    #[test]
+    fn starved_connections_set_a_ceiling() {
+        let mut t = tuner(16);
+        assert_eq!(t.target(), 8);
+        t.on_starved(0);
+        assert_eq!((t.target(), t.max_ok()), (8, None), "nothing streams");
+        t.on_starved(2);
+        assert_eq!((t.target(), t.max_ok()), (2, Some(2)));
+        assert!(t.settled());
+        assert_eq!(t.best(), 2);
+        // Re-probes never go above the ceiling, even where more
+        // connections would pay; one step down is tried and taken back.
+        let mut now = Instant::now();
+        let mut bytes = 0u64;
+        let mut path = vec![t.target()];
+        for _ in 0..2000 {
+            now += Duration::from_millis(50);
+            bytes += t.target() as u64 * 100_000; // 2 MB/s per connection
+            t.tick(Sample {
+                now,
+                bytes,
+                streaming: t.target(),
+                work_left: u64::MAX / 2,
+                limited: false,
+                ttfb: None,
+            });
+            if *path.last().unwrap() != t.target() {
+                path.push(t.target());
+            }
+        }
+        assert!(path.iter().all(|n| *n <= 2), "{path:?}");
+        assert!(path.contains(&1), "a re-probe down: {path:?}");
+        assert_eq!(t.target(), 2);
+        // A later look with fewer streaming lowers it again.
+        t.on_starved(1);
+        assert_eq!((t.target(), t.max_ok()), (1, Some(1)));
     }
 
     #[test]

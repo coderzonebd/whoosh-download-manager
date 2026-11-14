@@ -34,7 +34,8 @@ pub struct ScenarioStats {
     pub peak_open_connections: u64,
     pub resets_injected: u64,
     pub stalls_injected: u64,
-    /// Requests turned away by `limits` (503, 429 or reset).
+    /// Requests over the `limits` cap: turned away (503, 429 or reset) or
+    /// trickled.
     pub refused: u64,
     /// Per client IP.
     pub clients: BTreeMap<String, ClientStats>,

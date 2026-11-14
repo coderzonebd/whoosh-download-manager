@@ -16,7 +16,7 @@ It must never be the bottleneck, and every byte it sends can be verified.
   range, as on the CI runners), both are bound again elsewhere.
 - **Scenarios** in TOML, all served at once under `/s/<scenario>/<file>`:
   latency, per-connection and global bandwidth caps, per-IP concurrency caps
-  (503, 429 or TCP reset), random TCP resets, stalls, redirect chains, signed
+  (503, 429, TCP reset, or headers then a trickle), random TCP resets, stalls, redirect chains, signed
   expiring URLs, cookie/referer gates, no ranges, lying ranges, no length, no
   validators, files that change mid-download, and odd `Content-Disposition`
   headers.
@@ -162,7 +162,9 @@ global = "50MB/s"           # whole scenario, all clients together
 [limits]                    # per client IP, counted like nginx limit_conn (in-flight responses)
 max_conns_per_ip = 2
 refuse = "503"              # "503" | "429" | "reset" (TCP RST, no response; HTTP/3: CONNECTION_CLOSE)
+                            # | "trickle" (headers as usual, then the body at trickle_rate; holds no slot)
 retry_after_secs = 1        # Retry-After on 503/429; HTTP/1.1 also gets Connection: close
+trickle_rate = "200B/s"     # body rate over the cap with refuse = "trickle" (a tenth of it every 100 ms)
 
 [resets]                    # TCP RST mid-body (HTTP/3: CONNECTION_CLOSE, see below)
 after_bytes = "8MiB"        # every response, after this many body bytes

@@ -1,0 +1,15 @@
+# The sly flavour, seen on a real server (Hetzner's speed test from
+# Bangladesh): at most two in-flight requests per client IP stream; any
+# further request still gets its response head, then a 200 B/s trickle that
+# never quite stops, instead of a refusal. Each connection is capped at
+# 5 MB/s, so the best a downloader can do is exactly two connections
+# (~10 MB/s), and it has to notice the starved ones itself.
+description = "Max 2 streaming requests per IP, excess ones get headers then trickle at 200 B/s"
+
+[limits]
+max_conns_per_ip = 2
+refuse = "trickle"
+trickle_rate = "200B/s"
+
+[bandwidth]
+per_conn = "5MB/s"
