@@ -350,6 +350,8 @@ struct Driver {
     profile: Option<HostProfile>,
     rng: fastrand::Rng,
     consecutive: u32,
+    /// When a byte last arrived (or the run started).
+    last_progress: Instant,
     open_gate: Instant,
     open_failures: VecDeque<Instant>,
     replacements: u32,
@@ -433,6 +435,7 @@ impl Driver {
             profile: None,
             rng,
             consecutive: 0,
+            last_progress: now,
             open_gate: now,
             open_failures: VecDeque::new(),
             replacements: 0,
@@ -2068,7 +2071,13 @@ impl Driver {
             self.consecutive += 1;
         }
         if self.consecutive > self.t.error_budget {
-            return Err(Outcome::Failed(source_info(err)).into());
+            // With bytes already on disk, keep trying (at `retry_cap`) until
+            // nothing has arrived for `error_patience`.
+            let patient = self.written_total() > 0
+                && now.duration_since(self.last_progress) < self.t.error_patience;
+            if !patient {
+                return Err(Outcome::Failed(source_info(err)).into());
+            }
         }
         // `Retry-After` is honoured up to `retry_cap`: a server asking for a
         // day must not park the download outside the error budget.
@@ -2120,6 +2129,7 @@ impl Driver {
         self.recv_total += delta_total;
         if delta_total > 0 {
             self.consecutive = 0;
+            self.last_progress = now;
         }
         let inst = delta_total as f64 / dt;
         self.speed += alpha * (inst - self.speed);

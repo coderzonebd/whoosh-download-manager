@@ -257,7 +257,10 @@ rounds since the last byte arrived. Failures within one backoff window count
 as one round. `Retry-After` is honoured up to `retry_cap` (a server asking
 for a day must not park a download outside the error budget). After
 `error_budget` (10) rounds without a single byte, the
-download fails with `ErrorInfo { code: SourceError::code(), message }`.
+download fails with `ErrorInfo { code: SourceError::code(), message }`;
+once it has bytes on disk, only when nothing has arrived for
+`error_patience` (5 min) as well, retrying at `retry_cap` meanwhile, so a
+connection that drops for a minute does not fail a nearly finished download.
 Connections that finish normally are replaced at once, backoff or not, and
 so is one reset (`Transient`) after delivering at least `min_split_floor`
 (256 KiB): real progress, not the server pushing back. The failure round
@@ -626,6 +629,7 @@ System Events; Windows' interactive user holds the shutdown privilege, and
 | `record_interval` | 3 s | record saves while running |
 | `retry_base`, `retry_cap` | 50 ms, 30 s | backoff |
 | `error_budget` | 10 | failure rounds without progress before `failed` |
+| `error_patience` | 5 min | with bytes on disk, also this long without a byte before `failed` |
 | `tail_verify_len`, `tail_walkback` | 64 KiB, 16 | resume verification |
 | `max_remote_restarts` | 1 | restarts on a changed file before failing |
 | `progress_interval`, `segments_interval`, `stats_interval` | 250 ms, 1 s, 1 s | events |

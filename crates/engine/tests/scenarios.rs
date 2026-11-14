@@ -662,6 +662,73 @@ async fn a_dead_server_exhausts_the_error_budget() {
     assert_eq!(d.summary.error.unwrap().code, "network");
 }
 
+/// A server that answers for a second, then refuses every connection for
+/// `outage`, then serves again.
+fn outage_source(data: bytes::Bytes, outage: Duration) -> FaultSource {
+    let t0 = tokio::time::Instant::now();
+    FaultSource::new(data)
+        .cfg(|c| c.per_conn_bps = Some(256 * KIB))
+        .script(move |_, _| {
+            let at = tokio::time::Instant::now().duration_since(t0);
+            if at < Duration::from_secs(1) {
+                ReqPlan {
+                    reset_after: Some(256 * KIB),
+                    ..ReqPlan::default()
+                }
+            } else if at < Duration::from_secs(1) + outage {
+                ReqPlan {
+                    fail: Some(SourceError::Transient("connection refused".into())),
+                    ..ReqPlan::default()
+                }
+            } else {
+                ReqPlan::default()
+            }
+        })
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_started_download_rides_out_a_long_outage() {
+    // Ten failure rounds at the backoff cap take about 80 s; the outage is
+    // longer, yet shorter than `error_patience`, and bytes are on disk.
+    let lab = Lab::new(config()).await;
+    let data = content(4 * MIB, 41);
+    lab.serve(
+        URL,
+        Arc::new(outage_source(data.clone(), Duration::from_secs(180))),
+    );
+    let id = lab.add(URL).await;
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_started_download_fails_once_patience_runs_out() {
+    let lab = Lab::new(config()).await;
+    let started = tokio::time::Instant::now();
+    lab.serve(
+        URL,
+        Arc::new(outage_source(
+            content(4 * MIB, 42),
+            Duration::from_secs(24 * 3600),
+        )),
+    );
+    let id = lab.add(URL).await;
+    let d = wait_for(
+        &lab.engine,
+        &id,
+        &[DownloadState::Failed],
+        Duration::from_secs(3600),
+    )
+    .await;
+    assert_eq!(d.summary.error.unwrap().code, "network");
+    let took = tokio::time::Instant::now().duration_since(started);
+    assert!(
+        took >= Tuning::default().error_patience,
+        "failed after {took:?}"
+    );
+    assert!(d.summary.downloaded_bytes > 0);
+}
+
 #[tokio::test(start_paused = true)]
 async fn an_expired_link_at_probe_needs_refresh() {
     let lab = Lab::new(config()).await;

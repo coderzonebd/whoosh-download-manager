@@ -238,6 +238,11 @@ pub struct Tuning {
     /// A download fails after this many failure rounds in a row without a
     /// single byte arriving. Failures during one backoff window count once.
     pub error_budget: u32,
+    /// Once a download has bytes on disk, a spent `error_budget` fails it
+    /// only after this long without a byte arriving: a home connection that
+    /// drops for a minute must not turn a 99 % download into a failed one.
+    /// The backoff stays at `retry_cap` meanwhile. Fatal errors fail at once.
+    pub error_patience: Duration,
     /// Resume: bytes re-fetched from the end of every journalled range and
     /// compared with storage, and how many further windows to walk back
     /// when one differs before dropping the whole range.
@@ -317,6 +322,7 @@ impl Default for Tuning {
             retry_base: Duration::from_millis(50),
             retry_cap: Duration::from_secs(30),
             error_budget: 10,
+            error_patience: Duration::from_secs(5 * 60),
             tail_verify_len: 64 * 1024,
             tail_walkback: 16,
             max_remote_restarts: 1,
