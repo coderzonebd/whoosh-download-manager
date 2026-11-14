@@ -13,8 +13,14 @@
 use serde::{Deserialize, Serialize};
 
 pub mod auth;
+pub mod queue;
 pub mod runtime;
 pub mod service;
+
+pub use queue::{
+    AfterDone, ClockTime, MAIN_QUEUE, Queue, QueueConfig, QueueFinishedEvent, QueueNameParams,
+    QueueRenameParams, Schedule, SetQueueParams, SpeedWindow,
+};
 
 /// Bumped on any breaking change to methods, params, results or events.
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -39,6 +45,16 @@ pub mod method {
     pub const DOWNLOAD_RESUME: &str = "download.resume";
     pub const DOWNLOAD_REMOVE: &str = "download.remove";
     pub const DOWNLOAD_REFRESH_URL: &str = "download.refreshUrl";
+    pub const DOWNLOAD_SET_QUEUE: &str = "download.setQueue";
+
+    pub const QUEUE_LIST: &str = "queue.list";
+    pub const QUEUE_CREATE: &str = "queue.create";
+    pub const QUEUE_UPDATE: &str = "queue.update";
+    pub const QUEUE_RENAME: &str = "queue.rename";
+    pub const QUEUE_REMOVE: &str = "queue.remove";
+    pub const QUEUE_START: &str = "queue.start";
+    pub const QUEUE_STOP: &str = "queue.stop";
+    pub const QUEUE_CANCEL_ACTION: &str = "queue.cancelAction";
 
     pub const NET_PRECONNECT: &str = "net.preconnect";
 
@@ -60,6 +76,10 @@ pub mod event {
     pub const STATS: &str = "event.stats";
     /// The full `Settings` object, sent to every client after any change.
     pub const SETTINGS: &str = "event.settings";
+    /// Every queue (`Queue[]`), sent to every client after any change.
+    pub const QUEUES: &str = "event.queues";
+    /// A queue finished and its after-done action is about to run.
+    pub const QUEUE_FINISHED: &str = "event.queue.finished";
 }
 
 /// Answered by `whoosh-nmhost` itself, never by the daemon (PROTOCOL.md §1).
@@ -407,6 +427,10 @@ pub struct Settings {
     /// How finished downloads are made durable; absent means `powerSafe`.
     #[serde(default)]
     pub durability: Durability,
+    /// Speed limits by time of day; while one applies it replaces
+    /// `speed_limit_bps` (see [`SpeedWindow`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub speed_schedule: Vec<SpeedWindow>,
 }
 
 /// What a finished (and a checkpointed) download survives.

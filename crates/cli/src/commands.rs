@@ -858,6 +858,7 @@ mod tests {
             language: "en".into(),
             theme: "system".into(),
             durability: Default::default(),
+            speed_schedule: Vec::new(),
         };
         for pair in [
             "max_active_downloads=5",

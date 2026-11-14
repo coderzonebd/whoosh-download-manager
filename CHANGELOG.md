@@ -14,6 +14,10 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 ### Internal
 - New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
 
+### Protocol
+- Queues and the scheduler ([PROTOCOL.md](docs/api/PROTOCOL.md#queues-and-the-scheduler)): `queue.list/create/update/rename/remove/start/stop/cancelAction`, `download.setQueue`, `event.queues`, `event.queue.finished`, and `Settings.speedSchedule`. The daemon answers "unsupported" until the engine implements them; the mock client supports them so the UI can be built.
+- `download.add` with `queue: "main"` means the main queue.
+
 ## 0.1.0: Phase 1, the engine
 
 Tagged `v0.1.0` as the engine milestone; not published as a release. The first public release comes with the desktop app (Phase 2). Contents: the download engine, its daemon and the command line, all measured against nine other downloaders in a public, reproducible benchmark (gate: [MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).

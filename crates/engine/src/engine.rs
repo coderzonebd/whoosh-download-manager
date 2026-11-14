@@ -258,7 +258,7 @@ impl Engine {
                 .downloads
                 .get_mut(id)
                 .ok_or_else(|| ServiceError::not_found(id))?;
-            e.record.queue = queue.filter(|q| !q.is_empty());
+            e.record.queue = queue.filter(|q| !q.is_empty() && q != whoosh_proto::MAIN_QUEUE);
         }
         self.inner.save(id).await;
         self.inner.pump();
@@ -803,7 +803,10 @@ impl Inner {
             }
             None => None,
         };
-        let queue = p.queue.clone().filter(|q| !q.trim().is_empty());
+        let queue = p
+            .queue
+            .clone()
+            .filter(|q| !q.trim().is_empty() && q != whoosh_proto::MAIN_QUEUE);
         let name_locked = user_name.is_some();
         let name = names::resolve(user_name.as_deref(), None, &p.url, None);
         let id = new_id();
