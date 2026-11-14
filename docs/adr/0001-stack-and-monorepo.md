@@ -8,7 +8,7 @@ One engine has to serve a desktop app (Windows, macOS, every Linux), a browser e
 
 ## Decision
 - **Engine and daemon: Rust** (stable, edition 2024), async on tokio. It compiles to native code for every desktop and mobile target, to WASM for the extension's Lite mode, and exposes FFI through UniFFI if native mobile shells are ever needed.
-- **Desktop shell: Tauri 2**, with the engine linked in-process. No Electron.
+- **Desktop shell: Tauri 2**, a client of the daemon, which it starts as a bundled sidecar (amended by [ADR 0007](0007-phase2-plan.md); the engine was first planned to be linked in-process). No Electron.
 - **UI: Svelte 5 + TypeScript**, one package (`packages/ui`) rendered in the desktop window, the mobile shell, the extension popup/side panel and the web remote. Svelte's small bundles matter inside the extension.
 - **Mobile: Tauri 2 mobile first**, behind a time-boxed spike in Phase 4. If it fails, native Kotlin/Swift shells over UniFFI; the engine does not change.
 - **Monorepo**, one repository:

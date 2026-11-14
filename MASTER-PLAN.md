@@ -65,7 +65,7 @@ Also in the engine: "first-byte priority" (download the file header first so it 
 
 **Rules that keep this sane**
 
-- The core is a library with *no* UI assumptions. The daemon is the only process that owns downloads; every UI (desktop window, tray, extension, phone, web) is a client of the same local WebSocket/JSON-RPC API. Desktop app = daemon + embedded UI in one process (Tauri sidecar not required; core is linked in).
+- The core is a library with *no* UI assumptions. The daemon is the only process that owns downloads; every UI (desktop window, tray, extension, phone, web) is a client of the same local WebSocket/JSON-RPC API. Desktop app = the UI, which starts the daemon as a bundled sidecar when none is running (amended 2026-11-14, [ADR 0007](docs/adr/0007-phase2-plan.md); first planned with the core linked in).
 - One TypeScript UI package (Svelte 5 recommended; Vue 3 acceptable) renders in the desktop window, the mobile shell, the extension popup/side panel, and the web remote. One design system, four surfaces.
 - Mobile: start with **Tauri 2 mobile** (reuses the whole UI). If native quality or background behavior is insufficient after a 6-week spike, fall back to native shells (Kotlin Compose / SwiftUI) over the same core via **UniFFI**. The core does not change either way.
 - Alternative stack considered: Flutter + flutter_rust_bridge (proven by Gopeed/LocalSend). Rejected for v1 because it would split the UI from the extension/web surfaces. Revisit only if Tauri mobile fails the spike.
@@ -121,7 +121,7 @@ docs/     website/
 ## 4. Surfaces, honestly scoped
 
 ### 4.1 Desktop (Windows, macOS, Linux)
-Full feature set. Tauri 2 + Rust core linked in-process. Packages: MSIX + NSIS + portable ZIP + winget + scoop + choco; `.dmg` (Universal) + Homebrew cask; `.deb`, `.rpm`, AppImage, **Flatpak (Flathub)**, Snap, AUR, Nix — "any Linux distro" is satisfied by AppImage + Flatpak at minimum, native packages for the big families. Windows signing via SignPath Foundation (free for OSS) or an EV cert; macOS Developer ID + notarization ($99/yr) — unsigned builds are a dead end for mainstream users.
+Full feature set. Tauri 2 app over the daemon, started as a sidecar ([ADR 0007](docs/adr/0007-phase2-plan.md)). Packages: MSIX + NSIS + portable ZIP + winget + scoop + choco; `.dmg` (Universal) + Homebrew cask; `.deb`, `.rpm`, AppImage, **Flatpak (Flathub)**, Snap, AUR, Nix — "any Linux distro" is satisfied by AppImage + Flatpak at minimum, native packages for the big families. Windows signing via SignPath Foundation (free for OSS) or an EV cert; macOS Developer ID + notarization ($99/yr) — unsigned builds are a dead end for mainstream users.
 
 ### 4.2 Browser extension — Pro mode vs Lite mode
 Browsers: Chrome, Edge, Brave, Opera, Vivaldi (one Chromium build), Firefox, Safari (Xcode-converted, reduced).
@@ -217,8 +217,8 @@ Core: H1/H2/H3, TLS, Happy Eyeballs, host profiles, work-stealing scheduler, hed
 Public report.
 
 ### Phase 2 — Desktop + Extension Pro → **v1.0** (months 4–6)
-Tauri desktop (Win/mac/Linux), tray, Classic + Modern layouts, categories/queues/scheduler UI, history. Extension (Chromium + Firefox) Pro mode: capture, cookie/referer forwarding, context menus, media sniffer, predictive preconnect, self-healing links. yt-dlp/ffmpeg integration (desktop build). Signed installers on all channels in §7. Bangla + English + ~10 machine-seeded languages via Weblate. Accessibility pass.
-**Gate:** 2 weeks public beta, crash-free rate > 99.5%, extension approved in both stores.
+Tauri desktop (Win/mac/Linux), tray, Classic + Modern layouts, categories/queues/scheduler UI, history. Extension (Chromium + Firefox) Pro mode: capture, cookie/referer forwarding, context menus, media sniffer, predictive preconnect, self-healing links. yt-dlp/ffmpeg integration (desktop build). Signed installers on the v1.0 channels (amended 2026-11-14, [ADR 0007](docs/adr/0007-phase2-plan.md): GitHub Releases, winget, scoop, Homebrew cask, Flathub, AUR; MSIX/Microsoft Store, Snap, Nix, Chocolatey and apt/dnf repositories follow in v1.x). Bangla + English + ~10 machine-seeded languages via Weblate. Accessibility pass.
+**Gate:** 2 weeks public beta, crash-free rate > 99.5% (from opt-in crash reports), extension approved in both stores. Work streams and order: [ADR 0007](docs/adr/0007-phase2-plan.md).
 
 ### Phase 3 — Protocol & power features → **v1.5** (months 7–9)
 BitTorrent (librqbit), ed2k, FTP/SFTP/WebDAV, HLS/DASH, Metalink + multi-source + LAN peers, archive extraction, batch/site grabber/link crawler, RSS, debrid, proxy/VPN bind/kill switch, polite mode, content verification, headless Docker, web remote, MCP, portable mode, BDIX/local-FTP mode.
