@@ -81,6 +81,13 @@ const SCREENS: Screen[] = [
     },
   },
   {
+    name: "connect your browser",
+    async open(page) {
+      await withApp(page, `app.view = "browsers";`);
+      await page.getByText("Microsoft Edge").first().waitFor();
+    },
+  },
+  {
     name: "history",
     async open(page) {
       await withApp(page, `app.view = "history";`);
@@ -121,6 +128,23 @@ async function scan(page: Page): Promise<AxeViolation[]> {
     });
     return res.violations;
   })) as AxeViolation[];
+}
+
+/**
+ * Text squeezed into a column a few characters wide: what a label looks like
+ * when a narrow box style leaks onto it (axe cannot see this). Lists each one.
+ */
+async function squeezed(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const found: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>("body *")) {
+      const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent ?? "").join(" ").trim();
+      if (own.split(/\s+/).length < 3) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.width < 60 && Math.max(r.height, el.scrollHeight) > 40) found.push(`${el.tagName.toLowerCase()} "${own.slice(0, 40)}" ${Math.round(r.width)}px wide`);
+    }
+    return found;
+  });
 }
 
 function report(violations: AxeViolation[]): string {
@@ -172,6 +196,7 @@ describe.skipIf(!chrome)("accessibility (axe-core)", () => {
               await screen.open(page);
               const violations = await scan(page);
               expect(errors, "page errors").toEqual([]);
+              expect(await squeezed(page), "text squeezed into a narrow column").toEqual([]);
               expect(violations, report(violations)).toEqual([]);
             } finally {
               await context.close();

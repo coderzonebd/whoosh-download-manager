@@ -53,6 +53,24 @@ const mockHost: Host = {
     set: async (p) => p,
   },
   launchAtLogin: { get: async () => false, set: async () => {} },
+  // One browser in each state the "Connect your browser" page can show.
+  browsers: {
+    status: async () => [
+      { browser: "chrome", inUse: true, hostRegistered: true, extensionFound: false, store: "github" },
+      { browser: "edge", inUse: true, hostRegistered: false, extensionFound: true, store: "edgeAddOns" },
+      { browser: "brave", inUse: true, hostRegistered: true, extensionFound: true, store: "github" },
+      { browser: "firefox", inUse: true, hostRegistered: false, extensionFound: false, store: "amo" },
+      { browser: "vivaldi", inUse: false, hostRegistered: false, extensionFound: false, store: "github" },
+      { browser: "chromium", inUse: false, hostRegistered: false, extensionFound: false, store: "github" },
+    ],
+    connect: async () => {},
+    openStore: async () => {},
+    firstRun: async () => false,
+  },
+  updates: {
+    check: async () => ({ version: "1.0.0-beta.2", currentVersion: "1.0.0-beta.1", notes: "Fixes and a faster start." }),
+    install: async () => {},
+  },
   crashReports: {
     get: async () => ({ ...crash }),
     set: async (on) => void Object.assign(crash, { enabled: on, noticeShown: true }),

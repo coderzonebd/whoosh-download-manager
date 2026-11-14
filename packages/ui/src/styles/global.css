@@ -222,6 +222,9 @@ p {
 
 .vy-field {
   display: grid;
+  /* Rows keep their own height when the field is stretched (in a grid row
+     whose neighbour has a longer hint), so the input does not grow. */
+  align-content: start;
   gap: var(--vy-space-1);
 }
 .vy-label {
