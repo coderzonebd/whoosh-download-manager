@@ -3,17 +3,19 @@
 // from context (`getApp()`), so the same tree runs on the mock, the real
 // WebSocket client or (in the extension) a native-messaging client.
 
-import type { AddParams, DownloadSummary, Settings, Stats, WhooshClient } from "@whoosh/api-client";
+import { MAIN_QUEUE, type AddParams, type DownloadSummary, type Queue, type QueueConfig, type Settings, type Stats, type WhooshClient } from "@whoosh/api-client";
 import { isWhooshConnectionError, isWhooshRpcError } from "@whoosh/api-client/errors";
 import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
+import type { Host } from "../host.ts";
 import { DownloadStore, PAUSABLE, RESUMABLE, type Download } from "./downloads.svelte.ts";
 import { Prefs } from "./prefs.svelte.ts";
 import { SegmentCache } from "./segments.svelte.ts";
+import { QUEUES_CAPABILITY, QueueStore, isUnsupported } from "./queues.svelte.ts";
 import { ToastStore } from "./toasts.svelte.ts";
 
 export type Connection = "demo" | "connecting" | "open" | "reconnecting" | "closed";
-export type MainView = "downloads" | "settings";
+export type MainView = "downloads" | "history" | "settings";
 export type Theme = "system" | "light" | "dark" | "high-contrast";
 
 export interface AppOptions {
@@ -23,10 +25,15 @@ export interface AppOptions {
   storage?: Storage | null;
   /** Language before settings load (defaults to the browser language). */
   locale?: string;
+  /** What the host shell adds (folder picker, desktop settings…). */
+  host?: Host;
 }
 
+/** The queue dialog: create a queue, or edit one (name, limit, schedule). */
+export type QueueDialog = { mode: "create" } | { mode: "edit"; name: string };
+
 interface StatusSource {
-  onStatus(h: (s: { state: string }) => void): () => void;
+  onStatus(h: (s: { state: string; hello?: { capabilities?: string[] } }) => void): () => void;
 }
 function hasStatus(c: unknown): c is StatusSource {
   return typeof (c as Partial<StatusSource>)?.onStatus === "function";
@@ -47,6 +54,8 @@ export class AppState {
   readonly toasts = new ToastStore();
   readonly prefs: Prefs;
   readonly segments: SegmentCache;
+  readonly queues = new QueueStore();
+  readonly host: Host;
 
   settings = $state.raw<Settings | undefined>(undefined);
   stats = $state.raw<Stats>({ downloadBps: 0, uploadBps: 0, active: 0, queued: 0 });
@@ -55,6 +64,8 @@ export class AppState {
   view = $state<MainView>("downloads");
   navOpen = $state(false);
   addOpen = $state(false);
+  /** The address the add dialog opens with (a paste or a whoosh:// link). */
+  addUrl = $state("");
   shortcutsOpen = $state(false);
   /** Ids awaiting the remove confirmation. */
   removeIds = $state.raw<string[] | undefined>(undefined);
@@ -63,12 +74,21 @@ export class AppState {
   menu = $state.raw<{ id: string; x: number; y: number } | undefined>(undefined);
   /** Bumped to ask the download list to take keyboard focus. */
   listFocus = $state(0);
-
+  queueDialog = $state.raw<QueueDialog | undefined>(undefined);
+  /** Queue awaiting the delete confirmation. */
+  removeQueueName = $state<string | undefined>(undefined);
+  /** Ids awaiting "Move to queue". */
+  moveIds = $state.raw<string[] | undefined>(undefined);
+  /** History entries awaiting the clear confirmation. */
+  clearIds = $state.raw<string[] | undefined>(undefined);
+  /** Capabilities from the last hello, when the client reports them. */
+  #capabilities: string[] | undefined;
 
   readonly #off: (() => void)[] = [];
 
   constructor(client: WhooshClient, opts: AppOptions = {}) {
     this.client = client;
+    this.host = opts.host ?? {};
     this.prefs = new Prefs(opts.storage === undefined ? defaultStorage() : opts.storage);
     this.i18n = new I18n(opts.locale ?? (typeof navigator === "undefined" ? "en" : navigator.language));
     this.store.sort = this.prefs.initialSort;
@@ -80,6 +100,7 @@ export class AppState {
       this.#off.push(
         client.onStatus((s) => {
           const st = s.state as Connection;
+          if (s.hello) this.#capabilities = s.hello.capabilities ?? [];
           const resync = st === "open" && this.connection === "reconnecting";
           this.connection = st;
           if (resync) void this.reload(); // events were missed while away
@@ -96,6 +117,14 @@ export class AppState {
         $effect(() => {
           const locale = this.i18n.intlLocale;
           untrack(() => this.store.setCollationLocale(locale));
+        });
+        // A queue view whose queue went away (removed elsewhere) falls back to the main queue.
+        $effect(() => {
+          const v = this.store.view;
+          if (v.kind !== "queue" || v.queue === MAIN_QUEUE) return;
+          if (this.queues.supported === false || (this.queues.supported && !this.queues.has(v.queue))) {
+            untrack(() => (this.store.view = { kind: "queue", queue: MAIN_QUEUE }));
+          }
         });
       }),
     );
@@ -127,6 +156,23 @@ export class AppState {
       this.i18n.setLocale(settings.value.language);
     }
     if (stats.status === "fulfilled") this.stats = stats.value;
+    await this.loadQueues();
+  }
+
+  /** Learn whether the daemon has queues, and load them if it does. Never reports -32006. */
+  async loadQueues(): Promise<void> {
+    if (this.#capabilities && !this.#capabilities.includes(QUEUES_CAPABILITY)) {
+      this.queues.disable();
+      return;
+    }
+    try {
+      const list = await this.client.call("queue.list", undefined);
+      this.queues.supported = true;
+      this.queues.replace(list);
+    } catch (e) {
+      if (isUnsupported(e)) this.queues.disable();
+      // Anything else (a dropped connection): keep what we know; the next reload asks again.
+    }
   }
 
   #subscribe(): void {
@@ -140,6 +186,15 @@ export class AppState {
         this.segments.forget(e.ids);
       }),
       c.on("event.stats", (s) => (this.stats = s)),
+      c.on("event.settings", (s) => {
+        this.settings = s;
+        this.i18n.setLocale(s.language);
+      }),
+      c.on("event.queues", (list) => {
+        this.queues.supported = true;
+        this.queues.replace(list);
+      }),
+      c.on("event.queue.finished", (e) => this.queues.finished(e)),
       c.on("event.download.state", (e) => {
         const prev = this.store.applyState(e);
         const d = this.store.get(e.id);
@@ -166,6 +221,13 @@ export class AppState {
   }
 
   // ---------------------------------------------------------------- actions
+
+  /** Open the add dialog, optionally with an address filled in. */
+  openAdd(url = ""): void {
+    this.addUrl = url;
+    this.view = this.view === "settings" ? "downloads" : this.view;
+    this.addOpen = true;
+  }
 
   /** Show a download: switch to the list, clear filters that hide it, select it. */
   reveal(id: string): void {
@@ -265,6 +327,116 @@ export class AppState {
     try {
       await navigator.clipboard.writeText(d.data.url);
       this.toasts.push({ tone: "success", message: this.i18n.t("detail.copied") }, 2500);
+    } catch (e) {
+      this.report(e);
+    }
+  }
+
+  // ---------------------------------------------------------------- queues
+
+  /** Run a queue method; errors become a toast. Returns whether it worked. */
+  async #queueCall(run: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await run();
+      return true;
+    } catch (e) {
+      if (isUnsupported(e)) this.queues.disable();
+      else this.report(e);
+      return false;
+    }
+  }
+
+  async createQueue(config: QueueConfig): Promise<void> {
+    const q = await this.client.call("queue.create", config);
+    this.#mergeQueue(q);
+  }
+
+  /** Rename (when `newName` differs) and then apply `config` under the new name. */
+  async editQueue(name: string, config: QueueConfig): Promise<void> {
+    let current = name;
+    if (config.name !== name) {
+      // Read before the call: `event.queues` may arrive first and move a view
+      // whose queue disappeared back to the main queue.
+      const v = this.store.view;
+      const following = v.kind === "queue" && v.queue === name;
+      this.#mergeQueue(await this.client.call("queue.rename", { name, newName: config.name }), name);
+      current = config.name;
+      if (following) this.store.view = { kind: "queue", queue: current };
+    }
+    this.#mergeQueue(await this.client.call("queue.update", { ...config, name: current }));
+  }
+
+  /** Apply a queue the daemon returned, before `event.queues` arrives. */
+  #mergeQueue(q: Queue, oldName = q.name): void {
+    const rest = this.queues.list.filter((x) => x.name !== oldName && x.name !== q.name);
+    const main = rest.filter((x) => x.name === MAIN_QUEUE);
+    const named = [...rest.filter((x) => x.name !== MAIN_QUEUE), q].sort((a, b) => a.name.localeCompare(b.name));
+    this.queues.replace(q.name === MAIN_QUEUE ? [q, ...rest.filter((x) => x.name !== MAIN_QUEUE)] : [...main, ...named]);
+  }
+
+  async removeQueue(name: string): Promise<void> {
+    const ok = await this.#queueCall(() => this.client.call("queue.remove", { name }));
+    if (!ok) return;
+    this.queues.replace(this.queues.list.filter((q) => q.name !== name));
+    for (const d of this.store.all()) {
+      if (d.data.queue !== name) continue;
+      const next: DownloadSummary = { ...d.data };
+      delete next.queue;
+      this.store.upsert(next);
+    }
+    this.toasts.push({ tone: "info", message: this.i18n.t("queue.removed", { name }) }, 3000);
+  }
+
+  startQueue(name: string): Promise<boolean> {
+    return this.#queueCall(() => this.client.call("queue.start", { name }));
+  }
+
+  stopQueue(name: string): Promise<boolean> {
+    return this.#queueCall(() => this.client.call("queue.stop", { name }));
+  }
+
+  async cancelAction(name: string): Promise<void> {
+    const ok = await this.#queueCall(() => this.client.call("queue.cancelAction", { name }));
+    if (ok) {
+      this.queues.dismiss(name);
+      this.toasts.push({ tone: "info", message: this.i18n.t("afterDone.cancelled") }, 3000);
+    }
+  }
+
+  /** Move downloads to `queue` ("main" = the main queue). */
+  async moveToQueue(ids: string[], queue: string): Promise<boolean> {
+    if (ids.length === 0) return true;
+    const params = queue === MAIN_QUEUE ? { ids } : { ids, queue };
+    const ok = await this.#queueCall(() => this.client.call("download.setQueue", params));
+    if (!ok) return false;
+    // The daemon's `updated` events follow; show the move right away.
+    for (const id of ids) {
+      const d = this.store.get(id);
+      if (!d) continue;
+      const next: DownloadSummary = { ...d.data };
+      if (queue === MAIN_QUEUE) delete next.queue;
+      else next.queue = queue;
+      this.store.upsert(next);
+    }
+    const name = queue === MAIN_QUEUE ? this.i18n.t("queue.main") : queue;
+    this.toasts.push({ tone: "success", message: this.i18n.t("move.done", { count: ids.length, queue: name }) }, 3000);
+    return true;
+  }
+
+  /** Queue display name ("main" is translated). */
+  queueLabel(name: string): string {
+    return name === MAIN_QUEUE ? this.i18n.t("queue.main") : name;
+  }
+
+  // ---------------------------------------------------------------- history
+
+  /** Remove finished or failed entries from the list; their files stay on disk. */
+  async clearHistory(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    try {
+      await this.client.call("download.remove", { ids, deleteFiles: false });
+      this.store.remove(ids);
+      this.toasts.push({ tone: "info", message: this.i18n.t("history.cleared", { count: ids.length }) }, 3000);
     } catch (e) {
       this.report(e);
     }

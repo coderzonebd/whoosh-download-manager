@@ -11,7 +11,8 @@
   const canPause = $derived(app.pausableIds(selected).length > 0);
   const canResume = $derived(app.resumableIds(selected).length > 0);
   const canRemove = $derived(selected.length > 0);
-  const onSettings = $derived(app.view === "settings");
+  /** Selection actions, search and layout belong to the download list only. */
+  const onSettings = $derived(app.view !== "downloads");
 </script>
 
 <div class="toolbar">
@@ -19,7 +20,7 @@
     <Icon name="menu" size={18} />
   </button>
 
-  <button class="vy-btn vy-btn--primary add" onclick={() => (app.addOpen = true)}>
+  <button class="vy-btn vy-btn--primary add" onclick={() => app.openAdd()}>
     <Icon name="plus" size={16} />
     <span class="text">{t("toolbar.add")}</span>
   </button>

@@ -41,7 +41,7 @@ class FakePort implements NativePort {
   }
 }
 
-function setup(options: { idleMs?: number } = {}) {
+function setup(options: { idleMs?: number; holdOpen?: () => boolean } = {}) {
   const ports: FakePort[] = [];
   let lastError: string | undefined;
   let clock = 0;
@@ -54,6 +54,7 @@ function setup(options: { idleMs?: number } = {}) {
     },
     lastError: () => lastError,
     idleMs: options.idleMs ?? 0,
+    ...(options.holdOpen ? { holdOpen: options.holdOpen } : {}),
     failFastMs: 2_000,
     now: () => clock,
   });
@@ -214,6 +215,46 @@ describe("NativeMessagingTransport", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps an idle port open while asked to hold it (events keep flowing)", async () => {
+    vi.useFakeTimers();
+    try {
+      let hold = true;
+      const { transport, port } = setup({ idleMs: 1_000, holdOpen: () => hold });
+      const call = transport.call("stats.get", undefined);
+      port().receive({ jsonrpc: "2.0", id: 1, result: { downloadBps: 0, uploadBps: 0, active: 1, queued: 0 } });
+      await call;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(port().disconnected).toBe(false);
+      expect(transport.connected).toBe(true);
+      hold = false;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(port().disconnected).toBe(true);
+      expect(transport.connected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("tells listeners each time a port opens, after the opening request was sent", async () => {
+    const { transport, ports, port } = setup();
+    const opened: number[] = [];
+    transport.onOpen(() => opened.push(ports.length));
+    const first = transport.call("stats.get", undefined).catch(() => {});
+    expect(port().sent).toHaveLength(1);
+    await flush();
+    expect(opened).toEqual([1]);
+    // A second call on the same port is not an "open".
+    void transport.call("stats.get", undefined).catch(() => {});
+    await flush();
+    expect(opened).toEqual([1]);
+    port().receive({ jsonrpc: "2.0", id: 1, result: { downloadBps: 0, uploadBps: 0, active: 0, queued: 0 } });
+    await first;
+    port().drop("Native host has exited.");
+    void transport.call("stats.get", undefined).catch(() => {});
+    await flush();
+    expect(opened).toEqual([1, 2]);
   });
 
   it("times out requests the host never answers", async () => {

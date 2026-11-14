@@ -33,6 +33,11 @@
     if (pausable.length) out.push({ icon: "pause", label: t("action.pause"), run: () => app.pause(pausable) });
     if (d?.data.state === "needs_refresh") out.push({ icon: "refresh", label: t("action.refreshLink"), run: () => (app.refreshId = id) });
     out.push({ icon: "panel", label: t("action.details"), run: () => app.reveal(id) });
+    // Moving only means something once there is a queue to move to.
+    const movable = sel.filter((s) => s.data.state !== "completed").map((s) => s.id);
+    if (app.queues.enabled && app.queues.named.length > 0 && movable.length > 0) {
+      out.push({ icon: "layers", label: t("action.moveToQueue"), run: () => (app.moveIds = movable) });
+    }
     out.push({ icon: "copy", label: t("action.copyLink"), run: () => app.copyLink(id) });
     out.push({ icon: "trash", label: t("action.remove"), run: () => app.requestRemove(sel.map((s) => s.id)), danger: true });
     return out;

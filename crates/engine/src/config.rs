@@ -1,8 +1,12 @@
 //! Construction-time configuration and the scheduler's tuning knobs.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use whoosh_proto::Settings;
+
+use crate::clock::{Clock, SystemClock};
+use crate::power::{PowerControl, SystemPower};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -20,6 +24,12 @@ pub struct EngineConfig {
     pub capabilities: Vec<String>,
     /// Seeds retry jitter, for reproducible tests. `None` = random.
     pub rng_seed: Option<u64>,
+    /// The wall clock the scheduler reads (queue start/stop times, speed
+    /// windows). [`SystemClock`] unless a test drives its own.
+    pub clock: Arc<dyn Clock>,
+    /// Runs after-done actions (sleep, shut down). [`SystemPower`] unless
+    /// a test records them instead.
+    pub power: Arc<dyn PowerControl>,
 }
 
 impl EngineConfig {
@@ -39,6 +49,8 @@ impl EngineConfig {
             tuning: Tuning::default(),
             capabilities: vec!["http".into(), "https".into(), "preconnect".into()],
             rng_seed: None,
+            clock: Arc::new(SystemClock),
+            power: Arc::new(SystemPower),
         }
     }
 }
@@ -228,6 +240,9 @@ pub struct Tuning {
     pub stats_interval: Duration,
     /// Read size when hashing the finished file for a checksum.
     pub verify_chunk: usize,
+    /// How often the scheduler looks at the wall clock: queue start/stop
+    /// times fire and speed windows open within this of their minute.
+    pub clock_tick: Duration,
 }
 
 impl Default for Tuning {
@@ -294,6 +309,7 @@ impl Default for Tuning {
             segments_interval: Duration::from_secs(1),
             stats_interval: Duration::from_secs(1),
             verify_chunk: 1024 * 1024,
+            clock_tick: Duration::from_secs(1),
         }
     }
 }

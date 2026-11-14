@@ -9,6 +9,7 @@
     "build": "node scripts/build.mjs",
     "build:store": "node scripts/build.mjs --store",
     "package": "node scripts/build.mjs --zip",
+    "package:store": "node scripts/build.mjs --store --zip",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "node scripts/build.mjs && vitest run --config vitest.e2e.config.ts"

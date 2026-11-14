@@ -1,0 +1,160 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+:root {
+  color-scheme: light dark;
+  --fg: #1f2937;
+  --muted: #4b5563;
+  --bg: #ffffff;
+  --panel: #f9fafb;
+  --border: #d1d5db;
+  --accent: #2563eb;
+  --error: #b91c1c;
+  --note-bg: #fef3c7;
+  --note-fg: #78350f;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e5e7eb;
+    --muted: #9ca3af;
+    --bg: #111827;
+    --panel: #1f2937;
+    --border: #4b5563;
+    --accent: #60a5fa;
+    --error: #fca5a5;
+    --note-bg: #422006;
+    --note-fg: #fde68a;
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  /* Chromium gives extension pages a smaller default; keep the root size. */
+  font-size: 1rem;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.25rem;
+}
+
+.intro,
+.help {
+  color: var(--muted);
+}
+
+.help {
+  margin: 0.15rem 0 0.75rem 1.75rem;
+  font-size: 0.9rem;
+}
+
+textarea + .help,
+.inline + .help {
+  margin-left: 0;
+}
+
+.note {
+  background: var(--note-bg);
+  color: var(--note-fg);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  margin: 1rem 0;
+  padding: 0.75rem 1rem 0.5rem;
+}
+
+legend {
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.row input {
+  margin-top: 0.3rem;
+}
+
+.inline {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+label {
+  cursor: pointer;
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.25rem;
+  font: 0.9rem/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+input[type="text"],
+select,
+textarea {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+}
+
+[aria-invalid="true"] {
+  border-color: var(--error);
+  outline: 1px solid var(--error);
+}
+
+button {
+  font: inherit;
+  margin-bottom: 0.5rem;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.error {
+  color: var(--error);
+  margin: 0.25rem 0 0.5rem;
+}
+
+.status {
+  min-height: 1.5em;
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

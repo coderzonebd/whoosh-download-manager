@@ -1,7 +1,9 @@
 //! The engine: the download list, queues, settings, events, and the
 //! [`Service`] implementation.
 
-use std::collections::{HashMap, HashSet};
+mod queues;
+
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -17,8 +19,9 @@ use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
 use whoosh_proto::{
     AddParams, AddResult, DownloadDetail, DownloadId, DownloadState, DownloadSummary, Durability,
     ErrorInfo, IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult,
-    ProgressEvent, ProgressItem, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo,
-    Settings, StateEvent, Stats,
+    ProgressEvent, ProgressItem, Queue, QueueConfig, QueueNameParams, QueueRenameParams,
+    RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, SetQueueParams, Settings,
+    StateEvent, Stats,
 };
 
 use crate::bus::Bus;
@@ -28,7 +31,10 @@ use crate::config::EngineConfig;
 use crate::limiter::RateLimiter;
 use crate::names;
 use crate::run::{self, Outcome, RunSpec, StopReason};
+use crate::schedule::{self, Crossings};
 use crate::util::{new_id, unix_millis};
+
+use self::queues::QueueEntry;
 
 /// The `StateStore` key under which settings are persisted.
 pub const SETTINGS_KEY: &str = "settings";
@@ -36,6 +42,10 @@ pub const SETTINGS_KEY: &str = "settings";
 /// The `StateStore` key holding per-download connection counts
 /// (`AddParams::connections`) as a JSON object `{ id: count }`.
 pub const CONNECTIONS_KEY: &str = "download_connections";
+
+/// The `StateStore` key holding the named queues (`Queue[]`, without the
+/// main queue): name, `maxActive`, schedule and whether it is running.
+pub const QUEUES_KEY: &str = "queues";
 
 /// Bounds of `AddParams::connections` (PROTOCOL.md).
 const CONNECTIONS_RANGE: std::ops::RangeInclusive<u32> = 1..=64;
@@ -116,6 +126,15 @@ struct St {
     settings: Settings,
     downloads: HashMap<DownloadId, Entry>,
     seq: u64,
+    /// Named queues by name (the main queue is implicit).
+    queues: BTreeMap<String, QueueEntry>,
+    /// Scheduled queue events the wall clock crossed (`schedule.rs`).
+    crossings: Crossings,
+    /// The speed limit in force (`Settings::speed_limit_bps` or an open
+    /// speed window's).
+    speed_limit: Option<u64>,
+    /// Numbers pending after-done actions.
+    next_action: u64,
 }
 
 pub(crate) struct Inner {
@@ -192,6 +211,12 @@ impl Engine {
         };
         let mut records = deps.state.load_downloads().await?;
         records.sort_by(|a, b| a.added_at.cmp(&b.added_at).then(a.id.cmp(&b.id)));
+        let (queues, adopted) = queues::load(deps.state.as_ref(), &records).await?;
+        let speed_limit = schedule::speed_limit(
+            &settings.speed_schedule,
+            config.clock.local(),
+            settings.speed_limit_bps,
+        );
         let mut requeued = Vec::new();
         let mut downloads = HashMap::new();
         for (seq, mut rec) in records.into_iter().enumerate() {
@@ -218,12 +243,16 @@ impl Engine {
         }
         let seq = downloads.len() as u64;
         let inner = Arc::new(Inner {
-            limiter: Arc::new(RateLimiter::new(settings.speed_limit_bps)),
+            limiter: Arc::new(RateLimiter::new(speed_limit)),
             max_conns: AtomicU32::new(settings.max_connections_per_download),
             st: Mutex::new(St {
                 settings,
                 downloads,
                 seq,
+                queues,
+                crossings: Crossings::default(),
+                speed_limit,
+                next_action: 0,
             }),
             deps,
             config,
@@ -236,7 +265,11 @@ impl Engine {
         for id in requeued {
             inner.save(&id).await;
         }
+        if adopted {
+            inner.save_queues().await;
+        }
         tokio::spawn(ticker(Arc::downgrade(&inner)));
+        tokio::spawn(queues::scheduler(Arc::downgrade(&inner)));
         inner.pump();
         Ok(Arc::new(Engine { inner }))
     }
@@ -245,24 +278,6 @@ impl Engine {
     /// daemon's diagnostics).
     pub fn record(&self, id: &str) -> Option<DownloadRecord> {
         self.inner.record(id)
-    }
-
-    /// Put a download in a named queue (`None` = the main queue). Named
-    /// queues run one download at a time, oldest first; the main queue
-    /// runs up to `max_active_downloads`. Not yet part of the API (see the
-    /// README's contract proposals).
-    pub async fn set_queue(&self, id: &str, queue: Option<String>) -> ServiceResult<()> {
-        {
-            let mut st = lock(&self.inner.st);
-            let e = st
-                .downloads
-                .get_mut(id)
-                .ok_or_else(|| ServiceError::not_found(id))?;
-            e.record.queue = queue.filter(|q| !q.is_empty() && q != whoosh_proto::MAIN_QUEUE);
-        }
-        self.inner.save(id).await;
-        self.inner.pump();
-        Ok(())
     }
 }
 
@@ -478,13 +493,15 @@ impl Inner {
                 Outcome::Failed(info) => (DownloadState::Failed, Some(info)),
                 Outcome::NeedsRefresh(info) => (DownloadState::NeedsRefresh, Some(info)),
                 Outcome::Stopped(StopReason::Pause) => (DownloadState::Paused, None),
-                Outcome::Stopped(StopReason::Shutdown | StopReason::Restart) => {
+                Outcome::Stopped(StopReason::Shutdown | StopReason::Restart | StopReason::Hold) => {
                     (DownloadState::Queued, None)
                 }
                 Outcome::Stopped(StopReason::Remove) => return,
             };
             e.record.state = state;
             e.record.error = error.clone();
+            let ran_out = matches!(state, DownloadState::Completed | DownloadState::Failed);
+            let queue = e.record.queue.clone().filter(|_| ran_out);
             let progress = ProgressItem {
                 id: id.to_string(),
                 downloaded_bytes: e.record.downloaded_bytes,
@@ -501,9 +518,10 @@ impl Inner {
                     state,
                     error,
                 },
+                queue,
             )
         };
-        let (progress, state) = event;
+        let (progress, state, queue) = event;
         let completed = state.state == DownloadState::Completed;
         if completed {
             // The finished file may have taken a numbered name (`name (1)`).
@@ -536,26 +554,30 @@ impl Inner {
                 tracing::warn!(id, "journal remove failed: {e}");
             }
         }
+        if let Some(q) = queue {
+            self.check_finished(&q);
+        }
         self.pump();
     }
 
     /// Start queued downloads while the queues allow: the main queue up to
-    /// `max_active_downloads`, each named queue one at a time; oldest first.
+    /// `max_active_downloads`, each running named queue up to its
+    /// `max_active`; oldest first. A download whose queue is unknown runs in
+    /// the main queue.
     fn pump(self: &Arc<Self>) {
         if self.shutting_down.load(Ordering::Acquire) {
             return;
         }
-        let mut st = lock(&self.st);
-        let max_active = st.settings.max_active_downloads.max(1) as usize;
-        let mut active_main = 0usize;
-        let mut busy_queues = HashSet::new();
+        let mut guard = lock(&self.st);
+        let st = &mut *guard;
+        let max_main = st.settings.max_active_downloads.max(1) as usize;
+        // Active downloads per queue; `None` is the main queue.
+        let mut active: HashMap<Option<String>, usize> = HashMap::new();
+        let key = |queues: &BTreeMap<String, QueueEntry>, q: &Option<String>| {
+            q.clone().filter(|q| queues.contains_key(q))
+        };
         for e in st.downloads.values().filter(|e| e.run.is_some()) {
-            match &e.record.queue {
-                None => active_main += 1,
-                Some(q) => {
-                    busy_queues.insert(q.clone());
-                }
-            }
+            *active.entry(key(&st.queues, &e.record.queue)).or_default() += 1;
         }
         let mut queued: Vec<(i64, u64, DownloadId)> = st
             .downloads
@@ -568,16 +590,22 @@ impl Inner {
             let Some(e) = st.downloads.get_mut(&id) else {
                 continue;
             };
-            let start = match &e.record.queue {
-                None if active_main < max_active => {
-                    active_main += 1;
-                    true
+            let k = key(&st.queues, &e.record.queue);
+            let (limit, running) = match &k {
+                None => (max_main, true),
+                Some(q) => {
+                    let q = &st.queues[q];
+                    (q.max_active.max(1) as usize, q.running)
                 }
-                None => false,
-                Some(q) => busy_queues.insert(q.clone()),
             };
-            if !start {
+            let n = active.entry(k.clone()).or_default();
+            if !running || *n >= limit {
                 continue;
+            }
+            *n += 1;
+            if let Some(q) = k.and_then(|k| st.queues.get_mut(&k)) {
+                // Running again: the queue has not finished after all.
+                q.pending = None;
             }
             e.generation += 1;
             let live = Arc::new(Live::new(&e.record));
@@ -803,10 +831,14 @@ impl Inner {
             }
             None => None,
         };
-        let queue = p
-            .queue
-            .clone()
-            .filter(|q| !q.trim().is_empty() && q != whoosh_proto::MAIN_QUEUE);
+        let queue = queues::normalize(p.queue.as_deref());
+        if let Some(q) = &queue
+            && !whoosh_proto::queue::is_queue_name(q)
+        {
+            return Err(ServiceError::invalid_params(
+                "a queue name is 1–64 characters, without control characters",
+            ));
+        }
         let name_locked = user_name.is_some();
         let name = names::resolve(user_name.as_deref(), None, &p.url, None);
         let id = new_id();
@@ -837,8 +869,17 @@ impl Inner {
             completed_at: None,
             error: None,
         };
-        let summary = {
+        let (summary, created_queue) = {
             let mut st = lock(&self.st);
+            // Unknown queue names create the queue (as `whoosh get --queue`
+            // always could); `download.setQueue` needs an existing one.
+            let created_queue = match &record.queue {
+                Some(q) if !st.queues.contains_key(q) => {
+                    st.queues.insert(q.clone(), QueueEntry::new(1, None));
+                    true
+                }
+                _ => false,
+            };
             // Pick the name and store it in one critical section.
             record.filename = unique_in(&st, Path::new(&record.directory), &record.filename, &id);
             record.category =
@@ -859,8 +900,11 @@ impl Inner {
             };
             let summary = self.summary(&entry);
             st.downloads.insert(id.clone(), entry);
-            summary
+            (summary, created_queue)
         };
+        if created_queue {
+            self.emit_queues();
+        }
         // The run starts while the record is saved; `add` still answers
         // only once it is.
         self.bus.emit(Notification::DownloadAdded(summary));
@@ -868,6 +912,9 @@ impl Inner {
         self.save(&id).await;
         if connections.is_some() {
             self.save_connections().await;
+        }
+        if created_queue {
+            self.save_queues().await;
         }
         Ok(AddResult { id })
     }
@@ -1154,17 +1201,26 @@ impl Inner {
         if s.speed_limit_bps == Some(0) {
             s.speed_limit_bps = None;
         }
+        schedule::check_windows(&s.speed_schedule).map_err(ServiceError::invalid_params)?;
         let json = serde_json::to_string(&s).map_err(|e| ServiceError::io(e.to_string()))?;
         self.deps
             .state
             .set_value(SETTINGS_KEY, &json)
             .await
             .map_err(|e| ServiceError::io(e.to_string()))?;
-        lock(&self.st).settings = s.clone();
-        self.limiter.set_rate(s.speed_limit_bps);
+        let main_changed = {
+            let mut st = lock(&self.st);
+            let changed = st.settings.max_active_downloads != s.max_active_downloads;
+            st.settings = s.clone();
+            changed
+        };
+        self.apply_speed_limit(self.config.clock.local());
         self.max_conns
             .store(s.max_connections_per_download, Ordering::Relaxed);
         self.bus.emit(Notification::Settings(s.clone()));
+        if main_changed {
+            self.emit_queues();
+        }
         self.pump();
         Ok(s)
     }
@@ -1255,7 +1311,11 @@ async fn ticker(weak: Weak<Inner>) {
 
 impl Service for Engine {
     fn capabilities(&self) -> Vec<String> {
-        self.inner.config.capabilities.clone()
+        let mut c = self.inner.config.capabilities.clone();
+        if !c.iter().any(|c| c == "queues") {
+            c.push("queues".into());
+        }
+        c
     }
 
     fn probe(&self, params: ProbeParams) -> BoxFuture<'_, ServiceResult<ProbeResult>> {
@@ -1315,6 +1375,44 @@ impl Service for Engine {
 
     fn set_settings(&self, settings: Settings) -> BoxFuture<'_, ServiceResult<Settings>> {
         Box::pin(self.inner.set_settings(settings))
+    }
+
+    fn set_queue(&self, params: SetQueueParams) -> BoxFuture<'_, ServiceResult<()>> {
+        Box::pin(self.inner.set_queue(params))
+    }
+
+    fn queues(&self) -> BoxFuture<'_, ServiceResult<Vec<Queue>>> {
+        let v = queues::list(&lock(&self.inner.st));
+        Box::pin(async move { Ok(v) })
+    }
+
+    fn create_queue(&self, config: QueueConfig) -> BoxFuture<'_, ServiceResult<Queue>> {
+        Box::pin(self.inner.create_queue(config))
+    }
+
+    fn update_queue(&self, config: QueueConfig) -> BoxFuture<'_, ServiceResult<Queue>> {
+        Box::pin(self.inner.update_queue(config))
+    }
+
+    fn rename_queue(&self, params: QueueRenameParams) -> BoxFuture<'_, ServiceResult<Queue>> {
+        Box::pin(self.inner.rename_queue(params))
+    }
+
+    fn remove_queue(&self, params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        Box::pin(self.inner.remove_queue(params.name))
+    }
+
+    fn start_queue(&self, params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        Box::pin(self.inner.start_queue(params.name))
+    }
+
+    fn stop_queue(&self, params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        Box::pin(self.inner.stop_queue(params.name))
+    }
+
+    fn cancel_queue_action(&self, params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        let r = self.inner.cancel_queue_action(&params.name);
+        Box::pin(async move { r })
     }
 
     fn subscribe(&self) -> BoxStream<'static, Notification> {

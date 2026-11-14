@@ -17,7 +17,8 @@ use whoosh_engine::{Engine, SETTINGS_KEY};
 use whoosh_proto::service::{Notification, Service};
 use whoosh_proto::{
     AddParams, Checksum, DownloadState, Header, IdParams, IdsParams, ListParams, PreconnectParams,
-    ProbeParams, RefreshUrlParams, RemoveParams, RequestContext, error_code,
+    ProbeParams, QueueConfig, RefreshUrlParams, RemoveParams, RequestContext, SetQueueParams,
+    error_code,
 };
 
 const LONG: Duration = Duration::from_secs(600);
@@ -353,6 +354,14 @@ async fn the_main_queue_runs_max_active_in_order() {
 #[tokio::test(start_paused = true)]
 async fn named_queues_run_one_at_a_time() {
     let lab = Lab::new(config()).await;
+    lab.engine
+        .create_queue(QueueConfig {
+            name: "night".into(),
+            max_active: None,
+            schedule: None,
+        })
+        .await
+        .unwrap();
     let mut ids = Vec::new();
     for i in 0..3 {
         lab.serve(&url(i), slow(content(2 * MIB, i as u64), 2 * MIB));
@@ -360,7 +369,10 @@ async fn named_queues_run_one_at_a_time() {
         p.start = false;
         let id = lab.engine.add(p).await.unwrap().id;
         lab.engine
-            .set_queue(&id, Some("night".into()))
+            .set_queue(SetQueueParams {
+                ids: vec![id.clone()],
+                queue: Some("night".into()),
+            })
             .await
             .unwrap();
         ids.push(id);

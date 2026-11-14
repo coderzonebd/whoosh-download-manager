@@ -4,6 +4,9 @@
 // (`daemon_connection`, which starts the bundled daemon if none is running),
 // so a daemon that restarts on another port, or was stopped, is found again.
 //
+// It also gets the shell's extras (`host.ts`: folder picker, desktop
+// settings, launch at login) and `whoosh://add?url=…` links (`deeplinks.ts`).
+//
 // In a plain browser (the vite dev server) there is no shell, so the UI runs
 // on the mock daemon. Dev-only query parameters for that case:
 //   ?bulk=10000   add N synthetic downloads    ?lang=bn   start in Bangla
@@ -15,6 +18,8 @@ import { createMockClient } from "@whoosh/api-client/mock";
 import { connectWs } from "@whoosh/api-client/ws";
 import { App, type AppState } from "@whoosh/ui";
 import { mount } from "svelte";
+import { startDeepLinks } from "./deeplinks.ts";
+import { desktopHost } from "./host.ts";
 import { startNotifications } from "./notify.ts";
 import { startTrayUpdates } from "./tray.ts";
 
@@ -66,9 +71,14 @@ mount(App, {
   props: {
     client,
     mode: live ? "live" : "mock",
+    // The folder picker, tray and login settings exist only in the app.
+    ...(live ? { host: desktopHost() } : {}),
     onready: (app: AppState) => {
       startTrayUpdates(client, (bps) => app.i18n.speed(bps), (n) => app.i18n.t("status.active", { count: n }));
-      if (live) startNotifications(client, app);
+      if (live) {
+        startNotifications(client, app);
+        void startDeepLinks(app);
+      }
     },
   },
 });

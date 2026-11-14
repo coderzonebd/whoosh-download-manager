@@ -35,6 +35,7 @@ describe("evaluateCapture", () => {
     ["the referring site is excluded", { url: "https://other.net/a.iso" }, { excludedSites: ["example.com"] }, {}, "excluded-site"],
     ["its type is not listed", { filename: "page.html", url: "https://example.com/page.html" }, {}, {}, "file-type"],
     ["it is smaller than the minimum", { totalBytes: 10_000 }, { minSizeBytes: 1_000_000 }, {}, "too-small"],
+    ["the store build stays off this site", {}, {}, { blocked: true }, "store-policy"],
   ])("skips when %s", (_name, item, s, c, reason) => {
     expect(evaluateCapture({ ...base, ...item }, settings(s), { ...ctx, ...c })).toEqual({ capture: false, reason });
   });
@@ -78,5 +79,21 @@ describe("fileTypeOf", () => {
     expect(fileTypeOf({ url: "https://x/a/archive.tar.gz?sig=abc#frag" })).toBe("gz");
     expect(fileTypeOf({ url: "https://x/download?id=7", mime: "application/zip; charset=binary" })).toBe("zip");
     expect(fileTypeOf({ url: "https://x/download?id=7", mime: "application/octet-stream" })).toBe("");
+  });
+});
+
+describe("Alt+click with \"send to Whoosh\" (force)", () => {
+  const force: RuleContext = { bypass: false, nonGetRequest: false, force: true };
+
+  it("overrides capture off, excluded sites, file types and the minimum size", () => {
+    const s = settings({ captureEnabled: false, excludedSites: ["example.com"], fileTypes: ["mp4"], minSizeBytes: 1e12 });
+    expect(evaluateCapture({ ...base, filename: "page.html", totalBytes: 10 }, s, force)).toEqual({ capture: true });
+  });
+
+  it("never overrides the safety rules", () => {
+    expect(evaluateCapture({ ...base, danger: "url" }, settings(), force)).toEqual({ capture: false, reason: "dangerous" });
+    expect(evaluateCapture({ ...base, url: "blob:https://x/1" }, settings(), force)).toEqual({ capture: false, reason: "not-http" });
+    expect(evaluateCapture(base, settings(), { ...force, nonGetRequest: true })).toEqual({ capture: false, reason: "post" });
+    expect(evaluateCapture({ ...base, incognito: true }, settings(), force)).toEqual({ capture: false, reason: "incognito" });
   });
 });

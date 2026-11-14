@@ -30,6 +30,11 @@ export interface Transport extends WhooshClient {
   /** Called when the transport learns the status changed on its own. */
   onStatus(handler: (status: ConnectionStatus) => void): () => void;
   /**
+   * Called when a connection to the engine (re)opens. Events are only
+   * delivered while one is open, so listeners catch up on what they missed.
+   */
+  onOpen(handler: () => void): () => void;
+  /**
    * False right after the transport failed, so optional traffic (preconnect)
    * does not keep starting a host that is not installed. Required traffic
    * (a captured download) always tries.
