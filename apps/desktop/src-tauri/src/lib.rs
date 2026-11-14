@@ -238,6 +238,8 @@ pub fn run() {
             app.manage(updates::Pending::default());
             std::thread::spawn(move || browsers::ensure_registered(first_run));
             updates::start_daily_check(app.handle().clone());
+            // A daemon that crashes comes back even while the window is in the tray.
+            daemon::supervise(app.handle(), &QUITTING);
             if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 window_size::restore(&window);
                 let w = window.clone();
