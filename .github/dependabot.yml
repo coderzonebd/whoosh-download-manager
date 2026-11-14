@@ -19,6 +19,10 @@ updates:
     commit-message:
       prefix: "build(deps)"
     groups:
+      # The RustCrypto hashes share the `digest` traits (hmac needs sha2 of
+      # the same generation), so their bumps only build together.
+      rustcrypto:
+        patterns: [digest, hmac, md-5, sha1, sha2]
       cargo-minor-patch:
         update-types: [minor, patch]
 
@@ -36,6 +40,12 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "build(deps)"
+    ignore:
+      # apps/desktop and packages/ui stay on TypeScript 6: svelte-check 4
+      # runs on TypeScript 7 only behind an experimental --tsgo flag with
+      # both versions installed. Lift this once svelte-check supports 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-patch:
         update-types: [minor, patch]

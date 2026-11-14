@@ -9,7 +9,7 @@
 //! request, cookie or header. The daemon generates a new token at every start,
 //! so the stale token the impostor sees in the hello is worthless.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
 /// Domain separation for the proof, so the token's HMAC is never reused for
