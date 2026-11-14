@@ -42,7 +42,7 @@ export function manifestFor(target, { version, store }) {
     manifest_version: 3,
     // Translated: _locales/<lang>/messages.json (extName, extDescription).
     name: "__MSG_extName__",
-    short_name: "__MSG_extName__",
+    short_name: "__MSG_extShortName__",
     version,
     description: "__MSG_extDescription__",
     default_locale: "en",

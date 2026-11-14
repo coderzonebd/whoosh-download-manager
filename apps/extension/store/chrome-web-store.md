@@ -4,7 +4,7 @@ Upload `dist/whoosh-chromium-<version>-store.zip` from `pnpm --filter @whoosh/ex
 
 ## Item details
 
-- **Name:** Whoosh
+- **Name:** Whoosh Download Manager (from `_locales`, `extName`; the toolbar keeps the short name "Whoosh")
 - **Summary** (≤ 132 characters):
   > Send browser downloads to the Whoosh download manager, with the same cookies and referrer. Faster, resumable, repairs expired links.
 - **Category:** Productivity → Tools

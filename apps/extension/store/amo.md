@@ -4,7 +4,7 @@ Upload `dist/whoosh-firefox-<version>-store.zip` from `pnpm --filter @whoosh/ext
 
 ## Listing
 
-- **Name:** Whoosh
+- **Name:** Whoosh Download Manager (from `_locales`, `extName`; the toolbar keeps the short name "Whoosh")
 - **Add-on URL slug:** `whoosh-download-manager`
 - **Summary** (≤ 250 characters):
   > Sends Firefox downloads to the Whoosh download manager app with the same cookies and referrer: multi-connection, resumable downloads that survive restarts, and expired links repaired from the page they came from. Needs the Whoosh app.

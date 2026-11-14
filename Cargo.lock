@@ -6105,7 +6105,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -6125,7 +6125,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "futures",
@@ -6141,7 +6141,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-client"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "serde",
@@ -6155,7 +6155,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "futures",
@@ -6166,7 +6166,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-crash"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "regex",
  "sentry",
@@ -6176,7 +6176,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-daemon"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "clap",
@@ -6207,7 +6207,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-desktop"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -6228,7 +6228,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-engine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "fastrand",
@@ -6252,7 +6252,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-labserver"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -6284,7 +6284,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-media"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "futures",
@@ -6307,7 +6307,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-net"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -6339,7 +6339,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-nmhost"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "serde",
@@ -6353,7 +6353,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "getrandom 0.4.3",
@@ -6368,7 +6368,7 @@ dependencies = [
 
 [[package]]
 name = "whoosh-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "crc32c",

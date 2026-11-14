@@ -1,7 +1,11 @@
 {
   "extName": {
+    "message": "Whoosh Download Manager",
+    "description": "Extension name in the browser and the stores. A brand name: keep it in English unless your script needs a transliteration."
+  },
+  "extShortName": {
     "message": "Whoosh",
-    "description": "Extension name in the browser and the stores. A brand name: keep it as it is unless your script needs a transliteration."
+    "description": "Short name, where the browser has little room (12 characters or fewer). A brand name: keep it as it is."
   },
   "extDescription": {
     "message": "Hands your browser downloads to the Whoosh download manager, with the same cookies and referrer.",
