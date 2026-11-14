@@ -130,7 +130,6 @@ Setup, rules and commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Please repo
 Whoosh is free and has no ads or telemetry. If it saves you time, you can help keep it going:
 
 - [GitHub Sponsors](https://github.com/sponsors/coderzonebd)
-- [Open Collective](https://opencollective.com/coderzonebd): the budget and every expense are public
 - [Buy Me a Coffee](https://buymeacoffee.com/devrkb21)
 
 Starring the repository, reporting bugs and translating help too.
