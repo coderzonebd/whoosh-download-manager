@@ -70,6 +70,9 @@ fn main() {
         ("bundled_mismatch_falls_back_to_download", || {
             Box::pin(bundled_mismatch_falls_back_to_download())
         }),
+        ("tar_bundled_tools_are_unpacked_and_checked", || {
+            Box::pin(tar_bundled_tools_are_unpacked_and_checked())
+        }),
         ("newer_bundled_tools_replace_older_copies", || {
             Box::pin(newer_bundled_tools_replace_older_copies())
         }),
@@ -859,6 +862,12 @@ fn exe(name: &str) -> String {
 /// An installer's `media-tools` directory: yt-dlp, ffmpeg and ffprobe with
 /// a manifest. `bad` gets a wrong checksum in the manifest.
 fn bundle_dir(dir: &Path, yt_dlp_version: &str, bad: Option<&str>) -> PathBuf {
+    bundle_dir_as(dir, yt_dlp_version, bad, false)
+}
+
+/// As [`bundle_dir`]; with `tar`, each program is in an uncompressed
+/// `<name>.tar` as on Linux.
+fn bundle_dir_as(dir: &Path, yt_dlp_version: &str, bad: Option<&str>, tar: bool) -> PathBuf {
     let b = dir.join("media-tools");
     std::fs::create_dir_all(&b).unwrap();
     let mut tools = serde_json::Map::new();
@@ -867,6 +876,7 @@ fn bundle_dir(dir: &Path, yt_dlp_version: &str, bad: Option<&str>) -> PathBuf {
         ("ffmpeg", "9.0", vec![exe("ffmpeg"), exe("ffprobe")]),
     ] {
         let mut sums = serde_json::Map::new();
+        let mut tars = serde_json::Map::new();
         for f in files {
             let body = format!("#!/bin/sh\necho bundled {f} {version}\n").into_bytes();
             std::fs::write(b.join(&f), &body).unwrap();
@@ -875,6 +885,24 @@ fn bundle_dir(dir: &Path, yt_dlp_version: &str, bad: Option<&str>) -> PathBuf {
             } else {
                 sha256_hex(&body)
             };
+            if tar {
+                let packed = b.join(format!("{f}.tar"));
+                let ok = std::process::Command::new("tar")
+                    .arg("-cf")
+                    .arg(&packed)
+                    .arg("-C")
+                    .arg(&b)
+                    .arg(&f)
+                    .status()
+                    .unwrap()
+                    .success();
+                assert!(ok, "tar");
+                std::fs::remove_file(b.join(&f)).unwrap();
+                tars.insert(
+                    f.clone(),
+                    sha256_hex(&std::fs::read(&packed).unwrap()).into(),
+                );
+            }
             sums.insert(f, sha.into());
         }
         tools.insert(
@@ -885,6 +913,7 @@ fn bundle_dir(dir: &Path, yt_dlp_version: &str, bad: Option<&str>) -> PathBuf {
                 "license": "test",
                 "sources": [{ "url": format!("https://up.example.test/{tool}"), "sha256": "0".repeat(64) }],
                 "files": sums,
+                "tars": tars,
             }),
         );
     }
@@ -1020,6 +1049,67 @@ async fn bundled_mismatch_falls_back_to_download() {
     cfg.bundled = Some(empty);
     let tools = Tools::open(cfg, up).await;
     assert_eq!(tools.status().tools[0].state, MediaToolState::Missing);
+}
+
+/// Linux ships each program in a tar (linuxdeploy rewrites ELF programs in
+/// an AppImage): unpacked and checked against the manifest, without the
+/// network; `verify` checks tar and contents; a tampered program inside the
+/// tar is never used, the tool is downloaded instead.
+async fn tar_bundled_tools_are_unpacked_and_checked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bundle = bundle_dir_as(tmp.path(), "2026.10.26", None, true);
+    assert!(!bundle.join(exe("ffmpeg")).exists());
+    assert!(bundle.join(format!("{}.tar", exe("ffmpeg"))).is_file());
+    let m = whoosh_media::bundle::verify(&bundle).await.unwrap();
+    assert_eq!(m.tools["ffmpeg"].tars.len(), 2);
+    let data = tmp.path().join("media");
+    let up = offline();
+    let mut cfg = tools_config(&data);
+    cfg.bundled = Some(bundle.clone());
+    let tools = Tools::open(cfg, up.clone()).await;
+    assert_eq!(tools.status().tools[1].state, MediaToolState::Ready);
+    let ff = tools.ensure(Kind::Ffmpeg).await.unwrap();
+    assert_eq!(ff.program, data.join("bin").join(exe("ffmpeg")));
+    assert_eq!(
+        std::fs::read(&ff.program).unwrap(),
+        format!("#!/bin/sh\necho bundled {} 9.0\n", exe("ffmpeg")).into_bytes()
+    );
+    assert!(data.join("bin").join(exe("ffprobe")).is_file());
+    tools.ensure(Kind::YtDlp).await.unwrap();
+    assert!(up.fetched.lock().unwrap().is_empty(), "no network");
+    let left: Vec<_> = std::fs::read_dir(data.join("bin"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with('.'))
+        .collect();
+    assert!(left.is_empty(), "work directories left behind: {left:?}");
+
+    // The program in the tar does not match the manifest.
+    let tmp = tempfile::tempdir().unwrap();
+    let bundle = bundle_dir_as(tmp.path(), "2026.01.01", Some("yt-dlp"), true);
+    let e = whoosh_media::bundle::verify(&bundle).await.unwrap_err();
+    assert!(e.contains("yt-dlp"), "{e}");
+    // A tampered tar fails its own checksum.
+    let tmp2 = tempfile::tempdir().unwrap();
+    let other = bundle_dir_as(tmp2.path(), "2026.01.01", None, true);
+    let packed = other.join(format!("{}.tar", exe("ffmpeg")));
+    let mut bytes = std::fs::read(&packed).unwrap();
+    bytes.extend_from_slice(&[0u8; 512]);
+    std::fs::write(&packed, bytes).unwrap();
+    assert!(whoosh_media::bundle::verify(&other).await.is_err());
+
+    let data = tmp.path().join("media");
+    let (up, body) = upstream(None);
+    let mut cfg = tools_config(&data);
+    cfg.bundled = Some(bundle);
+    let tools = Tools::open(cfg, up.clone()).await;
+    let yt = tools.ensure(Kind::YtDlp).await.unwrap();
+    assert_eq!(std::fs::read(&yt.program).unwrap(), body);
+    assert_eq!(
+        tools.status().tools[0].version.as_deref(),
+        Some("2026.10.26")
+    );
 }
 
 /// An app update with newer tools replaces older managed copies; older

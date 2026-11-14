@@ -43,6 +43,9 @@ licence texts, notice and written source offer next to them come from
 [packaging/media-tools](../packaging/media-tools). After bundling, *Check
 yt-dlp and ffmpeg inside the bundles* verifies the copies in the `.app`, the
 `.deb` and the AppImage against the manifest (Windows: the portable zip's).
+On Linux the programs are packed in uncompressed tars, because the AppImage
+bundler (linuxdeploy) rewrites every ELF program in the image; the check
+covers the tar and the program in it.
 They add roughly 100–200 MB to each installed app (less to the compressed
 installers); the command-line archives do not include them.
 
