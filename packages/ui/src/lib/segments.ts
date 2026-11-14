@@ -47,15 +47,19 @@ export function blockCoverage(fills: readonly SegmentFill[], total: number, bloc
   if (total <= 0 || blocks <= 0) return out;
   const size = total / blocks;
   for (const f of fills) {
-    let a = f.start;
-    const b = f.start + f.done;
-    while (a < b) {
-      const i = Math.min(blocks - 1, Math.floor(a / size));
-      const blockEnd = (i + 1) * size;
-      const take = Math.min(b, blockEnd) - a;
-      out[i] = (out[i] ?? 0) + take / size;
-      a += take;
-      if (take <= 0) break;
+    const a = Math.max(0, f.start);
+    const b = Math.min(total, f.start + f.done);
+    if (b <= a) continue;
+    // Each block gets its overlap with [a, b), measured from the block's own
+    // edges: summing steps of a float `size` drifts on large files and could
+    // stall after a few blocks.
+    const first = Math.min(blocks - 1, Math.floor(a / size));
+    const last = Math.min(blocks - 1, Math.floor((b - 1) / size));
+    for (let i = first; i <= last; i++) {
+      const lo = i * size;
+      const hi = i === blocks - 1 ? total : (i + 1) * size;
+      const overlap = Math.min(b, hi) - Math.max(a, lo);
+      if (overlap > 0) out[i] = (out[i] ?? 0) + overlap / (hi - lo);
     }
   }
   return out.map((v) => Math.min(1, v));

@@ -460,6 +460,12 @@ async fn engine_path_merges_video_and_audio() {
     let done = wait_for(&r.media, &id, DownloadState::Completed).await;
     let media = done.media.clone().unwrap();
     assert_eq!(media.via, MediaVia::Engine);
+    // "Time taken" in the details: the run's time is kept.
+    assert!(
+        done.active_ms.is_some_and(|ms| ms > 0),
+        "{:?}",
+        done.active_ms
+    );
     assert_eq!(media.format, "1080p mp4");
     let stem = wdm_media::names::stem("Lab clip: AC/DC 100%").unwrap();
     assert!(stem.contains("AC-DC 100%"), "{stem}");
@@ -576,6 +582,11 @@ async fn streaming_formats_fall_back_to_yt_dlp() {
     let done = wait_for(&r.media, &id, DownloadState::Completed).await;
     assert_eq!(done.media.as_ref().unwrap().via, MediaVia::YtDlp);
     assert_eq!(done.total_bytes, Some(1000));
+    assert!(
+        done.active_ms.is_some_and(|ms| ms > 0),
+        "{:?}",
+        done.active_ms
+    );
     assert!(
         PathBuf::from(&done.directory)
             .join(&done.filename)

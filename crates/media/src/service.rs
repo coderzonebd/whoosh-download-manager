@@ -444,8 +444,8 @@ fn summary(job: &Job, st: &State) -> DownloadSummary {
             },
         }),
         awaiting_confirmation: false,
-        // Not kept for media downloads (yt-dlp runs outside the engine).
-        active_ms: None,
+        // Shown once the download is done (see `Job::active_ms`).
+        active_ms: (job.phase == Phase::Done && job.active_ms > 0).then_some(job.active_ms),
     }
 }
 
@@ -713,6 +713,7 @@ impl Shared {
             };
             tracing::warn!(id, code, %message, "media download failed");
             job.phase = Phase::Failed;
+            job.mark_stopped(now_ms());
             job.error = Some(ErrorInfo {
                 code: code.to_owned(),
                 message,
@@ -850,6 +851,8 @@ impl Shared {
             queue,
             added_at: now_ms(),
             completed_at: None,
+            active_ms: 0,
+            run_started: None,
             phase: Phase::Preparing,
             paused: !p.start,
             parts: Vec::new(),
@@ -876,6 +879,9 @@ impl Shared {
     }
 
     async fn spawn_prepare(self: &Arc<Self>, id: &str) {
+        if let Some(job) = self.state.lock().await.jobs.get_mut(id) {
+            job.mark_running(now_ms());
+        }
         let me = self.clone();
         let job_id = id.to_owned();
         let handle = tokio::spawn(async move {
@@ -1123,6 +1129,7 @@ impl Shared {
                     if let Some(job) = st.jobs.get_mut(&id) {
                         job.phase = Phase::Done;
                         job.completed_at = Some(now_ms());
+                        job.mark_stopped(now_ms());
                         job.filename = path
                             .file_name()
                             .map(|n| n.to_string_lossy().into_owned())
@@ -1355,6 +1362,7 @@ impl Shared {
                     if let Some(job) = st.jobs.get_mut(&id) {
                         job.phase = Phase::Done;
                         job.completed_at = Some(now_ms());
+                        job.mark_stopped(now_ms());
                         job.filename = path
                             .file_name()
                             .map(|n| n.to_string_lossy().into_owned())
@@ -1480,6 +1488,20 @@ impl Shared {
     // ------------------------------------------------------------ startup
 
     async fn resume_all(self: &Arc<Self>) {
+        // Runs that go on after a restart count from now.
+        {
+            let now = now_ms();
+            let mut st = self.state.lock().await;
+            for job in st.jobs.values_mut() {
+                let running = matches!(
+                    job.phase,
+                    Phase::Preparing | Phase::Downloading | Phase::Finishing
+                );
+                if running && !job.paused {
+                    job.mark_running(now);
+                }
+            }
+        }
         let jobs: Vec<Job> = self.state.lock().await.jobs.values().cloned().collect();
         for job in jobs {
             match (job.phase, job.via) {
@@ -1529,6 +1551,7 @@ impl Shared {
                 match job.phase {
                     Phase::Preparing | Phase::Downloading => {
                         job.paused = true;
+                        job.mark_stopped(now_ms());
                         parts.extend(job.parts.iter().map(|p| p.id.clone()));
                         changed.push(id.clone());
                         if let Some(l) = st.live.get_mut(id) {
@@ -1575,6 +1598,7 @@ impl Shared {
                     continue;
                 };
                 job.paused = false;
+                job.mark_running(now_ms());
                 changed.push(id.clone());
                 match job.phase {
                     Phase::Preparing if !has_task => prepare.push(id.clone()),
