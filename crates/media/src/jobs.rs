@@ -97,6 +97,13 @@ pub struct Job {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<UnixMillis>,
     pub phase: Phase,
+    /// Time spent running (preparing, downloading, finishing), in ms;
+    /// pauses and waits outside a run are not counted.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub active_ms: u64,
+    /// When the current run started; not saved (a restart starts a new run).
+    #[serde(skip)]
+    pub run_started: Option<UnixMillis>,
     /// Paused by the user (or added with `start: false`).
     #[serde(default)]
     pub paused: bool,
@@ -142,4 +149,64 @@ pub async fn load(path: &Path) -> BTreeMap<String, Job> {
 pub async fn save(path: &Path, jobs: Vec<Job>) -> std::io::Result<()> {
     let json = serde_json::to_vec_pretty(&Saved { jobs }).map_err(std::io::Error::other)?;
     write_atomic(path, &json).await
+}
+
+fn is_zero(v: &u64) -> bool {
+    *v == 0
+}
+
+impl Job {
+    /// A run starts (or goes on): count from now if not counting already.
+    pub fn mark_running(&mut self, now: UnixMillis) {
+        if self.run_started.is_none() {
+            self.run_started = Some(now);
+        }
+    }
+
+    /// A run ends (paused, failed or done): add its time.
+    pub fn mark_stopped(&mut self, now: UnixMillis) {
+        if let Some(started) = self.run_started.take() {
+            self.active_ms += u64::try_from(now - started).unwrap_or(0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod active_time_tests {
+    use super::*;
+
+    fn job() -> Job {
+        serde_json::from_value(serde_json::json!({
+            "id": "md_1", "url": "https://example.com/v", "title": "t", "via": "engine",
+            "choice": { "kind": "best" }, "filename": "t.mp4",
+            "directory": "/tmp", "category": "video", "addedAt": 0, "phase": "preparing"
+        }))
+        .expect("a job")
+    }
+
+    #[test]
+    fn active_time_counts_runs_and_skips_pauses() {
+        let mut j = job();
+        j.mark_running(1_000);
+        j.mark_running(1_500); // already counting: no restart
+        j.mark_stopped(4_000); // paused
+        j.mark_stopped(9_000); // not running: nothing added
+        j.mark_running(10_000);
+        j.mark_stopped(12_500);
+        assert_eq!(j.active_ms, 5_500);
+        assert_eq!(j.run_started, None);
+    }
+
+    #[test]
+    fn active_time_is_saved_but_the_running_clock_is_not() {
+        let mut j = job();
+        j.mark_running(1_000);
+        j.mark_stopped(3_000);
+        j.mark_running(5_000);
+        let back: Job = serde_json::from_value(serde_json::to_value(&j).unwrap()).unwrap();
+        assert_eq!(back.active_ms, 2_000);
+        assert_eq!(back.run_started, None);
+        // Old records without the field read as zero.
+        assert_eq!(job().active_ms, 0);
+    }
 }

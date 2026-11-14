@@ -53,6 +53,9 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - No shell, no config files, no browser cookies unless the extension passed one for the page, no DRM circumvention.
 
 ### Desktop app
+- Fixed: *Start download* / *Download later* in the browser-download confirmation failed with "download.confirm is not supported by this daemon": the media layer the daemon serves the engine through did not pass `download.confirm` on. And a long host or file name no longer widens the confirmation and add dialogs past their edge (it truncates).
+- Fixed: the segment map of a large finished download showed only its first few blocks filled (float steps of the block size drifted and stopped the loop; each block now takes its own overlap). Seen on a 689 MB video.
+- Video and audio downloads (yt-dlp) also show *Time taken* and *Average speed*: the time each run spends preparing, downloading and finishing is added up, pauses excluded.
 - macOS: ⌘Q keeps the app in the menu bar, the same as closing the window (when "Closing the window keeps Whoosh Download Manager in the tray" is on); the app leaves the Dock while only its menu bar icon is showing and comes back when the window opens. The menu bar icon's *Quit* quits. Tauri's built-in Quit item ended the process at once, so the app menu now has its own.
 - Launch at login is on by default: an installed build turns it on at its first start, once, and says so with a link to Settings, where turning it off sticks.
 - *Add download* fills in a download link from the clipboard (http, https or ftp), selected so typing replaces it; nothing else on the clipboard is used.
