@@ -43,4 +43,11 @@ describe("settings", () => {
     expect(store.data[SETTINGS_KEY]).toEqual(next);
     expect(await loadSettings(store)).toEqual(next);
   });
+
+  it("validates the Alt+click choice and the self-healing switch", () => {
+    expect(DEFAULT_SETTINGS.altClick).toBe("browser");
+    expect(DEFAULT_SETTINGS.selfHealing).toBe(true);
+    expect(normalizeSettings({ altClick: "whoosh", selfHealing: false })).toMatchObject({ altClick: "whoosh", selfHealing: false });
+    expect(normalizeSettings({ altClick: "shift", selfHealing: "no" })).toMatchObject({ altClick: "browser", selfHealing: true });
+  });
 });

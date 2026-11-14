@@ -1,6 +1,6 @@
 # Self-healing links — design
 
-Status: design for Phase 2. Phase 0 ships the types and a stub (`src/background/self-healing.ts`); nothing heals yet.
+Status: implemented in Phase 2 (`src/background/self-healing.ts`, `src/background/healing/`). Where the implementation differs from the design below, the "As built" section says so.
 
 ## The problem
 
@@ -64,3 +64,15 @@ Nothing new is strictly required: `needs_refresh`, `link_expired` and `download.
 
 - Unit: link matching (href, query-only change, text similarity), provenance eviction, attempt limits.
 - End-to-end: the labserver serves URLs signed for N seconds from a page that always links a freshly signed URL; a download paused past expiry must complete without user action, and a page that links a *different* file must end in "ask the user", not in a corrupted file.
+
+## As built (Phase 2)
+
+- **Trigger:** both options. The native port is held open while a remembered download is queued, probing, downloading, verifying or of unknown state (`holdOpen`), and every time a port opens, or the host reports the daemon came up, the extension pages through `download.list` for every unfinished state, forgets what is gone or completed, and heals what is in `needs_refresh` (`src/background/catch-up.ts`). Events that arrive before the hand-off has finished (the browser copy is still being cancelled) are kept for a minute and applied when the download is remembered.
+- **Strategy 1** uses `linkUrl` when there is one, else the handed-over URL, with cookies read now and the page as referrer.
+- **Strategy 2 reads, it does not click.** The page is read from a tab that already shows it, else from a muted background tab (Firefox: in the download's container) that is closed afterwards; at most one at a time, 30 s to load. Links equal to the expired URL are skipped. Matching (`healing/match.ts`): the stable link itself, then one link with the same origin and path (a re-signed URL), then the same file name on the same site — all *sure*, sent at once; several same-path links, the same name on another host, or the same link text are *unsure* and go to the user. Clicking elements was left out: it runs page scripts on the user's behalf, and the daemon follows redirects anyway. Pages that only produce the file through JavaScript end in step 4.
+- **Strategy 3** is general: while a remembered download is in `needs_refresh`, a new browser download with the same file name (and size, when both are known) from the same site — or from anywhere after the user chose "Open page", for ten minutes — refreshes it. The browser copy is cancelled only after the daemon accepted, with the hand-off's timeout; a refusal or a late answer leaves the browser its copy.
+- **Step 4 has no notification.** Instead of the `notifications` permission, the toolbar badge shows `!` and the popup lists the question with *Use this link* (unsure match), *Open page* and *Dismiss*. Dismiss stops automatic attempts for that download.
+- **Limits:** a round tries each strategy once, one per `needs_refresh`; a download returning to `downloading` ends the round as a success. Three failed rounds in a row at most, ten minutes apart; after that only the user can help. A `failed` with `remote_changed` after a proposal stops all automatic attempts for that download.
+- **Provenance** also records the Firefox container and, when the user clicked the link, its text (the content script reports clicks on download-looking links; kept in memory for a minute). Context-menu and popup downloads are remembered too.
+- **Not done:** the end-to-end test against the labserver's expiring URLs (the e2e suite uses the fake host; a manual run used Brave with `whoosh-daemon --mock`, whose `?expire=` links expire half way), and a `reason` on `refreshUrl` failures (no protocol change was made).
+

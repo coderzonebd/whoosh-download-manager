@@ -137,4 +137,73 @@ describe("CaptureController", () => {
     await expect(controller.onBrowserDownload(item, release)).resolves.toMatchObject({ outcome: "kept" });
     expect(release).toHaveBeenCalledTimes(1);
   });
+
+  it("sends an Alt+click to Whoosh when the setting says so, whatever the rules", async () => {
+    const { controller, deps, added } = harness({ settings: { captureEnabled: false, fileTypes: ["mp4"] } });
+    deps.force = new BypassTracker();
+    deps.force.arm(900);
+    await expect(controller.onBrowserDownload(item, () => {})).resolves.toMatchObject({ outcome: "sent" });
+    expect(added).toHaveLength(1);
+    await expect(controller.onBrowserDownload({ ...item, id: 8 }, () => {})).resolves.toEqual({ outcome: "skipped", reason: "disabled" });
+  });
+
+  it("leaves store-blocked downloads to the browser", async () => {
+    const { controller, deps, added } = harness();
+    deps.blocked = (urls) => urls.some((u) => u?.includes("example.com"));
+    await expect(controller.onBrowserDownload(item, () => {})).resolves.toEqual({ outcome: "skipped", reason: "store-policy" });
+    expect(added).toEqual([]);
+  });
+
+  describe("a fresh copy of an expired download", () => {
+    function withExpired(refresh: "accepts" | "refuses" | "hangs") {
+      const h = harness({ settings: { handoffTimeoutMs: 1_000 } });
+      const refreshed: unknown[] = [];
+      h.deps.expired = {
+        match: async (file) => (file.url.includes("linux.iso") ? "dl_old" : undefined),
+        refreshFromBrowser: async (id, file) => {
+          if (refresh === "refuses") throw new Error("refused");
+          if (refresh === "hangs") return new Promise<void>(() => {});
+          refreshed.push({ id, ...file });
+        },
+      };
+      return { ...h, refreshed };
+    }
+
+    it("continues the expired download and cancels the browser copy", async () => {
+      const { controller, states, added, refreshed } = withExpired("accepts");
+      const release = vi.fn();
+      await expect(controller.onBrowserDownload(item, release)).resolves.toEqual({ outcome: "healed", daemonId: "dl_old" });
+      expect(refreshed).toEqual([
+        {
+          id: "dl_old",
+          url: item.url,
+          originalUrl: item.originalUrl,
+          referrer: item.referrer,
+          filename: item.filename,
+          totalBytes: item.totalBytes,
+        },
+      ]);
+      expect(added).toEqual([]);
+      expect(states.has(item.id)).toBe(false);
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the browser copy when the daemon refuses or is too slow", async () => {
+      for (const mode of ["refuses", "hangs"] as const) {
+        const { controller, states } = withExpired(mode);
+        const release = vi.fn();
+        const result = await controller.onBrowserDownload(item, release);
+        expect(result).toMatchObject({ outcome: "kept", reason: mode === "refuses" ? "error" : "timeout", healing: "dl_old" });
+        expect(states.get(item.id)).toBe("in_progress");
+        expect(release).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it("is not used when the user Alt+clicked for the browser", async () => {
+      const { controller, deps, refreshed } = withExpired("accepts");
+      deps.bypass.arm(900);
+      await expect(controller.onBrowserDownload(item, () => {})).resolves.toEqual({ outcome: "skipped", reason: "bypassed" });
+      expect(refreshed).toEqual([]);
+    });
+  });
 });

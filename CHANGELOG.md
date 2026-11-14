@@ -23,6 +23,17 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 ### Engine
 - Queues and the scheduler: named queues, each running up to its own `maxActive`, kept across restarts; queues started and stopped at local clock times on chosen days (DST, time-zone changes and a sleeping machine handled); speed-limit windows by time of day, also over midnight; after-done actions (sleep or shut down) announced with `event.queue.finished` and run 60 s later unless cancelled. The daemon now advertises the `queues` capability.
 
+### Browser extension
+- Self-healing links: when a captured download's address expires (`needs_refresh`), the extension retries it with fresh cookies, then finds the fresh link on the page it came from (an open tab or a muted background tab), or takes over a new browser download of the same file, and hands it to the daemon with `download.refreshUrl`. When unsure it asks in the popup (badge `!`). Can be turned off.
+- No more lost events after the native port's idle close: the port stays open while handed-over downloads run, and each time it opens the extension lists unfinished downloads to catch up.
+- Options page: capture on/off, private windows, minimum size, file types, excluded sites, Alt+click behaviour (browser / send to Whoosh / nothing), media detection, hover preconnect, self-healing.
+- Store build (`build:store`, `package:store`): never captures, detects, offers or repairs anything on YouTube and similar streaming sites; the GitHub build is unchanged.
+- Privacy policy (`apps/extension/PRIVACY.md`), store listing text, permission justifications and screenshots (`apps/extension/store/`).
+- The e2e suite runs on macOS too, and covers self-healing, catch-up and the options page.
+
+### Native messaging host
+- `--register --browser brave` also writes Chrome's location (macOS: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`), which is where Brave looks; Brave never found the host before. Verified on macOS with Brave 1.99. `--unregister` removes each location once.
+
 ### Internal
 - New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
 

@@ -59,3 +59,38 @@ export class RequestMethodTracker {
     });
   }
 }
+
+/**
+ * The text of download-looking links the user clicked recently, so the
+ * self-healer can recognise the link on the page later. Kept in memory for a
+ * short while only.
+ */
+export class RecentClicks {
+  private readonly clicks = new Map<string, { text: string; at: number }>();
+
+  constructor(
+    private readonly ttlMs = 60_000,
+    private readonly maxEntries = 32,
+  ) {}
+
+  record(url: string, text: string, now: number): void {
+    const key = stripFragment(url);
+    this.clicks.delete(key);
+    this.clicks.set(key, { text, at: now });
+    while (this.clicks.size > this.maxEntries) {
+      const oldest = this.clicks.keys().next().value;
+      if (oldest === undefined) break;
+      this.clicks.delete(oldest);
+    }
+  }
+
+  /** The text of the most recent click on any of `urls`, if still fresh. */
+  textFor(urls: (string | undefined)[], now: number): string | undefined {
+    for (const url of urls) {
+      if (!url) continue;
+      const hit = this.clicks.get(stripFragment(url));
+      if (hit && now - hit.at <= this.ttlMs && hit.text) return hit.text;
+    }
+    return undefined;
+  }
+}

@@ -50,4 +50,16 @@ describe("manifest", () => {
     );
     expect(m.host_permissions).toEqual(["http://*/*", "https://*/*"]);
   });
+
+  it("has an options page in both browsers", () => {
+    for (const target of ["chromium", "firefox"] as const) {
+      expect(manifestFor(target, { version: "1.2.3", store: false }).options_ui).toEqual({ page: "options.html", open_in_tab: true });
+    }
+  });
+
+  it("keeps the content script off blocked sites in store builds only", () => {
+    const store = manifestFor("chromium", { version: "1.2.3", store: true });
+    expect(store.content_scripts[0].exclude_matches).toContain("*://*.youtube.com/*");
+    expect(manifestFor("chromium", { version: "1.2.3", store: false }).content_scripts[0].exclude_matches).toBeUndefined();
+  });
 });

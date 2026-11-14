@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // A stand-in for whoosh-nmhost in end-to-end tests: speaks native messaging on
 // stdio, logs every message, and answers as the control file says:
-//   { "mode": "accept" | "error" | "slow", "delayMs"?: number }
+//   {
+//     "mode": "accept" | "error" | "slow", "delayMs"?: number,
+//     "expire"?: { "<url substring>": <times> }   // accepted downloads whose URL
+//         contains the key report needs_refresh, and again after each
+//         download.refreshUrl, <times> times in all; then "downloading"
+//     "list"?: DownloadSummary[]                  // the answer to download.list
+//     "exitStartedBefore"?: <ms>                  // hosts started earlier exit
+//   }
 
 import { appendFileSync, readFileSync } from "node:fs";
 import { endianness } from "node:os";
@@ -30,6 +37,35 @@ function send(message) {
   process.stdout.write(Buffer.concat([head, body]));
 }
 
+const startedAt = Date.now();
+/** id → { url, left } for downloads that keep expiring. */
+const expiring = new Map();
+
+function event(method, params) {
+  send({ jsonrpc: "2.0", method, params });
+}
+
+function expireLater(id) {
+  const entry = expiring.get(id);
+  if (!entry) return;
+  setTimeout(() => {
+    if (entry.left > 0) {
+      entry.left--;
+      event("event.download.state", { id, state: "needs_refresh", error: { code: "link_expired", message: "expired" } });
+    } else {
+      event("event.download.state", { id, state: "downloading" });
+    }
+  }, 200);
+}
+
+setInterval(() => {
+  const c = control();
+  if (typeof c.exitStartedBefore === "number" && startedAt < c.exitStartedBefore) {
+    log({ exiting: true });
+    process.exit(0);
+  }
+}, 100);
+
 function handle(msg) {
   log({ argv: process.argv.slice(2), msg });
   if (msg.id === undefined) return;
@@ -44,11 +80,25 @@ function handle(msg) {
       if (c.mode === "error") {
         return send({ jsonrpc: "2.0", id: msg.id, error: { code: -32007, message: "the whoosh daemon is not running" } });
       }
-      const accept = () => reply({ id: `dl_e2e_${msg.id}` });
+      const id = `dl_e2e_${msg.id}`;
+      const accept = () => {
+        reply({ id });
+        for (const [needle, times] of Object.entries(c.expire ?? {})) {
+          if (String(msg.params?.url).includes(needle)) {
+            expiring.set(id, { left: times });
+            expireLater(id);
+          }
+        }
+      };
       if (c.mode === "slow") setTimeout(accept, c.delayMs ?? 2000);
       else accept();
       return;
     }
+    case "download.refreshUrl":
+      reply(null);
+      return expireLater(msg.params?.id);
+    case "download.list":
+      return reply(control().list ?? []);
     default:
       return reply(null);
   }

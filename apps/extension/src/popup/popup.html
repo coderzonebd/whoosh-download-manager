@@ -15,6 +15,13 @@
       </header>
       <p id="detail" class="detail"></p>
 
+      <section id="heals-section" class="heals" aria-labelledby="heals-title" hidden>
+        <h2 id="heals-title">Expired links</h2>
+        <ul id="heals"></ul>
+      </section>
+
+      <p id="page-blocked" class="note" hidden></p>
+
       <dl id="counts" class="counts" hidden>
         <div><dt>Active</dt><dd id="active">0</dd></div>
         <div><dt>Queued</dt><dd id="queued">0</dd></div>
@@ -23,7 +30,7 @@
       <div class="toggles">
         <label><input type="checkbox" id="capture" /> Catch browser downloads</label>
         <label id="site-row" hidden><input type="checkbox" id="site" /> Catch downloads on <span id="site-host"></span></label>
-        <p class="hint">Hold <kbd>Alt</kbd> while clicking a link to let the browser download it.</p>
+        <p class="hint" id="alt-hint">Hold <kbd>Alt</kbd> <span id="alt-hint-text">while clicking a link to let the browser download it.</span></p>
       </div>
 
       <section aria-labelledby="media-title">
@@ -33,6 +40,7 @@
       </section>
 
       <p id="last" class="muted"></p>
+      <p class="footer"><button type="button" id="open-options" class="link">Settings</button></p>
     </main>
     <script src="popup.js"></script>
   </body>
