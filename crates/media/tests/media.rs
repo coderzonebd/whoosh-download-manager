@@ -121,7 +121,10 @@ fn log_args(args: &[String]) {
             .append(true)
             .open(path)
     {
-        let _ = writeln!(f, "{}", serde_json::to_string(args).unwrap());
+        // One write per line: fake tools run concurrently (subtitles next
+        // to a download) and append to the same file.
+        let line = format!("{}\n", serde_json::to_string(args).unwrap());
+        let _ = f.write_all(line.as_bytes());
     }
 }
 
@@ -372,7 +375,7 @@ fn tool_runs(log: &Path) -> Vec<Vec<String>> {
     std::fs::read_to_string(log)
         .unwrap_or_default()
         .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
+        .filter_map(|l| serde_json::from_str(l).ok())
         .collect()
 }
 
@@ -633,7 +636,8 @@ async fn probe_errors_and_bad_input() {
         .await
         .unwrap();
     let runs = tool_runs(&r.log);
-    let probe = runs.last().unwrap();
+    // The probe with the cookie (version checks may run alongside).
+    let probe = runs.iter().rfind(|a| a.iter().any(|x| x == "-J")).unwrap();
     let file = probe
         .iter()
         .position(|a| a == "--cookies")
