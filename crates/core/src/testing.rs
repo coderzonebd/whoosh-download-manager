@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use bytes::Bytes;
 use futures::FutureExt;
 use futures::future::BoxFuture;
-use whoosh_proto::{DownloadId, RequestContext};
+use wdm_proto::{DownloadId, RequestContext};
 
 use crate::journal::{Checkpoint, Journal};
 use crate::source::{

@@ -1,4 +1,4 @@
-import type { AddParams } from "@whoosh/api-client";
+import type { AddParams } from "@wdm/api-client";
 import { describe, expect, it, vi } from "vitest";
 
 import { CaptureController, type CaptureDeps } from "../src/background/capture/controller";
@@ -138,7 +138,7 @@ describe("CaptureController", () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it("sends an Alt+click to Whoosh when the setting says so, whatever the rules", async () => {
+  it("sends an Alt+click to WDM when the setting says so, whatever the rules", async () => {
     const { controller, deps, added } = harness({ settings: { captureEnabled: false, fileTypes: ["mp4"] } });
     deps.force = new BypassTracker();
     deps.force.arm(900);

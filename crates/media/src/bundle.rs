@@ -1,7 +1,7 @@
 //! yt-dlp and ffmpeg shipped inside the desktop installers, so video and
 //! audio sites work right after installation.
 //!
-//! **At build time** (`whoosh-media-bundle`, run by the release workflow)
+//! **At build time** (`wdm-media-bundle`, run by the release workflow)
 //! [`fetch`] takes the newest builds for the release target from the same
 //! upstreams, with the same checksum check, as the first-use download
 //! ([`crate::upstream`]): every file is checked against the checksum the
@@ -36,7 +36,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use whoosh_proto::UnixMillis;
+use wdm_proto::UnixMillis;
 
 use crate::fetch::Fetcher;
 use crate::process::{self, Tool};
@@ -448,10 +448,7 @@ async fn pack(dir: &Path, m: &mut Manifest) -> Result<(), String> {
 
 /// A scratch directory for unpacking tars, removed by the caller.
 async fn scratch_dir() -> Result<PathBuf, String> {
-    let d = std::env::temp_dir().join(format!(
-        "whoosh-media-bundle-{}",
-        crate::util::random_hex(6)
-    ));
+    let d = std::env::temp_dir().join(format!("wdm-media-bundle-{}", crate::util::random_hex(6)));
     tokio::fs::create_dir_all(&d)
         .await
         .map_err(|e| format!("{}: {e}", d.display()))?;

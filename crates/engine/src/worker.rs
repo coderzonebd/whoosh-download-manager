@@ -21,7 +21,7 @@ use bytes::BytesMut;
 use futures::StreamExt;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use whoosh_core::{ByteStream, OpenRequest, RangeSource, SourceError, Storage};
+use wdm_core::{ByteStream, OpenRequest, RangeSource, SourceError, Storage};
 
 use crate::limiter::RateLimiter;
 use crate::segment::{Claim, Eof, Segment, WorkerId};

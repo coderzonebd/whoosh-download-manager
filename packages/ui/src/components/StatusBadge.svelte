@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <script lang="ts">
-  import type { DownloadState, MediaStep } from "@whoosh/api-client";
+  import type { DownloadState, MediaStep } from "@wdm/api-client";
   import { getApp } from "../lib/state/app.svelte.ts";
   import { toneFor } from "../lib/tone.ts";
 

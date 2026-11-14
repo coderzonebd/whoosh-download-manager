@@ -1,8 +1,8 @@
-//! `whoosh` end to end, against `whoosh-daemon --mock` started by the CLI itself.
+//! `wdm` end to end, against `wdm-daemon --mock` started by the CLI itself.
 //!
 //! The daemon binary is built from the workspace into the same target
-//! directory, i.e. next to `whoosh`, which is where the CLI looks first; set
-//! `WHOOSH_DAEMON_BIN_FOR_TESTS` to use another build.
+//! directory, i.e. next to `wdm`, which is where the CLI looks first; set
+//! `WDM_DAEMON_BIN_FOR_TESTS` to use another build.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -13,14 +13,14 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-const WHOOSH: &str = env!("CARGO_BIN_EXE_whoosh");
+const WDM: &str = env!("CARGO_BIN_EXE_wdm");
 
-/// Builds `whoosh-daemon` (once per test run) and checks it landed next to
-/// `whoosh`.
+/// Builds `wdm-daemon` (once per test run) and checks it landed next to
+/// `wdm`.
 fn daemon_bin() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
     BIN.get_or_init(|| {
-        if let Some(path) = std::env::var_os("WHOOSH_DAEMON_BIN_FOR_TESTS") {
+        if let Some(path) = std::env::var_os("WDM_DAEMON_BIN_FOR_TESTS") {
             return PathBuf::from(path);
         }
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
@@ -30,27 +30,25 @@ fn daemon_bin() -> &'static Path {
                 "--quiet",
                 "--message-format=json",
                 "-p",
-                "whoosh-daemon",
+                "wdm-daemon",
                 "--bin",
-                "whoosh-daemon",
+                "wdm-daemon",
             ])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .stderr(Stdio::inherit())
             .output()
             .expect("cannot run cargo");
-        assert!(out.status.success(), "building whoosh-daemon failed");
+        assert!(out.status.success(), "building wdm-daemon failed");
         let exe = String::from_utf8_lossy(&out.stdout)
             .lines()
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-            .filter(|m| {
-                m["reason"] == "compiler-artifact" && m["target"]["name"] == "whoosh-daemon"
-            })
+            .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == "wdm-daemon")
             .find_map(|m| m["executable"].as_str().map(PathBuf::from))
-            .expect("no whoosh-daemon executable reported");
+            .expect("no wdm-daemon executable reported");
         assert_eq!(
             exe.parent(),
-            Path::new(WHOOSH).parent(),
-            "whoosh-daemon must sit next to whoosh for auto-start"
+            Path::new(WDM).parent(),
+            "wdm-daemon must sit next to wdm for auto-start"
         );
         exe
     })
@@ -67,7 +65,7 @@ impl World {
         daemon_bin();
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "whoosh-cli-e2e-{name}-{}-{}",
+            "wdm-cli-e2e-{name}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -81,17 +79,17 @@ impl World {
     }
 
     fn cmd(&self, args: &[&str]) -> Command {
-        let mut cmd = Command::new(WHOOSH);
+        let mut cmd = Command::new(WDM);
         cmd.args(args)
-            .env("WHOOSH_DATA_DIR", self.data())
-            .env("WHOOSH_DAEMON_MOCK", "1")
-            .env("WHOOSH_DAEMON_MOCK_SCENARIO", "empty")
-            .env("WHOOSH_DAEMON_PORT", "0")
-            .env_remove("WHOOSH_NO_START")
-            .env_remove("WHOOSH_DAEMON_BIN")
+            .env("WDM_DATA_DIR", self.data())
+            .env("WDM_DAEMON_MOCK", "1")
+            .env("WDM_DAEMON_MOCK_SCENARIO", "empty")
+            .env("WDM_DAEMON_PORT", "0")
+            .env_remove("WDM_NO_START")
+            .env_remove("WDM_DAEMON_BIN")
             .stdin(Stdio::null());
-        if let Some(path) = std::env::var_os("WHOOSH_DAEMON_BIN_FOR_TESTS") {
-            cmd.env("WHOOSH_DAEMON_BIN", path);
+        if let Some(path) = std::env::var_os("WDM_DAEMON_BIN_FOR_TESTS") {
+            cmd.env("WDM_DAEMON_BIN", path);
         }
         cmd
     }
@@ -104,7 +102,7 @@ impl World {
         let mut all = vec!["--json"];
         all.extend_from_slice(args);
         let r = self.run(&all);
-        assert_eq!(r.code, 0, "whoosh {args:?}: {}", r.stderr);
+        assert_eq!(r.code, 0, "wdm {args:?}: {}", r.stderr);
         serde_json::from_str(&r.stdout).unwrap_or_else(|e| panic!("{e}: {}", r.stdout))
     }
 
@@ -114,7 +112,7 @@ impl World {
             .and_then(|b| serde_json::from_slice(&b).ok())
     }
 
-    /// Polls `whoosh info --json` until `pred` holds.
+    /// Polls `wdm info --json` until `pred` holds.
     fn wait_info(&self, id: &str, pred: impl Fn(&Value) -> bool) -> Value {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
@@ -132,10 +130,10 @@ impl Drop for World {
     fn drop(&mut self) {
         let _ = self.run(&["daemon", "stop"]);
         // Safety net for a daemon that did not stop: only ever a process
-        // that really is a whoosh-daemon (runtime files in these tests may
+        // that really is a wdm-daemon (runtime files in these tests may
         // name made-up pids).
         if let Some(pid) = self.runtime().and_then(|r| r["pid"].as_u64())
-            && is_whoosh_daemon(pid)
+            && is_wdm_daemon(pid)
         {
             kill(pid);
         }
@@ -144,9 +142,9 @@ impl Drop for World {
 }
 
 #[cfg(unix)]
-fn is_whoosh_daemon(pid: u64) -> bool {
+fn is_wdm_daemon(pid: u64) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/comm"))
-        .is_ok_and(|comm| comm.trim() == "whoosh-daemon")
+        .is_ok_and(|comm| comm.trim() == "wdm-daemon")
 }
 
 /// The image name of process `pid`, from `tasklist` (in every Windows).
@@ -157,7 +155,7 @@ fn image_name(pid: u64) -> Option<String> {
         .stderr(Stdio::null())
         .output()
         .ok()?;
-    // `"whoosh-daemon.exe","1234","Console","1","10,000 K"`, or an
+    // `"wdm-daemon.exe","1234","Console","1","10,000 K"`, or an
     // "INFO: No tasks ..." line when there is no such process.
     let text = String::from_utf8_lossy(&out.stdout);
     let mut fields = text.trim().split("\",\"");
@@ -166,8 +164,8 @@ fn image_name(pid: u64) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn is_whoosh_daemon(pid: u64) -> bool {
-    image_name(pid).is_some_and(|n| n.eq_ignore_ascii_case("whoosh-daemon.exe"))
+fn is_wdm_daemon(pid: u64) -> bool {
+    image_name(pid).is_some_and(|n| n.eq_ignore_ascii_case("wdm-daemon.exe"))
 }
 
 fn kill(pid: u64) {
@@ -198,7 +196,7 @@ fn run(mut cmd: Command) -> Run {
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
             let _ = child.kill();
-            panic!("whoosh did not finish within 60 s: {cmd:?}");
+            panic!("wdm did not finish within 60 s: {cmd:?}");
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -279,7 +277,7 @@ fn status_and_no_start_never_start_a_daemon() {
     assert_eq!(r.code, 3, "{r:?}");
     assert!(r.stderr.contains("not running"), "{r:?}");
     let mut cmd = w.cmd(&["list"]);
-    cmd.env("WHOOSH_NO_START", "1");
+    cmd.env("WDM_NO_START", "1");
     assert_eq!(run(cmd).code, 3);
     // Stopping a daemon that is not running is not an error.
     assert_eq!(w.run(&["daemon", "stop"]).code, 0);
@@ -291,7 +289,7 @@ fn status_and_no_start_never_start_a_daemon() {
 }
 
 #[test]
-fn any_command_starts_the_daemon_found_next_to_whoosh() {
+fn any_command_starts_the_daemon_found_next_to_wdm() {
     let w = World::new("autostart");
     let r = w.run(&["list"]);
     assert_eq!(r.code, 0, "{r:?}");
@@ -344,24 +342,24 @@ fn concurrent_commands_share_one_daemon() {
     assert!(pid_alive(pid));
 }
 
-/// `whoosh-autostart`, what the logon entry runs: it starts the daemon
+/// `wdm-autostart`, what the logon entry runs: it starts the daemon
 /// found next to it, detached, and exits without waiting.
 #[test]
 fn the_logon_launcher_starts_the_daemon_and_exits() {
     let w = World::new("launcher");
-    let mut launcher = Command::new(env!("CARGO_BIN_EXE_whoosh-autostart"));
+    let mut launcher = Command::new(env!("CARGO_BIN_EXE_wdm-autostart"));
     launcher
         .args(["--data-dir".as_ref(), w.data().as_os_str()])
-        .env("WHOOSH_DAEMON_MOCK", "1")
-        .env("WHOOSH_DAEMON_MOCK_SCENARIO", "empty")
-        .env("WHOOSH_DAEMON_PORT", "0")
-        .env_remove("WHOOSH_DATA_DIR")
-        .env_remove("WHOOSH_DAEMON_BIN")
+        .env("WDM_DAEMON_MOCK", "1")
+        .env("WDM_DAEMON_MOCK_SCENARIO", "empty")
+        .env("WDM_DAEMON_PORT", "0")
+        .env_remove("WDM_DATA_DIR")
+        .env_remove("WDM_DAEMON_BIN")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    if let Some(path) = std::env::var_os("WHOOSH_DAEMON_BIN_FOR_TESTS") {
-        launcher.env("WHOOSH_DAEMON_BIN", path);
+    if let Some(path) = std::env::var_os("WDM_DAEMON_BIN_FOR_TESTS") {
+        launcher.env("WDM_DAEMON_BIN", path);
     }
     let status = launcher.status().unwrap();
     assert!(status.success(), "{status}");
@@ -379,7 +377,7 @@ fn the_logon_launcher_starts_the_daemon_and_exits() {
     assert!(launcher.status().unwrap().success());
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(w.runtime().unwrap()["pid"], pid);
-    let bad = Command::new(env!("CARGO_BIN_EXE_whoosh-autostart"))
+    let bad = Command::new(env!("CARGO_BIN_EXE_wdm-autostart"))
         .arg("--nope")
         .status()
         .unwrap();
@@ -404,7 +402,7 @@ fn daemon_start_stop_status() {
 
     // Extra daemon arguments go after `--`.
     let mut cmd = w.cmd(&["daemon", "start", "--", "--mock-scenario", "demo"]);
-    cmd.env_remove("WHOOSH_DAEMON_MOCK_SCENARIO");
+    cmd.env_remove("WDM_DAEMON_MOCK_SCENARIO");
     assert_eq!(run(cmd).code, 0);
     let list = w.json(&["list"]);
     assert!(list.as_array().unwrap().len() >= 6, "demo data: {list}");
@@ -414,7 +412,7 @@ fn daemon_start_stop_status() {
 fn the_real_engine_starts_without_mock() {
     let w = World::new("engine");
     let mut cmd = w.cmd(&["--json", "list"]);
-    cmd.env_remove("WHOOSH_DAEMON_MOCK");
+    cmd.env_remove("WDM_DAEMON_MOCK");
     let r = run(cmd);
     assert_eq!(r.code, 0, "{r:?}");
     assert_eq!(
@@ -427,7 +425,7 @@ fn the_real_engine_starts_without_mock() {
         "the engine keeps its state in the data dir"
     );
     let mut cmd = w.cmd(&["daemon", "stop"]);
-    cmd.env_remove("WHOOSH_DAEMON_MOCK");
+    cmd.env_remove("WDM_DAEMON_MOCK");
     assert_eq!(run(cmd).code, 0);
 }
 
@@ -435,7 +433,7 @@ fn the_real_engine_starts_without_mock() {
 fn a_daemon_that_cannot_start_is_reported() {
     let w = World::new("nostart-engine");
     let mut cmd = w.cmd(&["list"]);
-    cmd.env("WHOOSH_DAEMON_PORT", "not-a-port");
+    cmd.env("WDM_DAEMON_PORT", "not-a-port");
     let r = run(cmd);
     assert_eq!(r.code, 3, "{r:?}");
     assert!(
@@ -444,7 +442,7 @@ fn a_daemon_that_cannot_start_is_reported() {
     );
 
     let mut cmd = w.cmd(&["list"]);
-    cmd.env("WHOOSH_DAEMON_BIN", w.dir.join("no-such-daemon"));
+    cmd.env("WDM_DAEMON_BIN", w.dir.join("no-such-daemon"));
     let r = run(cmd);
     assert_eq!(r.code, 3, "{r:?}");
     assert!(r.stderr.contains("cannot start"), "{r:?}");
@@ -455,14 +453,14 @@ fn a_daemon_that_cannot_start_is_reported() {
 fn the_xdg_data_dir_is_shared_with_the_daemon() {
     let w = World::new("xdg");
     let mut cmd = w.cmd(&["list"]);
-    cmd.env_remove("WHOOSH_DATA_DIR")
+    cmd.env_remove("WDM_DATA_DIR")
         .env("XDG_DATA_HOME", &w.dir)
         .env("HOME", w.dir.join("home"));
     assert_eq!(run(cmd).code, 0);
-    let rt = w.dir.join("whoosh").join("runtime.json");
-    assert!(rt.exists(), "the daemon used $XDG_DATA_HOME/whoosh");
+    let rt = w.dir.join("wdm").join("runtime.json");
+    assert!(rt.exists(), "the daemon used $XDG_DATA_HOME/wdm");
     let mut cmd = w.cmd(&["daemon", "stop"]);
-    cmd.env_remove("WHOOSH_DATA_DIR")
+    cmd.env_remove("WDM_DATA_DIR")
         .env("XDG_DATA_HOME", &w.dir)
         .env("HOME", w.dir.join("home"));
     assert_eq!(run(cmd).code, 0);
@@ -827,7 +825,7 @@ impl Fake {
                             Some("session.hello") => {
                                 let nonce = msg["params"]["nonce"].as_str().unwrap_or_default();
                                 let proof = match &token {
-                                    Some(t) => whoosh_proto::auth::hello_proof(t, nonce),
+                                    Some(t) => wdm_proto::auth::hello_proof(t, nonce),
                                     None => "0".repeat(64),
                                 };
                                 serde_json::json!({"daemonVersion": "fake", "protocol": 1,
@@ -878,7 +876,7 @@ fn write_runtime(data: &Path, port: u16, token: &str, pid: u32) {
     };
     #[cfg(windows)]
     let mut f = {
-        use whoosh_proto::winacl;
+        use wdm_proto::winacl;
         winacl::create_private_dir(data).unwrap();
         winacl::make_private(data).unwrap();
         let _ = std::fs::remove_file(&path);
@@ -1006,7 +1004,7 @@ fn requests_carry_files_headers_connections_and_queue() {
     );
     let hello = &received[0];
     assert_eq!(hello["method"], "session.hello");
-    assert!(whoosh_proto::auth::is_valid_nonce(
+    assert!(wdm_proto::auth::is_valid_nonce(
         hello["params"]["nonce"].as_str().unwrap()
     ));
     // Not a daemon of ours: nothing for the world to stop when dropped.
@@ -1052,7 +1050,7 @@ fn a_loose_data_dir_is_tightened_and_files_are_private() {
 #[cfg(windows)]
 #[test]
 fn a_loose_data_dir_is_tightened_and_files_are_private() {
-    use whoosh_proto::runtime::{check_private_dir, check_private_file};
+    use wdm_proto::runtime::{check_private_dir, check_private_file};
     let w = World::new("loose");
     let data = w.data();
     std::fs::create_dir_all(&data).unwrap();

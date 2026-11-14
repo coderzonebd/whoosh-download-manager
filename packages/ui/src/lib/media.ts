@@ -3,7 +3,7 @@
 // plain choices (best video at a height, or audio only) and estimates what
 // they will download. The daemon (yt-dlp) makes the final pick.
 
-import type { MediaChoice, MediaFormat } from "@whoosh/api-client";
+import type { MediaChoice, MediaFormat } from "@wdm/api-client";
 
 export type MediaMode = "video" | "audio";
 /** "best", or a height in pixels as a string ("1080"). */
@@ -52,7 +52,7 @@ export interface Estimate {
   bytes?: number;
   /** Some size is yt-dlp's estimate, or unknown. */
   approximate: boolean;
-  /** Whoosh's engine downloads every part (multi-connection, resumable). */
+  /** WDM's engine downloads every part (multi-connection, resumable). */
   direct: boolean;
 }
 

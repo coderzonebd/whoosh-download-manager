@@ -17,9 +17,9 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use whoosh_nmhost::framing::{self, Inbound, MAX_TO_BROWSER};
-use whoosh_nmhost::relay::{self, Config, RelayError};
-use whoosh_proto::ClientInfo;
+use wdm_nmhost::framing::{self, Inbound, MAX_TO_BROWSER};
+use wdm_nmhost::relay::{self, Config, RelayError};
+use wdm_proto::ClientInfo;
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -31,10 +31,8 @@ impl TempDir {
     fn new(tag: &str) -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "whoosh-nmhost-test-{tag}-{}-{n}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wdm-nmhost-test-{tag}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // The host refuses a runtime file in a directory others can write to.
@@ -151,7 +149,7 @@ impl FakeDaemon {
                         "daemonVersion": "9.9.9-fake",
                         "protocol": 1,
                         "capabilities": ["http"],
-                        "proof": whoosh_proto::auth::hello_proof(key, nonce),
+                        "proof": wdm_proto::auth::hello_proof(key, nonce),
                     },
                 });
                 ws.send(Message::text(reply.to_string())).await.unwrap();
@@ -576,7 +574,7 @@ async fn sends_a_fresh_valid_nonce_on_every_connection() {
         .as_str()
         .unwrap()
         .to_owned();
-    assert!(whoosh_proto::auth::is_valid_nonce(&nonce), "{nonce}");
+    assert!(wdm_proto::auth::is_valid_nonce(&nonce), "{nonce}");
 
     browser.close().await.unwrap();
     daemon.stop().await;

@@ -1,5 +1,5 @@
 //! Where the daemon publishes its port and token (PROTOCOL.md §1), shared by
-//! the daemon, the CLI and `whoosh-nmhost` so the three always agree.
+//! the daemon, the CLI and `wdm-nmhost` so the three always agree.
 //!
 //! [`read_runtime`] refuses a file that another user could have written: a
 //! symlink, a file not owned by the current user or readable by anyone else,
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Overrides the data directory. Meant for tests, portable installs and
 /// running a second daemon side by side.
-pub const DATA_DIR_ENV: &str = "WHOOSH_DATA_DIR";
+pub const DATA_DIR_ENV: &str = "WDM_DATA_DIR";
 
 /// The runtime file's name inside the data directory.
 pub const RUNTIME_FILE: &str = "runtime.json";
@@ -64,7 +64,7 @@ pub enum RuntimeError {
 /// the resolution itself is a pure function (and testable for every OS).
 #[derive(Debug, Clone, Default)]
 pub struct Env {
-    pub whoosh_data_dir: Option<PathBuf>,
+    pub wdm_data_dir: Option<PathBuf>,
     pub home: Option<PathBuf>,
     pub xdg_data_home: Option<PathBuf>,
     pub xdg_config_home: Option<PathBuf>,
@@ -79,7 +79,7 @@ impl Env {
                 .map(PathBuf::from)
         };
         Self {
-            whoosh_data_dir: var(DATA_DIR_ENV),
+            wdm_data_dir: var(DATA_DIR_ENV),
             home: var("HOME").or_else(|| var("USERPROFILE")),
             xdg_data_home: var("XDG_DATA_HOME").filter(|p| p.is_absolute()),
             xdg_config_home: var("XDG_CONFIG_HOME").filter(|p| p.is_absolute()),
@@ -108,32 +108,82 @@ impl Os {
     }
 }
 
+/// The data directory's name under the platform's base directory.
+const DIR_NAME: &str = "wdm";
+
+/// Its name before the internal names were renamed to `wdm` (2026-11-14).
+/// [`default_data_dir`] moves a directory of that name to [`DIR_NAME`].
+pub const LEGACY_DIR_NAME: &str = "whoosh";
+
 /// The daemon's data directory:
-/// Linux `$XDG_DATA_HOME/whoosh` (default `~/.local/share/whoosh`),
-/// macOS `~/Library/Application Support/whoosh`, Windows `%LOCALAPPDATA%\whoosh`.
-/// `WHOOSH_DATA_DIR` overrides it everywhere.
+/// Linux `$XDG_DATA_HOME/wdm` (default `~/.local/share/wdm`),
+/// macOS `~/Library/Application Support/wdm`, Windows `%LOCALAPPDATA%\wdm`.
+/// `WDM_DATA_DIR` overrides it everywhere.
 pub fn data_dir(os: Os, env: &Env) -> Result<PathBuf, RuntimeError> {
-    if let Some(dir) = &env.whoosh_data_dir {
+    if let Some(dir) = &env.wdm_data_dir {
         return Ok(dir.clone());
     }
+    named_data_dir(os, env, DIR_NAME)
+}
+
+/// Where [`data_dir`] was before the rename: the same base directory with
+/// [`LEGACY_DIR_NAME`]. `None` when `WDM_DATA_DIR` chooses the directory.
+pub fn legacy_data_dir(os: Os, env: &Env) -> Option<PathBuf> {
+    if env.wdm_data_dir.is_some() {
+        return None;
+    }
+    named_data_dir(os, env, LEGACY_DIR_NAME).ok()
+}
+
+fn named_data_dir(os: Os, env: &Env, name: &str) -> Result<PathBuf, RuntimeError> {
     let home = || env.home.clone().ok_or(RuntimeError::NoBaseDir("HOME"));
     Ok(match os {
         Os::Linux => match &env.xdg_data_home {
-            Some(xdg) => xdg.join("whoosh"),
-            None => home()?.join(".local/share/whoosh"),
+            Some(xdg) => xdg.join(name),
+            None => home()?.join(".local/share").join(name),
         },
-        Os::MacOs => home()?.join("Library/Application Support/whoosh"),
+        Os::MacOs => home()?.join("Library/Application Support").join(name),
         Os::Windows => env
             .local_app_data
             .clone()
             .ok_or(RuntimeError::NoBaseDir("LOCALAPPDATA"))?
-            .join("whoosh"),
+            .join(name),
     })
 }
 
-/// [`data_dir`] for this process's OS and environment.
+/// [`data_dir`] for this process's OS and environment, after moving a data
+/// directory left under the old name there ([`migrate_data_dir`]). The
+/// daemon, the CLI, the native host and the desktop app all resolve it this
+/// way, so whichever runs first after an update moves it, and all of them
+/// agree on the result.
 pub fn default_data_dir() -> Result<PathBuf, RuntimeError> {
-    data_dir(Os::current(), &Env::from_process())
+    let (os, env) = (Os::current(), Env::from_process());
+    let dir = data_dir(os, &env)?;
+    Ok(match legacy_data_dir(os, &env) {
+        Some(legacy) => migrate_data_dir(&dir, &legacy),
+        None => dir,
+    })
+}
+
+/// One-time move of the data directory from its old name: when `legacy`
+/// exists and `dir` does not, renames `legacy` to `dir` (same parent, so a
+/// plain rename: downloads, history, settings, journal and token move as
+/// they are). Returns the directory to use: `dir`, or `legacy` when the
+/// rename failed and `legacy` is still there (on Windows, a daemon of the
+/// old version still running holds files open in it; the next start tries
+/// again). Never copies and never deletes.
+pub fn migrate_data_dir(dir: &Path, legacy: &Path) -> PathBuf {
+    let exists = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+    if exists(dir) || !exists(legacy) {
+        return dir.to_path_buf();
+    }
+    match std::fs::rename(legacy, dir) {
+        Ok(()) => dir.to_path_buf(),
+        // Another process may have moved it at the same moment.
+        Err(_) if exists(dir) => dir.to_path_buf(),
+        Err(_) if exists(legacy) => legacy.to_path_buf(),
+        Err(_) => dir.to_path_buf(),
+    }
 }
 
 pub fn runtime_file(os: Os, env: &Env) -> Result<PathBuf, RuntimeError> {
@@ -319,15 +369,15 @@ mod tests {
     fn data_dir_per_os() {
         assert_eq!(
             data_dir(Os::Linux, &env()).unwrap(),
-            PathBuf::from("/home/u/.local/share/whoosh")
+            PathBuf::from("/home/u/.local/share/wdm")
         );
         assert_eq!(
             data_dir(Os::MacOs, &env()).unwrap(),
-            PathBuf::from("/home/u/Library/Application Support/whoosh")
+            PathBuf::from("/home/u/Library/Application Support/wdm")
         );
         assert_eq!(
             data_dir(Os::Windows, &env()).unwrap(),
-            PathBuf::from(r"C:\Users\u\AppData\Local").join("whoosh")
+            PathBuf::from(r"C:\Users\u\AppData\Local").join("wdm")
         );
     }
 
@@ -339,18 +389,118 @@ mod tests {
         };
         assert_eq!(
             data_dir(Os::Linux, &env).unwrap(),
-            PathBuf::from("/data/whoosh")
+            PathBuf::from("/data/wdm")
         );
     }
 
     #[test]
     fn override_wins_everywhere() {
         let env = Env {
-            whoosh_data_dir: Some("/portable".into()),
+            wdm_data_dir: Some("/portable".into()),
             ..env()
         };
         for os in [Os::Linux, Os::MacOs, Os::Windows] {
             assert_eq!(data_dir(os, &env).unwrap(), PathBuf::from("/portable"));
+        }
+    }
+
+    #[test]
+    fn legacy_data_dir_is_the_old_name_in_the_same_place() {
+        assert_eq!(
+            legacy_data_dir(Os::Linux, &env()),
+            Some(PathBuf::from("/home/u/.local/share/whoosh"))
+        );
+        assert_eq!(
+            legacy_data_dir(Os::MacOs, &env()),
+            Some(PathBuf::from("/home/u/Library/Application Support/whoosh"))
+        );
+        assert_eq!(
+            legacy_data_dir(Os::Windows, &env()),
+            Some(PathBuf::from(r"C:\Users\u\AppData\Local").join("whoosh"))
+        );
+        let xdg = Env {
+            xdg_data_home: Some("/data".into()),
+            ..env()
+        };
+        assert_eq!(
+            legacy_data_dir(Os::Linux, &xdg),
+            Some(PathBuf::from("/data/whoosh"))
+        );
+        // An explicit directory is never migrated.
+        let portable = Env {
+            wdm_data_dir: Some("/portable".into()),
+            ..env()
+        };
+        assert_eq!(legacy_data_dir(Os::Linux, &portable), None);
+    }
+
+    mod migrate {
+        use super::*;
+
+        struct Base(PathBuf);
+        impl Base {
+            fn new(tag: &str) -> Self {
+                let dir = std::env::temp_dir().join(format!(
+                    "wdm-proto-migrate-{tag}-{}-{:?}",
+                    std::process::id(),
+                    std::thread::current().id()
+                ));
+                let _ = std::fs::remove_dir_all(&dir);
+                std::fs::create_dir_all(&dir).unwrap();
+                Self(dir)
+            }
+        }
+        impl Drop for Base {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        #[test]
+        fn moves_the_old_directory_with_everything_in_it() {
+            let base = Base::new("move");
+            let (dir, legacy) = (base.0.join("wdm"), base.0.join("whoosh"));
+            std::fs::create_dir_all(legacy.join("journal")).unwrap();
+            std::fs::write(legacy.join("state.db"), b"db").unwrap();
+            std::fs::write(legacy.join("journal/1"), b"j").unwrap();
+
+            assert_eq!(migrate_data_dir(&dir, &legacy), dir);
+            assert!(!legacy.exists());
+            assert_eq!(std::fs::read(dir.join("state.db")).unwrap(), b"db");
+            assert_eq!(std::fs::read(dir.join("journal/1")).unwrap(), b"j");
+            // Once moved, nothing more happens.
+            assert_eq!(migrate_data_dir(&dir, &legacy), dir);
+        }
+
+        #[test]
+        fn leaves_both_alone_when_the_new_one_exists() {
+            let base = Base::new("both");
+            let (dir, legacy) = (base.0.join("wdm"), base.0.join("whoosh"));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::create_dir_all(&legacy).unwrap();
+            std::fs::write(legacy.join("state.db"), b"old").unwrap();
+
+            assert_eq!(migrate_data_dir(&dir, &legacy), dir);
+            assert!(legacy.join("state.db").exists());
+            assert!(!dir.join("state.db").exists());
+        }
+
+        #[test]
+        fn nothing_to_move_is_the_new_directory() {
+            let base = Base::new("none");
+            let (dir, legacy) = (base.0.join("wdm"), base.0.join("whoosh"));
+            assert_eq!(migrate_data_dir(&dir, &legacy), dir);
+            assert!(!dir.exists() && !legacy.exists());
+        }
+
+        #[test]
+        fn keeps_using_the_old_one_when_it_cannot_be_moved() {
+            let base = Base::new("stuck");
+            // The new name's parent does not exist: the rename fails.
+            let (dir, legacy) = (base.0.join("missing/wdm"), base.0.join("whoosh"));
+            std::fs::create_dir_all(&legacy).unwrap();
+            assert_eq!(migrate_data_dir(&dir, &legacy), legacy);
+            assert!(legacy.exists());
         }
     }
 
@@ -367,7 +517,7 @@ mod tests {
 
     #[test]
     fn missing_runtime_file_is_reported_as_such() {
-        let err = read_runtime(Path::new("/nonexistent/whoosh/runtime.json")).unwrap_err();
+        let err = read_runtime(Path::new("/nonexistent/wdm/runtime.json")).unwrap_err();
         assert!(matches!(err, RuntimeError::Missing(_)), "{err}");
     }
 
@@ -381,7 +531,7 @@ mod tests {
         impl TempDir {
             fn new(tag: &str) -> Self {
                 let dir = std::env::temp_dir().join(format!(
-                    "whoosh-proto-rt-{tag}-{}-{:?}",
+                    "wdm-proto-rt-{tag}-{}-{:?}",
                     std::process::id(),
                     std::thread::current().id()
                 ));
@@ -460,7 +610,7 @@ mod tests {
         impl TempDir {
             fn new(tag: &str) -> Self {
                 let dir = std::env::temp_dir().join(format!(
-                    "whoosh-proto-rt-{tag}-{}-{:?}",
+                    "wdm-proto-rt-{tag}-{}-{:?}",
                     std::process::id(),
                     std::thread::current().id()
                 ));

@@ -1,8 +1,8 @@
 {
-  "name": "@whoosh/extension",
+  "name": "@wdm/extension",
   "version": "0.1.2",
   "private": true,
-  "description": "whoosh browser extension (Pro mode: hands browser downloads to the whoosh daemon)",
+  "description": "wdm browser extension (Pro mode: hands browser downloads to the wdm daemon)",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
@@ -15,7 +15,7 @@
     "test:e2e": "node scripts/build.mjs && vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
-    "@whoosh/api-client": "workspace:*"
+    "@wdm/api-client": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.7",

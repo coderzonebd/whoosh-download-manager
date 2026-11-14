@@ -1,6 +1,6 @@
 # Screen-reader checklist (NVDA, VoiceOver, Orca)
 
-A manual pass for the v1.0 gate (ADR 0007, stream 9). The automated checks (`pnpm --filter @whoosh/ui test:a11y`, axe-core in English and Bangla, light, dark and high contrast) catch missing names, roles and contrast. They cannot tell whether the app makes sense when you listen to it. This list can.
+A manual pass for the v1.0 gate (ADR 0007, stream 9). The automated checks (`pnpm --filter @wdm/ui test:a11y`, axe-core in English and Bangla, light, dark and high contrast) catch missing names, roles and contrast. They cannot tell whether the app makes sense when you listen to it. This list can.
 
 **Status: not yet run.** Nobody has done this pass with a real screen reader. VoiceOver could not be driven from a script on the build machine without changing a system setting ("Allow VoiceOver to be controlled with AppleScript"), so it was left for the owner. Fill in the results table at the end when you run it.
 
@@ -14,7 +14,7 @@ A manual pass for the v1.0 gate (ADR 0007, stream 9). The automated checks (`pnp
 
 Do each task twice: once in **English** and once in **বাংলা** (Settings → Language). In Bangla, check that the voice actually reads Bangla (NVDA: an eSpeak or OneCore Bangla voice; VoiceOver: "Bangla" voice installed; Orca: eSpeak NG `bn`). Numbers in the Bangla UI use Bangla digits; the voice should read them as numbers, not letter by letter.
 
-Start every task from a fresh launch with a few downloads in the list (paste three links from any public mirror, or use the labserver: `cargo run -p whoosh-labserver`, then `http://127.0.0.1:18080/s/global-throttle/1g.bin`, which is slow enough to pause).
+Start every task from a fresh launch with a few downloads in the list (paste three links from any public mirror, or use the labserver: `cargo run -p wdm-labserver`, then `http://127.0.0.1:18080/s/global-throttle/1g.bin`, which is slow enough to pause).
 
 "Hear" below means the gist: exact wording varies by screen reader and verbosity. A task fails if you hear nothing, hear the wrong thing, lose your place, or cannot finish it with the keyboard alone.
 

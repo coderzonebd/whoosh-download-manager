@@ -147,7 +147,7 @@ async function offerVideoDownload(file: string): Promise<{ released: boolean; co
 }
 
 describe("store build (built bundles)", () => {
-  const out = mkdtempSync(join(tmpdir(), "whoosh-policy-"));
+  const out = mkdtempSync(join(tmpdir(), "wdm-policy-"));
   const storeDir = join(out, "store");
   const devDir = join(out, "dev");
 
@@ -163,7 +163,7 @@ describe("store build (built bundles)", () => {
     expect(result).toEqual({ released: true, contactedHost: false });
   });
 
-  it("the GitHub/desktop bundle is unchanged: it offers the same download to Whoosh", async () => {
+  it("the GitHub/desktop bundle is unchanged: it offers the same download to WDM", async () => {
     const result = await offerVideoDownload(join(devDir, "chromium", "background.js"));
     expect(result.contactedHost).toBe(true);
   });
@@ -201,7 +201,7 @@ describe("store build (built bundles)", () => {
       const bg = check(file);
       const reply = await new Promise<{ media?: unknown[] }>((resolve) => {
         bg.listener("runtime.onMessage")(
-          { type: "whoosh/popup-state", tabId: 3, pageUrl: "https://example.org/" },
+          { type: "wdm/popup-state", tabId: 3, pageUrl: "https://example.org/" },
           { id: "test", url: "chrome-extension://test/popup.html" },
           resolve,
         );

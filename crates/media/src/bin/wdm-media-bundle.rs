@@ -1,10 +1,10 @@
 //! Puts yt-dlp and ffmpeg into a directory for the desktop installers
-//! (release workflow only; see `whoosh_media::bundle` and docs/release.md).
+//! (release workflow only; see `wdm_media::bundle` and docs/release.md).
 //!
 //! ```text
-//! whoosh-media-bundle fetch --target <triple> --out <dir>
-//! whoosh-media-bundle rehash <dir>     after signing the programs
-//! whoosh-media-bundle verify <dir>     the copy inside a built app
+//! wdm-media-bundle fetch --target <triple> --out <dir>
+//! wdm-media-bundle rehash <dir>     after signing the programs
+//! wdm-media-bundle verify <dir>     the copy inside a built app
 //! ```
 //!
 //! `fetch` uses the same upstreams and checksum checks as the first-use
@@ -13,10 +13,10 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use whoosh_media::bundle::{self, Manifest};
-use whoosh_media::{NetFetcher, Upstreams};
+use wdm_media::bundle::{self, Manifest};
+use wdm_media::{NetFetcher, Upstreams};
 
-const USAGE: &str = "usage: whoosh-media-bundle fetch --target <triple> --out <dir>\n       whoosh-media-bundle rehash <dir>\n       whoosh-media-bundle verify <dir>";
+const USAGE: &str = "usage: wdm-media-bundle fetch --target <triple> --out <dir>\n       wdm-media-bundle rehash <dir>\n       wdm-media-bundle verify <dir>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -26,7 +26,7 @@ fn main() -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("whoosh-media-bundle: {e}");
+            eprintln!("wdm-media-bundle: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -38,10 +38,10 @@ fn main() -> ExitCode {
     {
         ["fetch", "--target", target, "--out", out]
         | ["fetch", "--out", out, "--target", target] => {
-            let fetcher = NetFetcher::new(whoosh_net::HttpSourceFactory::new(
-                whoosh_net::NetConfig::default(),
+            let fetcher = NetFetcher::new(wdm_net::HttpSourceFactory::new(
+                wdm_net::NetConfig::default(),
             ));
-            let log = |line: &str| eprintln!("whoosh-media-bundle: {line}");
+            let log = |line: &str| eprintln!("wdm-media-bundle: {line}");
             rt.block_on(bundle::fetch(
                 &fetcher,
                 &Upstreams::default(),
@@ -63,7 +63,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("whoosh-media-bundle: {e}");
+            eprintln!("wdm-media-bundle: {e}");
             ExitCode::FAILURE
         }
     }

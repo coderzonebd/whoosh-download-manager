@@ -38,8 +38,8 @@ test("without store IDs: the GitHub build's host only, no offers", () => {
   const files = generate(ids());
   const host = JSON.parse(files.get("installer/linux/host-chromium.json"));
   assert.deepEqual(host.allowed_origins, [`chrome-extension://${GITHUB}/`]);
-  assert.equal(host.path, "/usr/bin/whoosh-nmhost");
-  assert.equal(JSON.parse(files.get("installer/windows/com.coderzonebd.whoosh.chromium.json")).path, "whoosh-nmhost.exe");
+  assert.equal(host.path, "/usr/bin/wdm-nmhost");
+  assert.equal(JSON.parse(files.get("installer/windows/com.coderzonebd.whoosh.chromium.json")).path, "wdm-nmhost.exe");
   assert.ok(![...files.keys()].some((f) => f.includes("offer-")));
   assert.ok(!files.get("installer/windows/browsers.wxs").includes("Extensions"));
   const conf = JSON.parse(files.get("tauri.browsers.conf.json"));

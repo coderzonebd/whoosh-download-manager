@@ -308,7 +308,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn offer_and_withdraw_files_on_macos() {
-        let home = std::env::temp_dir().join(format!("whoosh-offer-{}", std::process::id()));
+        let home = std::env::temp_dir().join(format!("wdm-offer-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let e = Env {
             home: Some(home.clone()),

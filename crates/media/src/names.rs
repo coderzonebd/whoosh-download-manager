@@ -1,9 +1,9 @@
 //! File names for media downloads, by the same rules as every download
-//! (`whoosh_net::sanitize_filename`).
+//! (`wdm_net::sanitize_filename`).
 
 use std::path::{Path, PathBuf};
 
-/// Room left for `.f<format>.<ext>.whoosh-part` and ` (12)`.
+/// Room left for `.f<format>.<ext>.wdm-part` and ` (12)`.
 const MAX_STEM_BYTES: usize = 180;
 
 /// A file name stem from a title or the user's name: path separators
@@ -14,7 +14,7 @@ pub fn stem(name: &str) -> Option<String> {
         .chars()
         .map(|c| if c == '/' || c == '\\' { '-' } else { c })
         .collect();
-    let mut s = whoosh_net::sanitize_filename(&flat)?;
+    let mut s = wdm_net::sanitize_filename(&flat)?;
     if s.len() > MAX_STEM_BYTES {
         let mut cut = MAX_STEM_BYTES;
         while !s.is_char_boundary(cut) {

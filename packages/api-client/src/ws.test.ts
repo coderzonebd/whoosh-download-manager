@@ -6,9 +6,9 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket as ServerSocket } from "ws";
 import { verifyHelloProof } from "./auth";
-import { WhooshConnectionError, WhooshRpcError } from "./errors";
+import { WdmConnectionError, WdmRpcError } from "./errors";
 import { ErrorCode } from "./types";
-import { connectWs, type ConnectionStatus, type WsClientOptions, type WsWhooshClient } from "./ws";
+import { connectWs, type ConnectionStatus, type WsClientOptions, type WsWdmClient } from "./ws";
 
 interface Req {
   jsonrpc: "2.0";
@@ -85,7 +85,7 @@ class FakeDaemon {
 }
 
 let daemon: FakeDaemon;
-let client: WsWhooshClient | undefined;
+let client: WsWdmClient | undefined;
 
 beforeEach(async () => {
   daemon = new FakeDaemon();
@@ -98,7 +98,7 @@ afterEach(async () => {
   await daemon.close();
 });
 
-function connect(extra: Partial<WsClientOptions> = {}): WsWhooshClient {
+function connect(extra: Partial<WsClientOptions> = {}): WsWdmClient {
   client = connectWs({
     url: extra.url ?? daemon.url,
     token: daemon.token,
@@ -156,16 +156,16 @@ describe("WebSocket client", () => {
     expect(b.id).toBe("b");
   });
 
-  it("maps JSON-RPC errors to WhooshRpcError with the daemon's code", async () => {
+  it("maps JSON-RPC errors to WdmRpcError with the daemon's code", async () => {
     daemon.handlers.set("download.resume", () => {
       throw { code: ErrorCode.InvalidState, message: "already complete" };
     });
     const c = connect();
     const err = await c.call("download.resume", { ids: ["x"] }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(WhooshRpcError);
-    expect((err as WhooshRpcError).isInvalidState).toBe(true);
-    expect((err as WhooshRpcError).method).toBe("download.resume");
-    expect((err as WhooshRpcError).message).toBe("already complete");
+    expect(err).toBeInstanceOf(WdmRpcError);
+    expect((err as WdmRpcError).isInvalidState).toBe(true);
+    expect((err as WdmRpcError).method).toBe("download.resume");
+    expect((err as WdmRpcError).message).toBe("already complete");
   });
 
   it("dispatches events to subscribers and stops after unsubscribe", async () => {
@@ -197,8 +197,8 @@ describe("WebSocket client", () => {
     await until(() => daemon.received.some((r) => r.method === "download.probe"));
     daemon.dropAll();
     const err = await inflight.catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(WhooshConnectionError);
-    expect((err as WhooshConnectionError).reason).toBe("connection_lost");
+    expect(err).toBeInstanceOf(WdmConnectionError);
+    expect((err as WdmConnectionError).reason).toBe("connection_lost");
 
     await until(() => c.status.state === "open");
     expect(tokenReads).toBe(2); // re-read on reconnect
@@ -260,7 +260,7 @@ describe("WebSocket client", () => {
     expect(daemon.received.every((r) => r.method === "session.hello")).toBe(true);
     expect(c.status.state).not.toBe("open");
     c.close();
-    await expect(pending).rejects.toBeInstanceOf(WhooshConnectionError);
+    await expect(pending).rejects.toBeInstanceOf(WdmConnectionError);
   });
 
   it("does not act on notifications before the proof is checked", async () => {
@@ -306,7 +306,7 @@ describe("WebSocket client", () => {
     c.close();
     await expect(p).rejects.toMatchObject({ reason: "closed" });
     expect(c.status).toEqual({ state: "closed", reason: "closed" });
-    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(WhooshConnectionError);
+    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(WdmConnectionError);
   });
 
   it("gives up after maxAttempts when the daemon is unreachable", async () => {

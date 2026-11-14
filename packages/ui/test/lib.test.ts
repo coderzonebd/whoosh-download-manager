@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { SegmentInfo } from "@whoosh/api-client";
+import type { SegmentInfo } from "@wdm/api-client";
 import { describe, expect, it } from "vitest";
 import { etaTemplate, interpolate, scaleBytes, splitDuration } from "../src/lib/format.ts";
 import { blockCoverage, estimateSegments } from "../src/lib/segments.ts";

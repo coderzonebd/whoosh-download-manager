@@ -2,7 +2,7 @@
 
 // Content script (every http(s) page and frame):
 //  * Alt+click → tell the background to leave the next download to the browser
-//    (or, per the options, to send it to Whoosh whatever the rules say).
+//    (or, per the options, to send it to WDM whatever the rules say).
 //  * Clicking a download-looking link → its text, for self-healing.
 //  * Hovering a download-looking link for ~150 ms → ask for a preconnect.
 //  * Answer "collect links" for the context menus.
@@ -13,7 +13,7 @@ import { DEFAULT_SETTINGS, normalizeSettings, SETTINGS_KEY, type Settings } from
 import { collectLinks, linkFromTarget } from "./links";
 
 const HOVER_MS = 150;
-const MARK = Symbol.for("whoosh.content");
+const MARK = Symbol.for("wdm.content");
 
 type Api = typeof chrome;
 
@@ -45,15 +45,15 @@ function start(api: Api): void {
     (event) => {
       if (event.button !== 0) return;
       if (event.altKey) {
-        // Alt+click: the browser keeps it, or Whoosh takes it, as set in the options.
-        if (settings.altClick === "browser" && settings.captureEnabled) send({ type: "whoosh/bypass-next" });
-        else if (settings.altClick === "whoosh") send({ type: "whoosh/force-next" });
+        // Alt+click: the browser keeps it, or WDM takes it, as set in the options.
+        if (settings.altClick === "browser" && settings.captureEnabled) send({ type: "wdm/bypass-next" });
+        else if (settings.altClick === "wdm") send({ type: "wdm/force-next" });
       }
       // The link's text lets self-healing find the same link again later.
       const link = linkFromTarget(event.target);
       if (link && looksLikeDownloadLink(link.href, settings.fileTypes, link.hasAttribute("download"))) {
         const text = (link.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-        if (text) send({ type: "whoosh/link-click", url: link.href, text });
+        if (text) send({ type: "wdm/link-click", url: link.href, text });
       }
     },
     { capture: true, passive: true },
@@ -80,7 +80,7 @@ function start(api: Api): void {
       hovered = link;
       timer = setTimeout(() => {
         if (hovered !== link) return;
-        if (throttle.allow(link.href, Date.now())) send({ type: "whoosh/preconnect", url: link.href });
+        if (throttle.allow(link.href, Date.now())) send({ type: "wdm/preconnect", url: link.href });
       }, HOVER_MS);
     },
     { capture: true, passive: true },
@@ -97,7 +97,7 @@ function start(api: Api): void {
 
   api.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     const m = message as Partial<CollectLinksMessage> | null;
-    if (m?.type !== "whoosh/collect-links" || (m.scope !== "all" && m.scope !== "selection")) return false;
+    if (m?.type !== "wdm/collect-links" || (m.scope !== "all" && m.scope !== "selection")) return false;
     const reply: CollectLinksReply = { links: collectLinks(document, m.scope) };
     sendResponse(reply);
     return false;

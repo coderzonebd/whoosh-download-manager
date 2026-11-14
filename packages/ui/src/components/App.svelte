@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  The whole download manager UI. Hand it any WhooshClient (mock, WebSocket,
+  The whole download manager UI. Hand it any WdmClient (mock, WebSocket,
   native messaging) and it runs. Hosts (desktop, extension, mobile, web
   remote) only decide which client to pass and where to mount it.
 -->
 <script lang="ts">
-  import type { WhooshClient } from "@whoosh/api-client";
+  import type { WdmClient } from "@wdm/api-client";
   import { onDestroy, untrack } from "svelte";
   import { AppState, provideApp, type AppOptions } from "../lib/state/app.svelte.ts";
   import type { Host } from "../lib/host.ts";
@@ -33,7 +33,7 @@
   import Toolbar from "./Toolbar.svelte";
 
   interface Props {
-    client: WhooshClient;
+    client: WdmClient;
     /** "mock" shows "Demo data" in the status bar. */
     mode?: "mock" | "live";
     /** Where device preferences persist (default localStorage; null = nowhere). */

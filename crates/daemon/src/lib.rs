@@ -1,16 +1,16 @@
-//! `whoosh-daemon`: serves the local API (`docs/api/PROTOCOL.md`) for any
-//! [`Service`](whoosh_proto::service::Service).
+//! `wdm-daemon`: serves the local API (`docs/api/PROTOCOL.md`) for any
+//! [`Service`](wdm_proto::service::Service).
 //!
 //! ```no_run
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! use std::sync::Arc;
-//! use whoosh_daemon::{DaemonConfig, mock::{MockOptions, MockService}};
+//! use wdm_daemon::{DaemonConfig, mock::{MockOptions, MockService}};
 //!
 //! let service = MockService::new(MockOptions::default());
-//! let config = DaemonConfig::new(whoosh_daemon::paths::default_data_dir()?);
-//! let daemon = whoosh_daemon::serve(service, config).await?;
+//! let config = DaemonConfig::new(wdm_daemon::paths::default_data_dir()?);
+//! let daemon = wdm_daemon::serve(service, config).await?;
 //! tokio::select! {
-//!     _ = whoosh_daemon::shutdown_signal() => {}
+//!     _ = wdm_daemon::shutdown_signal() => {}
 //!     _ = daemon.stop_requested() => {} // a client called daemon.shutdown
 //! }
 //! daemon.shutdown().await;
@@ -32,6 +32,7 @@ pub mod client;
 pub mod config;
 mod limit;
 pub mod logging;
+pub mod migrate;
 pub mod mock;
 pub mod outbox;
 pub mod paths;
@@ -52,7 +53,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug, thiserror::Error)]
 pub enum ServeError {
     #[error("{} (pid {}, port {})",
-        "another whoosh-daemon is already running for this data directory",
+        "another wdm-daemon is already running for this data directory",
         .pid.map_or("unknown".into(), |p| p.to_string()),
         .port.map_or("unknown".into(), |p| p.to_string()))]
     AlreadyRunning { pid: Option<u32>, port: Option<u16> },

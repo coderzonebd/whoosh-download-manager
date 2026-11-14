@@ -1,7 +1,7 @@
 //! Finding, starting and stopping the daemon.
 //!
 //! A client that needs the daemon calls [`ensure`]: it reads `runtime.json`
-//! and says hello; if nothing answers, it starts `whoosh-daemon` detached
+//! and says hello; if nothing answers, it starts `wdm-daemon` detached
 //! (the CLI finds it with [`daemon_exe`]; the desktop app passes its bundled
 //! copy) and waits for it to answer.
 
@@ -10,14 +10,14 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use whoosh_proto::ClientInfo;
+use wdm_proto::ClientInfo;
 
 use crate::client::{Client, ConnectError};
 use crate::error::{ClientError, Result};
 use crate::runtime::{self, Lookup, RuntimeInfo};
 
-pub const DAEMON_BIN_ENV: &str = "WHOOSH_DAEMON_BIN";
-/// `whoosh-daemon`'s exit code when another daemon owns the data directory.
+pub const DAEMON_BIN_ENV: &str = "WDM_DAEMON_BIN";
+/// `wdm-daemon`'s exit code when another daemon owns the data directory.
 const DAEMON_EXIT_ALREADY_RUNNING: i32 = 3;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const START_TIMEOUT: Duration = Duration::from_secs(20);
@@ -118,20 +118,20 @@ pub async fn ensure_with_args(
     };
     if !autostart {
         return Err(ClientError::DaemonUnavailable(format!(
-            "the whoosh daemon is not running ({why}); start it with `whoosh daemon start`"
+            "the wdm daemon is not running ({why}); start it with `wdm daemon start`"
         )));
     }
     let child = spawn_detached(data_dir, exe, extra_args)?;
     wait_until_up(data_dir, child, who).await
 }
 
-/// The `whoosh-daemon` executable a client finds on its own:
-/// `$WHOOSH_DAEMON_BIN`, else next to the running executable, else `PATH`.
+/// The `wdm-daemon` executable a client finds on its own:
+/// `$WDM_DAEMON_BIN`, else next to the running executable, else `PATH`.
 pub fn daemon_exe() -> PathBuf {
     if let Some(path) = std::env::var_os(DAEMON_BIN_ENV).filter(|p| !p.is_empty()) {
         return PathBuf::from(path);
     }
-    let name = format!("whoosh-daemon{}", std::env::consts::EXE_SUFFIX);
+    let name = format!("wdm-daemon{}", std::env::consts::EXE_SUFFIX);
     if let Ok(exe) = std::env::current_exe() {
         let sibling = exe.with_file_name(&name);
         if sibling.is_file() {
@@ -178,7 +178,7 @@ pub fn spawn_detached(data_dir: &Path, exe: &Path, extra_args: &[String]) -> Res
     }
     cmd.spawn().map_err(|e| {
         ClientError::DaemonUnavailable(format!(
-            "cannot start {}: {e} (put whoosh-daemon next to this program or on PATH, \
+            "cannot start {}: {e} (put wdm-daemon next to this program or on PATH, \
              or set {DAEMON_BIN_ENV})",
             exe.display()
         ))
@@ -232,7 +232,7 @@ fn private_log(path: &Path) -> std::io::Result<std::fs::File> {
     }
     #[cfg(windows)]
     {
-        use whoosh_proto::winacl;
+        use wdm_proto::winacl;
         if winacl::access(path)?.is_loose() {
             winacl::make_private(path)?;
         }
@@ -242,7 +242,7 @@ fn private_log(path: &Path) -> std::io::Result<std::fs::File> {
 
 fn create_private_dirs(dir: &Path) -> Result<()> {
     #[cfg(windows)]
-    let created = whoosh_proto::winacl::create_private_dir(dir);
+    let created = wdm_proto::winacl::create_private_dir(dir);
     #[cfg(not(windows))]
     let created = {
         let mut builder = std::fs::DirBuilder::new();
@@ -280,7 +280,7 @@ pub async fn wait_until_up(
                 let detail = std::fs::read_to_string(start_log(data_dir)).unwrap_or_default();
                 let detail = detail.trim();
                 return Err(ClientError::DaemonUnavailable(format!(
-                    "whoosh-daemon exited ({status}){}{}",
+                    "wdm-daemon exited ({status}){}{}",
                     if detail.is_empty() { "" } else { ": " },
                     detail
                 )));
@@ -288,7 +288,7 @@ pub async fn wait_until_up(
         }
         if Instant::now() > deadline {
             return Err(ClientError::DaemonUnavailable(format!(
-                "whoosh-daemon did not come up within {}s; see {}",
+                "wdm-daemon did not come up within {}s; see {}",
                 START_TIMEOUT.as_secs(),
                 data_dir.join("logs").display()
             )));
@@ -312,7 +312,7 @@ fn poll_delay(waited: Duration) -> Duration {
 pub async fn stop(connected: Connected, data_dir: &Path) -> Result<()> {
     let Connected { client, info } = connected;
     client
-        .call_value(whoosh_proto::method::DAEMON_SHUTDOWN, Value::Null)
+        .call_value(wdm_proto::method::DAEMON_SHUTDOWN, Value::Null)
         .await?;
     client.close().await;
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -326,7 +326,7 @@ pub async fn stop(connected: Connected, data_dir: &Path) -> Result<()> {
         }
         if Instant::now() > deadline {
             return Err(ClientError::Other(format!(
-                "whoosh-daemon (pid {}) did not stop within 30 s",
+                "wdm-daemon (pid {}) did not stop within 30 s",
                 info.pid
             )));
         }

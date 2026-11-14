@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "دع المتصفح ينزّله"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "أرسله إلى Whoosh Download Manager بغض النظر عن القواعد أعلاه"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "اضغط مع الاستمرار على $KEY$ أثناء النقر على رابط لإرساله إلى Whoosh Download Manager بغض النظر عن القواعد.",
     "placeholders": {
       "key": {

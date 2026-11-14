@@ -1,6 +1,6 @@
 # Chrome Web Store listing
 
-Upload `dist/whoosh-chromium-<version>-store.zip` from `pnpm --filter @whoosh/extension package:store`. Never upload the development build: it carries the development `key`.
+Upload `dist/wdm-chromium-<version>-store.zip` from `pnpm --filter @wdm/extension package:store`. Never upload the development build: it carries the development `key`.
 
 ## Item details
 
@@ -45,4 +45,4 @@ Copy from [`permissions.md`](permissions.md): single purpose, one justification 
 ## Distribution
 
 - Visibility: public. Regions: all.
-- The store assigns the extension ID on first upload. Wave 4 (release engineering) adds that ID to `whoosh-nmhost --register` and the installers, next to the development ID.
+- The store assigns the extension ID on first upload. Wave 4 (release engineering) adds that ID to `wdm-nmhost --register` and the installers, next to the development ID.

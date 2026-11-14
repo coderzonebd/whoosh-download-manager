@@ -9,7 +9,7 @@ import { afterAll, describe, expect, it } from "vitest";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { buildExtension } from "../scripts/build.mjs";
 
-const out = mkdtempSync(join(tmpdir(), "whoosh-store-build-"));
+const out = mkdtempSync(join(tmpdir(), "wdm-store-build-"));
 afterAll(() => rmSync(out, { recursive: true, force: true }));
 
 describe("store build", () => {

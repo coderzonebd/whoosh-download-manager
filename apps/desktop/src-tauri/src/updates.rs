@@ -63,7 +63,7 @@ async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<Option<UpdateInfo>, Str
         .await
         .map_err(|e| e.to_string());
     if let Err(err) = prefs::update(app, |p| p.last_update_check = now()) {
-        eprintln!("whoosh-desktop: could not save desktop.json: {err}");
+        eprintln!("wdm-desktop: could not save desktop.json: {err}");
     }
     let found = found?;
     let info = found.as_ref().map(|u| UpdateInfo {
@@ -131,7 +131,7 @@ pub fn start_daily_check<R: Runtime>(app: AppHandle<R>) {
                         announced = info.version;
                     }
                     Ok(_) => {}
-                    Err(err) => eprintln!("whoosh-desktop: update check: {err}"),
+                    Err(err) => eprintln!("wdm-desktop: update check: {err}"),
                 }
             }
             std::thread::sleep(TICK);

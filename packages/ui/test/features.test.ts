@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Queues, the scheduler, history and the desktop extras, driven through the
 // whole shell on the mock daemon.
-import type { WhooshClient } from "@whoosh/api-client";
-import { createMockClient, type MockWhooshClient } from "@whoosh/api-client/mock";
+import type { WdmClient } from "@wdm/api-client";
+import { createMockClient, type MockWdmClient } from "@wdm/api-client/mock";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 /** Records every call so tests can assert what reached the daemon. */
-function spy<C extends WhooshClient>(client: C): C & { log: { method: string; params: unknown }[] } {
+function spy<C extends WdmClient>(client: C): C & { log: { method: string; params: unknown }[] } {
   const log: { method: string; params: unknown }[] = [];
   const call = client.call.bind(client) as (m: string, p: unknown) => Promise<unknown>;
   return Object.assign(Object.create(client) as C, {
@@ -37,8 +37,8 @@ function spy<C extends WhooshClient>(client: C): C & { log: { method: string; pa
   });
 }
 
-async function setup(opts: { client?: WhooshClient; host?: Host; locale?: string } = {}) {
-  const mock: MockWhooshClient = createMockClient({ autoTick: false });
+async function setup(opts: { client?: WdmClient; host?: Host; locale?: string } = {}) {
+  const mock: MockWdmClient = createMockClient({ autoTick: false });
   const client = spy(opts.client ?? mock);
   closeClient = () => client.close();
   let app: AppState | undefined;

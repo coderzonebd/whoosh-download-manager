@@ -6,7 +6,7 @@
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::time::{Duration, Instant};
-use whoosh_labserver::{LabConfig, LabServer, ScenarioStats};
+use wdm_labserver::{LabConfig, LabServer, ScenarioStats};
 
 /// One file a scenario serves.
 #[derive(Debug, Clone, Deserialize)]

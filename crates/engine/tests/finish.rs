@@ -17,11 +17,11 @@ use std::time::Duration;
 use bytes::Bytes;
 use common::*;
 use sha2::{Digest, Sha256};
-use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
-use whoosh_core::{Checkpoint, Finishing, StorageProvider};
-use whoosh_engine::{Engine, EngineConfig, EngineDeps, Tuning};
-use whoosh_proto::service::Service;
-use whoosh_proto::{AddParams, Checksum, DownloadState, Durability};
+use wdm_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
+use wdm_core::{Checkpoint, Finishing, StorageProvider};
+use wdm_engine::{Engine, EngineConfig, EngineDeps, Tuning};
+use wdm_proto::service::Service;
+use wdm_proto::{AddParams, Checksum, DownloadState, Durability};
 
 const LONG: Duration = Duration::from_secs(600);
 
@@ -314,12 +314,12 @@ fn a_record_that_says_completed_needs_no_journal() {
     drop(rt);
     // The journal entry is still there (killed before its removal).
     let len = w.data.len() as u64;
-    let stale = whoosh_core::Checkpoint {
-        meta: whoosh_core::RemoteMeta {
+    let stale = wdm_core::Checkpoint {
+        meta: wdm_core::RemoteMeta {
             size: Some(len),
-            ..whoosh_core::RemoteMeta::default()
+            ..wdm_core::RemoteMeta::default()
         },
-        done: whoosh_core::RangeSet::from_ranges(whoosh_core::ByteRange::new(0, len)),
+        done: wdm_core::RangeSet::from_ranges(wdm_core::ByteRange::new(0, len)),
         finishing: None,
     };
     let opens = w.src.opens();
@@ -346,7 +346,7 @@ fn the_intent_is_the_checkpoint_field() {
         .unwrap();
     assert_eq!(
         cp.finishing,
-        Some(whoosh_core::Finishing {
+        Some(wdm_core::Finishing {
             name: "data.bin".into(),
             len: w.data.len() as u64,
         })
@@ -373,18 +373,18 @@ fn an_interim_marker_journal_is_still_recognised() {
         let mut p = add_params(URL);
         p.start = false;
         let id = engine.add(p).await.unwrap().id;
-        let legacy = whoosh_core::Checkpoint {
-            meta: whoosh_core::RemoteMeta {
+        let legacy = wdm_core::Checkpoint {
+            meta: wdm_core::RemoteMeta {
                 size: Some(len),
                 final_url: Some("whoosh-finishing:data.bin".into()),
-                ..whoosh_core::RemoteMeta::default()
+                ..wdm_core::RemoteMeta::default()
             },
-            done: whoosh_core::RangeSet::from_ranges(whoosh_core::ByteRange::new(0, len)),
+            done: wdm_core::RangeSet::from_ranges(wdm_core::ByteRange::new(0, len)),
             finishing: None,
         };
         w.deps.journal.commit(&id, &legacy).await.unwrap();
         engine
-            .resume(whoosh_proto::IdsParams {
+            .resume(wdm_proto::IdsParams {
                 ids: vec![id.clone()],
             })
             .await
@@ -505,7 +505,7 @@ async fn journal_until(w: &World, id: &str, f: impl Fn(&Checkpoint) -> bool) -> 
 /// file of the download's length holds its name.
 fn plant_same_length(w: &World, seed: u64) -> Bytes {
     runtime()
-        .block_on(w.fs.remove(&final_path("data.bin.whoosh-part")))
+        .block_on(w.fs.remove(&final_path("data.bin.wdm-part")))
         .unwrap();
     let foreign = content(w.data.len() as u64, seed);
     w.fs.put_finished(&final_path("data.bin"), foreign.clone());

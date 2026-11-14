@@ -6,16 +6,16 @@
 // or heals anything on these sites. The GitHub / desktop build (`build`) is
 // unchanged: there the list is not applied at all.
 //
-// `scripts/build.mjs --store` replaces `__WHOOSH_STORE__` with `true`; every
+// `scripts/build.mjs --store` replaces `__WDM_STORE__` with `true`; every
 // other build with `false` (test/policy.test.ts checks both bundles).
 
 import storeList from "./store-blocklist.json";
 import { hostMatches, hostOf } from "./url";
 
-declare const __WHOOSH_STORE__: boolean | undefined;
+declare const __WDM_STORE__: boolean | undefined;
 
 /** True in the store build only. */
-export const STORE_BUILD: boolean = typeof __WHOOSH_STORE__ === "boolean" ? __WHOOSH_STORE__ : false;
+export const STORE_BUILD: boolean = typeof __WDM_STORE__ === "boolean" ? __WDM_STORE__ : false;
 
 /**
  * Sites the store build stays away from: video platforms whose terms forbid

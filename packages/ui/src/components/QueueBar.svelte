@@ -4,7 +4,7 @@
   schedule in words, and what you can do with it.
 -->
 <script lang="ts">
-  import { MAIN_QUEUE } from "@whoosh/api-client";
+  import { MAIN_QUEUE } from "@wdm/api-client";
   import { scheduleSummary } from "../lib/schedule.ts";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Icon from "./Icon.svelte";

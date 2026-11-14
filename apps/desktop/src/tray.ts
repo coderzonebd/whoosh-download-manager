@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Mirrors the daemon's total speed into the tray icon's tooltip. (Linux app
 // indicators do not show tooltips; see the README.)
-import type { WhooshClient } from "@whoosh/api-client";
+import type { WdmClient } from "@wdm/api-client";
 
 function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 /** `tooltip(bps, active)`: "WDM — ↓ 12.5 MB/s · 3 active", in the UI's language. */
-export function startTrayUpdates(client: WhooshClient, tooltip: (bps: number, active: number) => string): () => void {
+export function startTrayUpdates(client: WdmClient, tooltip: (bps: number, active: number) => string): () => void {
   if (!inTauri()) return () => {};
   let last = "";
   let invoke: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;

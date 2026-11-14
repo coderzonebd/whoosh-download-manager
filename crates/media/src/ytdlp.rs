@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use whoosh_proto::RequestContext;
+use wdm_proto::RequestContext;
 
 use crate::process::{self, Tool};
 use crate::util::{random_hex, with_suffix};
@@ -25,8 +25,8 @@ pub struct Dirs {
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_JSON: usize = 64 << 20;
-pub const PROGRESS_MARK: &str = "WHOOSHP";
-pub const FILE_MARK: &str = "WHOOSHF";
+pub const PROGRESS_MARK: &str = "WDMP";
+pub const FILE_MARK: &str = "WDMF";
 
 fn os(s: impl Into<OsString>) -> OsString {
     s.into()
@@ -318,7 +318,7 @@ pub fn fallback_args(dirs: &Dirs, run: &FallbackRun<'_>) -> Vec<OsString> {
     args
 }
 
-/// Parses `WHOOSHP <downloaded> <total> <estimate> <speed>` (yt-dlp prints
+/// Parses `WDMP <downloaded> <total> <estimate> <speed>` (yt-dlp prints
 /// `NA` for unknown fields and floats for some).
 pub fn parse_progress(line: &str) -> Option<(u64, Option<u64>, u64)> {
     let rest = line.trim().strip_prefix(PROGRESS_MARK)?;
@@ -475,7 +475,7 @@ pub fn subtitle_files(dir: &Path, stem: &str, langs: &[String]) -> Vec<PathBuf> 
 
 /// Path of a temporary output next to `final_path`.
 pub fn temp_output(final_path: &Path) -> PathBuf {
-    with_suffix(final_path, ".whoosh-tmp")
+    with_suffix(final_path, ".wdm-tmp")
 }
 
 #[cfg(test)]
@@ -485,14 +485,14 @@ mod tests {
     #[test]
     fn progress_lines_parse() {
         assert_eq!(
-            parse_progress("WHOOSHP 100 1000 NA 50.5"),
+            parse_progress("WDMP 100 1000 NA 50.5"),
             Some((100, Some(1000), 50))
         );
         assert_eq!(
-            parse_progress("WHOOSHP 100 NA 2000.0 NA"),
+            parse_progress("WDMP 100 NA 2000.0 NA"),
             Some((100, Some(2000), 0))
         );
-        assert_eq!(parse_progress("WHOOSHP NA NA NA NA"), None);
+        assert_eq!(parse_progress("WDMP NA NA NA NA"), None);
         assert_eq!(parse_progress("[download] 5%"), None);
     }
 

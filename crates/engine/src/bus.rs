@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
 
 use futures::Stream;
-use whoosh_proto::service::Notification;
-use whoosh_proto::{ProgressEvent, ProgressItem};
+use wdm_proto::service::Notification;
+use wdm_proto::{ProgressEvent, ProgressItem};
 
 /// Pending events after which lossy ones are coalesced.
 const COALESCE_AT: usize = 8;
@@ -155,7 +155,7 @@ impl Drop for Subscription {
 mod tests {
     use super::*;
     use futures::StreamExt;
-    use whoosh_proto::{DownloadState, StateEvent, Stats};
+    use wdm_proto::{DownloadState, StateEvent, Stats};
 
     fn state(i: u32) -> Notification {
         Notification::DownloadState(StateEvent {

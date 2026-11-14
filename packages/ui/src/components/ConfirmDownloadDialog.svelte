@@ -13,9 +13,9 @@
   Several waiting downloads are asked about one at a time, oldest first.
 -->
 <script lang="ts">
-  import { MAIN_QUEUE, type ConfirmParams } from "@whoosh/api-client";
+  import { MAIN_QUEUE, type ConfirmParams } from "@wdm/api-client";
   import { untrack } from "svelte";
-  import { CATEGORIES, categoryForFilename, isCategory, type Category } from "@whoosh/api-client/categories";
+  import { CATEGORIES, categoryForFilename, isCategory, type Category } from "@wdm/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
   import { queueOf, type Download } from "../lib/state/downloads.svelte.ts";
   import Dialog from "./Dialog.svelte";

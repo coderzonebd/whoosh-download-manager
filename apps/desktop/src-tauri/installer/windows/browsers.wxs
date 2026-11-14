@@ -6,15 +6,15 @@
      with Handlebars and compiles it in its own output directory. -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
-    <ComponentGroup Id="WhooshBrowserIntegration" Directory="INSTALLDIR">
-      <Component Id="WhooshHostRegistry" Guid="8EA710A1-5F51-52F0-A4A0-41045D421F83">
+    <ComponentGroup Id="WdmBrowserIntegration" Directory="INSTALLDIR">
+      <Component Id="WdmHostRegistry" Guid="8EA710A1-5F51-52F0-A4A0-41045D421F83">
         <RegistryValue Root="HKLM" Key="Software\Google\Chrome\NativeMessagingHosts\com.coderzonebd.whoosh" Type="string" Value="[INSTALLDIR]com.coderzonebd.whoosh.chromium.json" KeyPath="yes" />
         <RegistryValue Root="HKLM" Key="Software\Chromium\NativeMessagingHosts\com.coderzonebd.whoosh" Type="string" Value="[INSTALLDIR]com.coderzonebd.whoosh.chromium.json" />
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Edge\NativeMessagingHosts\com.coderzonebd.whoosh" Type="string" Value="[INSTALLDIR]com.coderzonebd.whoosh.chromium.json" />
         <RegistryValue Root="HKLM" Key="Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.coderzonebd.whoosh" Type="string" Value="[INSTALLDIR]com.coderzonebd.whoosh.chromium.json" />
         <RegistryValue Root="HKLM" Key="Software\Mozilla\NativeMessagingHosts\com.coderzonebd.whoosh" Type="string" Value="[INSTALLDIR]com.coderzonebd.whoosh.firefox.json" />
       </Component>
-      <Component Id="WhooshStoreOffer0" Guid="5963E2FE-258F-585B-A42F-A11E6CC340D2">
+      <Component Id="WdmStoreOffer0" Guid="5963E2FE-258F-585B-A42F-A11E6CC340D2">
         <RegistryValue Root="HKLM" Key="Software\Wow6432Node\Microsoft\Edge\Extensions\lbcnfampnnfcbfacehkdjlggmbigpbdh" Name="update_url" Type="string" Value="https://edge.microsoft.com/extensionwebstorebase/v1/crx" KeyPath="yes" />
       </Component>
     </ComponentGroup>

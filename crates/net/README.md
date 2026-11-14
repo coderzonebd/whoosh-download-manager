@@ -1,8 +1,8 @@
-# whoosh-net
+# wdm-net
 
 The engine's network layer. `HttpSourceFactory` implements
-`whoosh_core::SourceFactory` for `http` and `https`; the `HttpSource`s it makes
-implement `whoosh_core::RangeSource` over HTTP/1.1, HTTP/2 and HTTP/3. It
+`wdm_core::SourceFactory` for `http` and `https`; the `HttpSource`s it makes
+implement `wdm_core::RangeSource` over HTTP/1.1, HTTP/2 and HTTP/3. It
 performs requests and reports precisely what happened; retries, connection
 counts and hedging belong to the engine (ADR 0005).
 
@@ -10,8 +10,8 @@ counts and hedging belong to the engine (ADR 0005).
 
 ```rust
 use futures::StreamExt;
-use whoosh_core::{ByteRange, OpenRequest, SourceFactory};
-use whoosh_net::{HttpSourceFactory, NetConfig};
+use wdm_core::{ByteRange, OpenRequest, SourceFactory};
+use wdm_net::{HttpSourceFactory, NetConfig};
 
 let factory = HttpSourceFactory::new(NetConfig::default()); // one per process
 factory.preconnect("https://example.com/big.iso").await;    // optional, on hover
@@ -35,7 +35,7 @@ also useful for the engine's URL-path fallback name).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `user_agent` | `whoosh/<version>` | Sent when the `RequestContext` has no `User-Agent` |
+| `user_agent` | `wdm/<version>` | Sent when the `RequestContext` has no `User-Agent` |
 | `connect_timeout` | 10 s | Per connection attempt (one address: TCP + TLS, or QUIC) |
 | `happy_eyeballs_delay` | 250 ms | RFC 8305 Connection Attempt Delay |
 | `idle_timeout` | 60 s | Backstop: no response head, or no body bytes, for this long → `Transient`. Keep ≥ 30 s; stall detection is the engine's |
@@ -50,7 +50,7 @@ also useful for the engine's URL-path fallback name).
 | `extra_root_certs` | none | Extra trusted roots (DER), e.g. `lab.cert_der()` |
 | `platform_roots` | true | Trust the OS store (tests set false) |
 
-**User-Agent.** The default is an honest product token, `whoosh/<version>`
+**User-Agent.** The default is an honest product token, `wdm/<version>`
 (as `curl/8.x`, `Wget/1.x`, `aria2/1.x` do). Downloads handed over by the
 browser extension carry the browser's own `User-Agent` in the
 `RequestContext`, and that is what gets sent, so sites that gate or vary
@@ -64,7 +64,7 @@ Crypto is rustls with `ring` (no C toolchain), the same as labserver.
 
 ## How it works
 
-**Contract** (`whoosh_core::RangeSource` points 1–6; each has tests):
+**Contract** (`wdm_core::RangeSource` points 1–6; each has tests):
 
 1. *Concurrency.* Each `open` is its own request. HTTP/1.1: one connection
    per request in flight, kept alive and reused (LIFO, most recently used
@@ -128,7 +128,7 @@ violation closes the QUIC connection with `H3_EXCESSIVE_LOAD` and the
 request fails with `Fatal` (the server is broken or hostile; retrying will
 not help).
 
-**Requests.** Built from `whoosh_proto::RequestContext`: method (default
+**Requests.** Built from `wdm_proto::RequestContext`: method (default
 GET), headers, `cookie`, `referer`, `user_agent` (the explicit fields win
 over the header list), `bodyBase64`. Dropped: hop-by-hop headers (including
 those listed in `Connection`), `Host`, `Content-Length`, `Expect`, `Range`,
@@ -186,7 +186,7 @@ byte arrives after ~0.50 s instead of ~1.01 s, on all four transports.
 ## Testing
 
 ```bash
-scripts/cargo-slot.sh cargo test -p whoosh-net
+scripts/cargo-slot.sh cargo test -p wdm-net
 ```
 
 About 210 tests, ~20–60 s on the development laptop (debug build, load
@@ -237,7 +237,7 @@ concurrent copies of the whole suite pass at load average 54–65.
 ## Benchmarking
 
 ```bash
-cargo run --release -p whoosh-net --example throughput -- --compare
+cargo run --release -p wdm-net --example throughput -- --compare
 ```
 
 `tools/daemon-ab.sh` and `tools/ab-summary.py` measure the whole daemon
@@ -289,7 +289,7 @@ Run-to-run variation on this loaded machine is large (the same row moved
 by 2× between sessions), so single-connection HTTP/1.1 was also compared
 with wget and curl in back-to-back rounds (GB/s @ CPU s/GB):
 
-| round | whoosh-net, 4 threads | whoosh-net, 1 thread | wget | curl |
+| round | wdm-net, 4 threads | wdm-net, 1 thread | wget | curl |
 |---|---|---|---|---|
 | 1 (load 8.2) | 0.95 @ 0.80 | 1.02 @ 0.72 | 1.34 @ 0.48 | 1.39 @ 0.55 |
 | 2 (load 7.3) | 1.85 @ 0.39 | 2.84 @ 0.24 | 3.19 @ 0.20 | 3.00 @ 0.25 |
@@ -327,14 +327,14 @@ TLS, one 100 MiB pass per run, client runtime 4 worker threads, load 1–5:
 
 | client | 1 conn | 4 conns | 16 conns |
 |---|---:|---:|---:|
-| whoosh-net, before | 3.97 | 3.24 | 2.64 |
-| **whoosh-net, now** | 4.27 | 3.38 | 2.57 |
+| wdm-net, before | 3.97 | 3.24 | 2.64 |
+| **wdm-net, now** | 4.27 | 3.38 | 2.57 |
 | curl (N processes, `-r`) | 5.20 | 6.34 | 7.76 |
 | wget | 4.91 | | |
 | aria2c `-x N -s N -k 1M` (writes to `/dev/shm`) | 6.91 | 5.07 | 4.09 |
 
 (client CPU seconds per GB; before/now differ only by noise at this rate.)
-whoosh-net's read path costs less per GB than every other client, and its
+wdm-net's read path costs less per GB than every other client, and its
 cost falls as connections are added; the excess seen on the live link is
 not in this layer.
 
@@ -377,7 +377,7 @@ change at 2 MB/s, where decryption is not the main cost.
 The gate run (`docs/bench/data/2026-11-12-pop-os-phase1-gate`) fails rule 5
 (CPU per GiB) on no-range, lying-ranges, no-length, no-validators,
 redirect-chain and clean/1g by small margins. `tools/daemon-ab.sh` measures
-what the gate measures (a resident `whoosh-daemon` per run, `whoosh --no-start
+what the gate measures (a resident `wdm-daemon` per run, `wdm --no-start
 get`, the CLI's CPU plus the daemon's) with several builds interleaved in
 one run against one labserver; `tools/ab-summary.py` gives medians and
 per-round paired changes. On this shared machine a single run varies by
@@ -388,12 +388,12 @@ every 20 ms; ticks of 10 ms per GiB):
 
 | thread | no-range/1g (1 connection) | clean/1g (engine's connection count) |
 |---|---:|---:|
-| tokio worker: whoosh-net + engine | 0.30–0.64 s | 1.0–1.1 s |
-| `whoosh-store-writer` (`pwrite`, page-cache drop) | 0.41–0.72 s | 0.9–1.0 s |
-| `whoosh-store-sync` (`fdatasync`) | 0.07–0.11 s | 0.07 s |
+| tokio worker: wdm-net + engine | 0.30–0.64 s | 1.0–1.1 s |
+| `wdm-store-writer` (`pwrite`, page-cache drop) | 0.41–0.72 s | 0.9–1.0 s |
+| `wdm-store-sync` (`fdatasync`) | 0.07–0.11 s | 0.07 s |
 
 Almost all of it is **kernel** time; user time is ~0.1 s/GiB for the whole
-daemon. whoosh-net alone (`examples/throughput.rs`, one plain HTTP/1.1
+daemon. wdm-net alone (`examples/throughput.rs`, one plain HTTP/1.1
 connection, client CPU only) costs **0.15 CPU-s/GiB**, the same as wget
 (0.14) and curl (0.18) reading to `/dev/null`: the kernel's receive copy.
 The rest of the worker's time is the engine (its gather copy of chunks
@@ -401,7 +401,7 @@ under 256 KiB, hand-off to the writer) and page faults, which swing from 2k
 to 23k per GiB with the machine's memory pressure and move the worker's
 system time with them.
 
-**Tried** (whoosh-net-only CPU-s/GB at 8 / 16 / 1 connections; whole daemon
+**Tried** (wdm-net-only CPU-s/GB at 8 / 16 / 1 connections; whole daemon
 paired against the old build):
 
 | change | net only | whole daemon |
@@ -415,7 +415,7 @@ paired against the old build):
 Kept: the **256 KiB** ceiling (the engine's write size): page faults and
 read-buffer memory per connection fall (−45 %, −75 %), the one-connection
 rows gain a little, clean/1g is unchanged within noise. No read-path change
-reaches 20 % of the daemon's CPU, because whoosh-net's own share is already at
+reaches 20 % of the daemon's CPU, because wdm-net's own share is already at
 wget's level. The remaining per-byte cost is the copy and sync chain
 downstream (receive copy, the engine's gather copy, `pwrite`'s copy into the
 page cache, page-cache drop, `fdatasync`); wget does the first and third

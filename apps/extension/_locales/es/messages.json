@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "Dejar que lo descargue el navegador"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "Enviarlo a Whoosh Download Manager, digan lo que digan las reglas de arriba"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "Mantén pulsada la tecla $KEY$ al hacer clic en un enlace para enviarlo a Whoosh Download Manager, digan lo que digan las reglas.",
     "placeholders": {
       "key": {

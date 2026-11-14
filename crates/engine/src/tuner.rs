@@ -84,7 +84,7 @@
 use std::time::Duration;
 
 use tokio::time::Instant;
-use whoosh_core::HostProfile;
+use wdm_core::HostProfile;
 
 use crate::config::Tuning;
 

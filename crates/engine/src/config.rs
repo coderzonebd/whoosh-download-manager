@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use whoosh_proto::Settings;
+use wdm_proto::Settings;
 
 use crate::clock::{Clock, SystemClock};
 use crate::power::{PowerControl, SystemPower};

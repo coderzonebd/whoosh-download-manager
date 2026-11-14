@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Store screenshots (1280×800) from the end-to-end setup: Chrome for Testing
-// with the unpacked dist/chromium, the real whoosh-nmhost and
-// `whoosh-daemon --mock` (demo data, nothing downloaded). Writes
+// with the unpacked dist/chromium, the real wdm-nmhost and
+// `wdm-daemon --mock` (demo data, nothing downloaded). Writes
 // store/screenshots/*.png. Nothing outside a temporary directory is touched.
 //
-//   cargo build -p whoosh-nmhost -p whoosh-daemon
-//   pnpm --filter @whoosh/extension build
-//   WHOOSH_E2E_CHROME=/path/to/chrome node scripts/store-screenshots.mjs
+//   cargo build -p wdm-nmhost -p wdm-daemon
+//   pnpm --filter @wdm/extension build
+//   WDM_E2E_CHROME=/path/to/chrome node scripts/store-screenshots.mjs
 //
 // The host manifest is written into the throwaway profile's own
 // NativeMessagingHosts directory (Chrome for Testing looks there).
@@ -22,9 +22,9 @@ import { chromium } from "playwright-core";
 
 const extRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = join(extRoot, "../..");
-const exe = process.env.WHOOSH_E2E_CHROME;
-if (!exe) throw new Error("set WHOOSH_E2E_CHROME to a Chrome for Testing executable");
-const work = mkdtempSync(join(tmpdir(), "whoosh-shots-"));
+const exe = process.env.WDM_E2E_CHROME;
+if (!exe) throw new Error("set WDM_E2E_CHROME to a Chrome for Testing executable");
+const work = mkdtempSync(join(tmpdir(), "wdm-shots-"));
 const outDir = join(extRoot, "store", "screenshots");
 const EXT = "clhjgofaikdmabdnebgcmdffdjenagfl";
 const ext = join(extRoot, "dist/chromium");
@@ -34,9 +34,9 @@ const profile = join(work, "profile");
 mkdirSync(join(profile, "NativeMessagingHosts"), { recursive: true });
 mkdirSync(data, { recursive: true, mode: 0o700 });
 mkdirSync(outDir, { recursive: true });
-const reg = spawnSync(join(repo, "target/debug/whoosh-nmhost"), ["--register", "--browser", "chrome"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
-renameSync(reg.stdout.match(/(\/\S.*com\.coderzonebd\.whoosh\.json)/)[1], join(profile, "NativeMessagingHosts/com.coderzonebd.whoosh.json"));
-const daemon = spawn(join(repo, "target/debug/whoosh-daemon"), ["--mock", "--port", "0", "--data-dir", data], { stdio: "ignore" });
+const reg = spawnSync(join(repo, "target/debug/wdm-nmhost"), ["--register", "--browser", "chrome"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+renameSync(reg.stdout.match(/(\/\S.*com\.coderzonebd\.wdm\.json)/)[1], join(profile, "NativeMessagingHosts/com.coderzonebd.whoosh.json"));
+const daemon = spawn(join(repo, "target/debug/wdm-daemon"), ["--mock", "--port", "0", "--data-dir", data], { stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 while (!existsSync(join(data, "runtime.json"))) await sleep(100);
 const server = createServer((req, res) => {
@@ -48,7 +48,7 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const b = spawn(exe, ["--headless=new", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-first-run", "--hide-scrollbars",
   "--disable-features=DisableLoadExtensionCommandLineSwitch", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`, "about:blank"],
-  { env: { ...process.env, HOME: home, WHOOSH_DATA_DIR: data }, stdio: "ignore" });
+  { env: { ...process.env, HOME: home, WDM_DATA_DIR: data }, stdio: "ignore" });
 let browser;
 try {
   const f = join(profile, "DevToolsActivePort");

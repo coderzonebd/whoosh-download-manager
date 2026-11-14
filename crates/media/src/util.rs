@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use whoosh_proto::UnixMillis;
+use wdm_proto::UnixMillis;
 
 pub fn now_ms() -> UnixMillis {
     std::time::SystemTime::now()

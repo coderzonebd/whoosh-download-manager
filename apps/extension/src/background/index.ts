@@ -98,7 +98,7 @@ const healer = new LinkHealer({
 });
 
 function remember(provenance: Provenance): void {
-  void healer.remember(provenance).catch((e: unknown) => console.warn("whoosh: could not remember a download", e));
+  void healer.remember(provenance).catch((e: unknown) => console.warn("wdm: could not remember a download", e));
 }
 
 // Catch up on what happened while no port was open: downloads that finished
@@ -108,9 +108,9 @@ const catchUp = new Coalescer(
     if ((await healer.ids()).length === 0) return;
     const summaries = await listUnfinished(transport);
     const outcomes = await healer.sync(summaries);
-    for (const outcome of outcomes) console.debug("whoosh: self-healing (catch-up)", outcome.status);
+    for (const outcome of outcomes) console.debug("wdm: self-healing (catch-up)", outcome.status);
   },
-  (error) => console.debug("whoosh: catch-up skipped:", error instanceof Error ? error.message : String(error)),
+  (error) => console.debug("wdm: catch-up skipped:", error instanceof Error ? error.message : String(error)),
 );
 const daemonUp = new RisingEdge();
 transport.onOpen(() => void catchUp.trigger());
@@ -144,7 +144,7 @@ function report(candidate: CandidateDownload, result: CaptureResult): void {
   if (result.outcome !== "skipped") {
     lastCapture = { url: candidate.url, outcome: describe(result), at: Date.now() };
   }
-  console.debug("whoosh: download", candidate.id, result.outcome, "reason" in result ? result.reason : "");
+  console.debug("wdm: download", candidate.id, result.outcome, "reason" in result ? result.reason : "");
   if (result.outcome === "sent" && !candidate.incognito) {
     // Private-window downloads are never remembered.
     const now = Date.now();
@@ -158,7 +158,7 @@ function report(candidate: CandidateDownload, result: CaptureResult): void {
     if (text) provenance.linkText = text;
     remember(provenance);
   } else if (result.outcome === "kept" && "late" in result && result.late) {
-    void result.late.then((late) => console.debug("whoosh: late answer for download", candidate.id, late.outcome));
+    void result.late.then((late) => console.debug("wdm: late answer for download", candidate.id, late.outcome));
   }
 }
 
@@ -212,7 +212,7 @@ api.webRequest.onBeforeRequest.addListener(
 
 interface SendOptions {
   referrer?: string | undefined;
-  /** For a single explicit link: if whoosh cannot take it, let the browser download it. */
+  /** For a single explicit link: if wdm cannot take it, let the browser download it. */
   fallbackToBrowser: boolean;
   incognito?: boolean | undefined;
   cookieStoreId?: string | undefined;
@@ -344,15 +344,15 @@ const preconnect = new PreconnectThrottle();
 
 async function onContentMessage(message: ContentMessage): Promise<void> {
   const now = Date.now();
-  if (message.type === "whoosh/bypass-next") {
+  if (message.type === "wdm/bypass-next") {
     bypass.arm(now);
     return;
   }
-  if (message.type === "whoosh/force-next") {
+  if (message.type === "wdm/force-next") {
     force.arm(now);
     return;
   }
-  if (message.type === "whoosh/link-click") {
+  if (message.type === "wdm/link-click") {
     clicks.record(message.url, message.text, now);
     return;
   }
@@ -364,12 +364,12 @@ async function onContentMessage(message: ContentMessage): Promise<void> {
 
 async function onPopupMessage(message: PopupMessage): Promise<PopupState | ActionReply> {
   switch (message.type) {
-    case "whoosh/popup-state":
+    case "wdm/popup-state":
       return popupState(message.tabId, message.pageUrl);
-    case "whoosh/set-capture":
+    case "wdm/set-capture":
       await changeSettings({ captureEnabled: message.enabled });
       return { ok: true };
-    case "whoosh/set-site-excluded": {
+    case "wdm/set-site-excluded": {
       const host = normalizeSitePattern(message.host);
       if (!host) return { ok: false, error: "not a host name" };
       const current = (await settings()).excludedSites;
@@ -379,9 +379,9 @@ async function onPopupMessage(message: PopupMessage): Promise<PopupState | Actio
       await changeSettings({ excludedSites });
       return { ok: true };
     }
-    case "whoosh/download-media":
+    case "wdm/download-media":
       return sendLinks([message.url], { referrer: message.pageUrl, fallbackToBrowser: false });
-    case "whoosh/heal-answer": {
+    case "wdm/heal-answer": {
       const outcome = await healer.act(message.id, message.answer);
       if (outcome?.status === "failed" && outcome.reason === "daemon-refused") {
         return { ok: false, error: t("errorRefused") };
@@ -449,9 +449,9 @@ api.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 transport.on("event.download.state", (event) => {
   void healer.onState(event).then(
     (outcome) => {
-      if (outcome) console.debug("whoosh: self-healing", event.id, outcome.status);
+      if (outcome) console.debug("wdm: self-healing", event.id, outcome.status);
     },
-    (error: unknown) => console.warn("whoosh: self-healing failed", event.id, error),
+    (error: unknown) => console.warn("wdm: self-healing failed", event.id, error),
   );
 });
 transport.on("event.download.removed", (event) => {

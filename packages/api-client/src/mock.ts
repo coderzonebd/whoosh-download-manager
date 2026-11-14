@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// An in-memory WhooshClient that simulates a daemon: segmented downloads with
+// An in-memory WdmClient that simulates a daemon: segmented downloads with
 // wobbling speeds, dynamic segment splitting (when a connection finishes its
 // range it takes half of the largest remaining one), a global speed limit,
 // the active-download limit, a failure, an expiring link (`needs_refresh`),
@@ -10,7 +10,7 @@
 // `autoTick: false` and `advance(ms)` for deterministic results.
 
 import { CATEGORIES, categoryForFilename } from "./categories";
-import { WhooshConnectionError, WhooshRpcError, JsonRpcErrorCode } from "./errors";
+import { WdmConnectionError, WdmRpcError, JsonRpcErrorCode } from "./errors";
 import {
   ErrorCode,
   PROTOCOL_VERSION,
@@ -34,7 +34,7 @@ import {
   type SegmentInfo,
   type Settings,
   type Stats,
-  type WhooshClient,
+  type WdmClient,
   MAIN_QUEUE,
 } from "./types";
 
@@ -61,7 +61,7 @@ export interface MockClientOptions {
   mediaToolsMissing?: boolean;
 }
 
-export interface MockWhooshClient extends WhooshClient {
+export interface MockWdmClient extends WdmClient {
   /** Run the simulation forward by `ms` synchronously (in `tickMs` steps). */
   advance(ms: number): void;
   /** Snapshot of every download with segments, for assertions. */
@@ -185,8 +185,8 @@ function pickFormats(formats: MediaFormat[], choice: MediaChoice): MediaFormat[]
   return v.kind === "videoOnly" && bestAudio ? [v, bestAudio] : [v];
 }
 
-function invalidParams(message: string): WhooshRpcError {
-  return new WhooshRpcError(JsonRpcErrorCode.InvalidParams, message);
+function invalidParams(message: string): WdmRpcError {
+  return new WdmRpcError(JsonRpcErrorCode.InvalidParams, message);
 }
 
 function parseUrl(raw: unknown): URL {
@@ -198,7 +198,7 @@ function parseUrl(raw: unknown): URL {
     throw invalidParams(`not a valid URL: ${raw}`);
   }
   if (!["http:", "https:", "ftp:"].includes(u.protocol)) {
-    throw new WhooshRpcError(ErrorCode.Unsupported, `unsupported scheme ${u.protocol.replace(":", "")}`);
+    throw new WdmRpcError(ErrorCode.Unsupported, `unsupported scheme ${u.protocol.replace(":", "")}`);
   }
   return u;
 }
@@ -263,7 +263,7 @@ const BULK_NAMES = [
   ["installer", "exe"], ["paper", "pdf"], ["firmware", "img"], ["episode", "mkv"], ["package", "deb"],
 ] as const;
 
-export function createMockClient(options: MockClientOptions = {}): MockWhooshClient {
+export function createMockClient(options: MockClientOptions = {}): MockWdmClient {
   const tickMs = options.tickMs ?? 250;
   const latencyMs = options.latencyMs ?? 0;
   const wallNow = options.now ?? Date.now;
@@ -293,7 +293,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     if (ready) {
       t.source = "managed";
       if (version) t.version = version;
-      t.path = `~/.local/share/whoosh/media/bin/${name}`;
+      t.path = `~/.local/share/wdm/media/bin/${name}`;
     }
     return t;
   };
@@ -315,7 +315,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       try {
         (h as (p: EventMap[E]) => void)(structuredClone(payload));
       } catch (err) {
-        console.error(`[whoosh mock] ${event} handler threw`, err);
+        console.error(`[wdm mock] ${event} handler threw`, err);
       }
     }
   }
@@ -608,7 +608,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
 
   function get(id: unknown): Sim {
     const sim = typeof id === "string" ? sims.get(id) : undefined;
-    if (!sim) throw new WhooshRpcError(ErrorCode.NotFound, `no download with id ${String(id)}`);
+    if (!sim) throw new WdmRpcError(ErrorCode.NotFound, `no download with id ${String(id)}`);
     return sim;
   }
 
@@ -622,10 +622,10 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     const u = parseUrl(rawUrl);
     const href = u.toString();
     if (/(^|\/)404(\/|$)|not-found/.test(u.pathname)) {
-      throw new WhooshRpcError(ErrorCode.Network, "The server says this file does not exist (HTTP 404).");
+      throw new WdmRpcError(ErrorCode.Network, "The server says this file does not exist (HTTP 404).");
     }
     if (u.hostname.endsWith(".invalid")) {
-      throw new WhooshRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
+      throw new WdmRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
     }
     if (mediaOn && looksLikeMediaPage(href) && VIDEO_PAGE.test(u.pathname)) {
       // A video page: the server sends HTML (so the add dialog asks media.probe).
@@ -664,7 +664,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
   function confirm(params: ConfirmParams): null {
     const sim = get(params?.id);
     const d = sim.d;
-    if (!d.awaitingConfirmation) throw new WhooshRpcError(ErrorCode.InvalidState, "this download is not waiting for confirmation");
+    if (!d.awaitingConfirmation) throw new WdmRpcError(ErrorCode.InvalidState, "this download is not waiting for confirmation");
     if (params.directory !== undefined) {
       const dir = params.directory.trim();
       if (!dir) throw invalidParams("directory must be an absolute path");
@@ -691,7 +691,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
   // ---------------------------------------------------------------- media
 
   function requireMedia(method: string): void {
-    if (!mediaOn) throw new WhooshRpcError(ErrorCode.Unsupported, `${method} is not supported by this daemon`);
+    if (!mediaOn) throw new WdmRpcError(ErrorCode.Unsupported, `${method} is not supported by this daemon`);
   }
 
   function toolsChanged(): void {
@@ -709,7 +709,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     t.state = "ready";
     t.source = "managed";
     t.version = t.latestVersion ?? (name === "yt-dlp" ? MOCK_YT_DLP_VERSION : "9.0");
-    t.path = `~/.local/share/whoosh/media/bin/${name}`;
+    t.path = `~/.local/share/wdm/media/bin/${name}`;
     t.updateAvailable = false;
     delete t.downloadedBytes;
     delete t.totalBytes;
@@ -729,7 +729,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     requireMedia("media.probe");
     const u = parseUrl(rawUrl);
     if (u.protocol === "ftp:") throw invalidParams("only http and https pages");
-    if (u.hostname.endsWith(".invalid")) throw new WhooshRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
+    if (u.hostname.endsWith(".invalid")) throw new WdmRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
     // First use: yt-dlp is "fetched" on the spot.
     const yt = findTool("yt-dlp");
     if (yt.state !== "ready") {
@@ -738,7 +738,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     }
     // Like yt-dlp's generic extractor: only real video pages have video.
     if (!looksLikeMediaPage(u.toString()) || !VIDEO_PAGE.test(u.pathname)) {
-      throw new WhooshRpcError(ErrorCode.Network, `[generic] Unsupported URL: ${u.toString()}`);
+      throw new WdmRpcError(ErrorCode.Network, `[generic] Unsupported URL: ${u.toString()}`);
     }
     const href = u.toString();
     const words = (u.pathname.split("/").filter(Boolean).pop() ?? u.hostname).replace(/[-_]+/g, " ");
@@ -845,7 +845,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
   function namedQueue(name: unknown): Queue {
     if (name === MAIN_QUEUE) throw invalidParams("the main queue cannot be changed this way");
     const q = typeof name === "string" ? queues.get(name) : undefined;
-    if (!q) throw new WhooshRpcError(ErrorCode.NotFound, `no queue named "${String(name)}"`);
+    if (!q) throw new WdmRpcError(ErrorCode.NotFound, `no queue named "${String(name)}"`);
     return q;
   }
 
@@ -880,7 +880,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
   const handlersByMethod: { [M in keyof MethodMap]: (params: MethodMap[M]["params"]) => MethodMap[M]["result"] } = {
     "session.hello": (p) => {
       if (p?.protocol !== PROTOCOL_VERSION) {
-        throw new WhooshRpcError(ErrorCode.Unsupported, `protocol ${String(p?.protocol)} not supported`);
+        throw new WdmRpcError(ErrorCode.Unsupported, `protocol ${String(p?.protocol)} not supported`);
       }
       // The in-process mock has no transport to authenticate, so no real proof.
       return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock", "queues", ...(mediaOn ? ["media"] : [])], proof: "" };
@@ -904,7 +904,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       const targets = idsOf(p);
       const bad = targets.filter((s) => !["queued", "probing", "downloading", "paused"].includes(s.d.state));
       if (bad.length > 0) {
-        throw new WhooshRpcError(ErrorCode.InvalidState, `cannot pause a ${bad[0]?.d.state} download`, { ids: bad.map((s) => s.d.id) });
+        throw new WdmRpcError(ErrorCode.InvalidState, `cannot pause a ${bad[0]?.d.state} download`, { ids: bad.map((s) => s.d.id) });
       }
       for (const sim of targets) {
         if (sim.d.state === "paused") continue;
@@ -918,7 +918,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       const bad = targets.filter((s) => s.d.state === "completed" || s.d.state === "needs_refresh" || s.d.state === "verifying");
       if (bad.length > 0) {
         const why = bad[0]?.d.state === "needs_refresh" ? "the link expired; refresh it first" : `cannot resume a ${bad[0]?.d.state} download`;
-        throw new WhooshRpcError(ErrorCode.InvalidState, why, { ids: bad.map((s) => s.d.id) });
+        throw new WdmRpcError(ErrorCode.InvalidState, why, { ids: bad.map((s) => s.d.id) });
       }
       for (const sim of targets) {
         if (sim.d.state !== "paused" && sim.d.state !== "failed") continue;
@@ -944,7 +944,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     "download.refreshUrl": (p) => {
       const sim = get(p?.id);
       const u = parseUrl(p?.url);
-      if (sim.d.state === "completed") throw new WhooshRpcError(ErrorCode.InvalidState, "the download is already complete");
+      if (sim.d.state === "completed") throw new WdmRpcError(ErrorCode.InvalidState, "the download is already complete");
       sim.d.url = u.toString();
       delete sim.expireAt;
       if (sim.d.state === "needs_refresh" || sim.d.state === "failed") setState(sim, "queued");
@@ -1093,13 +1093,13 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
 
   // ---------------------------------------------------------------- client
 
-  const client: MockWhooshClient = {
+  const client: MockWdmClient = {
     call(method, params) {
-      if (closed) return Promise.reject(new WhooshConnectionError("closed"));
+      if (closed) return Promise.reject(new WdmConnectionError("closed"));
       const fn = handlersByMethod[method] as ((p: unknown) => unknown) | undefined;
       const delay = method === "download.probe" || method === "media.probe" ? latencyMs * 6 : latencyMs;
       const run = () => {
-        if (!fn) throw new WhooshRpcError(JsonRpcErrorCode.MethodNotFound, `method not found: ${method}`);
+        if (!fn) throw new WdmRpcError(JsonRpcErrorCode.MethodNotFound, `method not found: ${method}`);
         return structuredClone(fn(params));
       };
       if (delay <= 0) {
@@ -1111,7 +1111,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       }
       return new Promise((resolve, reject) => {
         setTimeout(() => {
-          if (closed) return reject(new WhooshConnectionError("connection_lost"));
+          if (closed) return reject(new WdmConnectionError("connection_lost"));
           try {
             resolve(run() as never);
           } catch (e) {

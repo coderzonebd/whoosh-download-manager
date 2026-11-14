@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "Tarayıcı indirsin"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "Yukarıdaki kurallar ne derse desin Whoosh Download Manager’a gönder"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "Bir bağlantıyı kurallar ne derse desin Whoosh Download Manager’a göndermek için tıklarken $KEY$ tuşunu basılı tutun.",
     "placeholders": {
       "key": {

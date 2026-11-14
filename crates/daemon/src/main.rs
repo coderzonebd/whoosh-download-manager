@@ -1,4 +1,4 @@
-//! `whoosh-daemon` — see the crate README.
+//! `wdm-daemon` — see the crate README.
 //!
 //! Exit codes: 0 clean shutdown, 1 error, 2 usage, 3 another daemon already
 //! runs for this data directory, 130 forced exit (second signal).
@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use clap::builder::BoolishValueParser;
 use clap::{ArgAction, Parser};
-use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
-use whoosh_daemon::{DaemonConfig, ServeError, VERSION, logging, paths};
-use whoosh_proto::service::Service;
+use wdm_daemon::mock::{MockOptions, MockService, Scenario};
+use wdm_daemon::{DaemonConfig, ServeError, VERSION, logging, paths};
+use wdm_proto::service::Service;
 
 const EXIT_ALREADY_RUNNING: u8 = 3;
 
@@ -22,25 +22,25 @@ const EXIT_ALREADY_RUNNING: u8 = 3;
 /// at about 1 GB/s; raise this only for multi-gigabit links.
 const DEFAULT_WORKER_THREADS: u16 = 1;
 
-/// The whoosh download daemon: serves the local JSON-RPC API on 127.0.0.1.
+/// The wdm download daemon: serves the local JSON-RPC API on 127.0.0.1.
 #[derive(Debug, Parser)]
-#[command(name = "whoosh-daemon", version = VERSION)]
+#[command(name = "wdm-daemon", version = VERSION)]
 struct Args {
     /// Serve the in-memory mock service (no network, no disk) instead of the
     /// download engine.
-    #[arg(long, env = "WHOOSH_DAEMON_MOCK", action = ArgAction::SetTrue,
+    #[arg(long, env = "WDM_DAEMON_MOCK", action = ArgAction::SetTrue,
           value_parser = BoolishValueParser::new())]
     mock: bool,
 
     /// Initial downloads of the mock: `demo` or `empty`.
-    #[arg(long, env = "WHOOSH_DAEMON_MOCK_SCENARIO", default_value = "demo")]
+    #[arg(long, env = "WDM_DAEMON_MOCK_SCENARIO", default_value = "demo")]
     mock_scenario: Scenario,
 
     /// Port on 127.0.0.1; a free one is used if it is taken. 0 = any.
-    #[arg(long, env = "WHOOSH_DAEMON_PORT", default_value_t = whoosh_proto::DEFAULT_PORT)]
+    #[arg(long, env = "WDM_DAEMON_PORT", default_value_t = wdm_proto::DEFAULT_PORT)]
     port: u16,
 
-    /// Data directory (runtime.json, logs). Default: $WHOOSH_DATA_DIR, then the
+    /// Data directory (runtime.json, logs). Default: $WDM_DATA_DIR, then the
     /// platform's data directory.
     #[arg(long)]
     data_dir: Option<PathBuf>,
@@ -48,13 +48,13 @@ struct Args {
     /// Worker threads of the async runtime (1–64). Few is better: idle
     /// workers parking and waking on every network burst cost more CPU than
     /// the downloads, and one core decrypts TLS far faster than real links.
-    #[arg(long, env = "WHOOSH_WORKER_THREADS", default_value_t = DEFAULT_WORKER_THREADS,
+    #[arg(long, env = "WDM_WORKER_THREADS", default_value_t = DEFAULT_WORKER_THREADS,
           value_parser = clap::value_parser!(u16).range(1..=64))]
     worker_threads: u16,
 
     /// Turn off video and audio sites (yt-dlp/ffmpeg) in a build that has
     /// them.
-    #[arg(long, env = "WHOOSH_DAEMON_NO_MEDIA", action = ArgAction::SetTrue,
+    #[arg(long, env = "WDM_DAEMON_NO_MEDIA", action = ArgAction::SetTrue,
           value_parser = BoolishValueParser::new())]
     no_media: bool,
 
@@ -62,10 +62,10 @@ struct Args {
     /// manifest.json): copied into the data directory at start instead of
     /// downloaded on first use. The desktop app passes its own; without it
     /// the tools are downloaded when first needed.
-    #[arg(long, env = "WHOOSH_MEDIA_TOOLS_DIR", value_name = "DIR")]
+    #[arg(long, env = "WDM_MEDIA_TOOLS_DIR", value_name = "DIR")]
     media_tools_dir: Option<PathBuf>,
 
-    /// Started in the background by `whoosh`: no logging to stderr, and SIGHUP
+    /// Started in the background by `wdm`: no logging to stderr, and SIGHUP
     /// is ignored.
     #[arg(long, hide = true)]
     detached: bool,
@@ -76,7 +76,7 @@ fn ms(since: Instant) -> f64 {
     (since.elapsed().as_secs_f64() * 1e4).round() / 10.0
 }
 
-/// How long each startup phase took (logged once, with "whoosh-daemon ready").
+/// How long each startup phase took (logged once, with "wdm-daemon ready").
 #[derive(Debug, Default)]
 struct Startup {
     logging: f64,
@@ -98,7 +98,7 @@ fn main() -> ExitCode {
         None => match paths::default_data_dir() {
             Ok(dir) => dir,
             Err(e) => {
-                eprintln!("whoosh-daemon: {e}");
+                eprintln!("wdm-daemon: {e}");
                 return ExitCode::FAILURE;
             }
         },
@@ -108,7 +108,7 @@ fn main() -> ExitCode {
         Ok(guard) => Some(guard),
         Err(e) => {
             eprintln!(
-                "whoosh-daemon: logging to {} disabled: {e}",
+                "wdm-daemon: logging to {} disabled: {e}",
                 data_dir.display()
             );
             logging::init(None, !args.detached).ok()
@@ -118,7 +118,7 @@ fn main() -> ExitCode {
     // Crash reports (panics): only with a DSN in this build, and unless the
     // user turned them off (choice in the data directory; on by default).
     // Held until the daemon exits.
-    let _crash = whoosh_crash::init("daemon", VERSION, &data_dir);
+    let _crash = wdm_crash::init("daemon", VERSION, &data_dir);
     let t = Instant::now();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(usize::from(args.worker_threads))
@@ -127,7 +127,7 @@ fn main() -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("whoosh-daemon: cannot start the async runtime: {e}");
+            eprintln!("wdm-daemon: cannot start the async runtime: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -140,7 +140,7 @@ fn main() -> ExitCode {
 
 fn serve_error(e: &ServeError) -> ExitCode {
     tracing::error!("{e}");
-    eprintln!("whoosh-daemon: {e}");
+    eprintln!("wdm-daemon: {e}");
     match e {
         ServeError::AlreadyRunning { .. } => ExitCode::from(EXIT_ALREADY_RUNNING),
         _ => ExitCode::FAILURE,
@@ -153,7 +153,7 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
     // Claim the data directory first: the engine loads and resumes the
     // downloads stored there, which must never happen in two daemons.
     let t = Instant::now();
-    let claim = match whoosh_daemon::claim(config).await {
+    let claim = match wdm_daemon::claim(config).await {
         Ok(claim) => claim,
         Err(e) => return serve_error(&e),
     };
@@ -171,7 +171,7 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
             Ok(engine) => engine,
             Err(e) => {
                 tracing::error!(error = %e, "cannot start the download engine");
-                eprintln!("whoosh-daemon: cannot start the download engine: {e}");
+                eprintln!("wdm-daemon: cannot start the download engine: {e}");
                 return ExitCode::FAILURE;
             }
         }
@@ -195,7 +195,7 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
         store_ms = startup.store,
         service_ms = (startup.service * 10.0).round() / 10.0,
         serve_ms = startup.serve,
-        "whoosh-daemon ready"
+        "wdm-daemon ready"
     );
 
     #[cfg(unix)]
@@ -208,19 +208,19 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
     };
 
     tokio::select! {
-        _ = whoosh_daemon::shutdown_signal() => {}
+        _ = wdm_daemon::shutdown_signal() => {}
         _ = daemon.stop_requested() => tracing::info!("stopping: daemon.shutdown"),
     }
     tokio::spawn(async {
-        whoosh_daemon::shutdown_signal().await;
-        eprintln!("whoosh-daemon: second signal, exiting immediately");
+        wdm_daemon::shutdown_signal().await;
+        eprintln!("wdm-daemon: second signal, exiting immediately");
         std::process::exit(130);
     });
     daemon.shutdown().await;
     ExitCode::SUCCESS
 }
 
-/// The real service: whoosh-engine over whoosh-net and whoosh-store, with its state
+/// The real service: wdm-engine over wdm-net and wdm-store, with its state
 /// in the data directory (`state.db`, `journal/`).
 /// `media`: `None` turns media downloads off, else where the installer's
 /// tools are, if anywhere.
@@ -229,7 +229,7 @@ async fn start_engine(
     store_ms: &mut f64,
     media: Option<Option<PathBuf>>,
 ) -> std::io::Result<Arc<dyn Service>> {
-    let net = whoosh_net::NetConfig::default();
+    let net = wdm_net::NetConfig::default();
     let mut capabilities: Vec<String> = vec!["http".into(), "https".into(), "preconnect".into()];
     if net.http2 {
         capabilities.push("h2".into());
@@ -237,25 +237,26 @@ async fn start_engine(
     if net.http3 {
         capabilities.push("h3".into());
     }
-    let sources = whoosh_net::HttpSourceFactory::new(net);
-    let storage = Arc::new(whoosh_store::FileStorageProvider::new(
-        whoosh_store::StorageOptions::default(),
+    let sources = wdm_net::HttpSourceFactory::new(net);
+    let storage = Arc::new(wdm_store::FileStorageProvider::new(
+        wdm_store::StorageOptions::default(),
     ));
     // Both may fsync (creating the journal directory, a new database); do
     // them at the same time. The journal's open blocks, so not on a worker.
     let t = Instant::now();
     let journal_dir = data_dir.join("journal");
-    let journal = tokio::task::spawn_blocking(move || whoosh_store::FileJournal::open(journal_dir));
-    let state = whoosh_store::SqliteStateStore::open(data_dir.join("state.db"));
+    let journal = tokio::task::spawn_blocking(move || wdm_store::FileJournal::open(journal_dir));
+    let state = wdm_store::SqliteStateStore::open(data_dir.join("state.db"));
     let (journal, state) = tokio::join!(journal, state);
     let journal = Arc::new(journal.map_err(std::io::Error::other)??);
     let state = Arc::new(state?);
     *store_ms = ms(t);
+    migrate_part_files(state.as_ref()).await;
 
-    let mut config = whoosh_engine::EngineConfig::new(default_download_dir(data_dir));
+    let mut config = wdm_engine::EngineConfig::new(default_download_dir(data_dir));
     config.capabilities = capabilities;
-    let engine = whoosh_engine::Engine::start(
-        whoosh_engine::EngineDeps {
+    let engine = wdm_engine::Engine::start(
+        wdm_engine::EngineDeps {
             sources,
             storage,
             journal,
@@ -266,6 +267,41 @@ async fn start_engine(
     .await?;
     tracing::info!("download engine started");
     with_media(engine, data_dir, media).await
+}
+
+/// Once per data directory: in-progress files named before the rename
+/// (`<name>.whoosh-part`) get the current suffix, so unfinished downloads
+/// resume where they were. Failures are logged and never stop the start.
+async fn migrate_part_files(state: &dyn wdm_core::StateStore) {
+    use wdm_daemon::migrate;
+    match state.get_value(migrate::PART_FILES_KEY).await {
+        Ok(None) => {}
+        Ok(Some(_)) => return,
+        Err(e) => {
+            tracing::warn!("in-progress file migration skipped: {e}");
+            return;
+        }
+    }
+    let records = match state.load_downloads().await {
+        Ok(records) => records,
+        Err(e) => {
+            tracing::warn!("in-progress file migration skipped: {e}");
+            return;
+        }
+    };
+    let moved = migrate::part_files(
+        records
+            .iter()
+            .filter(|r| r.state != wdm_proto::DownloadState::Completed)
+            .map(|r| (Path::new(&r.directory), r.filename.as_str())),
+        wdm_engine::PART_SUFFIX,
+    );
+    if moved > 0 {
+        tracing::info!(moved, "renamed in-progress files to the current suffix");
+    }
+    if let Err(e) = state.set_value(migrate::PART_FILES_KEY, "true").await {
+        tracing::warn!("cannot record the in-progress file migration: {e}");
+    }
 }
 
 /// Media downloads (yt-dlp/ffmpeg) on top of the engine, in builds with the
@@ -280,12 +316,12 @@ async fn with_media(
         tracing::info!("media downloads turned off");
         return Ok(engine);
     };
-    let mut config = whoosh_media::MediaConfig::new(data_dir.join("media"));
+    let mut config = wdm_media::MediaConfig::new(data_dir.join("media"));
     if let Some(dir) = &bundled {
         tracing::info!(dir = %dir.display(), "media tools shipped with the app");
     }
     config.bundled_tools = bundled;
-    let media = whoosh_media::MediaService::start(engine, config).await?;
+    let media = wdm_media::MediaService::start(engine, config).await?;
     tracing::info!("media downloads available");
     Ok(media)
 }

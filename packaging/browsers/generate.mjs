@@ -11,7 +11,7 @@
 //   node packaging/browsers/generate.mjs           write the files
 //   node packaging/browsers/generate.mjs --check   exit 1 if they are out of date
 //
-// The NSIS installer (per user) runs `whoosh-nmhost --register --offer-extension`
+// The NSIS installer (per user) runs `wdm-nmhost --register --offer-extension`
 // instead (installer/windows/hooks.nsh, not generated), and the app itself
 // registers for the user on macOS and from an AppImage.
 
@@ -25,7 +25,7 @@ const DESCRIPTION = "whoosh download manager — browser integration";
 export const EDGE_UPDATE_URL = "https://edge.microsoft.com/extensionwebstorebase/v1/crx";
 export const CWS_UPDATE_URL = "https://clients2.google.com/service/update2/crx";
 /** Where the .deb and .rpm put the sidecar (Tauri installs externalBin into /usr/bin). */
-const LINUX_HOST_PATH = "/usr/bin/whoosh-nmhost";
+const LINUX_HOST_PATH = "/usr/bin/wdm-nmhost";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -33,7 +33,7 @@ const tauriDir = join(root, "apps", "desktop", "src-tauri");
 
 const CHROMIUM_ID = /^[a-p]{32}$/;
 
-/** Reads and checks the config (the same rules as whoosh-nmhost's `ids.rs`). */
+/** Reads and checks the config (the same rules as wdm-nmhost's `ids.rs`). */
 export function loadIds(text) {
   const ids = JSON.parse(text);
   const chromium = [ids.edge?.id, ids.chromeWebStore?.id].filter((x) => x != null);
@@ -113,12 +113,12 @@ function wixFragment(ids) {
     `     with Handlebars and compiles it in its own output directory. -->`,
     `<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">`,
     `  <Fragment>`,
-    `    <ComponentGroup Id="WhooshBrowserIntegration" Directory="INSTALLDIR">`,
-    `      <Component Id="WhooshHostRegistry" Guid="${guid("registry", ...regs.map((r) => r.key))}">`,
+    `    <ComponentGroup Id="WdmBrowserIntegration" Directory="INSTALLDIR">`,
+    `      <Component Id="WdmHostRegistry" Guid="${guid("registry", ...regs.map((r) => r.key))}">`,
     ...regs.map(regXml),
     `      </Component>`,
     ...offers.flatMap((r, i) => [
-      `      <Component Id="WhooshStoreOffer${i}" Guid="${guid("offer", r.key)}">`,
+      `      <Component Id="WdmStoreOffer${i}" Guid="${guid("offer", r.key)}">`,
       regXml(r, 0),
       `      </Component>`,
     ]),
@@ -146,10 +146,10 @@ const LINUX_OFFER_DIRS = {
 /** Every generated file, relative to apps/desktop/src-tauri, with its text. */
 export function generate(ids) {
   const out = new Map();
-  // Windows: manifests next to whoosh-nmhost.exe; a relative "path" is
+  // Windows: manifests next to wdm-nmhost.exe; a relative "path" is
   // resolved against the manifest's directory (Chrome and Firefox both).
-  out.set(`installer/windows/${HOST_NAME}.chromium.json`, chromiumManifest("whoosh-nmhost.exe", ids));
-  out.set(`installer/windows/${HOST_NAME}.firefox.json`, firefoxManifest("whoosh-nmhost.exe", ids));
+  out.set(`installer/windows/${HOST_NAME}.chromium.json`, chromiumManifest("wdm-nmhost.exe", ids));
+  out.set(`installer/windows/${HOST_NAME}.firefox.json`, firefoxManifest("wdm-nmhost.exe", ids));
   out.set("installer/windows/browsers.wxs", wixFragment(ids));
 
   out.set("installer/linux/host-chromium.json", chromiumManifest(LINUX_HOST_PATH, ids));
@@ -179,11 +179,11 @@ export function generate(ids) {
     json({
       $schema: "https://schema.tauri.app/config/2",
       bundle: {
-        // Next to whoosh-nmhost.exe (the resource directory is the install directory).
+        // Next to wdm-nmhost.exe (the resource directory is the install directory).
         resources: Object.fromEntries(manifests.map((m) => [`installer/windows/${m}`, m])),
         windows: {
           nsis: { installerHooks: "installer/windows/hooks.nsh" },
-          wix: { fragmentPaths: ["installer/windows/browsers.wxs"], componentGroupRefs: ["WhooshBrowserIntegration"] },
+          wix: { fragmentPaths: ["installer/windows/browsers.wxs"], componentGroupRefs: ["WdmBrowserIntegration"] },
         },
       },
     }),

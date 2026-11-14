@@ -1,6 +1,6 @@
 # Local API — protocol v1
 
-The daemon (`whoosh-daemon`, Phase 1) owns every download. Every user interface is a client of this API: the desktop window, the CLI, the browser extension (through the native messaging host), the web remote, and the MCP server.
+The daemon (`wdm-daemon`, Phase 1) owns every download. Every user interface is a client of this API: the desktop window, the CLI, the browser extension (through the native messaging host), the web remote, and the MCP server.
 
 Source of truth for types: [`crates/proto/src/lib.rs`](../../crates/proto/src/lib.rs). TypeScript mirror: [`packages/api-client/src/types.ts`](../../packages/api-client/src/types.ts). **A change to one is a change to all three, in the same commit**, and bumps `PROTOCOL_VERSION` if it is breaking. Version 1 is a draft until the first public release; breaking changes before then keep the number.
 
@@ -12,7 +12,7 @@ Source of truth for types: [`crates/proto/src/lib.rs`](../../crates/proto/src/li
 | Address | `ws://127.0.0.1:<port>/rpc` — loopback only, never `0.0.0.0` |
 | Default port | `47210`; the daemon falls back to a free port if taken |
 | Runtime file | `<data dir>/runtime.json` = `{ "port", "token", "pid", "version" }`, written atomically at start, created owner-only (0600; owner-only ACL on Windows). The token is 32 random bytes, new at every daemon start. |
-| Data dir | `$WHOOSH_DATA_DIR` if set (tests, portable installs); otherwise Linux `$XDG_DATA_HOME/whoosh`, macOS `~/Library/Application Support/whoosh`, Windows `%LOCALAPPDATA%\whoosh`. The daemon and every native client must honour the same rule ([`whoosh_proto::runtime`](../../crates/proto/src/runtime.rs)). On Unix the directory must be owned by the user and not writable by group or others (0700); the daemon tightens a directory it owns and refuses one it does not, and clients refuse a runtime file that is a symlink, not owned by the user, or readable by others. |
+| Data dir | `$WDM_DATA_DIR` if set (tests, portable installs); otherwise Linux `$XDG_DATA_HOME/wdm`, macOS `~/Library/Application Support/wdm`, Windows `%LOCALAPPDATA%\wdm`. The daemon and every native client must honour the same rule ([`wdm_proto::runtime`](../../crates/proto/src/runtime.rs)), including moving a directory left under the old name `whoosh` (same place) to `wdm` before use. On Unix the directory must be owned by the user and not writable by group or others (0700); the daemon tightens a directory it owns and refuses one it does not, and clients refuse a runtime file that is a symlink, not owned by the user, or readable by others. |
 | Health | `GET /healthz` → `200 ok`, no CORS headers; every other path but `/rpc` is 404 |
 | Host header | Must name a loopback address (`127.0.0.1`, `localhost`, `[::1]`, with or without the port); anything else → HTTP 403 (DNS rebinding) |
 | Message size | At most 16 MiB per message (close `1009`). Before `session.hello` completes, at most 64 KiB, and only a few connections may be waiting for their hello at once |
@@ -25,7 +25,7 @@ Authentication is mutual: the token proves the client, and a proof proves the da
 1. The client reads `port` and `token` from the runtime file, and makes a fresh `nonce`: 16 random bytes as 32 lower-case hex characters (32–128 hex characters are accepted).
 2. Its **first** message must be `session.hello` with the token, the nonce and its protocol version.
 3. The daemon answers with `proof` = lower-case hex of `HMAC-SHA256(key = token, message = "whoosh-hello-proof-v1\n" + nonce)`.
-4. The client checks `proof` (in constant time) **before it sends anything else**, and closes the connection if it is wrong. A wrong proof means a stale runtime file whose port another process now holds; that process saw only an old token, which is worthless because the daemon makes a new one at every start. Reference implementation and test vector: [`whoosh_proto::auth`](../../crates/proto/src/auth.rs).
+4. The client checks `proof` (in constant time) **before it sends anything else**, and closes the connection if it is wrong. A wrong proof means a stale runtime file whose port another process now holds; that process saw only an old token, which is worthless because the daemon makes a new one at every start. Reference implementation and test vector: [`wdm_proto::auth`](../../crates/proto/src/auth.rs).
 
 Close codes:
 
@@ -44,15 +44,15 @@ Allowed `Origin` values: absent (native clients), `tauri://localhost`, `http://t
 The extension never opens the WebSocket and never sees the token.
 
 ```
-extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket + token──▶ daemon
+extension ──native messaging (stdio)──▶ wdm-nmhost ──WebSocket + token──▶ daemon
 ```
 
 - Framing is the browser's: 4-byte native-endian length, then UTF-8 JSON. Host → browser messages are limited to 1 MiB by Chrome and Firefox; a larger response is replaced by error `-32008`, so extensions page with `download.list { offset, limit }`.
-- The messages are the same JSON-RPC 2.0 requests, responses and notifications as on the WebSocket. `whoosh-nmhost` performs `session.hello` itself and relays everything else verbatim.
+- The messages are the same JSON-RPC 2.0 requests, responses and notifications as on the WebSocket. `wdm-nmhost` performs `session.hello` itself and relays everything else verbatim.
 - One extra method answered by the host itself: `nm.status` → `NmStatus { daemonRunning, daemonVersion?, hostVersion }`.
 - The host sends `event.nm.status` (same payload) whenever its daemon connection goes up or down. Request ids starting with `nmhost:` are reserved for the host.
 - When the daemon is not running, rejects the token, or the connection drops before an answer, the host answers the request with error `-32007`.
-- When the daemon answers a `download.add` with `needsApp: true` (the download waits for confirmation and no desktop window is connected; see "Downloads from the browser"), the host starts the desktop app, at most once every 30 seconds: on macOS the `.app` bundle it is in (`open <bundle>`; a host outside a bundle asks for the bundle id `com.coderzonebd.whoosh` with `open -b`), elsewhere `whoosh-desktop` next to the host, started outside the browser's process group or job. No app found (command-line-only installs, an AppImage whose host is a copy in the data directory): nothing is started and the download waits until the app is opened. `WHOOSH_NMHOST_NO_LAUNCH=1` turns this off.
+- When the daemon answers a `download.add` with `needsApp: true` (the download waits for confirmation and no desktop window is connected; see "Downloads from the browser"), the host starts the desktop app, at most once every 30 seconds: on macOS the `.app` bundle it is in (`open <bundle>`; a host outside a bundle asks for the bundle id `com.coderzonebd.whoosh` with `open -b`), elsewhere `wdm-desktop` next to the host, started outside the browser's process group or job. No app found (command-line-only installs, an AppImage whose host is a copy in the data directory): nothing is started and the download waits until the app is opened. `WDM_NMHOST_NO_LAUNCH=1` turns this off.
 - Host name: `com.coderzonebd.whoosh` (renamed with the product). The host manifest lists the extension IDs allowed to connect.
 
 ## 2. Conventions
@@ -68,7 +68,7 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | Method | Params | Result |
 |---|---|---|
 | `session.hello` | `HelloParams { token, nonce, protocol, client: { name, version } }` | `HelloResult { daemonVersion, protocol, capabilities[], proof }` |
-| `daemon.shutdown` | — | `null`, then the daemon stops: it pauses transfers, saves state, closes every connection with `1001` and exits. Used by `whoosh daemon stop`, and by the desktop app's Quit when the user chose to stop the daemon with the app |
+| `daemon.shutdown` | — | `null`, then the daemon stops: it pauses transfers, saves state, closes every connection with `1001` and exits. Used by `wdm daemon stop`, and by the desktop app's Quit when the user chose to stop the daemon with the app |
 | `download.probe` | `ProbeParams { url, request? }` | `ProbeResult { totalBytes?, resumable, filename, contentType?, finalUrl }` |
 | `download.add` | `AddParams { url, request?, filename?, directory?, category?, start = true, mirrors[], checksum?, connections?, queue?, fromBrowser = false }` | `AddResult { id, awaitingConfirmation = false, needsApp = false }`. `connections` (1–64) fixes the connection count instead of learning it (still lowered if the server throttles); `queue` names the queue it joins (absent or `"main"`: the main queue; see "Queues and the scheduler"). `fromBrowser` is set by the daemon, see "Downloads from the browser" |
 | `download.confirm` | `ConfirmParams { id, start, filename?, directory?, category?, queue? }` | `null`; answers a download that waits for confirmation (see "Downloads from the browser"). `-32003` if it is not waiting |
@@ -98,7 +98,7 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | `media.updateTools` | `MediaUpdateParams { tools[] }` (names; all when empty) | `MediaToolsStatus` at once (the tools show `installing`); the install runs in the background and reports through `event.media.tools` |
 | `media.configure` | `MediaConfigureParams { autoUpdate }` | `MediaToolsStatus` |
 
-`Settings.durability` is `powerSafe` (default: data is forced to disk before a file is finished or its progress journalled, so a power cut never damages a finished file) or `processSafe` (data is handed to the OS without forcing it to disk: faster on small files and fast links, survives a killed Whoosh but not a power cut).
+`Settings.durability` is `powerSafe` (default: data is forced to disk before a file is finished or its progress journalled, so a power cut never damages a finished file) or `processSafe` (data is handed to the OS without forcing it to disk: faster on small files and fast links, survives a killed WDM but not a power cut).
 
 `Settings.speedSchedule` (`SpeedWindow[] { days?, from, to, limitBps }`, absent when empty): while a window is open its `limitBps` replaces `speedLimitBps`; where windows overlap the lowest limit wins; `from` after `to` spans midnight.
 
@@ -108,7 +108,7 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 
 With `Settings.confirmBrowserDownloads` on ("Ask before downloading from the browser"), a download the browser extension hands over is created but not started, like IDM's "Download File Info" window:
 
-- **Who counts as the browser.** The daemon decides, not the request: `download.add` from a session whose `client.name` starts with `extension` (what `whoosh-nmhost` says) gets `fromBrowser: true`, and every other session's `fromBrowser` is dropped. Downloads from the app's own add dialog, the CLI, deep links and `media.add` never wait. A request with `start: false` does not wait either (it was not going to start).
+- **Who counts as the browser.** The daemon decides, not the request: `download.add` from a session whose `client.name` starts with `extension` (what `wdm-nmhost` says) gets `fromBrowser: true`, and every other session's `fromBrowser` is dropped. Downloads from the app's own add dialog, the CLI, deep links and `media.add` never wait. A request with `start: false` does not wait either (it was not going to start).
 - **Waiting.** The download is `paused` with `awaitingConfirmation: true` in its `DownloadSummary`, announced with `event.download.added` like any other. `download.add` answers `awaitingConfirmation: true`, and `needsApp: true` when no desktop window (`client.name` `"desktop"`) is connected to ask, so the native host starts the app (§1). While it waits the daemon probes it once and sends `event.download.updated` with the size, `resumable` and the server's file name (unless the client chose one), so the dialog can show them. The waiting survives a daemon restart. UIs should ask about every download with `awaitingConfirmation` in the list they load at start, not only about new ones.
 - **The answer.** `download.confirm { id, start }`, optionally with the name, folder, category and queue the user picked (they replace the download's; a new name is kept from then on, as `AddParams.filename` is). `start: true` ("Start download") queues it at once. `start: false` ("Download later") keeps it paused, except in a named queue that is stopped, where it is `queued` and starts with the queue. Either way `awaitingConfirmation` goes away (`event.download.updated`, then `event.download.state`). "Cancel" is `download.remove`. `download.resume` on a waiting download also answers it, so clients that know nothing of confirmation just see a paused download.
 
@@ -120,7 +120,7 @@ Every download is in one queue: the **main queue**, named `"main"` (the default;
 
 `Queue { name, maxActive, schedule?, running }`. `Schedule { start?, stop?, afterDone = "none" }`: `start` and `stop` are `ClockTime { at: "HH:MM", days? }` in the daemon machine's local time, `days` being 0 (Sunday) to 6 and absent meaning every day. At `start` the queue runs; at `stop` it pauses what it is running. Once nothing is left in the queue, `afterDone` (`none`, `sleep`, `shutdown`) is announced with `event.queue.finished` and carried out 60 seconds later unless a client calls `queue.cancelAction`.
 
-A daemon that implements queues and the scheduler advertises the `queues` capability in `HelloResult.capabilities` (the daemon with the Whoosh engine does); one that does not answers these methods with `-32006`.
+A daemon that implements queues and the scheduler advertises the `queues` capability in `HelloResult.capabilities` (the daemon with the WDM engine does); one that does not answers these methods with `-32006`.
 
 ### Media (video and audio sites)
 

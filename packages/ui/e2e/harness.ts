@@ -4,33 +4,33 @@
 // no app, extension or package export includes it.
 //
 //   ?client=mock (default)  the mock daemon. ?lang=bn  ?theme=light|dark
-//   ?client=live            a real whoosh-daemon. The suite injects the
-//                           address and token as window.__WHOOSH_E2E__ before
+//   ?client=live            a real wdm-daemon. The suite injects the
+//                           address and token as window.__WDM_E2E__ before
 //                           the page loads (never in the URL).
 //
-// The AppState is exposed as window.__whooshApp so the suites can open
+// The AppState is exposed as window.__wdmApp so the suites can open
 // screens directly.
-import type { WhooshClient } from "@whoosh/api-client";
-import { createMockClient } from "@whoosh/api-client/mock";
-import { connectWs } from "@whoosh/api-client/ws";
+import type { WdmClient } from "@wdm/api-client";
+import { createMockClient } from "@wdm/api-client/mock";
+import { connectWs } from "@wdm/api-client/ws";
 import { mount } from "svelte";
 import { App, type AppState, type Host } from "../src/index.ts";
 import "../src/styles/global.css";
 
 declare global {
   interface Window {
-    __WHOOSH_E2E__?: { url: string; token: string };
-    __whooshApp?: AppState;
+    __WDM_E2E__?: { url: string; token: string };
+    __wdmApp?: AppState;
   }
 }
 
 const q = new URLSearchParams(location.search);
 const live = q.get("client") === "live";
 
-function client(): WhooshClient {
+function client(): WdmClient {
   if (live) {
-    const conn = window.__WHOOSH_E2E__;
-    if (!conn) throw new Error("window.__WHOOSH_E2E__ is missing");
+    const conn = window.__WDM_E2E__;
+    if (!conn) throw new Error("window.__WDM_E2E__ is missing");
     return connectWs({ url: conn.url, token: conn.token, client: { name: "e2e", version: "0.0.0" } });
   }
   const theme = q.get("theme");
@@ -88,7 +88,7 @@ mount(App, {
     storage: null,
     ...(live ? {} : { host: mockHost }),
     onready: (app: AppState) => {
-      window.__whooshApp = app;
+      window.__wdmApp = app;
     },
   },
 });

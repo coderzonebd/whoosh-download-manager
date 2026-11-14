@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- "Move to queue…": pick the queue for the selected downloads. -->
 <script lang="ts">
-  import { MAIN_QUEUE } from "@whoosh/api-client";
+  import { MAIN_QUEUE } from "@wdm/api-client";
   import { untrack } from "svelte";
   import { queueOf } from "../lib/state/downloads.svelte.ts";
   import { getApp } from "../lib/state/app.svelte.ts";

@@ -14,16 +14,16 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use whoosh_nmhost::detect::{self, BrowserStatus};
-use whoosh_nmhost::external;
-use whoosh_nmhost::ids::ids;
-use whoosh_nmhost::register::{self, Browser, Location};
-use whoosh_nmhost::runtime::{Env, Os};
+use wdm_nmhost::detect::{self, BrowserStatus};
+use wdm_nmhost::external;
+use wdm_nmhost::ids::ids;
+use wdm_nmhost::register::{self, Browser, Location};
+use wdm_nmhost::runtime::{Env, Os};
 
 const HOST_EXE: &str = if cfg!(windows) {
-    "whoosh-nmhost.exe"
+    "wdm-nmhost.exe"
 } else {
-    "whoosh-nmhost"
+    "wdm-nmhost"
 };
 
 /// Where the user gets the extension for a browser.
@@ -230,13 +230,13 @@ pub fn ensure_registered(first_run: bool) {
     if !missing.is_empty()
         && let Err(err) = register_for(Some(missing), false)
     {
-        eprintln!("whoosh-desktop: browser integration: {err}");
+        eprintln!("wdm-desktop: browser integration: {err}");
     }
     if first_run
         && cfg!(target_os = "macos")
         && let Err(err) = external::offer(Os::current(), &Env::from_process(), ids(), false)
     {
-        eprintln!("whoosh-desktop: store offers: {err}");
+        eprintln!("wdm-desktop: store offers: {err}");
     }
 }
 

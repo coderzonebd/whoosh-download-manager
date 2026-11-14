@@ -17,8 +17,8 @@ if (!args.includes("-J") || page === "") {
   console.error("ERROR: the fake yt-dlp only answers -J");
   process.exit(2);
 }
-const text = readFileSync(process.env.WHOOSH_FAKE_FIXTURE ?? "", "utf8");
-const base = process.env.WHOOSH_FAKE_BASE ?? "";
+const text = readFileSync(process.env.WDM_FAKE_FIXTURE ?? "", "utf8");
+const base = process.env.WDM_FAKE_BASE ?? "";
 // One line, like yt-dlp: the daemon reads the first line of stdout.
 const info = JSON.parse(text.replaceAll("{BASE}", base).replaceAll("{PAGE}", page));
 process.stdout.write(`${JSON.stringify(info)}\n`);

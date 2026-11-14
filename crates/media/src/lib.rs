@@ -1,4 +1,4 @@
-//! `whoosh-media`: video and audio sites, for desktop and GitHub builds
+//! `wdm-media`: video and audio sites, for desktop and GitHub builds
 //! only (never a store build; MASTER-PLAN §6).
 //!
 //! - **Out of process.** yt-dlp and ffmpeg are separate programs, never

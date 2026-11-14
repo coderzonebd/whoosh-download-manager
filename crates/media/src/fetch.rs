@@ -1,4 +1,4 @@
-//! Fetching the tools from their upstream releases, through whoosh-net.
+//! Fetching the tools from their upstream releases, through wdm-net.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -7,8 +7,8 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use whoosh_core::SourceFactory;
-use whoosh_net::HttpSourceFactory;
+use wdm_core::SourceFactory;
+use wdm_net::HttpSourceFactory;
 
 /// Called with `(downloaded, total)` while a download runs.
 pub type Progress<'a> = &'a (dyn Fn(u64, Option<u64>) + Send + Sync);
@@ -35,7 +35,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-/// The real network: one request each, redirects followed by whoosh-net.
+/// The real network: one request each, redirects followed by wdm-net.
 #[derive(Debug)]
 pub struct NetFetcher {
     factory: Arc<HttpSourceFactory>,

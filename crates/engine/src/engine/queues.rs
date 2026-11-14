@@ -4,9 +4,9 @@
 
 use std::time::Duration;
 
-use whoosh_core::DownloadRecord;
-use whoosh_proto::queue::{AFTER_DONE_GRACE_SECS, is_queue_name};
-use whoosh_proto::{AfterDone, MAIN_QUEUE, QueueFinishedEvent, Schedule};
+use wdm_core::DownloadRecord;
+use wdm_proto::queue::{AFTER_DONE_GRACE_SECS, is_queue_name};
+use wdm_proto::{AfterDone, MAIN_QUEUE, QueueFinishedEvent, Schedule};
 
 use super::*;
 use crate::clock::LocalTime;
@@ -59,7 +59,7 @@ pub(super) fn normalize(name: Option<&str>) -> Option<String> {
 
 fn no_queue(name: &str) -> ServiceError {
     ServiceError::new(
-        whoosh_proto::error_code::NOT_FOUND,
+        wdm_proto::error_code::NOT_FOUND,
         format!("no queue named {name:?}"),
     )
 }
@@ -113,7 +113,7 @@ pub(super) fn list(st: &St) -> Vec<Queue> {
 /// download uses that is not stored (downloads put in a queue before
 /// queues were stored). Returns whether any was added that way.
 pub(super) async fn load(
-    state: &dyn whoosh_core::StateStore,
+    state: &dyn wdm_core::StateStore,
     records: &[DownloadRecord],
 ) -> io::Result<(BTreeMap<String, QueueEntry>, bool)> {
     let mut queues = BTreeMap::new();

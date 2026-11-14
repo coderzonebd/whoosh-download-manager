@@ -1,17 +1,17 @@
-//! `whoosh-core`: the contract every part of the engine agrees on.
+//! `wdm-core`: the contract every part of the engine agrees on.
 //!
 //! Phase 1 builds the engine as independent crates, at the same time, behind
 //! these seams:
 //!
 //! | Seam | Trait(s) | Implemented by |
 //! |---|---|---|
-//! | Bytes in | [`RangeSource`], [`SourceFactory`] | `whoosh-net` (HTTP/1.1, HTTP/2, HTTP/3) |
-//! | Bytes out | [`Storage`], [`StorageProvider`] | `whoosh-store` (preallocated files, positional writes) |
-//! | Crash safety | [`Journal`] | `whoosh-store` (checksummed, atomic checkpoints) |
-//! | Everything else durable | [`StateStore`] | `whoosh-store` (SQLite) |
-//! | The API | [`whoosh_proto::service::Service`] | `whoosh-engine` (scheduler, queues, rules) |
+//! | Bytes in | [`RangeSource`], [`SourceFactory`] | `wdm-net` (HTTP/1.1, HTTP/2, HTTP/3) |
+//! | Bytes out | [`Storage`], [`StorageProvider`] | `wdm-store` (preallocated files, positional writes) |
+//! | Crash safety | [`Journal`] | `wdm-store` (checksummed, atomic checkpoints) |
+//! | Everything else durable | [`StateStore`] | `wdm-store` (SQLite) |
+//! | The API | [`wdm_proto::service::Service`] | `wdm-engine` (scheduler, queues, rules) |
 //!
-//! `whoosh-daemon` serves a `Service` over the local API; `whoosh` (the CLI) is
+//! `wdm-daemon` serves a `Service` over the local API; `wdm` (the CLI) is
 //! one of its clients. The [`testing`] module (feature `testing`) has an
 //! in-memory implementation of every trait so each crate can be built and
 //! tested before the others exist.

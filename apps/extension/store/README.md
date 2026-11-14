@@ -13,8 +13,8 @@ Nothing here is submitted automatically; the owner submits from the store accoun
 ## The store build
 
 ```bash
-corepack pnpm --filter @whoosh/extension build:store            # dist/chromium, dist/firefox
-corepack pnpm --filter @whoosh/extension package:store          # plus dist/whoosh-<target>-<version>-store.zip
+corepack pnpm --filter @wdm/extension build:store            # dist/chromium, dist/firefox
+corepack pnpm --filter @wdm/extension package:store          # plus dist/wdm-<target>-<version>-store.zip
 ```
 
 Differences from the GitHub / desktop build (`build`):
@@ -28,9 +28,9 @@ Changing the list is a policy decision: edit the JSON, rebuild, and mention it i
 ## Screenshots
 
 ```bash
-cargo build -p whoosh-nmhost -p whoosh-daemon
-corepack pnpm --filter @whoosh/extension build
-WHOOSH_E2E_CHROME=/path/to/chrome-for-testing node apps/extension/scripts/store-screenshots.mjs
+cargo build -p wdm-nmhost -p wdm-daemon
+corepack pnpm --filter @wdm/extension build
+WDM_E2E_CHROME=/path/to/chrome-for-testing node apps/extension/scripts/store-screenshots.mjs
 ```
 
-The script runs Chrome for Testing with a throwaway profile, the real host and `whoosh-daemon --mock` (demo data, no network), and writes `screenshots/*.png`.
+The script runs Chrome for Testing with a throwaway profile, the real host and `wdm-daemon --mock` (demo data, no network), and writes `screenshots/*.png`.

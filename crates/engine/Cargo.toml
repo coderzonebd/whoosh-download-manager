@@ -1,6 +1,6 @@
 [package]
-name = "whoosh-engine"
-description = "The download engine: work-stealing scheduler, hedged requests, learned connection counts, retries, queues; implements whoosh_proto::service::Service"
+name = "wdm-engine"
+description = "The download engine: work-stealing scheduler, hedged requests, learned connection counts, retries, queues; implements wdm_proto::service::Service"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,14 +24,14 @@ sha2 = "0.11"
 tokio.workspace = true
 tokio-util = "0.7"
 tracing.workspace = true
-whoosh-core.workspace = true
-whoosh-proto.workspace = true
+wdm-core.workspace = true
+wdm-proto.workspace = true
 
 [dev-dependencies]
 proptest = "1"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true
-whoosh-core = { workspace = true, features = ["testing"] }
+wdm-core = { workspace = true, features = ["testing"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.31", features = ["resource"] }

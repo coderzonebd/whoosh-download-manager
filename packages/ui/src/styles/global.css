@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Base styles and shared primitives for every whoosh surface. Components keep
+/* Base styles and shared primitives for every wdm surface. Components keep
    their own scoped styles; only things used in three or more places live
    here. Logical properties only, so RTL locales flip for free. */
 
-@import "@whoosh/design-tokens/tokens.css";
+@import "@wdm/design-tokens/tokens.css";
 
 *,
 *::before,

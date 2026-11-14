@@ -556,7 +556,7 @@ pub(crate) enum DirMode {
     Default,
     /// Owner-only: 0700 on Unix; on Windows a protected DACL for the user,
     /// `SYSTEM` and `Administrators`, which files created inside inherit
-    /// (see `whoosh_proto::winacl`).
+    /// (see `wdm_proto::winacl`).
     Private,
 }
 
@@ -574,7 +574,7 @@ pub(crate) fn create_dirs(dir: &Path, mode: DirMode) -> io::Result<Vec<PathBuf>>
     }
     #[cfg(windows)]
     if mode == DirMode::Private {
-        whoosh_proto::winacl::create_private_dir(dir)?;
+        wdm_proto::winacl::create_private_dir(dir)?;
     }
     #[cfg(windows)]
     let done = mode == DirMode::Private;

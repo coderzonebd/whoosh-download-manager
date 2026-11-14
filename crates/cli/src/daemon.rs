@@ -1,13 +1,13 @@
 //! Finding, starting and stopping the daemon, as the CLI: the shared logic
-//! is in [`whoosh_client::daemon`]; this adds who we are and where the
-//! daemon executable is (`$WHOOSH_DAEMON_BIN`, next to `whoosh`, or `PATH`).
+//! is in [`wdm_client::daemon`]; this adds who we are and where the
+//! daemon executable is (`$WDM_DAEMON_BIN`, next to `wdm`, or `PATH`).
 
 use std::path::Path;
 use std::process::Child;
 
-use whoosh_client::daemon as shared;
-pub use whoosh_client::daemon::{Connected, Found, daemon_exe};
-use whoosh_proto::ClientInfo;
+use wdm_client::daemon as shared;
+pub use wdm_client::daemon::{Connected, Found, daemon_exe};
+use wdm_proto::ClientInfo;
 
 use crate::error::Result;
 

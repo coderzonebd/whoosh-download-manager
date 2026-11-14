@@ -1,5 +1,5 @@
 {
-  "name": "@whoosh/ui",
+  "name": "@wdm/ui",
   "version": "0.0.1",
   "private": true,
   "license": "Apache-2.0",
@@ -23,8 +23,8 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts e2e/live.e2e.test.ts"
   },
   "dependencies": {
-    "@whoosh/api-client": "workspace:*",
-    "@whoosh/design-tokens": "workspace:*"
+    "@wdm/api-client": "workspace:*",
+    "@wdm/design-tokens": "workspace:*"
   },
   "peerDependencies": {
     "svelte": "^5.46.4"

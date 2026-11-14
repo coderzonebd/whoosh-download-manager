@@ -5,9 +5,9 @@ import { t } from "../shared/i18n";
 import type { Api } from "./browser";
 
 export const MENU = {
-  link: "whoosh-link",
-  selection: "whoosh-selection",
-  page: "whoosh-all-links",
+  link: "wdm-link",
+  selection: "wdm-selection",
+  page: "wdm-all-links",
 } as const;
 
 /** (Re)creates the context menu items. Safe to call on every install/startup. */
@@ -39,7 +39,7 @@ export async function collectLinks(
   frameId: number,
   scope: CollectLinksMessage["scope"],
 ): Promise<LinkInfo[]> {
-  const message: CollectLinksMessage = { type: "whoosh/collect-links", scope };
+  const message: CollectLinksMessage = { type: "wdm/collect-links", scope };
   const ask = async () => {
     const reply: unknown = await api.tabs.sendMessage(tabId, message, { frameId });
     if (!isReply(reply)) throw new Error("no link list from the page");

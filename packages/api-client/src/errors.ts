@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Typed errors shared by every WhooshClient transport (WebSocket, mock, …).
+// Typed errors shared by every WdmClient transport (WebSocket, mock, …).
 
 import { ErrorCode } from "./types";
 
@@ -27,8 +27,8 @@ export const CloseCode = {
 } as const;
 
 /** The daemon answered a request with a JSON-RPC error object. */
-export class WhooshRpcError extends Error {
-  override readonly name = "WhooshRpcError";
+export class WdmRpcError extends Error {
+  override readonly name = "WdmRpcError";
   readonly code: number;
   readonly data: unknown;
   /** The method that failed, when known. */
@@ -73,8 +73,8 @@ export type ConnectionErrorReason =
   | "gave_up";
 
 /** The request never got an answer because of the transport, not the daemon. */
-export class WhooshConnectionError extends Error {
-  override readonly name = "WhooshConnectionError";
+export class WdmConnectionError extends Error {
+  override readonly name = "WdmConnectionError";
   readonly reason: ConnectionErrorReason;
 
   constructor(reason: ConnectionErrorReason, message?: string) {
@@ -83,10 +83,10 @@ export class WhooshConnectionError extends Error {
   }
 }
 
-export function isWhooshRpcError(e: unknown): e is WhooshRpcError {
-  return e instanceof WhooshRpcError;
+export function isWdmRpcError(e: unknown): e is WdmRpcError {
+  return e instanceof WdmRpcError;
 }
 
-export function isWhooshConnectionError(e: unknown): e is WhooshConnectionError {
-  return e instanceof WhooshConnectionError;
+export function isWdmConnectionError(e: unknown): e is WdmConnectionError {
+  return e instanceof WdmConnectionError;
 }

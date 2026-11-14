@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The app is a client of `whoosh-daemon` (ADR 0007). The UI asks for the
+//! The app is a client of `wdm-daemon` (ADR 0007). The UI asks for the
 //! daemon's address and token with [`daemon_connection`] on every
 //! (re)connection; that starts the daemon first if none is running, so a
 //! daemon that crashed or was stopped comes back on the next attempt.
 //!
 //! The daemon executable is the one bundled next to this app (Tauri's
-//! `externalBin` puts it there), else `$WHOOSH_DAEMON_BIN`, else `PATH`; in a
+//! `externalBin` puts it there), else `$WDM_DAEMON_BIN`, else `PATH`; in a
 //! development build it is the sibling in `target/<profile>/` once
-//! `cargo build -p whoosh-daemon` has run.
+//! `cargo build -p wdm-daemon` has run.
 //!
 //! The installers ship yt-dlp and ffmpeg in the app's resources
 //! (`media-tools/`, see crates/media's `bundle` module); the daemon is told
@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{Manager, Runtime};
-use whoosh_client::daemon::{self, Found};
-use whoosh_proto::ClientInfo;
+use wdm_client::daemon::{self, Found};
+use wdm_proto::ClientInfo;
 
 /// What the UI needs to open its WebSocket.
 #[derive(Debug, Serialize)]
@@ -44,9 +44,9 @@ pub fn client_info() -> ClientInfo {
     }
 }
 
-/// `$WHOOSH_DATA_DIR`, else the platform's data directory (PROTOCOL.md §1).
+/// `$WDM_DATA_DIR`, else the platform's data directory (PROTOCOL.md §1).
 pub fn data_dir() -> Result<PathBuf, String> {
-    whoosh_proto::runtime::default_data_dir().map_err(|e| e.to_string())
+    wdm_proto::runtime::default_data_dir().map_err(|e| e.to_string())
 }
 
 /// Where the installer put yt-dlp and ffmpeg: `media-tools/` in the app's
@@ -81,7 +81,7 @@ pub async fn connection(
     // there and knows the token.
     connected.client.close().await;
     Ok(Connection {
-        url: format!("ws://127.0.0.1:{}{}", info.port, whoosh_proto::RPC_PATH),
+        url: format!("ws://127.0.0.1:{}{}", info.port, wdm_proto::RPC_PATH),
         token: info.token,
         daemon_version: info.version,
     })
@@ -109,8 +109,7 @@ const WATCH_EVERY: Duration = Duration::from_secs(5);
 /// the daemon's log stays quiet); [`connection`] does the real check when
 /// this says no.
 fn looks_alive(data_dir: &Path) -> bool {
-    let Ok(whoosh_client::runtime::Lookup::Found(info)) = whoosh_client::runtime::read(data_dir)
-    else {
+    let Ok(wdm_client::runtime::Lookup::Found(info)) = wdm_client::runtime::read(data_dir) else {
         return false;
     };
     let addr = SocketAddr::from(([127, 0, 0, 1], info.port));
@@ -134,9 +133,9 @@ pub fn supervise<R: Runtime>(app: &tauri::AppHandle<R>, stop: &'static AtomicBoo
                 continue;
             }
             match tauri::async_runtime::block_on(connection(&dir, &exe, media_tools.as_deref())) {
-                Ok(_) => eprintln!("whoosh-desktop: the daemon was not running; started it again"),
+                Ok(_) => eprintln!("wdm-desktop: the daemon was not running; started it again"),
                 Err(err) => eprintln!(
-                    "whoosh-desktop: the daemon is not running and could not be started: {err}"
+                    "wdm-desktop: the daemon is not running and could not be started: {err}"
                 ),
             }
         }
@@ -156,7 +155,7 @@ mod tests {
 
     #[test]
     fn a_missing_runtime_file_is_not_alive() {
-        let dir = std::env::temp_dir().join(format!("whoosh-supervise-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("wdm-supervise-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert!(!looks_alive(&dir));
         let _ = std::fs::remove_dir_all(&dir);
@@ -172,7 +171,7 @@ mod tests {
     #[test]
     fn media_tools_reach_the_daemon_only_when_bundled() {
         assert!(daemon_args(None).is_empty());
-        let dir = Path::new("/opt/whoosh/media-tools");
+        let dir = Path::new("/opt/wdm/media-tools");
         assert_eq!(
             daemon_args(Some(dir)),
             vec!["--media-tools-dir".to_owned(), dir.display().to_string()]

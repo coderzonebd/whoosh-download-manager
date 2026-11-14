@@ -17,7 +17,7 @@
 
 use std::fmt;
 
-use whoosh_proto::UnixMillis;
+use wdm_proto::UnixMillis;
 
 /// A local wall-clock time at minute resolution: `day` counts days from
 /// 1970-01-01 in the local calendar (not UTC), `minute` is 0–1439.

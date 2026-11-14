@@ -10,11 +10,11 @@
   the file, with a way back to downloading the page itself.
 -->
 <script lang="ts">
-  import { MAIN_QUEUE, type MediaAddParams, type MediaProbeResult, type ProbeResult } from "@whoosh/api-client";
+  import { MAIN_QUEUE, type MediaAddParams, type MediaProbeResult, type ProbeResult } from "@wdm/api-client";
   import { choiceFor, isWebPage, type AudioConvert, type MediaMode, type Quality } from "../lib/media.ts";
   import MediaPicker from "./MediaPicker.svelte";
   import { isDownloadUrl } from "../lib/host.ts";
-  import { CATEGORIES, categoryForFilename, type Category } from "@whoosh/api-client/categories";
+  import { CATEGORIES, categoryForFilename, type Category } from "@wdm/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Dialog from "./Dialog.svelte";
   import FileIcon from "./FileIcon.svelte";

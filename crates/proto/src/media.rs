@@ -95,7 +95,7 @@ pub struct MediaFormat {
     /// yt-dlp's note, e.g. "1080p", "medium".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Whoosh's engine downloads it (a plain HTTP(S) URL): multi-connection,
+    /// WDM's engine downloads it (a plain HTTP(S) URL): multi-connection,
     /// resumable, crash-safe. Otherwise yt-dlp downloads it (HLS, DASH
     /// fragments and other streaming protocols).
     pub direct: bool,
@@ -192,7 +192,7 @@ pub struct MediaDownloadInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MediaVia {
-    /// Whoosh's engine (direct HTTP formats), then ffmpeg merges.
+    /// WDM's engine (direct HTTP formats), then ffmpeg merges.
     Engine,
     /// yt-dlp itself (streaming protocols the engine does not speak yet).
     YtDlp,
@@ -270,10 +270,10 @@ pub enum MediaToolState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MediaToolSource {
-    /// Fetched by whoosh into its data directory (and updated by it).
+    /// Fetched by wdm into its data directory (and updated by it).
     Managed,
     /// Installed by the system's package manager (Linux, and ffmpeg on
-    /// macOS); updated by it, not by whoosh.
+    /// macOS); updated by it, not by wdm.
     System,
 }
 

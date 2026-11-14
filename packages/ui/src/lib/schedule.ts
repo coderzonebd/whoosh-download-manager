@@ -2,7 +2,7 @@
 // Helpers for queue schedules and speed windows: checking "HH:MM" times and
 // saying a schedule in words.
 
-import type { ClockTime, Schedule, SpeedWindow } from "@whoosh/api-client";
+import type { ClockTime, Schedule, SpeedWindow } from "@wdm/api-client";
 import type { I18n } from "./i18n/i18n.svelte.ts";
 
 /** "HH:MM", 24-hour, as the protocol wants it. */

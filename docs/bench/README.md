@@ -1,6 +1,6 @@
 # Benchmarks
 
-> Run sets recorded before 2026-11-13 call Whoosh by its old codename, `vayu` (clients `vayu` and `vayu-cold`). `whoosh-bench report` gates them under that name when no `whoosh` client is present.
+> Run sets recorded before 2026-11-13 call WDM by its old codename, `vayu` (clients `vayu` and `vayu-cold`), and those recorded until 2026-11-14 by its earlier internal name, `whoosh` (`whoosh` and `whoosh-cold`). `wdm-bench report` gates them under that name when no `wdm` client is present.
 
 The project promises to be the fastest download manager, **provably**: every
 speed claim must come from this harness, with the raw data committed next
@@ -12,7 +12,7 @@ with which exact client builds it was produced.
 |---|---|
 | [`baseline-phase0.md`](baseline-phase0.md) | Phase 0 baseline: curl, wget, aria2c (default and tuned), aria2-next, Mister Download Manager, Surge and Gopeed against every labserver scenario. Raw data: [`data/2026-11-10-pop-os/`](data/2026-11-10-pop-os/). |
 
-The harness is [`crates/bench`](../../crates/bench/README.md) (`whoosh-bench`);
+The harness is [`crates/bench`](../../crates/bench/README.md) (`wdm-bench`);
 the server it measures against is [`crates/labserver`](../../crates/labserver/README.md).
 
 ## Reproduce the Phase 0 baseline (Linux)
@@ -22,12 +22,12 @@ You need a Rust toolchain (the repository pins it), `curl`, `wget` and
 
 ```bash
 git clone <this repository> && cd <it>
-cargo build --release -p whoosh-bench
-B=target/release/whoosh-bench
+cargo build --release -p wdm-bench
+B=target/release/wdm-bench
 
 # 1. Competitors: pinned versions from their official GitHub releases,
 #    checked against the published SHA-256 (refused otherwise). Opt-in;
-#    stored in ~/.cache/whoosh-bench/, never committed.
+#    stored in ~/.cache/wdm-bench/, never committed.
 $B fetch
 $B list                 # every client should show a path and a version
 
@@ -82,7 +82,7 @@ twice in a block is skipped for the rest of it.
   completion is detected, the harness fsyncs the output file and its
   directory and counts until that returns (*sync ms* is that sync alone).
   The Phase 1 gate times every client to durability (MASTER-PLAN §8 rule
-  3): Whoosh syncs before it reports done (power-safe by default, for
+  3): WDM syncs before it reports done (power-safe by default, for
   load-shedding), others leave the bytes in the page cache, so this is the
   like-for-like comparison. Older run sets without it show *time* instead,
   marked †.
@@ -123,8 +123,8 @@ Linux). Steps:
 3. Build and fetch:
 
    ```powershell
-   cargo build --release -p whoosh-bench
-   $B = ".\target\release\whoosh-bench.exe"
+   cargo build --release -p wdm-bench
+   $B = ".\target\release\wdm-bench.exe"
    & $B fetch                 # Windows builds of aria2-next, MDM, Surge, Gopeed
    & $B list                  # IDM is found in %ProgramFiles(x86)%\Internet Download Manager
    ```
@@ -145,7 +145,7 @@ design; `/f` fixes the file name, so the `Content-Disposition` test does not
 apply to IDM; and IDM keeps its settings in the registry, so runs are not
 isolated from each other the way other clients' are. Windows Defender's
 real-time scanning of the download folder can dominate small downloads —
-exclude the work directory (`%LOCALAPPDATA%\whoosh-bench\work`) for fair runs.
+exclude the work directory (`%LOCALAPPDATA%\wdm-bench\work`) for fair runs.
 
 If IDM's command line misbehaves (it is a GUI app first), use manual mode
 instead: `& $B manual --client idm-gui --scenario clean --file 1g.bin --runs 5 --watch-dir $env:USERPROFILE\Downloads`
@@ -154,7 +154,7 @@ and start each download from IDM's "Add URL".
 ## GUI-only clients (AB Download Manager, Free Download Manager)
 
 They have no headless mode, so the harness measures them from labserver's
-side: `whoosh-bench manual --client abdm --scenario <s> --file <f> --runs 3
+side: `wdm-bench manual --client abdm --scenario <s> --file <f> --runs 3
 --watch-dir <their download folder>`. It prints the URL, you paste it into
 the app, and the harness records labserver's first request → last byte,
 peak connections, and the downloaded file's SHA-256. Manual *time* is
@@ -169,7 +169,7 @@ with that in mind.
 
 ## Real internet (user-run only)
 
-`whoosh-bench run --real-internet` downloads public speed-test files instead
+`wdm-bench run --real-internet` downloads public speed-test files instead
 (Hetzner, OVH, Tele2; `--url name=URL` to choose). It is off by default and
 never run by CI: it uses other people's bandwidth and the numbers say as
 much about your connection as about the clients. Correctness is judged by
@@ -177,20 +177,20 @@ agreement with the other clients' hashes.
 
 ## Phase 1
 
-The Whoosh engine is two clients: `whoosh`, with its daemon resident the way a
+The WDM engine is two clients: `wdm`, with its daemon resident the way a
 download manager runs (the gate's configuration: the daemon is started
 before each run, outside the measured window, and its CPU and memory
-during the run are counted), and `whoosh-cold`, the one-shot CLI with the
+during the run are counted), and `wdm-cold`, the one-shot CLI with the
 daemon's start and stop inside the timed window (reported alongside; it
 does not gate). The amended gate (MASTER-PLAN §8) is measured on an idle
 machine with ≥ 7 runs per cell:
 
 ```bash
-# Build whoosh and whoosh-daemon (release) first; then, with the machine idle:
-$B run --clients whoosh,whoosh-cold,curl,wget,aria2c,aria2c-tuned,aria2-next,aria2-next-tuned,mdm,surge,gopeed \
-    --bin whoosh=target/release/whoosh --seed 20261111 --cache-mb 128 --wait-for-idle
+# Build wdm and wdm-daemon (release) first; then, with the machine idle:
+$B run --clients wdm,wdm-cold,curl,wget,aria2c,aria2c-tuned,aria2-next,aria2-next-tuned,mdm,surge,gopeed \
+    --bin wdm=target/release/wdm --seed 20261111 --cache-mb 128 --wait-for-idle
 $B report docs/bench/data/<dir> -o report.md      # includes the "Phase 1 gate" section
-$B hardkill --whoosh target/release/whoosh --kills 1000   # rule 2
+$B hardkill --wdm target/release/wdm --kills 1000   # rule 2
 ```
 
 The idle-machine guard samples the rest of the machine before every run;

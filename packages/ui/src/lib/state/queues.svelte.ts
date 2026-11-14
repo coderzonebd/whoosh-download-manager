@@ -4,8 +4,8 @@
 // then `supported` is false and the UI shows only the main queue, as before
 // queues existed, and never surfaces that error.
 
-import { ErrorCode, MAIN_QUEUE, type AfterDone, type Queue, type QueueFinishedEvent } from "@whoosh/api-client";
-import { isWhooshRpcError } from "@whoosh/api-client/errors";
+import { ErrorCode, MAIN_QUEUE, type AfterDone, type Queue, type QueueFinishedEvent } from "@wdm/api-client";
+import { isWdmRpcError } from "@wdm/api-client/errors";
 
 export const QUEUES_CAPABILITY = "queues";
 
@@ -17,7 +17,7 @@ export interface PendingAction {
 }
 
 export function isUnsupported(err: unknown): boolean {
-  return isWhooshRpcError(err) && err.code === ErrorCode.Unsupported;
+  return isWdmRpcError(err) && err.code === ErrorCode.Unsupported;
 }
 
 /** Queue names: 1–64 characters without control characters (PROTOCOL.md). */

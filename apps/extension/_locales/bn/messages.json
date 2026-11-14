@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "ব্রাউজারকেই ডাউনলোড করতে দিন"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "ওপরের নিয়ম যা-ই বলুক, Whoosh Download Manager-এ পাঠান"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "নিয়ম যা-ই বলুক, Whoosh Download Manager-এ পাঠাতে $KEY$ চেপে ধরে লিংকে ক্লিক করুন।",
     "placeholders": {
       "key": {

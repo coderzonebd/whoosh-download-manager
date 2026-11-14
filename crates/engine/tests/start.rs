@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use common::*;
-use whoosh_core::{SourceError, StateStore};
-use whoosh_proto::service::Service;
-use whoosh_proto::{AddParams, DownloadState, IdsParams};
+use wdm_core::{SourceError, StateStore};
+use wdm_proto::service::Service;
+use wdm_proto::{AddParams, DownloadState, IdsParams};
 
 const LONG: Duration = Duration::from_secs(600);
 

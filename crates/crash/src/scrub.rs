@@ -1,5 +1,5 @@
 //! The `before_send` / `before_breadcrumb` scrubber: what leaves the
-//! computer is the error, where in Whoosh's code it happened, the version and
+//! computer is the error, where in WDM's code it happened, the version and
 //! the operating system. Links, file names, paths, cookies, headers, query
 //! strings, e-mail addresses, IP addresses, the user name and the computer's
 //! name are removed from messages, exception values, breadcrumbs and stack
@@ -80,7 +80,7 @@ static QUOTED_RE: LazyLock<Regex> = LazyLock::new(|| {
     re(r#""(?:[^"\\\n]|\\.)*"|'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’|«[^»\n]*»|`[^`\n]*`"#)
 });
 /// A bare file name with an extension (not Rust or JavaScript source: those
-/// are Whoosh's own code, in panic locations).
+/// are WDM's own code, in panic locations).
 static FILE_RE: LazyLock<Regex> = LazyLock::new(|| {
     re(
         r"(?i)(?:^|[\s(\[=:,])([^\s/\\:*?<>|()\[\]]+\.(?:[a-z0-9]{1,5}(?:\.part|\.tmp|\.crdownload|\.download)?))(?:$|[\s)\],;:.!?])",
@@ -379,7 +379,7 @@ mod tests {
             "No such file or directory (os error 2): <path> <file>"
         );
         assert_eq!(
-            s("open ~/Library/Application Support/whoosh/runtime.json"),
+            s("open ~/Library/Application Support/wdm/runtime.json"),
             "open <path> <path>"
         );
         assert_eq!(
@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(s("finished film.mkv in 3s"), "finished <file> in 3s");
         assert_eq!(s("merge of clip.f137.mp4 failed"), "merge of <file> failed");
         assert_eq!(s("‘report.pdf’ is busy"), "‘<redacted>’ is busy");
-        // Whoosh's own source locations and versions stay.
+        // WDM's own source locations and versions stay.
         assert_eq!(
             s("panicked at crates/engine/src/engine.rs:120:5"),
             "panicked at crates/engine/src/engine.rs:120:5"
@@ -459,7 +459,7 @@ mod tests {
     #[test]
     fn source_paths_in_frames() {
         assert_eq!(
-            source_path("/Users/runner/work/whoosh/whoosh/crates/engine/src/engine.rs"),
+            source_path("/Users/runner/work/wdm/wdm/crates/engine/src/engine.rs"),
             "engine/src/engine.rs"
         );
         assert_eq!(
@@ -469,7 +469,7 @@ mod tests {
             "tokio-1.48.0/src/runtime/task/mod.rs"
         );
         assert_eq!(
-            source_path(r"C:\Users\rakibuddin\src\whoosh\crates\store\src\journal.rs"),
+            source_path(r"C:\Users\rakibuddin\src\wdm\crates\store\src\journal.rs"),
             "store/src/journal.rs"
         );
         assert_eq!(
@@ -483,10 +483,10 @@ mod tests {
     /// careless report could carry.
     fn realistic_event() -> Event<'static> {
         let mut frame = Frame {
-            function: Some("whoosh_engine::task::Task::finish".into()),
-            filename: Some("/home/rakibuddin/src/whoosh/crates/engine/src/task.rs".into()),
-            abs_path: Some("/home/rakibuddin/src/whoosh/crates/engine/src/task.rs".into()),
-            package: Some("/home/rakibuddin/.local/bin/whoosh-daemon".into()),
+            function: Some("wdm_engine::task::Task::finish".into()),
+            filename: Some("/home/rakibuddin/src/wdm/crates/engine/src/task.rs".into()),
+            abs_path: Some("/home/rakibuddin/src/wdm/crates/engine/src/task.rs".into()),
+            package: Some("/home/rakibuddin/.local/bin/wdm-daemon".into()),
             lineno: Some(812),
             context_line: Some("let name = \"film.mkv\";".into()),
             pre_context: vec!["// secret".into()],
@@ -594,7 +594,7 @@ mod tests {
             assert!(!json.contains(leak), "{leak} leaked: {json}");
         }
         // What is useful survives.
-        assert!(json.contains("whoosh_engine::task::Task::finish"), "{json}");
+        assert!(json.contains("wdm_engine::task::Task::finish"), "{json}");
         assert!(json.contains("engine/src/task.rs"), "{json}");
         assert!(json.contains("812"));
         assert!(json.contains("PermissionDenied"));

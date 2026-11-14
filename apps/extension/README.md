@@ -1,6 +1,6 @@
 # Whoosh Download Manager browser extension
 
-Pro mode of the Whoosh Download Manager extension: it catches browser downloads and hands them — with the browser's cookies, referrer and user agent — to the WDM daemon through the native messaging host [`whoosh-nmhost`](../../crates/nmhost). One TypeScript code base, built for Chromium browsers (Chrome, Edge, Brave, Opera, Vivaldi) and Firefox. License: GPL-3.0-or-later.
+Pro mode of the Whoosh Download Manager extension: it catches browser downloads and hands them — with the browser's cookies, referrer and user agent — to the WDM daemon through the native messaging host [`wdm-nmhost`](../../crates/nmhost). One TypeScript code base, built for Chromium browsers (Chrome, Edge, Brave, Opera, Vivaldi) and Firefox. License: GPL-3.0-or-later.
 
 Lite mode (the engine compiled to WASM, no app installed) is Phase 4; it plugs in as another implementation of the `Transport` interface (`src/transport/types.ts`).
 
@@ -24,10 +24,10 @@ From the repository root (Node 24, pnpm via corepack):
 ```bash
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 corepack pnpm install --config.strict-dep-builds=false   # see "Known issues"
-corepack pnpm --filter @whoosh/extension build              # dist/chromium and dist/firefox
-corepack pnpm --filter @whoosh/extension package            # also dist/whoosh-<target>-<version>.zip
-corepack pnpm --filter @whoosh/extension build:store        # store build: no development key, video-site blocklist
-corepack pnpm --filter @whoosh/extension package:store      # the same, zipped for upload
+corepack pnpm --filter @wdm/extension build              # dist/chromium and dist/firefox
+corepack pnpm --filter @wdm/extension package            # also dist/wdm-<target>-<version>.zip
+corepack pnpm --filter @wdm/extension build:store        # store build: no development key, video-site blocklist
+corepack pnpm --filter @wdm/extension package:store      # the same, zipped for upload
 ```
 
 The bundles are not minified (easier store review). Zips are deterministic (sorted entries, fixed timestamps).
@@ -38,8 +38,8 @@ The bundles are not minified (easier store review). Zips are deterministic (sort
 
 ```bash
 export CARGO_BUILD_JOBS=2
-cargo build -p whoosh-nmhost --release
-target/release/whoosh-nmhost --register
+cargo build -p wdm-nmhost --release
+target/release/wdm-nmhost --register
 ```
 
 This allows the development extension ID `clhjgofaikdmabdnebgcmdffdjenagfl` and the Firefox ID `whoosh@coderzonebd.com` for every browser you use. Details and per-OS locations: [`crates/nmhost/README.md`](../../crates/nmhost/README.md). Brave reads Chrome's location, so registering Brave also writes `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` on macOS (verified with Brave 1.99).
@@ -61,25 +61,25 @@ Temporary add-ons disappear when Firefox restarts. A permanent install needs an 
 ### 3. Use it
 
 - Click the toolbar icon. Without the daemon (it arrives in Phase 1) the popup says **App not running**, and downloads simply stay in the browser. Without the host it says **Not connected** and explains why.
-- With a daemon running, start any download of a listed type: it disappears from the browser and appears in whoosh. Hold **Alt** while clicking to keep one in the browser.
-- To watch the hand-off, open the extension's service worker console (Chromium: *Inspect views* on the extensions page; Firefox: *Inspect* in about:debugging) — every decision is logged as `whoosh: download <id> …`.
+- With a daemon running, start any download of a listed type: it disappears from the browser and appears in wdm. Hold **Alt** while clicking to keep one in the browser.
+- To watch the hand-off, open the extension's service worker console (Chromium: *Inspect views* on the extensions page; Firefox: *Inspect* in about:debugging) — every decision is logged as `wdm: download <id> …`.
 
 Settings: the options page (right-click the toolbar icon → *Options*, or *Settings* in the popup). They are stored in `storage.local` under `settings` (`src/shared/settings.ts` has the fields and defaults).
 
 ## Tests
 
 ```bash
-corepack pnpm --filter @whoosh/extension typecheck
-corepack pnpm --filter @whoosh/extension test        # vitest unit tests
-corepack pnpm --filter @whoosh/extension test:e2e    # builds, then runs Chrome for Testing and Firefox
+corepack pnpm --filter @wdm/extension typecheck
+corepack pnpm --filter @wdm/extension test        # vitest unit tests
+corepack pnpm --filter @wdm/extension test:e2e    # builds, then runs Chrome for Testing and Firefox
 ```
 
-Unit tests (`test/`): capture rules (including Alt+click "send to Whoosh Download Manager" and the store policy), request context (cookie header order, referer, user agent), file name and URL handling, the hand-off race (accept, refuse, host missing, timeout + late accept/failure, browser finished first, cancel refused), the capture controller (including taking over a fresh copy of an expired download), the native-messaging transport (fail-fast, reconnect, idle close, holding the port open, open notifications), self-healing (link matching, same-file matching, strategy order, asking, attempt limits, eviction, restart, early events, catch-up sync), catch-up paging, the options form, message validation, links, sniffer, settings, the manifest (the `key` really produces the ID that `whoosh-nmhost` allows; options page; store `exclude_matches`), and the store policy (`test/policy.test.ts` builds both variants and runs each `background.js` against a fake browser API: the store bundle leaves a YouTube download to the browser and does not list YouTube media, the plain bundle offers both to WDM).
+Unit tests (`test/`): capture rules (including Alt+click "send to Whoosh Download Manager" and the store policy), request context (cookie header order, referer, user agent), file name and URL handling, the hand-off race (accept, refuse, host missing, timeout + late accept/failure, browser finished first, cancel refused), the capture controller (including taking over a fresh copy of an expired download), the native-messaging transport (fail-fast, reconnect, idle close, holding the port open, open notifications), self-healing (link matching, same-file matching, strategy order, asking, attempt limits, eviction, restart, early events, catch-up sync), catch-up paging, the options form, message validation, links, sniffer, settings, the manifest (the `key` really produces the ID that `wdm-nmhost` allows; options page; store `exclude_matches`), and the store policy (`test/policy.test.ts` builds both variants and runs each `background.js` against a fake browser API: the store bundle leaves a YouTube download to the browser and does not list YouTube media, the plain bundle offers both to WDM).
 
 End-to-end (`e2e/`), both with a fake native host (`e2e/fake-host.mjs`) and pages from a local HTTP server, never touching your real profile or `~/Downloads`:
 
-- `capture.e2e.test.ts` — Chrome for Testing, headless, with the unpacked `dist/chromium` (Playwright attaches over CDP; its own download handling is switched off because it bypasses extensions). Checks: the pinned ID; no host → the browser keeps the download; popup status and counts; a clicked link reaches the host with cookie, referer, user agent and file name, and the browser copy is cancelled and erased; hover → `net.preconnect` with the origin only; daemon unavailable → the browser keeps it; daemon too slow → the browser keeps it and the late daemon copy is removed; **self-healing** (the host reports `needs_refresh`: `download.refreshUrl` with fresh cookies, then with the re-signed link read from the page in a background tab that is closed again); **catch-up** (the host exits, events are lost; the reopened port calls `download.list` and heals what expired); the **options page** saves to storage and flags bad input. Looks for Chrome for Testing in Playwright's cache (`~/.cache/ms-playwright` on Linux, `~/Library/Caches/ms-playwright` on macOS) or `WHOOSH_E2E_CHROME`.
-- `firefox.e2e.test.ts` — stock Firefox (140+), headless, `dist/firefox` installed as a temporary add-on over WebDriver BiDi, host manifest under a temporary `HOME`. Checks the `downloads.onCreated` path: the gecko ID; a captured download reaches the host with cookie, referer and user agent and the running browser copy is cancelled; daemon unavailable → the browser finishes it. Uses `/usr/bin/firefox` (or `WHOOSH_E2E_FIREFOX`).
+- `capture.e2e.test.ts` — Chrome for Testing, headless, with the unpacked `dist/chromium` (Playwright attaches over CDP; its own download handling is switched off because it bypasses extensions). Checks: the pinned ID; no host → the browser keeps the download; popup status and counts; a clicked link reaches the host with cookie, referer, user agent and file name, and the browser copy is cancelled and erased; hover → `net.preconnect` with the origin only; daemon unavailable → the browser keeps it; daemon too slow → the browser keeps it and the late daemon copy is removed; **self-healing** (the host reports `needs_refresh`: `download.refreshUrl` with fresh cookies, then with the re-signed link read from the page in a background tab that is closed again); **catch-up** (the host exits, events are lost; the reopened port calls `download.list` and heals what expired); the **options page** saves to storage and flags bad input. Looks for Chrome for Testing in Playwright's cache (`~/.cache/ms-playwright` on Linux, `~/Library/Caches/ms-playwright` on macOS) or `WDM_E2E_CHROME`.
+- `firefox.e2e.test.ts` — stock Firefox (140+), headless, `dist/firefox` installed as a temporary add-on over WebDriver BiDi, host manifest under a temporary `HOME`. Checks the `downloads.onCreated` path: the gecko ID; a captured download reaches the host with cookie, referer and user agent and the running browser copy is cancelled; daemon unavailable → the browser finishes it. Uses `/usr/bin/firefox` (or `WDM_E2E_FIREFOX`).
 
 Each suite skips when its browser is missing. Not automated: the context-menu items (native menus cannot be clicked from CDP or BiDi), the media sniffer on real sites, the popup's self-healing buttons, and self-healing in Firefox (containers, `onCreated`).
 
@@ -98,14 +98,14 @@ docs/            self-healing design
 store/           store listings, permission justifications, screenshots; PRIVACY.md is the privacy policy
 ```
 
-`@whoosh/api-client` is used for types only; nothing from it is bundled.
+`@wdm/api-client` is used for types only; nothing from it is bundled.
 
 ## Permissions and store review
 
 | Permission | Used for |
 |---|---|
 | `downloads` | see and cancel/erase browser downloads; fallback downloads |
-| `nativeMessaging` | talk to `whoosh-nmhost` |
+| `nativeMessaging` | talk to `wdm-nmhost` |
 | `cookies` + host access | build the `Cookie` header for the handed-over request |
 | `webRequest` + host access | non-blocking: media sniffer, noticing form-POST downloads |
 | `contextMenus` | the three menu items |
@@ -119,5 +119,5 @@ Store risks to expect: broad host permissions plus `cookies` trigger an in-depth
 
 - **pnpm 12 and esbuild.** vitest pulls in Vite, which auto-installs its optional peer `esbuild`; pnpm 12 refuses unapproved build scripts and exits with `ERR_PNPM_IGNORED_BUILDS`. Until the workspace root allows or ignores that build (`allowBuilds: { esbuild: false }` in `pnpm-workspace.yaml`), install with `--config.strict-dep-builds=false`. Nothing here needs esbuild's postinstall; the bundler is Rolldown.
 - Downloads started by a form POST stay in the browser (the request body is not replayed yet).
-- The native port stays open (and the host running) while a remembered download's state is unknown or active. If the daemon never comes back, that lasts until the entry ages out (30 days); the cost is one idle `whoosh-nmhost` process while the browser runs.
+- The native port stays open (and the host running) while a remembered download's state is unknown or active. If the daemon never comes back, that lasts until the entry ages out (30 days); the cost is one idle `wdm-nmhost` process while the browser runs.
 - Self-healing reads links; it does not click buttons or run page scripts. Pages that produce the file only through JavaScript end in a question to the user ("Open page"), after which the next matching download refreshes it.

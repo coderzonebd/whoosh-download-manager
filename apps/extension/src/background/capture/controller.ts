@@ -24,7 +24,7 @@ export interface CaptureDeps {
   cookies: CookieSource;
   settings(): Promise<Settings>;
   bypass: BypassTracker;
-  /** Armed by Alt+click when the setting says "send to Whoosh". */
+  /** Armed by Alt+click when the setting says "send to WDM". */
   force?: BypassTracker;
   methods: RequestMethodTracker;
   /** Store build: true for URLs the store extension must leave alone. */
@@ -41,7 +41,7 @@ export interface CaptureDeps {
 export type CaptureResult =
   | { outcome: "skipped"; reason: SkipReason }
   | HandoffResult
-  /** The download was the fresh copy of an expired whoosh download, which now continues. */
+  /** The download was the fresh copy of an expired wdm download, which now continues. */
   | { outcome: "healed"; daemonId: string }
   | { outcome: "kept"; reason: KeptReason; error?: unknown; healing: string };
 
@@ -88,7 +88,7 @@ export class CaptureController {
       nonGetRequest: deps.methods.wasNonGet([candidate.url, candidate.originalUrl], now),
     };
 
-    // A fresh copy of an expired whoosh download continues that download.
+    // A fresh copy of an expired wdm download continues that download.
     if (!bypass && deps.expired && safetySkip(candidate, settings, ctx) === undefined) {
       const expiredId = await deps.expired.match(candidate, settings);
       if (expiredId) return this.refreshExpired(candidate, expiredId, settings, release);

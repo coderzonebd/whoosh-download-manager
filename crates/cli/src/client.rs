@@ -1,3 +1,3 @@
-//! The JSON-RPC client; see [`whoosh_client::client`].
+//! The JSON-RPC client; see [`wdm_client::client`].
 
-pub use whoosh_client::client::{Client, Event};
+pub use wdm_client::client::{Client, Event};

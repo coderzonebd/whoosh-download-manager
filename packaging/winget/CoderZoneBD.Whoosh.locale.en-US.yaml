@@ -16,7 +16,7 @@ Description: >-
   A free download manager built on one Rust engine: many connections per file,
   instant resume after a crash or power cut, and a browser extension that hands
   downloads over with their cookies and referrer.
-Moniker: whoosh
+Moniker: wdm
 Tags:
   - download-manager
   - downloader

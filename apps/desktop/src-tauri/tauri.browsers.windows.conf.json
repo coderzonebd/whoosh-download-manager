@@ -14,7 +14,7 @@
           "installer/windows/browsers.wxs"
         ],
         "componentGroupRefs": [
-          "WhooshBrowserIntegration"
+          "WdmBrowserIntegration"
         ]
       }
     }

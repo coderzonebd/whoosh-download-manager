@@ -5,7 +5,7 @@
   the add dialog; the dialog owns the values and sends `media.add`.
 -->
 <script lang="ts">
-  import type { MediaProbeResult } from "@whoosh/api-client";
+  import type { MediaProbeResult } from "@wdm/api-client";
   import { choiceFor, estimate, hasAudio, sizeAt, videoHeights, type AudioConvert, type MediaMode, type Quality } from "../lib/media.ts";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Icon from "./Icon.svelte";

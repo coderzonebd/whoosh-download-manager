@@ -10,7 +10,7 @@
 //! quarter of the cases another program puts a file of the same length
 //! under the download's name at a random moment: it must be left alone and
 //! never taken for the download's own (it finishes under `name (1)`).
-//! `WHOOSH_CRASH_CASES` sets the number of cases (default 300).
+//! `WDM_CRASH_CASES` sets the number of cases (default 300).
 
 mod common;
 
@@ -19,11 +19,11 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use common::*;
-use whoosh_core::SourceError;
-use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
-use whoosh_engine::{Engine, EngineConfig, EngineDeps, Tuning};
-use whoosh_proto::service::Service;
-use whoosh_proto::{DownloadState, Durability};
+use wdm_core::SourceError;
+use wdm_core::testing::{MemJournal, MemSourceFactory, MemStateStore};
+use wdm_engine::{Engine, EngineConfig, EngineDeps, Tuning};
+use wdm_proto::service::Service;
+use wdm_proto::{DownloadState, Durability};
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -34,7 +34,7 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 /// Random faults for request `n`, decided by a per-case seed.
-fn faults(seed: u64) -> impl Fn(u64, &whoosh_core::OpenRequest) -> ReqPlan + Send + Sync {
+fn faults(seed: u64) -> impl Fn(u64, &wdm_core::OpenRequest) -> ReqPlan + Send + Sync {
     move |n, _| {
         let mut r = fastrand::Rng::with_seed(seed ^ n.wrapping_mul(0x9e37_79b9_7f4a_7c15));
         let mut p = ReqPlan {
@@ -102,7 +102,7 @@ fn setup(seed: u64) -> Case {
     // undetectable from headers (by any client); changing files keep
     // validators, unchanging ones may lack them.
     let validators = changing || r.u8(0..5) != 0;
-    if std::env::var("WHOOSH_CRASH_TRACE").is_ok() {
+    if std::env::var("WDM_CRASH_TRACE").is_ok() {
         eprintln!(
             "seed {seed}: size {size} ranges {ranges} size_known {size_known} changing {changing} validators {validators}"
         );
@@ -185,7 +185,7 @@ fn place_foreign(case: &Case, after: Duration, state: &Arc<AtomicU8>) {
 }
 
 fn run_case(seed: u64) {
-    if std::env::var("WHOOSH_CRASH_TRACE").is_ok() {
+    if std::env::var("WDM_CRASH_TRACE").is_ok() {
         trace();
     }
     let case = setup(seed);
@@ -318,7 +318,7 @@ fn claims_survived(case: &Case, id: &str, seed: u64) {
     else {
         return;
     };
-    let part = std::path::Path::new(DIR).join("data.bin.whoosh-part");
+    let part = std::path::Path::new(DIR).join("data.bin.wdm-part");
     let Some(file) = case.fs.contents(&part) else {
         return;
     };
@@ -346,11 +346,11 @@ fn claims_survived(case: &Case, id: &str, seed: u64) {
 
 #[test]
 fn hard_kills_never_corrupt() {
-    let cases: u64 = std::env::var("WHOOSH_CRASH_CASES")
+    let cases: u64 = std::env::var("WDM_CRASH_CASES")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(300);
-    let base: u64 = std::env::var("WHOOSH_CRASH_SEED")
+    let base: u64 = std::env::var("WDM_CRASH_SEED")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);

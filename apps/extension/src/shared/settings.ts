@@ -23,16 +23,16 @@ export interface Settings {
   sniffMedia: boolean;
   /**
    * What holding Alt while clicking a link does: let the browser keep that
-   * download (`browser`), send it to Whoosh even when the rules would not
-   * (`whoosh`), or nothing (`off`).
+   * download (`browser`), send it to WDM even when the rules would not
+   * (`wdm`), or nothing (`off`).
    */
   altClick: AltClick;
   /** Find a fresh address by itself when a captured download's link expires. */
   selfHealing: boolean;
 }
 
-export type AltClick = "browser" | "whoosh" | "off";
-export const ALT_CLICK_VALUES: readonly AltClick[] = ["browser", "whoosh", "off"];
+export type AltClick = "browser" | "wdm" | "off";
+export const ALT_CLICK_VALUES: readonly AltClick[] = ["browser", "wdm", "off"];
 
 export const SETTINGS_KEY = "settings";
 
@@ -87,7 +87,8 @@ export function normalizeSettings(raw: unknown): Settings {
     handoffTimeoutMs: count(r["handoffTimeoutMs"], d.handoffTimeoutMs, 500, 30_000),
     preconnect: bool(r["preconnect"], d.preconnect),
     sniffMedia: bool(r["sniffMedia"], d.sniffMedia),
-    altClick: oneOf(r["altClick"], ALT_CLICK_VALUES, d.altClick),
+    // "whoosh": the same choice, saved before the internal rename to WDM.
+    altClick: oneOf(r["altClick"] === "whoosh" ? "wdm" : r["altClick"], ALT_CLICK_VALUES, d.altClick),
     selfHealing: bool(r["selfHealing"], d.selfHealing),
   };
 }

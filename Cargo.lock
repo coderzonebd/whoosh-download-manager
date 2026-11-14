@@ -6258,6 +6258,293 @@ dependencies = [
 ]
 
 [[package]]
+name = "wdm-bench"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fastrand",
+ "flate2",
+ "hex",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tar",
+ "tokio",
+ "ureq",
+ "wdm-labserver",
+ "zip",
+]
+
+[[package]]
+name = "wdm-cli"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "wdm-client",
+ "wdm-proto",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "wdm-client"
+version = "0.1.2"
+dependencies = [
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "wdm-proto",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "wdm-core"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "futures",
+ "serde",
+ "thiserror 2.0.21",
+ "wdm-proto",
+]
+
+[[package]]
+name = "wdm-crash"
+version = "0.1.2"
+dependencies = [
+ "regex",
+ "sentry",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "wdm-daemon"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "clap",
+ "futures",
+ "getrandom 0.4.3",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "rustix",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "wdm-core",
+ "wdm-crash",
+ "wdm-engine",
+ "wdm-media",
+ "wdm-net",
+ "wdm-proto",
+ "wdm-store",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "wdm-desktop"
+version = "0.1.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-deep-link",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "wdm-client",
+ "wdm-crash",
+ "wdm-nmhost",
+ "wdm-proto",
+]
+
+[[package]]
+name = "wdm-engine"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures",
+ "hex",
+ "jiff",
+ "md-5",
+ "nix",
+ "percent-encoding",
+ "proptest",
+ "serde_json",
+ "sha1",
+ "sha2 0.11.1",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "wdm-core",
+ "wdm-proto",
+]
+
+[[package]]
+name = "wdm-labserver"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "futures",
+ "h3",
+ "h3-quinn",
+ "http",
+ "http-body",
+ "http-body-util",
+ "httpdate",
+ "hyper",
+ "hyper-util",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "socket2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "toml 1.2.1+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "wdm-core",
+]
+
+[[package]]
+name = "wdm-media"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "futures",
+ "getrandom 0.4.3",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "wdm-core",
+ "wdm-engine",
+ "wdm-labserver",
+ "wdm-net",
+ "wdm-proto",
+ "wdm-store",
+]
+
+[[package]]
+name = "wdm-net"
+version = "0.1.2"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "futures",
+ "h2",
+ "h3",
+ "h3-quinn",
+ "http",
+ "http-body",
+ "http-body-util",
+ "httpdate",
+ "hyper",
+ "hyper-util",
+ "nix",
+ "percent-encoding",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "rustls-platform-verifier",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "url",
+ "wdm-core",
+ "wdm-labserver",
+ "wdm-proto",
+]
+
+[[package]]
+name = "wdm-nmhost"
+version = "0.1.2"
+dependencies = [
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "wdm-proto",
+ "winreg",
+]
+
+[[package]]
+name = "wdm-proto"
+version = "0.1.2"
+dependencies = [
+ "futures",
+ "getrandom 0.4.3",
+ "hmac",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "wdm-store"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "crc32c",
+ "futures",
+ "libc",
+ "nix",
+ "proptest",
+ "rusqlite",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "wdm-core",
+ "wdm-proto",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6390,292 +6677,6 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
-
-[[package]]
-name = "whoosh-bench"
-version = "0.1.2"
-dependencies = [
- "anyhow",
- "clap",
- "fastrand",
- "flate2",
- "hex",
- "nix",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tar",
- "tokio",
- "ureq",
- "whoosh-labserver",
- "zip",
-]
-
-[[package]]
-name = "whoosh-cli"
-version = "0.1.2"
-dependencies = [
- "clap",
- "futures",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "whoosh-client",
- "whoosh-proto",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "whoosh-client"
-version = "0.1.2"
-dependencies = [
- "futures",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "whoosh-proto",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "whoosh-core"
-version = "0.1.2"
-dependencies = [
- "bytes",
- "futures",
- "serde",
- "thiserror 2.0.21",
- "whoosh-proto",
-]
-
-[[package]]
-name = "whoosh-crash"
-version = "0.1.2"
-dependencies = [
- "regex",
- "sentry",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "whoosh-daemon"
-version = "0.1.2"
-dependencies = [
- "bytes",
- "clap",
- "futures",
- "getrandom 0.4.3",
- "http",
- "http-body-util",
- "hyper",
- "hyper-util",
- "rustix",
- "serde",
- "serde_json",
- "subtle",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "whoosh-crash",
- "whoosh-engine",
- "whoosh-media",
- "whoosh-net",
- "whoosh-proto",
- "whoosh-store",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "whoosh-desktop"
-version = "0.1.2"
-dependencies = [
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-deep-link",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "whoosh-client",
- "whoosh-crash",
- "whoosh-nmhost",
- "whoosh-proto",
-]
-
-[[package]]
-name = "whoosh-engine"
-version = "0.1.2"
-dependencies = [
- "bytes",
- "fastrand",
- "futures",
- "hex",
- "jiff",
- "md-5",
- "nix",
- "percent-encoding",
- "proptest",
- "serde_json",
- "sha1",
- "sha2 0.11.1",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "whoosh-core",
- "whoosh-proto",
-]
-
-[[package]]
-name = "whoosh-labserver"
-version = "0.1.2"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "futures",
- "h3",
- "h3-quinn",
- "http",
- "http-body",
- "http-body-util",
- "httpdate",
- "hyper",
- "hyper-util",
- "quinn",
- "rcgen",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "socket2",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "toml 1.2.1+spec-1.1.0",
- "tracing",
- "tracing-subscriber",
- "whoosh-core",
-]
-
-[[package]]
-name = "whoosh-media"
-version = "0.1.2"
-dependencies = [
- "bytes",
- "futures",
- "getrandom 0.4.3",
- "hex",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tempfile",
- "tokio",
- "tracing",
- "url",
- "whoosh-core",
- "whoosh-engine",
- "whoosh-labserver",
- "whoosh-net",
- "whoosh-proto",
- "whoosh-store",
-]
-
-[[package]]
-name = "whoosh-net"
-version = "0.1.2"
-dependencies = [
- "base64 0.23.1",
- "bytes",
- "futures",
- "h2",
- "h3",
- "h3-quinn",
- "http",
- "http-body",
- "http-body-util",
- "httpdate",
- "hyper",
- "hyper-util",
- "nix",
- "percent-encoding",
- "quinn",
- "rcgen",
- "rustls",
- "rustls-platform-verifier",
- "socket2",
- "tokio",
- "tokio-rustls",
- "tracing",
- "url",
- "whoosh-core",
- "whoosh-labserver",
- "whoosh-proto",
-]
-
-[[package]]
-name = "whoosh-nmhost"
-version = "0.1.2"
-dependencies = [
- "futures",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite",
- "whoosh-proto",
- "winreg",
-]
-
-[[package]]
-name = "whoosh-proto"
-version = "0.1.2"
-dependencies = [
- "futures",
- "getrandom 0.4.3",
- "hmac",
- "rustix",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "thiserror 2.0.21",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "whoosh-store"
-version = "0.1.2"
-dependencies = [
- "bytes",
- "crc32c",
- "futures",
- "libc",
- "nix",
- "proptest",
- "rusqlite",
- "rustix",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "whoosh-core",
- "whoosh-proto",
- "windows-sys 0.61.2",
-]
 
 [[package]]
 name = "winapi"

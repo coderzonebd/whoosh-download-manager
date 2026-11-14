@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "Để trình duyệt tải xuống"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "Gửi sang Whoosh Download Manager, bất kể các quy tắc ở trên"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "Giữ $KEY$ khi nhấp vào liên kết để gửi sang Whoosh Download Manager bất kể quy tắc.",
     "placeholders": {
       "key": {

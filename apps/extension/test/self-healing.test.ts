@@ -1,4 +1,4 @@
-import type { DownloadSummary, RefreshUrlParams } from "@whoosh/api-client";
+import type { DownloadSummary, RefreshUrlParams } from "@wdm/api-client";
 import { describe, expect, it } from "vitest";
 
 import { isSameFile, matchLink, siteOf, type HealTarget } from "../src/background/healing/match";

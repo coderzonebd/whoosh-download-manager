@@ -47,7 +47,9 @@ describe("settings", () => {
   it("validates the Alt+click choice and the self-healing switch", () => {
     expect(DEFAULT_SETTINGS.altClick).toBe("browser");
     expect(DEFAULT_SETTINGS.selfHealing).toBe(true);
-    expect(normalizeSettings({ altClick: "whoosh", selfHealing: false })).toMatchObject({ altClick: "whoosh", selfHealing: false });
+    expect(normalizeSettings({ altClick: "wdm", selfHealing: false })).toMatchObject({ altClick: "wdm", selfHealing: false });
     expect(normalizeSettings({ altClick: "shift", selfHealing: "no" })).toMatchObject({ altClick: "browser", selfHealing: true });
+    // Saved before the rename.
+    expect(normalizeSettings({ altClick: "whoosh" })).toMatchObject({ altClick: "wdm" });
   });
 });

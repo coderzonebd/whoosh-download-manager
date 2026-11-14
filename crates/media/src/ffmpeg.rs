@@ -102,12 +102,12 @@ mod tests {
         let a = strs(merge_args(
             Path::new("/d/v.mp4"),
             Path::new("/d/a.m4a"),
-            Path::new("/d/out.mp4.whoosh-tmp"),
+            Path::new("/d/out.mp4.wdm-tmp"),
             "mp4",
         ));
         assert!(a.windows(2).any(|w| w == ["-c", "copy"]));
         assert!(a.windows(2).any(|w| w == ["-f", "mp4"]));
-        assert_eq!(a.last().unwrap(), "/d/out.mp4.whoosh-tmp");
+        assert_eq!(a.last().unwrap(), "/d/out.mp4.wdm-tmp");
         let w = strs(merge_args(
             Path::new("/v"),
             Path::new("/a"),

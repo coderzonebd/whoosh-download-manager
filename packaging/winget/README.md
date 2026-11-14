@@ -5,10 +5,10 @@ NSIS installer (per-user) and the MSI (per-machine) that `release.yml` builds.
 
 ## Per release
 
-Each release carries `whoosh-<version>-package-manifests.tar.gz`, whose
+Each release carries `wdm-<version>-package-manifests.tar.gz`, whose
 `winget/` folder holds these three files filled in (version, URLs,
 `ReleaseDate`, `InstallerSha256`). Copy them into
-`manifests/c/CoderZoneBD/Whoosh/<version>/` of a winget-pkgs fork, validate
+`manifests/c/CoderZoneBD/WDM/<version>/` of a winget-pkgs fork, validate
 and open the PR. Or:
 
 The simplest path is [wingetcreate](https://github.com/microsoft/winget-create),
@@ -22,7 +22,7 @@ wingetcreate update CoderZoneBD.Whoosh --version 0.1.0 `
 ```
 
 For the very first submission use `wingetcreate new` or copy these three files
-into `manifests/c/CoderZoneBD/Whoosh/<version>/`, replace the version, URLs,
+into `manifests/c/CoderZoneBD/WDM/<version>/`, replace the version, URLs,
 `ReleaseDate` and `InstallerSha256` (from `SHA256SUMS`), then
 `winget validate <dir>` and `winget install --manifest <dir>` in a Windows
 Sandbox before opening the PR. Automating this from `release.yml` needs a

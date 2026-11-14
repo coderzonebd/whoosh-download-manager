@@ -12,7 +12,7 @@ dist/
 # Tauri
 apps/*/src-tauri/gen/
 apps/desktop/src-tauri/binaries/
-# yt-dlp and ffmpeg for the installers (release workflow, whoosh-media-bundle)
+# yt-dlp and ffmpeg for the installers (release workflow, wdm-media-bundle)
 apps/desktop/src-tauri/media-tools/
 
 # Bench / labserver output

@@ -9,7 +9,7 @@
 //!   before every report, so turning it off stops reports at once. The app
 //!   tells the user once, on first run ([`notice_shown`]).
 //! - **Inert without a DSN.** The address of the crash-report service comes
-//!   from the build-time variable `WHOOSH_CRASH_DSN` (a release secret). A
+//!   from the build-time variable `WDM_CRASH_DSN` (a release secret). A
 //!   build without it never starts a client, opens no connection and sends
 //!   nothing, whatever the setting says.
 //! - **Scrubbed.** Every event and breadcrumb goes through [`scrub`]: no
@@ -28,7 +28,7 @@ use sentry::protocol::{Event, Exception, Frame, Level, Stacktrace, Values};
 pub mod scrub;
 
 /// Build-time variable holding the DSN; see the crate docs.
-pub const DSN_ENV: &str = "WHOOSH_CRASH_DSN";
+pub const DSN_ENV: &str = "WDM_CRASH_DSN";
 
 /// In the daemon's data directory: `{"enabled": false}` when the user turned
 /// reports off (absent or without `enabled`: the default, on).
@@ -36,7 +36,7 @@ pub const CONSENT_FILE: &str = "crash-reports.json";
 
 /// The DSN this build was made with, if any.
 pub fn build_dsn() -> Option<&'static str> {
-    option_env!("WHOOSH_CRASH_DSN")
+    option_env!("WDM_CRASH_DSN")
         .map(str::trim)
         .filter(|s| !s.is_empty())
 }
@@ -86,7 +86,7 @@ pub fn consent(data_dir: &Path) -> bool {
     }
 }
 
-/// Whether the first-run notice ("Whoosh sends anonymous crash reports…")
+/// Whether the first-run notice ("WDM sends anonymous crash reports…")
 /// was dismissed, or the user already made a choice in Settings.
 pub fn notice_shown(data_dir: &Path) -> bool {
     match read(data_dir) {
@@ -156,11 +156,11 @@ fn start(dsn: &str, component: &'static str, release: &str, data_dir: PathBuf) -
     let dsn = match dsn.parse() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("whoosh: crash reports disabled, bad {DSN_ENV}: {e}");
+            eprintln!("wdm: crash reports disabled, bad {DSN_ENV}: {e}");
             return None;
         }
     };
-    let release = format!("whoosh@{release}");
+    let release = format!("wdm@{release}");
     let environment = if release.contains('-') {
         "beta"
     } else {
@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn consent_is_on_by_default_and_a_saved_choice_is_kept() {
-        let dir = std::env::temp_dir().join(format!("whoosh-crash-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("wdm-crash-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         // No file: on, and the notice is still to be shown.
         assert!(consent(&dir));
@@ -308,11 +308,11 @@ mod tests {
 
     #[test]
     fn without_a_dsn_nothing_starts() {
-        // CI and local builds have no WHOOSH_CRASH_DSN.
+        // CI and local builds have no WDM_CRASH_DSN.
         if build_dsn().is_some() {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("whoosh-crash-nodsn-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("wdm-crash-nodsn-{}", std::process::id()));
         // Even with the default (on) in place.
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn reports_pass_through_the_scrubber() {
         use sentry::test::with_captured_events_options;
-        let dir = std::env::temp_dir().join(format!("whoosh-crash-cap-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("wdm-crash-cap-{}", std::process::id()));
         set_consent(&dir, true).unwrap();
         let d = dir.clone();
         let mut opts = sentry::ClientOptions::default();

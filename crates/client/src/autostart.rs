@@ -14,10 +14,10 @@
 //!   [`std::io::ErrorKind::Unsupported`] for now. The desktop app's "launch
 //!   at login" covers macOS (a launch agent) and Linux (XDG autostart).
 //!
-//! The daemon's entry ([`DAEMON_ENTRY`]) runs `whoosh-autostart`
-//! ([`launcher_exe`]), not `whoosh-daemon` itself: the daemon is a console
+//! The daemon's entry ([`DAEMON_ENTRY`]) runs `wdm-autostart`
+//! ([`launcher_exe`]), not `wdm-daemon` itself: the daemon is a console
 //! program, so Explorer would open a console window for it at every logon.
-//! `whoosh-autostart` is a GUI-subsystem program that starts the daemon
+//! `wdm-autostart` is a GUI-subsystem program that starts the daemon
 //! detached, with no window, and exits. The desktop app can register itself
 //! the same way under a name of its own.
 
@@ -26,10 +26,14 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// The value name of the daemon's entry.
-pub const DAEMON_ENTRY: &str = "Whoosh daemon";
+pub const DAEMON_ENTRY: &str = "WDM daemon";
+
+/// The daemon entry's name before the internal rename to `wdm`; its
+/// `whoosh-autostart.exe` is gone after an update. `on` and `off` remove it.
+pub const LEGACY_DAEMON_ENTRY: &str = "Whoosh daemon";
 
 /// The launcher's executable name, without the platform's suffix.
-pub const LAUNCHER: &str = "whoosh-autostart";
+pub const LAUNCHER: &str = "wdm-autostart";
 
 /// Whether an entry starts at logon.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +47,7 @@ pub enum Status {
     DisabledByUser { command: String },
 }
 
-/// `whoosh-autostart` next to the running executable (the `whoosh` CLI and
+/// `wdm-autostart` next to the running executable (the `wdm` CLI and
 /// the launcher ship side by side), or `None` if it is not there.
 pub fn launcher_exe() -> Option<PathBuf> {
     let name = format!("{LAUNCHER}{}", std::env::consts::EXE_SUFFIX);
@@ -303,11 +307,8 @@ mod tests {
         .map(OsString::from)
         .collect();
         assert_eq!(
-            command_line(
-                Path::new(r"C:\Program Files\Whoosh\whoosh-autostart.exe"),
-                &args
-            ),
-            r#""C:\Program Files\Whoosh\whoosh-autostart.exe" --data-dir "C:\Users\Ana Ruiz\data\\" plain "" "say \"hi\"" back\\slash"#
+            command_line(Path::new(r"C:\Program Files\WDM\wdm-autostart.exe"), &args),
+            r#""C:\Program Files\WDM\wdm-autostart.exe" --data-dir "C:\Users\Ana Ruiz\data\\" plain "" "say \"hi\"" back\\slash"#
         );
     }
 
@@ -315,8 +316,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn enable_disable_and_the_users_switch() {
-        let name = format!("whoosh-test-{}", std::process::id());
-        let program = Path::new(r"C:\Program Files\Whoosh\whoosh-autostart.exe");
+        let name = format!("wdm-test-{}", std::process::id());
+        let program = Path::new(r"C:\Program Files\WDM\wdm-autostart.exe");
         let args = [OsString::from("--data-dir"), OsString::from(r"C:\d d")];
         let command = command_line(program, &args);
         assert_eq!(status(&name).unwrap(), Status::Off);

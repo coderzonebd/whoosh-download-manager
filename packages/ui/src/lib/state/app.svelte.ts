@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Everything the shell needs, built from one WhooshClient. Components get it
+// Everything the shell needs, built from one WdmClient. Components get it
 // from context (`getApp()`), so the same tree runs on the mock, the real
 // WebSocket client or (in the extension) a native-messaging client.
 
-import { MAIN_QUEUE, type AddParams, type ConfirmParams, type DownloadSummary, type MediaAddParams, type Queue, type QueueConfig, type Settings, type Stats, type WhooshClient } from "@whoosh/api-client";
-import { isWhooshConnectionError, isWhooshRpcError } from "@whoosh/api-client/errors";
+import { MAIN_QUEUE, type AddParams, type ConfirmParams, type DownloadSummary, type MediaAddParams, type Queue, type QueueConfig, type Settings, type Stats, type WdmClient } from "@wdm/api-client";
+import { isWdmConnectionError, isWdmRpcError } from "@wdm/api-client/errors";
 import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
 import type { Host } from "../host.ts";
@@ -49,7 +49,7 @@ function defaultStorage(): Storage | null {
 }
 
 export class AppState {
-  readonly client: WhooshClient;
+  readonly client: WdmClient;
   readonly i18n: I18n;
   readonly store = new DownloadStore();
   readonly toasts = new ToastStore();
@@ -100,7 +100,7 @@ export class AppState {
 
   readonly #off: (() => void)[] = [];
 
-  constructor(client: WhooshClient, opts: AppOptions = {}) {
+  constructor(client: WdmClient, opts: AppOptions = {}) {
     this.client = client;
     this.host = opts.host ?? {};
     this.host.crashReports
@@ -322,7 +322,7 @@ export class AppState {
   }
 
   describe(err: unknown): string {
-    if (isWhooshRpcError(err) || isWhooshConnectionError(err)) return err.message;
+    if (isWdmRpcError(err) || isWdmConnectionError(err)) return err.message;
     return err instanceof Error ? err.message : String(err);
   }
 
@@ -568,7 +568,7 @@ export class AppState {
   }
 }
 
-const KEY = Symbol("whoosh.app");
+const KEY = Symbol("wdm.app");
 
 export function provideApp(app: AppState): AppState {
   return setContext(KEY, app);
