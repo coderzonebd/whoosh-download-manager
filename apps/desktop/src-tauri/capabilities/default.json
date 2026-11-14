@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window gets core IPC only; window state is saved from Rust, not JS.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "The main window: core IPC, events from the shell, and notifications. Window state is saved from Rust, not JS.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "notification:default"
+  ]
 }
