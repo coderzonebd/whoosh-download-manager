@@ -149,14 +149,23 @@ async fn serve_file<B>(
 
     let ttfb = Duration::from_millis(sc.latency.ttfb_ms);
     let early = gatekeep(&req, hop, file_name, rt, ctx);
+    // Over the cap with `refuse = "trickle"`: served, at this rate.
+    let mut trickle = None;
     let guard = match early {
         Some(_) => None,
         None => match ActiveGuard::acquire(rt, ctx.conn.peer) {
             Some(g) => Some(g),
-            None => {
-                tokio::time::sleep(ttfb).await;
-                return refuse(&req, rt, ctx).await;
-            }
+            None => match sc.limits.filter(|l| l.refuse == Refuse::Trickle) {
+                // Not holding a slot: it never counts against the cap.
+                Some(l) => {
+                    trickle = Some(l.trickle_rate.0);
+                    None
+                }
+                None => {
+                    tokio::time::sleep(ttfb).await;
+                    return refuse(&req, rt, ctx).await;
+                }
+            },
         },
     };
     if !ttfb.is_zero() {
@@ -261,6 +270,7 @@ async fn serve_file<B>(
             end: range.end,
             conn: ctx.conn.clone(),
             guard,
+            trickle,
         })
     };
     let mut r = Response::new(body);
@@ -379,9 +389,12 @@ async fn refuse<B>(req: &Request<B>, rt: &ScenarioRt, ctx: &ReqCtx) -> Response<
         max_conns_per_ip: 1,
         refuse: Refuse::ServiceUnavailable,
         retry_after_secs: 1,
+        trickle_rate: crate::units::Rate(1),
     });
     let status = match limits.refuse {
-        Refuse::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        // A trickle is served by `serve_file`; only a request that cannot
+        // be (none) ends up here.
+        Refuse::ServiceUnavailable | Refuse::Trickle => StatusCode::SERVICE_UNAVAILABLE,
         Refuse::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
         Refuse::Reset => {
             ctx.conn.kill();

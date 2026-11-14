@@ -384,7 +384,7 @@
                 aria-describedby={errors.defaultDirectory ? "vy-set-dir-err" : undefined}
               />
               {#if host.pickFolder}
-                <button type="button" class="vy-btn" disabled={picking} onclick={chooseFolder}>
+                <button type="button" class="vy-btn vy-btn--secondary" disabled={picking} onclick={chooseFolder}>
                   <Icon name="folder" size={15} />{t("action.browse")}
                 </button>
               {/if}
@@ -506,7 +506,7 @@
             </div>
           {/each}
           <div>
-            <button id="vy-win-add" type="button" class="vy-btn" onclick={addWindow}>
+            <button id="vy-win-add" type="button" class="vy-btn vy-btn--secondary" onclick={addWindow}>
               <Icon name="plus" size={15} />{t("speedSchedule.add")}
             </button>
           </div>
@@ -552,7 +552,7 @@
           <h2 id="vy-set-browsers">{t("settings.browsers")}</h2>
           <p class="vy-hint">{t("settings.browsersHint")}</p>
           <div>
-            <button type="button" class="vy-btn" onclick={() => (app.view = "browsers")}>{t("settings.browsersOpen")}</button>
+            <button type="button" class="vy-btn vy-btn--secondary" onclick={() => (app.view = "browsers")}>{t("settings.browsersOpen")}</button>
           </div>
         </section>
       {/if}
@@ -575,7 +575,7 @@
                 {#if update.kind === "installing"}<span class="vy-spinner" aria-hidden="true"></span>{t("settings.installing")}{:else}{t("settings.installUpdate")}{/if}
               </button>
             {:else}
-              <button type="button" class="vy-btn" disabled={update.kind === "checking"} onclick={checkUpdate}>
+              <button type="button" class="vy-btn vy-btn--secondary" disabled={update.kind === "checking"} onclick={checkUpdate}>
                 {#if update.kind === "checking"}<span class="vy-spinner" aria-hidden="true"></span>{t("settings.checking")}{:else}{t("settings.checkNow")}{/if}
               </button>
             {/if}

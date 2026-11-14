@@ -33,7 +33,7 @@ use crate::config::Tuning;
 use crate::engine::{Inner, Live};
 use crate::names;
 use crate::segment::{HedgeKind, Segment, WorkerId};
-use crate::tuner::{Sample, Tuner};
+use crate::tuner::{self, Look, Sample, Tuner};
 use crate::util::{backoff, host_key, median, unix_millis};
 use crate::worker::{self, Counters, Exit, Job};
 
@@ -191,6 +191,9 @@ struct Wk {
     ttfb_seen: bool,
     /// Where its request ends: its stream can deliver up to here.
     req_end: u64,
+    /// Since when it has been starved while others stream
+    /// (`Driver::starved_check`).
+    starved_since: Option<Instant>,
 }
 
 impl Wk {
@@ -347,6 +350,8 @@ struct Driver {
     profile: Option<HostProfile>,
     rng: fastrand::Rng,
     consecutive: u32,
+    /// When a byte last arrived (or the run started).
+    last_progress: Instant,
     open_gate: Instant,
     open_failures: VecDeque<Instant>,
     replacements: u32,
@@ -430,6 +435,7 @@ impl Driver {
             profile: None,
             rng,
             consecutive: 0,
+            last_progress: now,
             open_gate: now,
             open_failures: VecDeque::new(),
             replacements: 0,
@@ -1880,6 +1886,7 @@ impl Driver {
                 ewma: None,
                 ttfb_seen: false,
                 req_end: end,
+                starved_since: None,
             },
         );
         Some(wid)
@@ -2064,7 +2071,13 @@ impl Driver {
             self.consecutive += 1;
         }
         if self.consecutive > self.t.error_budget {
-            return Err(Outcome::Failed(source_info(err)).into());
+            // With bytes already on disk, keep trying (at `retry_cap`) until
+            // nothing has arrived for `error_patience`.
+            let patient = self.written_total() > 0
+                && now.duration_since(self.last_progress) < self.t.error_patience;
+            if !patient {
+                return Err(Outcome::Failed(source_info(err)).into());
+            }
         }
         // `Retry-After` is honoured up to `retry_cap`: a server asking for a
         // day must not park the download outside the error budget.
@@ -2116,6 +2129,7 @@ impl Driver {
         self.recv_total += delta_total;
         if delta_total > 0 {
             self.consecutive = 0;
+            self.last_progress = now;
         }
         let inst = delta_total as f64 / dt;
         self.speed += alpha * (inst - self.speed);
@@ -2177,10 +2191,18 @@ impl Driver {
         if self.old_version {
             return;
         }
+        let limited = self.inner.limiter.limited();
+        if limited {
+            // A speed limit shares the rate out as it likes: no judging.
+            for w in self.workers.values_mut() {
+                w.starved_since = None;
+            }
+        } else {
+            self.starved_check(now);
+        }
         let streaming = self.streaming_owners();
         let work_left: u64 = self.segs.iter().map(|s| s.snapshot().remaining()).sum();
         let max = self.inner.max_connections();
-        let limited = self.inner.limiter.limited();
         let recv = self.recv_total;
         let ttfb = self.median_ttfb();
         let Some(tuner) = self.tuner.as_mut() else {
@@ -2215,6 +2237,84 @@ impl Driver {
                     w.cancelling = true;
                     w.cancel.cancel();
                 }
+            }
+        }
+    }
+
+    /// Owners the server accepted but starves while others stream (see
+    /// `Tuning::starved_share`) count as refused: the tuner caps the count
+    /// at the connections streaming, and the starved ones are cancelled, so
+    /// their ranges go to the others like any cancelled connection's.
+    fn starved_check(&mut self, now: Instant) {
+        let Some(tuner) = self.tuner.as_ref() else {
+            return;
+        };
+        let share = tuner.starved_share();
+        let after = tuner.starved_after(self.median_ttfb());
+        let now_us = now_us_since(self.epoch, now);
+        let mut ids = Vec::new();
+        let mut looks = Vec::new();
+        // Owners still waiting for their headers: not known to be starved,
+        // so they count as streaming (a ceiling set too high comes down at
+        // the next look; one set too low would stay).
+        let mut pending = 0u16;
+        for (wid, w) in &self.workers {
+            if w.cancelling {
+                continue;
+            }
+            let n = w.seg.snapshot();
+            if n.owner != Some(*wid) || n.remaining() == 0 {
+                continue;
+            }
+            let opened = w.counters.opened_us.load(Ordering::Relaxed);
+            if opened == 0 {
+                pending = pending.saturating_add(1);
+                continue;
+            }
+            let secs = now_us.saturating_sub(opened) as f64 / 1e6;
+            let bytes = w.counters.bytes.load(Ordering::Relaxed) as f64;
+            ids.push(*wid);
+            looks.push(Look {
+                rate: w.ewma.unwrap_or(0.0),
+                since_headers: if secs > 0.0 {
+                    bytes / secs
+                } else {
+                    f64::INFINITY
+                },
+            });
+        }
+        let (flags, streaming) = tuner::starved(&looks, share);
+        let mut due = Vec::new();
+        for (wid, starved) in ids.iter().zip(flags) {
+            let Some(w) = self.workers.get_mut(wid) else {
+                continue;
+            };
+            if !starved {
+                w.starved_since = None;
+                continue;
+            }
+            let since = *w.starved_since.get_or_insert(now);
+            if now.duration_since(since) >= after {
+                due.push(*wid);
+            }
+        }
+        if due.is_empty() || streaming == 0 {
+            return;
+        }
+        let streaming = streaming.saturating_add(pending);
+        tracing::debug!(
+            id = %self.id,
+            starved = due.len(),
+            streaming,
+            "connections starved while others stream; capping the count"
+        );
+        if let Some(t) = self.tuner.as_mut() {
+            t.on_starved(streaming);
+        }
+        for wid in due {
+            if let Some(w) = self.workers.get_mut(&wid) {
+                w.cancelling = true;
+                w.cancel.cancel();
             }
         }
     }

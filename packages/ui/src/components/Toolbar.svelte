@@ -38,7 +38,7 @@
         title={t(picked > 0 ? "toolbar.clearSelection" : "toolbar.selectAll")}
         onclick={() => (picked > 0 ? store.clearSelection() : store.selectAll())}
       >
-        <span class="vy-check" aria-hidden="true"></span>
+        <span class="vy-pick" aria-hidden="true"></span>
         <span class="text">{picked > 0 ? t("toolbar.selectedCount", { count: picked }) : t("toolbar.selectAll")}</span>
       </button>
       <button class="vy-btn" disabled={!canResume} onclick={() => app.resume()} title={t("toolbar.resume")}>

@@ -33,7 +33,7 @@
   data-state={d.state}
 >
   <div class="cell name" role="gridcell">
-    <span class="vy-check" data-pick role="checkbox" aria-checked={selected} aria-label={i18n.t("list.pick")}></span>
+    <span class="vy-pick" data-pick role="checkbox" aria-checked={selected} aria-label={i18n.t("list.pick")}></span>
     <FileIcon category={download.category} size="sm" />
     <span class="vy-truncate" title={d.filename} dir="auto">{d.filename}</span>
   </div>
