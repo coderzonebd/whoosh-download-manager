@@ -1,12 +1,12 @@
 # Homebrew cask (template)
 
-`wdm.rb` installs the universal `.dmg` that `release.yml` attaches to each
+`whoosh-download-manager.rb` installs the universal `.dmg` that `release.yml` attaches to each
 GitHub release.
 
 ## Where it goes
 
 1. **Own tap first:** a repository `coderzonebd/homebrew-tap` with this file
-   at `Casks/wdm.rb`; users run `brew install --cask coderzonebd/tap/wdm`.
+   at `Casks/whoosh-download-manager.rb`; users run `brew install --cask coderzonebd/tap/whoosh-download-manager`.
 2. **homebrew/cask later:** it only accepts apps that are signed with a
    Developer ID and notarized (Gatekeeper must pass), with a stable download
    URL and enough users ("notable"). Submit once releases are notarized.
@@ -21,7 +21,7 @@ filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
 ```bash
 shasum -a 256 Whoosh-Download-Manager_0.1.0_universal.dmg            # or take it from SHA256SUMS
 brew bump-cask-pr --version 0.1.0 wdm            # in the tap or homebrew/cask
-brew audit --cask --new wdm && brew style wdm.rb
+brew audit --cask --new whoosh-download-manager && brew style whoosh-download-manager.rb
 ```
 
 Automating the bump from `release.yml` needs a token that can push to the tap

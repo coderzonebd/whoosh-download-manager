@@ -1,5 +1,5 @@
 # TEMPLATE cask: see README.md. Version, sha256 and every URL are placeholders.
-cask "wdm" do
+cask "whoosh-download-manager" do
   version "0.0.1"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 

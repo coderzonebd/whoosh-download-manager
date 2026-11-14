@@ -100,7 +100,7 @@ ManifestVersion: 1.10.0
 
 export function scoop({ version, repo, assets }) {
   if (!assets.portableX64) return undefined;
-  const m = JSON.parse(read("scoop/wdm.json"));
+  const m = JSON.parse(read("scoop/whoosh-download-manager.json"));
   m.version = version;
   m.description = "Fast, open-source download manager";
   m.homepage = `https://github.com/${repo}`;
@@ -112,16 +112,16 @@ export function scoop({ version, repo, assets }) {
     hash: { url: "$baseurl/SHA256SUMS", regex: "$sha256\\s+\\*?$basename" },
   });
   m.autoupdate = { architecture: { "64bit": auto("x64"), ...(assets.portableArm64 ? { arm64: auto("arm64") } : {}) } };
-  return { "wdm.json": `${JSON.stringify(m, null, 4)}\n` };
+  return { "whoosh-download-manager.json": `${JSON.stringify(m, null, 4)}\n` };
 }
 
 export function homebrew({ version, repo, assets }) {
   if (!assets.dmg) return undefined;
-  const text = untemplate(read("homebrew/wdm.rb"))
+  const text = untemplate(read("homebrew/whoosh-download-manager.rb"))
     .replace(/^ {2}version "[^"]*"$/m, `  version "${version}"`)
     .replace(/^ {2}sha256 "[0-9a-f]{64}"$/m, `  sha256 "${assets.dmg.sha256}"`)
     .replaceAll("coderzonebd/whoosh-download-manager", repo);
-  return { "wdm.rb": text };
+  return { "whoosh-download-manager.rb": text };
 }
 
 export function flatpak({ repo, assets }) {

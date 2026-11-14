@@ -1,6 +1,6 @@
 # Scoop manifest (template)
 
-`wdm.json` installs the portable build (`Whoosh-Download-Manager_<version>_x64_portable.zip`,
+`whoosh-download-manager.json` installs the portable build (`Whoosh-Download-Manager_<version>_x64_portable.zip`,
 the signed `wdm-desktop.exe` alone) that `release.yml` attaches to each
 release, and adds a Start-menu shortcut. `checkver`/`autoupdate` read new
 versions from GitHub and the hash from the release's `SHA256SUMS`.
@@ -12,13 +12,13 @@ filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
 ## Where it goes
 
 1. **Own bucket first:** a repository `coderzonebd/scoop-bucket` with this
-   file at `bucket/wdm.json`; users run
+   file at `bucket/whoosh-download-manager.json`; users run
    `scoop bucket add wdm https://github.com/coderzonebd/scoop-bucket` and
-   `scoop install wdm/wdm`. The bucket template's Excavator workflow then
+   `scoop install wdm/whoosh-download-manager`. The bucket template's Excavator workflow then
    runs `checkver -u` on a schedule, so no token is needed in this repo.
 2. **ScoopInstaller/Extras** later (GUI apps go there, not `main`).
 
-Check locally with `scoop install .\wdm.json` and
+Check locally with `scoop install .\whoosh-download-manager.json` and
 `.\bin\checkver.ps1 -Dir . -App wdm -Update` from a bucket checkout.
 
 ## Placeholders until the name, portable mode and signing are settled

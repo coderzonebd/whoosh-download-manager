@@ -1,4 +1,4 @@
-# AUR package `wdm` (template)
+# AUR package `whoosh-download-manager` (template)
 
 `PKGBUILD` builds from the source archive that `release.yml` attaches to
 every release (`wdm-<version>-source.tar.gz`, a `git archive` of the tag),

@@ -34,12 +34,12 @@ test("every channel gets the real version, URLs and hashes", () => {
     assert.ok(w["CoderZoneBD.Whoosh.locale.en-US.yaml"].includes(`PackageVersion: ${V}`));
     assert.ok(!w["CoderZoneBD.Whoosh.locale.en-US.yaml"].includes("TEMPLATE"));
 
-    const s = JSON.parse(scoop(ctx)["wdm.json"]);
+    const s = JSON.parse(scoop(ctx)["whoosh-download-manager.json"]);
     assert.equal(s.version, V);
     assert.equal(s.architecture["64bit"].url, `${BASE}/Whoosh-Download-Manager_${V}_x64_portable.zip`);
     assert.equal(s.architecture.arm64, undefined);
 
-    const cask = homebrew(ctx)["wdm.rb"];
+    const cask = homebrew(ctx)["whoosh-download-manager.rb"];
     assert.ok(cask.includes(`version "${V}"`) && cask.includes(sha256(join(dir, `Whoosh-Download-Manager_${V}_universal.dmg`))));
 
     const fp = flatpak(ctx)["com.coderzonebd.whoosh.yml"];
