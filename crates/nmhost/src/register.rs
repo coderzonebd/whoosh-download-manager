@@ -6,8 +6,12 @@
 //! * Windows: the manifests live under `%LOCALAPPDATA%\whoosh\nmhost\` and a
 //!   per-browser key under `HKEY_CURRENT_USER` points at them.
 //!
-//! Linux is tested. macOS and Windows locations follow each browser's
-//! documentation but have not been run on those systems yet.
+//! Brave reads the user-level host from **Google Chrome's** location, not
+//! from its own profile directory (verified on macOS with Brave 1.99 /
+//! Chromium 157: a manifest only in `BraveSoftware/Brave-Browser/
+//! NativeMessagingHosts` is "not found"), so a Brave registration writes
+//! both. Linux and macOS are tested; the Windows registry layout follows the
+//! Chrome and Firefox documentation but has not been run on Windows.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -106,6 +110,11 @@ pub struct Target {
     pub location: Location,
     /// A directory that exists when the browser has been used by this user.
     pub profile_dir: PathBuf,
+    /// Written whenever this browser is registered by name, even if
+    /// `profile_dir` does not exist yet (the browser's main location, and
+    /// Chrome's location for Brave). Other locations are written only where
+    /// the browser keeps its files.
+    pub always: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -131,10 +140,11 @@ pub enum RegisterError {
 /// Every place a manifest can go for `browser` on `os`.
 pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, RegisterError> {
     let home = || env.home.clone().ok_or(RegisterError::NoBaseDir("HOME"));
-    let file = |profile_dir: PathBuf, hosts_dir: PathBuf| Target {
+    let file = |profile_dir: PathBuf, hosts_dir: PathBuf, always: bool| Target {
         browser,
         location: Location::File(hosts_dir.join(format!("{HOST_NAME}.json"))),
         profile_dir,
+        always,
     };
 
     Ok(match os {
@@ -150,11 +160,13 @@ pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, Regis
                         file(
                             home.join(".mozilla"),
                             home.join(".mozilla/native-messaging-hosts"),
+                            true,
                         ),
                         // Firefox 147+ can keep its files under XDG_CONFIG_HOME.
                         file(
                             config.join("mozilla"),
                             config.join("mozilla/native-messaging-hosts"),
+                            false,
                         ),
                     ]
                 }
@@ -168,7 +180,12 @@ pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, Regis
                         Browser::Firefox => unreachable!(),
                     });
                     let hosts = profile.join("NativeMessagingHosts");
-                    vec![file(profile, hosts)]
+                    let mut all = vec![file(profile.clone(), hosts, true)];
+                    if browser == Browser::Brave {
+                        let chrome = config.join("google-chrome/NativeMessagingHosts");
+                        all.push(file(profile, chrome, true));
+                    }
+                    all
                 }
             }
         }
@@ -185,7 +202,16 @@ pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, Regis
                 Browser::Vivaldi => ("Vivaldi", "Vivaldi/NativeMessagingHosts"),
                 Browser::Firefox => ("Firefox", "Mozilla/NativeMessagingHosts"),
             };
-            vec![file(support.join(profile), support.join(hosts))]
+            let mut all = vec![file(support.join(profile), support.join(hosts), true)];
+            if browser == Browser::Brave {
+                // Brave looks here, not in its own directory (see the module docs).
+                all.push(file(
+                    support.join(profile),
+                    support.join("Google/Chrome/NativeMessagingHosts"),
+                    true,
+                ));
+            }
+            all
         }
         Os::Windows => {
             let local = env
@@ -208,14 +234,29 @@ pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, Regis
                 Browser::Vivaldi => (r"Software\Vivaldi", "Vivaldi"),
                 Browser::Firefox => (r"Software\Mozilla", r"Mozilla\Firefox"),
             };
-            vec![Target {
+            let mut all = vec![Target {
                 browser,
                 location: Location::Registry {
                     key: format!(r"{key_prefix}\NativeMessagingHosts\{HOST_NAME}"),
-                    manifest,
+                    manifest: manifest.clone(),
                 },
                 profile_dir: local.join(profile),
-            }]
+                always: true,
+            }];
+            if browser == Browser::Brave {
+                // Brave reads Chrome's key, as it reads Chrome's directory on
+                // macOS. Not verified on Windows.
+                all.push(Target {
+                    browser,
+                    location: Location::Registry {
+                        key: format!(r"Software\Google\Chrome\NativeMessagingHosts\{HOST_NAME}"),
+                        manifest,
+                    },
+                    profile_dir: local.join(profile),
+                    always: true,
+                });
+            }
+            all
         }
     })
 }
@@ -288,17 +329,17 @@ pub fn register(os: Os, env: &Env, opts: &Options) -> Result<Vec<Change>, Regist
         .browsers
         .clone()
         .unwrap_or_else(|| Browser::ALL.to_vec());
-    let mut chosen = Vec::new();
+    let mut chosen: Vec<Target> = Vec::new();
     for browser in browsers {
-        let all = targets(os, env, browser)?;
-        if explicit {
-            // Always write the primary location; extra ones only where the
-            // browser actually keeps its files.
-            let mut it = all.into_iter();
-            chosen.extend(it.next());
-            chosen.extend(it.filter(|t| t.profile_dir.is_dir()));
-        } else {
-            chosen.extend(all.into_iter().filter(|t| t.profile_dir.is_dir()));
+        for target in targets(os, env, browser)? {
+            // Named browsers: their main locations always, extra ones only
+            // where the browser keeps its files. Detected browsers: wherever
+            // the profile exists.
+            let wanted = target.profile_dir.is_dir() || (explicit && target.always);
+            // Chrome's location may come from both Chrome and Brave.
+            if wanted && !chosen.iter().any(|c| c.location == target.location) {
+                chosen.push(target);
+            }
         }
     }
     if chosen.is_empty() {
@@ -338,9 +379,12 @@ pub fn register(os: Os, env: &Env, opts: &Options) -> Result<Vec<Change>, Regist
 /// Removes the manifest from every location for every browser. `done` is
 /// false where there was nothing to remove.
 pub fn unregister(os: Os, env: &Env) -> Result<Vec<Change>, RegisterError> {
-    let mut changes = Vec::new();
+    let mut changes: Vec<Change> = Vec::new();
     for browser in Browser::ALL {
         for target in targets(os, env, browser)? {
+            if changes.iter().any(|c| c.location == target.location) {
+                continue;
+            }
             let path = target.location.manifest();
             let mut done = match std::fs::remove_file(path) {
                 Ok(()) => true,
@@ -518,6 +562,17 @@ mod tests {
         );
     }
 
+    fn files(os: Os, env: &Env, browser: Browser) -> Vec<PathBuf> {
+        targets(os, env, browser)
+            .unwrap()
+            .into_iter()
+            .map(|t| match t.location {
+                Location::File(path) => path,
+                other => panic!("expected a file, got {other:?}"),
+            })
+            .collect()
+    }
+
     #[test]
     fn macos_locations() {
         let env = Env {
@@ -525,24 +580,114 @@ mod tests {
             ..Env::default()
         };
         let support = "/Users/u/Library/Application Support";
+        let host = "NativeMessagingHosts/com.coderzonebd.whoosh.json";
+        let chrome = PathBuf::from(format!("{support}/Google/Chrome/{host}"));
+        let cases = [
+            (Browser::Chrome, vec![chrome.clone()]),
+            (
+                Browser::Chromium,
+                vec![PathBuf::from(format!("{support}/Chromium/{host}"))],
+            ),
+            (
+                Browser::Edge,
+                vec![PathBuf::from(format!("{support}/Microsoft Edge/{host}"))],
+            ),
+            (
+                Browser::Vivaldi,
+                vec![PathBuf::from(format!("{support}/Vivaldi/{host}"))],
+            ),
+            (
+                Browser::Firefox,
+                vec![PathBuf::from(format!("{support}/Mozilla/{host}"))],
+            ),
+            // Brave's own directory, plus Chrome's, which is where Brave
+            // actually looks.
+            (
+                Browser::Brave,
+                vec![
+                    PathBuf::from(format!("{support}/BraveSoftware/Brave-Browser/{host}")),
+                    chrome,
+                ],
+            ),
+        ];
+        for (browser, expected) in cases {
+            assert_eq!(files(Os::MacOs, &env, browser), expected, "{browser:?}");
+        }
+        // Detection looks at each browser's profile directory.
+        let profiles: Vec<PathBuf> = Browser::ALL
+            .iter()
+            .map(|&b| targets(Os::MacOs, &env, b).unwrap()[0].profile_dir.clone())
+            .collect();
         assert_eq!(
-            only_file(Os::MacOs, &env, Browser::Chrome),
-            PathBuf::from(format!(
-                "{support}/Google/Chrome/NativeMessagingHosts/com.coderzonebd.whoosh.json"
-            ))
+            profiles,
+            [
+                "Google/Chrome",
+                "Chromium",
+                "BraveSoftware/Brave-Browser",
+                "Microsoft Edge",
+                "Vivaldi",
+                "Firefox"
+            ]
+            .map(|p| PathBuf::from(format!("{support}/{p}")))
         );
+    }
+
+    #[test]
+    fn macos_register_brave_reaches_chromes_directory_and_unregisters_once() {
+        let home = TempHome::new("mac-brave");
+        let env = home.env();
+        let support = home.0.join("Library/Application Support");
+        // Only Brave has been used.
+        std::fs::create_dir_all(support.join("BraveSoftware/Brave-Browser")).unwrap();
+
+        let changes = register(Os::MacOs, &env, &opts(None)).unwrap();
+        let written: Vec<&Path> = changes.iter().map(|c| c.location.manifest()).collect();
+        let brave = support
+            .join("BraveSoftware/Brave-Browser/NativeMessagingHosts/com.coderzonebd.whoosh.json");
+        let chrome = support.join("Google/Chrome/NativeMessagingHosts/com.coderzonebd.whoosh.json");
+        assert_eq!(written, vec![brave.as_path(), chrome.as_path()]);
+        assert!(changes.iter().all(|c| c.browser == Browser::Brave));
+        for path in [&brave, &chrome] {
+            let m: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            assert_eq!(
+                m["allowed_origins"][0],
+                "chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/"
+            );
+            assert_eq!(m["path"], "/opt/whoosh/whoosh-nmhost");
+        }
+
+        // Chrome named as well: its location is written once, not twice.
+        let both = register(
+            Os::MacOs,
+            &env,
+            &opts(Some(vec![Browser::Chrome, Browser::Brave])),
+        )
+        .unwrap();
+        assert_eq!(both.len(), 2);
+
+        let removed = unregister(Os::MacOs, &env).unwrap();
+        let done: Vec<&Path> = removed
+            .iter()
+            .filter(|c| c.done)
+            .map(|c| c.location.manifest())
+            .collect();
+        assert_eq!(done, vec![chrome.as_path(), brave.as_path()]);
         assert_eq!(
-            only_file(Os::MacOs, &env, Browser::Edge),
-            PathBuf::from(format!(
-                "{support}/Microsoft Edge/NativeMessagingHosts/com.coderzonebd.whoosh.json"
-            ))
+            removed
+                .iter()
+                .filter(|c| c.location.manifest() == chrome.as_path())
+                .count(),
+            1
         );
-        assert_eq!(
-            only_file(Os::MacOs, &env, Browser::Firefox),
-            PathBuf::from(format!(
-                "{support}/Mozilla/NativeMessagingHosts/com.coderzonebd.whoosh.json"
-            ))
-        );
+        assert!(!brave.exists() && !chrome.exists());
+    }
+
+    #[test]
+    fn explicit_brave_is_written_without_a_profile() {
+        let home = TempHome::new("mac-explicit");
+        let changes = register(Os::MacOs, &home.env(), &opts(Some(vec![Browser::Brave]))).unwrap();
+        assert_eq!(changes.len(), 2);
+        assert!(changes.iter().all(|c| c.location.manifest().is_file()));
     }
 
     #[test]
@@ -570,6 +715,25 @@ mod tests {
             r"Software\Mozilla\NativeMessagingHosts\com.coderzonebd.whoosh"
         );
         assert!(manifest.ends_with("com.coderzonebd.whoosh.firefox.json"));
+
+        let brave: Vec<String> = targets(Os::Windows, &env, Browser::Brave)
+            .unwrap()
+            .into_iter()
+            .map(|t| match t.location {
+                Location::Registry { key, manifest } => {
+                    assert!(manifest.ends_with("com.coderzonebd.whoosh.chromium.json"));
+                    key
+                }
+                other => panic!("expected a registry location, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            brave,
+            [
+                r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.coderzonebd.whoosh",
+                r"Software\Google\Chrome\NativeMessagingHosts\com.coderzonebd.whoosh",
+            ]
+        );
     }
 
     #[test]
