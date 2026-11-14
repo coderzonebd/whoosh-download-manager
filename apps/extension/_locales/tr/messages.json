@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "Tarayıcı indirmelerinizi aynı çerezler ve yönlendiren adresle Whoosh indirme yöneticisine aktarır."
+    "message": "Tarayıcı indirmelerinizi aynı çerezler ve yönlendiren adresle Whoosh Download Manager’a aktarır."
   },
   "optionsTitle": {
-    "message": "Whoosh ayarları"
+    "message": "Whoosh Download Manager ayarları"
   },
   "optionsIntro": {
     "message": "Değişiklikler siz yaptıkça kaydedilir ve hemen uygulanır."
@@ -21,7 +21,7 @@
     "message": "İndirmeleri yakalama"
   },
   "captureEnabled": {
-    "message": "Tarayıcı indirmelerini Whoosh’a gönder"
+    "message": "Tarayıcı indirmelerini Whoosh Download Manager’a gönder"
   },
   "captureEnabledHelp": {
     "message": "Kapalıyken her indirme tarayıcıda kalır. Araç çubuğu düğmesinde “OFF” yazar."
@@ -87,7 +87,7 @@
     "message": "Tarayıcı indirsin"
   },
   "altClickWhoosh": {
-    "message": "Yukarıdaki kurallar ne derse desin Whoosh’a gönder"
+    "message": "Yukarıdaki kurallar ne derse desin Whoosh Download Manager’a gönder"
   },
   "altClickOff": {
     "message": "Özel bir şey yapma"
@@ -105,13 +105,13 @@
     "message": "İşaretçi bir indirme bağlantısının üzerinde durduğunda sunucuya önceden bağlan"
   },
   "preconnectHelp": {
-    "message": "Whoosh’a bağlantının kendisi değil, yalnızca sitenin adresi iletilir."
+    "message": "Whoosh Download Manager’a bağlantının kendisi değil, yalnızca sitenin adresi iletilir."
   },
   "selfHealing": {
     "message": "Süresi dolmuş indirme bağlantılarını onar"
   },
   "selfHealingHelp": {
-    "message": "Duraklatılmış bir indirmenin adresinin süresi dolduğunda Whoosh, indirmenin geldiği sayfada yeni adresi arar ve emin olmadığında size sorar."
+    "message": "Duraklatılmış bir indirmenin adresinin süresi dolduğunda Whoosh Download Manager, indirmenin geldiği sayfada yeni adresi arar ve emin olmadığında size sorar."
   },
   "saved": {
     "message": "Kaydedildi."
@@ -132,19 +132,19 @@
     "message": "Bağlı değil"
   },
   "popupNoHost": {
-    "message": "Whoosh yerel ana makine bileşeni yüklü değil."
+    "message": "Whoosh Download Manager yerel ana makine bileşeni yüklü değil."
   },
   "popupAppNotRunning": {
     "message": "Uygulama çalışmıyor"
   },
   "popupStartApp": {
-    "message": "Whoosh’u başlatın; o zamana kadar indirmeler tarayıcıda kalır."
+    "message": "Whoosh Download Manager’ı başlatın; o zamana kadar indirmeler tarayıcıda kalır."
   },
   "popupConnected": {
     "message": "Bağlı"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "Bir bağlantıyı kurallar ne derse desin Whoosh’a göndermek için tıklarken $KEY$ tuşunu basılı tutun.",
+    "message": "Bir bağlantıyı kurallar ne derse desin Whoosh Download Manager’a göndermek için tıklarken $KEY$ tuşunu basılı tutun.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "Tarayıcı mağazasındaki Whoosh bu sitede çalışmaz."
+    "message": "Tarayıcı mağazasındaki Whoosh Download Manager bu sitede çalışmaz."
   },
   "healTitle": {
     "message": "Süresi dolmuş bağlantılar"
   },
   "healOpenPage": {
-    "message": "Whoosh’un şu dosya için indirme sayfasına bir kez daha ihtiyacı var: $FILE$",
+    "message": "Whoosh Download Manager’ın şu dosya için indirme sayfasına bir kez daha ihtiyacı var: $FILE$",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "Yok say"
   },
   "menuLink": {
-    "message": "Bağlantıyı Whoosh ile indir"
+    "message": "Bağlantıyı WDM ile indir"
   },
   "menuSelection": {
-    "message": "Seçili bağlantıları Whoosh ile indir"
+    "message": "Seçili bağlantıları WDM ile indir"
   },
   "menuPage": {
-    "message": "Tüm bağlantıları Whoosh ile indir"
+    "message": "Tüm bağlantıları WDM ile indir"
   },
   "badgeOff": {
     "message": "OFF"
   },
   "outcomeSent": {
-    "message": "Whoosh’a gönderildi"
+    "message": "Whoosh Download Manager’a gönderildi"
   },
   "outcomeHealed": {
-    "message": "süresi dolmuş bir Whoosh indirmesi sürdürüldü"
+    "message": "süresi dolmuş bir Whoosh Download Manager indirmesi sürdürüldü"
   },
   "outcomeSkipped": {
     "message": "tarayıcıya bırakıldı ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "Whoosh’a gönderilen bağlantılar: $COUNT$",
+    "message": "Whoosh Download Manager’a gönderilen bağlantılar: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "Tarayıcı mağazasındaki Whoosh bu siteden indirme yapmaz."
+    "message": "Tarayıcı mağazasındaki Whoosh Download Manager bu siteden indirme yapmaz."
   },
   "errorRefused": {
-    "message": "Whoosh bu adresi kabul etmedi."
+    "message": "Whoosh Download Manager bu adresi kabul etmedi."
   }
 }

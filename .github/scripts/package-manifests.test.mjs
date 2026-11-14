@@ -20,14 +20,14 @@ function release(names) {
 
 test("every channel gets the real version, URLs and hashes", () => {
   const { dir, ctx } = release([
-    `Whoosh_${V}_x64-setup.exe`,
-    `Whoosh_${V}_x64_portable.zip`,
-    `Whoosh_${V}_universal.dmg`,
-    `Whoosh_${V}_amd64.deb`,
+    `Whoosh-Download-Manager_${V}_x64-setup.exe`,
+    `Whoosh-Download-Manager_${V}_x64_portable.zip`,
+    `Whoosh-Download-Manager_${V}_universal.dmg`,
+    `Whoosh-Download-Manager_${V}_amd64.deb`,
     `whoosh-${V}-source.tar.gz`,
   ]);
   try {
-    const nsis = sha256(join(dir, `Whoosh_${V}_x64-setup.exe`));
+    const nsis = sha256(join(dir, `Whoosh-Download-Manager_${V}_x64-setup.exe`));
     const w = winget(ctx);
     assert.match(w["CoderZoneBD.Whoosh.installer.yaml"], new RegExp(`InstallerSha256: ${nsis.toUpperCase()}`));
     assert.ok(!w["CoderZoneBD.Whoosh.installer.yaml"].includes("wix"), "no MSI for a pre-release");
@@ -36,14 +36,14 @@ test("every channel gets the real version, URLs and hashes", () => {
 
     const s = JSON.parse(scoop(ctx)["whoosh.json"]);
     assert.equal(s.version, V);
-    assert.equal(s.architecture["64bit"].url, `${BASE}/Whoosh_${V}_x64_portable.zip`);
+    assert.equal(s.architecture["64bit"].url, `${BASE}/Whoosh-Download-Manager_${V}_x64_portable.zip`);
     assert.equal(s.architecture.arm64, undefined);
 
     const cask = homebrew(ctx)["whoosh.rb"];
-    assert.ok(cask.includes(`version "${V}"`) && cask.includes(sha256(join(dir, `Whoosh_${V}_universal.dmg`))));
+    assert.ok(cask.includes(`version "${V}"`) && cask.includes(sha256(join(dir, `Whoosh-Download-Manager_${V}_universal.dmg`))));
 
     const fp = flatpak(ctx)["com.coderzonebd.whoosh.yml"];
-    assert.ok(fp.includes(`url: ${BASE}/Whoosh_${V}_amd64.deb`));
+    assert.ok(fp.includes(`url: ${BASE}/Whoosh-Download-Manager_${V}_amd64.deb`));
     assert.ok(!fp.includes("0000000000000000"));
 
     const a = aur(ctx);
@@ -56,7 +56,7 @@ test("every channel gets the real version, URLs and hashes", () => {
 });
 
 test("a channel without its installer is skipped", () => {
-  const { dir, ctx } = release([`Whoosh_${V}_amd64.deb`]);
+  const { dir, ctx } = release([`Whoosh-Download-Manager_${V}_amd64.deb`]);
   try {
     assert.equal(winget(ctx), undefined);
     assert.equal(scoop(ctx), undefined);

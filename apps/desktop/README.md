@@ -1,4 +1,4 @@
-# Whoosh desktop (`apps/desktop`)
+# Whoosh Download Manager desktop (`apps/desktop`)
 
 The Tauri 2 desktop app: [`@whoosh/ui`](../../packages/ui) as a client of
 `whoosh-daemon` over its WebSocket API ([ADR 0007](../../docs/adr/0007-phase2-plan.md)).
@@ -69,8 +69,8 @@ GPL-3.0-or-later.
   the plugin's round trip grew the window by ~40×77 px per launch. Wayland
   does not let apps read or set their position, so only size and maximised
   state apply there.
-- Tray icon with *Show Whoosh* / *Quit*; left-click shows the window (and
-  on macOS, so does the Dock icon). The UI pushes "Whoosh — ↓ 12.5 MB/s ·
+- Tray icon with *Show Whoosh Download Manager* / *Quit*; left-click shows the window (and
+  on macOS, so does the Dock icon). The UI pushes "WDM — ↓ 12.5 MB/s ·
   3 active" from the daemon's stats into the tooltip once a second
   (`set_tray_tooltip` command). The menu is in the UI's language: Rust
   embeds the UI's locale files at build time (`build.rs`) and reads the
@@ -120,7 +120,7 @@ except `installer/windows/hooks.nsh`, which is written by hand).
 
 - **Connect your browser** opens on the first run and from Settings →
   Browsers: per browser in use, whether `whoosh-nmhost` is registered and the
-  extension installed, with *Link to Whoosh* or a store link (`browsers.rs`).
+  extension installed, with *Link to WDM* or a store link (`browsers.rs`).
   At every start the app registers the host for this user in browsers that
   lack it (macOS and AppImage have no installer to do it).
 - **Updates** (`updates.rs`, `tauri-plugin-updater`): signed with the minisign

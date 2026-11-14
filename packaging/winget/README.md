@@ -16,8 +16,8 @@ which downloads the installers, computes the hashes and opens the PR:
 
 ```powershell
 wingetcreate update CoderZoneBD.Whoosh --version 0.1.0 `
-  --urls https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh_0.1.0_x64-setup.exe `
-         https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh_0.1.0_x64_en-US.msi `
+  --urls https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh-Download-Manager_0.1.0_x64-setup.exe `
+         https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh-Download-Manager_0.1.0_x64_en-US.msi `
   --submit
 ```
 

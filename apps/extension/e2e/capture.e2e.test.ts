@@ -398,7 +398,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${EXTENSION_ID}/options.html`);
     await expect.poll(() => page.isChecked("#captureEnabled"), { timeout: 10_000 }).toBe(true);
-    expect(await page.textContent("h1")).toBe("Whoosh settings");
+    expect(await page.textContent("h1")).toBe("Whoosh Download Manager settings");
     expect(await page.isHidden("#store-note")).toBe(true);
     expect(await page.inputValue("#fileTypes")).toContain("zip");
 

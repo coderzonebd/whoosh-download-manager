@@ -18,7 +18,7 @@ cd packaging/flatpak
 git clone --depth 1 https://github.com/flathub/shared-modules.git
 # Point the .deb source at a local build instead of a release while testing:
 #   - type: file
-#     path: ../../target/x86_64-unknown-linux-gnu/release/bundle/deb/Whoosh_0.0.1_amd64.deb
+#     path: ../../target/x86_64-unknown-linux-gnu/release/bundle/deb/Whoosh-Download-Manager_0.0.1_amd64.deb
 #     dest-filename: whoosh.deb
 flatpak run org.flatpak.Builder --user --install --force-clean build-dir com.coderzonebd.whoosh.yml
 flatpak run com.coderzonebd.whoosh

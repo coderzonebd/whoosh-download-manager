@@ -1,6 +1,6 @@
 # Scoop manifest (template)
 
-`whoosh.json` installs the portable build (`Whoosh_<version>_x64_portable.zip`,
+`whoosh.json` installs the portable build (`Whoosh-Download-Manager_<version>_x64_portable.zip`,
 the signed `whoosh-desktop.exe` alone) that `release.yml` attaches to each
 release, and adds a Start-menu shortcut. `checkver`/`autoupdate` read new
 versions from GitHub and the hash from the release's `SHA256SUMS`.

@@ -1,6 +1,6 @@
-# Translating Whoosh
+# Translating Whoosh Download Manager
 
-Whoosh is translated on **hosted Weblate** (the free plan for libre projects, ADR 0007 amendment 1). Translators work in the browser; Weblate opens pull requests against `dev`, and maintainers review and merge them like any other PR. You do not need to know Git or JSON.
+Whoosh Download Manager is translated on **hosted Weblate** (the free plan for libre projects, ADR 0007 amendment 1). Translators work in the browser; Weblate opens pull requests against `dev`, and maintainers review and merge them like any other PR. You do not need to know Git or JSON.
 
 - **Translate:** <https://hosted.weblate.org/engage/whoosh-download-manager/> (live once the owner has created the project; see [Setting up Weblate](#setting-up-weblate-for-the-owner) below).
 - **Languages today:** English (source), বাংলা (Bangla, reviewed by people), and ten languages seeded by machine translation and waiting for review: Arabic, Chinese (Simplified), Hindi, Indonesian, Portuguese (Brazil), Russian, Spanish, Turkish, Urdu and Vietnamese. The app's language picker marks those ten as machine-translated, in their own language, and links here.
@@ -33,7 +33,7 @@ To add a language that is not listed, use *Start new translation* on Weblate. It
 
 ### Things to keep as they are
 
-- `Whoosh` (the brand), `app.name`, `extName`.
+- The brand: `Whoosh Download Manager`, or `WDM` where space is short (tray tooltip, short buttons, menus, or a sentence that already named it). Keep it in Latin script in every language, never "Whoosh" alone. `app.name` and `extName` stay as they are.
 - Placeholders: `{{count}}`, `{{name}}`, `$FILE$`, … (their position is yours to choose). In a singular form you may leave out `{{count}}` when the language says "one file" without a number, but not in a form that also covers other numbers (Russian *one* covers 21, 31…).
 - Technical tokens in examples: `https://example.com/file.zip`, `http://`, `https://`, `ftp://`, `KB`/`MB`/`GB`, `23:30`, `zip iso mp4`, `example.com`, `Alt`.
 - A trailing `…` on a menu item or button: it means "opens a dialog".
@@ -43,7 +43,7 @@ To add a language that is not listed, use *Start new translation* on Weblate. It
 
 The agreed English and Bangla terms. Weblate's glossary for the project should hold the same list; the seeded languages' choices are listed so reviewers can see what to check.
 
-| English | Meaning in Whoosh | বাংলা |
+| English | Meaning in Whoosh Download Manager | বাংলা |
 |---|---|---|
 | download (noun) | one file being fetched, an entry in the list | ডাউনলোড |
 | download (verb) | fetch a file | ডাউনলোড করা (not নামানো) |
@@ -136,7 +136,7 @@ Nobody but the owner connects services to this repository. These are the values 
 
 | Field | Value |
 |---|---|
-| Project name | `Whoosh` |
+| Project name | `Whoosh Download Manager` |
 | URL slug | `whoosh-download-manager` (the app links to `https://hosted.weblate.org/engage/whoosh-download-manager/`; if you choose another slug, change `TRANSLATE_URL` in `packages/ui/src/lib/i18n/languages.ts` and the URLs in this file) |
 | Project website | `https://github.com/coderzonebd/whoosh-download-manager` |
 | Translation instructions | `https://github.com/coderzonebd/whoosh-download-manager/blob/dev/docs/translating.md` |

@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "Meneruskan unduhan browser Anda ke pengelola unduhan Whoosh, dengan cookie dan perujuk yang sama."
+    "message": "Meneruskan unduhan browser Anda ke Whoosh Download Manager, dengan cookie dan perujuk yang sama."
   },
   "optionsTitle": {
-    "message": "Pengaturan Whoosh"
+    "message": "Pengaturan Whoosh Download Manager"
   },
   "optionsIntro": {
     "message": "Perubahan disimpan saat Anda membuatnya dan langsung berlaku."
@@ -21,7 +21,7 @@
     "message": "Menangkap unduhan"
   },
   "captureEnabled": {
-    "message": "Kirim unduhan browser ke Whoosh"
+    "message": "Kirim unduhan browser ke Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "Jika nonaktif, semua unduhan tetap di browser. Tombol toolbar menampilkan “mati”."
@@ -87,7 +87,7 @@
     "message": "Biarkan browser mengunduhnya"
   },
   "altClickWhoosh": {
-    "message": "Kirim ke Whoosh, apa pun aturan di atas"
+    "message": "Kirim ke Whoosh Download Manager, apa pun aturan di atas"
   },
   "altClickOff": {
     "message": "Tidak melakukan hal khusus"
@@ -105,13 +105,13 @@
     "message": "Siapkan koneksi saat penunjuk berhenti di atas tautan unduhan"
   },
   "preconnectHelp": {
-    "message": "Hanya alamat situs yang diteruskan ke Whoosh, tidak pernah tautannya sendiri."
+    "message": "Hanya alamat situs yang diteruskan ke Whoosh Download Manager, tidak pernah tautannya sendiri."
   },
   "selfHealing": {
     "message": "Perbaiki tautan unduhan yang kedaluwarsa"
   },
   "selfHealingHelp": {
-    "message": "Jika alamat unduhan yang dijeda sudah kedaluwarsa, Whoosh mencari alamat baru di halaman asalnya, dan bertanya kepada Anda jika ragu."
+    "message": "Jika alamat unduhan yang dijeda sudah kedaluwarsa, Whoosh Download Manager mencari alamat baru di halaman asalnya, dan bertanya kepada Anda jika ragu."
   },
   "saved": {
     "message": "Disimpan."
@@ -132,19 +132,19 @@
     "message": "Tidak terhubung"
   },
   "popupNoHost": {
-    "message": "Host native Whoosh belum terpasang."
+    "message": "Host native Whoosh Download Manager belum terpasang."
   },
   "popupAppNotRunning": {
     "message": "Aplikasi tidak berjalan"
   },
   "popupStartApp": {
-    "message": "Jalankan Whoosh; sampai saat itu unduhan tetap di browser."
+    "message": "Jalankan Whoosh Download Manager; sampai saat itu unduhan tetap di browser."
   },
   "popupConnected": {
     "message": "Terhubung"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "Tahan $KEY$ sambil mengeklik tautan untuk mengirimnya ke Whoosh, apa pun aturannya.",
+    "message": "Tahan $KEY$ sambil mengeklik tautan untuk mengirimnya ke Whoosh Download Manager, apa pun aturannya.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "Whoosh dari toko browser tidak berfungsi di situs ini."
+    "message": "Whoosh Download Manager dari toko browser tidak berfungsi di situs ini."
   },
   "healTitle": {
     "message": "Tautan kedaluwarsa"
   },
   "healOpenPage": {
-    "message": "Whoosh memerlukan halaman unduhan sekali lagi untuk $FILE$.",
+    "message": "Whoosh Download Manager memerlukan halaman unduhan sekali lagi untuk $FILE$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "Tutup"
   },
   "menuLink": {
-    "message": "Unduh tautan dengan Whoosh"
+    "message": "Unduh tautan dengan WDM"
   },
   "menuSelection": {
-    "message": "Unduh tautan yang dipilih dengan Whoosh"
+    "message": "Unduh tautan yang dipilih dengan WDM"
   },
   "menuPage": {
-    "message": "Unduh semua tautan dengan Whoosh"
+    "message": "Unduh semua tautan dengan WDM"
   },
   "badgeOff": {
     "message": "mati"
   },
   "outcomeSent": {
-    "message": "dikirim ke Whoosh"
+    "message": "dikirim ke Whoosh Download Manager"
   },
   "outcomeHealed": {
-    "message": "melanjutkan unduhan Whoosh yang kedaluwarsa"
+    "message": "melanjutkan unduhan Whoosh Download Manager yang kedaluwarsa"
   },
   "outcomeSkipped": {
     "message": "diserahkan ke browser ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "tautan dikirim ke Whoosh: $COUNT$",
+    "message": "tautan dikirim ke Whoosh Download Manager: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "Whoosh dari toko browser tidak mengunduh dari situs ini."
+    "message": "Whoosh Download Manager dari toko browser tidak mengunduh dari situs ini."
   },
   "errorRefused": {
-    "message": "Whoosh tidak menerima alamat tersebut."
+    "message": "Whoosh Download Manager tidak menerima alamat tersebut."
   }
 }

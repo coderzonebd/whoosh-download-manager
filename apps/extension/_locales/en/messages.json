@@ -4,15 +4,15 @@
     "description": "Extension name in the browser and the stores. A brand name: keep it in English unless your script needs a transliteration."
   },
   "extShortName": {
-    "message": "Whoosh",
+    "message": "WDM",
     "description": "Short name, where the browser has little room (12 characters or fewer). A brand name: keep it as it is."
   },
   "extDescription": {
-    "message": "Hands your browser downloads to the Whoosh download manager, with the same cookies and referrer.",
+    "message": "Hands your browser downloads to Whoosh Download Manager, with the same cookies and referrer.",
     "description": "Store and extensions-page description. At most 132 characters."
   },
   "optionsTitle": {
-    "message": "Whoosh settings",
+    "message": "Whoosh Download Manager settings",
     "description": "Title of the options page."
   },
   "optionsIntro": {
@@ -26,7 +26,7 @@
     "description": "Options section heading."
   },
   "captureEnabled": {
-    "message": "Send browser downloads to Whoosh"
+    "message": "Send browser downloads to Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "When off, every download stays in the browser. The toolbar button shows “off”.",
@@ -102,7 +102,7 @@
     "message": "Let the browser download it"
   },
   "altClickWhoosh": {
-    "message": "Send it to Whoosh, whatever the rules above say"
+    "message": "Send it to Whoosh Download Manager, whatever the rules above say"
   },
   "altClickOff": {
     "message": "Do nothing special"
@@ -121,13 +121,13 @@
     "message": "Prepare the connection when the pointer rests on a download link"
   },
   "preconnectHelp": {
-    "message": "Only the site's address is passed to Whoosh, never the link itself."
+    "message": "Only the site's address is passed to Whoosh Download Manager, never the link itself."
   },
   "selfHealing": {
     "message": "Repair expired download links"
   },
   "selfHealingHelp": {
-    "message": "When a paused download's address has expired, Whoosh looks for the fresh one on the page it came from, and asks you when unsure."
+    "message": "When a paused download's address has expired, Whoosh Download Manager looks for the fresh one on the page it came from, and asks you when unsure."
   },
   "saved": {
     "message": "Saved.",
@@ -151,22 +151,22 @@
     "description": "Popup status: the native host is missing."
   },
   "popupNoHost": {
-    "message": "The Whoosh native host is not installed.",
+    "message": "The Whoosh Download Manager native host is not installed.",
     "description": "Popup detail under “Not connected”."
   },
   "popupAppNotRunning": {
     "message": "App not running",
-    "description": "Popup status: the host works but the Whoosh app is not running."
+    "description": "Popup status: the host works but the Whoosh Download Manager app is not running."
   },
   "popupStartApp": {
-    "message": "Start Whoosh; downloads stay in the browser until then."
+    "message": "Start Whoosh Download Manager; downloads stay in the browser until then."
   },
   "popupConnected": {
     "message": "Connected",
     "description": "Popup status."
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "description": "Popup detail: the app's version.",
     "placeholders": {
       "version": {
@@ -215,7 +215,7 @@
   },
   "popupSent": {
     "message": "Sent",
-    "description": "The button after the file was handed to Whoosh."
+    "description": "The button after the file was handed to Whoosh Download Manager."
   },
   "popupFailed": {
     "message": "Failed",
@@ -231,7 +231,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -250,7 +250,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "Hold $KEY$ while clicking a link to send it to Whoosh whatever the rules say.",
+    "message": "Hold $KEY$ while clicking a link to send it to Whoosh Download Manager whatever the rules say.",
     "description": "$KEY$ is the Alt key, shown as a keyboard key.",
     "placeholders": {
       "key": {
@@ -260,14 +260,14 @@
     }
   },
   "pageBlocked": {
-    "message": "Whoosh from the browser store does not work on this site."
+    "message": "Whoosh Download Manager from the browser store does not work on this site."
   },
   "healTitle": {
     "message": "Expired links",
     "description": "Popup section: downloads whose address expired."
   },
   "healOpenPage": {
-    "message": "Whoosh needs the download page once more for $FILE$.",
+    "message": "Whoosh Download Manager needs the download page once more for $FILE$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -277,7 +277,7 @@
   },
   "healConfirm": {
     "message": "Is this the same file as $FILE$?",
-    "description": "Followed by the address Whoosh found.",
+    "description": "Followed by the address Whoosh Download Manager found.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -295,15 +295,15 @@
     "message": "Dismiss"
   },
   "menuLink": {
-    "message": "Download link with Whoosh",
+    "message": "Download link with WDM",
     "description": "Context menu on a link."
   },
   "menuSelection": {
-    "message": "Download selected links with Whoosh",
+    "message": "Download selected links with WDM",
     "description": "Context menu on selected text."
   },
   "menuPage": {
-    "message": "Download all links with Whoosh",
+    "message": "Download all links with WDM",
     "description": "Context menu on a page."
   },
   "badgeOff": {
@@ -311,11 +311,11 @@
     "description": "Toolbar badge when catching is switched off. At most 4 characters; shorter is better."
   },
   "outcomeSent": {
-    "message": "sent to Whoosh",
+    "message": "sent to Whoosh Download Manager",
     "description": "Popup footer, after “Last: file.zip —”."
   },
   "outcomeHealed": {
-    "message": "continued an expired Whoosh download",
+    "message": "continued an expired Whoosh Download Manager download",
     "description": "Popup footer, after “Last: file.zip —”."
   },
   "outcomeSkipped": {
@@ -339,7 +339,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "links sent to Whoosh: $COUNT$",
+    "message": "links sent to Whoosh Download Manager: $COUNT$",
     "description": "Popup footer after a context-menu download.",
     "placeholders": {
       "count": {
@@ -373,10 +373,10 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "Whoosh from the browser store does not download from this site."
+    "message": "Whoosh Download Manager from the browser store does not download from this site."
   },
   "errorRefused": {
-    "message": "Whoosh did not accept that address.",
+    "message": "Whoosh Download Manager did not accept that address.",
     "description": "Shown when the app refused the new address of an expired download."
   }
 }

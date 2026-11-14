@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "يُسلّم تنزيلات متصفحك إلى مدير التنزيلات Whoosh مع ملفات تعريف الارتباط والمُحيل نفسها."
+    "message": "يُسلّم تنزيلات متصفحك إلى Whoosh Download Manager مع ملفات تعريف الارتباط والمُحيل نفسها."
   },
   "optionsTitle": {
-    "message": "إعدادات Whoosh"
+    "message": "إعدادات Whoosh Download Manager"
   },
   "optionsIntro": {
     "message": "تُحفظ التغييرات فور إجرائها وتُطبَّق مباشرة."
@@ -21,7 +21,7 @@
     "message": "التقاط التنزيلات"
   },
   "captureEnabled": {
-    "message": "إرسال تنزيلات المتصفح إلى Whoosh"
+    "message": "إرسال تنزيلات المتصفح إلى Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "عند الإيقاف، يبقى كل تنزيل في المتصفح، ويظهر على زر شريط الأدوات «معطل»."
@@ -87,7 +87,7 @@
     "message": "دع المتصفح ينزّله"
   },
   "altClickWhoosh": {
-    "message": "أرسله إلى Whoosh بغض النظر عن القواعد أعلاه"
+    "message": "أرسله إلى Whoosh Download Manager بغض النظر عن القواعد أعلاه"
   },
   "altClickOff": {
     "message": "لا تفعل شيئًا خاصًا"
@@ -105,13 +105,13 @@
     "message": "تجهيز الاتصال عندما يستقر المؤشر على رابط تنزيل"
   },
   "preconnectHelp": {
-    "message": "يُمرَّر عنوان الموقع فقط إلى Whoosh، وليس الرابط نفسه أبدًا."
+    "message": "يُمرَّر عنوان الموقع فقط إلى Whoosh Download Manager، وليس الرابط نفسه أبدًا."
   },
   "selfHealing": {
     "message": "إصلاح روابط التنزيل المنتهية الصلاحية"
   },
   "selfHealingHelp": {
-    "message": "عندما تنتهي صلاحية عنوان تنزيل متوقف مؤقتًا، يبحث Whoosh عن العنوان الجديد في الصفحة التي جاء منها، ويسألك عند الشك."
+    "message": "عندما تنتهي صلاحية عنوان تنزيل متوقف مؤقتًا، يبحث Whoosh Download Manager عن العنوان الجديد في الصفحة التي جاء منها، ويسألك عند الشك."
   },
   "saved": {
     "message": "حُفظ."
@@ -132,19 +132,19 @@
     "message": "غير متصل"
   },
   "popupNoHost": {
-    "message": "المضيف الأصلي لـ Whoosh غير مثبّت."
+    "message": "المضيف الأصلي لـ Whoosh Download Manager غير مثبّت."
   },
   "popupAppNotRunning": {
     "message": "التطبيق لا يعمل"
   },
   "popupStartApp": {
-    "message": "شغّل Whoosh؛ تبقى التنزيلات في المتصفح حتى ذلك الحين."
+    "message": "شغّل Whoosh Download Manager؛ تبقى التنزيلات في المتصفح حتى ذلك الحين."
   },
   "popupConnected": {
     "message": "متصل"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "اضغط مع الاستمرار على $KEY$ أثناء النقر على رابط لإرساله إلى Whoosh بغض النظر عن القواعد.",
+    "message": "اضغط مع الاستمرار على $KEY$ أثناء النقر على رابط لإرساله إلى Whoosh Download Manager بغض النظر عن القواعد.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "نسخة Whoosh من متجر المتصفح لا تعمل على هذا الموقع."
+    "message": "نسخة Whoosh Download Manager من متجر المتصفح لا تعمل على هذا الموقع."
   },
   "healTitle": {
     "message": "روابط منتهية الصلاحية"
   },
   "healOpenPage": {
-    "message": "يحتاج Whoosh إلى صفحة التنزيل مرة أخرى من أجل $FILE$.",
+    "message": "يحتاج Whoosh Download Manager إلى صفحة التنزيل مرة أخرى من أجل $FILE$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "تجاهل"
   },
   "menuLink": {
-    "message": "تنزيل الرابط باستخدام Whoosh"
+    "message": "تنزيل الرابط باستخدام WDM"
   },
   "menuSelection": {
-    "message": "تنزيل الروابط المحددة باستخدام Whoosh"
+    "message": "تنزيل الروابط المحددة باستخدام WDM"
   },
   "menuPage": {
-    "message": "تنزيل كل الروابط باستخدام Whoosh"
+    "message": "تنزيل كل الروابط باستخدام WDM"
   },
   "badgeOff": {
     "message": "معطل"
   },
   "outcomeSent": {
-    "message": "أُرسل إلى Whoosh"
+    "message": "أُرسل إلى Whoosh Download Manager"
   },
   "outcomeHealed": {
-    "message": "استُكمل تنزيل منتهي الصلاحية في Whoosh"
+    "message": "استُكمل تنزيل منتهي الصلاحية في Whoosh Download Manager"
   },
   "outcomeSkipped": {
     "message": "تُرك للمتصفح ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "روابط أُرسلت إلى Whoosh: $COUNT$",
+    "message": "روابط أُرسلت إلى Whoosh Download Manager: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "نسخة Whoosh من متجر المتصفح لا تنزّل من هذا الموقع."
+    "message": "نسخة Whoosh Download Manager من متجر المتصفح لا تنزّل من هذا الموقع."
   },
   "errorRefused": {
-    "message": "لم يقبل Whoosh ذلك العنوان."
+    "message": "لم يقبل Whoosh Download Manager ذلك العنوان."
   }
 }

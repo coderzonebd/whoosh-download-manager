@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Whoosh"
+    "name": "Whoosh Download Manager"
   },
   "nav": {
     "label": "Biblioteca",
@@ -203,7 +203,7 @@
   },
   "add": {
     "title": "Añadir una descarga",
-    "description": "Pega un enlace. Whoosh lo comprueba primero para que veas el archivo antes de que empiece.",
+    "description": "Pega un enlace. Whoosh Download Manager lo comprueba primero para que veas el archivo antes de que empiece.",
     "url": "Dirección",
     "urlPlaceholder": "https://example.com/file.zip",
     "invalidUrl": "Escribe una dirección completa que empiece por http://, https:// o ftp://",
@@ -273,25 +273,25 @@
     "chooseFolder": "Elige la carpeta de descargas predeterminada",
     "desktop": "Este equipo",
     "desktopHint": "Se aplican al instante y solo a esta aplicación.",
-    "launchAtLogin": "Iniciar Whoosh al iniciar sesión",
+    "launchAtLogin": "Iniciar Whoosh Download Manager al iniciar sesión",
     "launchAtLoginHint": "Se inicia en la bandeja, sin abrir la ventana.",
-    "closeToTray": "Al cerrar la ventana, Whoosh sigue en la bandeja",
+    "closeToTray": "Al cerrar la ventana, Whoosh Download Manager sigue en la bandeja",
     "closeToTrayHint": "Las descargas continúan. Para salir, usa el menú de la bandeja.",
     "stopDaemonOnQuit": "Al salir, también se detienen las descargas",
     "stopDaemonOnQuitHint": "Desactivado: las descargas siguen en segundo plano para la extensión del navegador y la línea de comandos.",
     "privacy": "Privacidad",
     "crashReports": "Enviar informes de errores",
-    "crashReportsHint": "Whoosh envía informes de errores anónimos para ayudar a corregir fallos: el error, en qué parte de Whoosh ocurrió, la versión de la aplicación y el sistema operativo. Sin nombres de archivo, enlaces ni nombre de usuario. Activado salvo que lo desactives; el servicio en segundo plano aplicará el cambio la próxima vez que se inicie.",
+    "crashReportsHint": "Whoosh Download Manager envía informes de errores anónimos para ayudar a corregir fallos: el error, en qué parte de WDM ocurrió, la versión de la aplicación y el sistema operativo. Sin nombres de archivo, enlaces ni nombre de usuario. Activado salvo que lo desactives; el servicio en segundo plano aplicará el cambio la próxima vez que se inicie.",
     "machineTranslated": "Traducción automática.",
     "helpTranslate": "Ayuda a mejorar la traducción",
     "media": "Sitios de vídeo y audio",
-    "mediaHint": "Whoosh usa yt-dlp para encontrar el vídeo de una página y ffmpeg para unir vídeo y audio. Ambos son programas independientes de sus versiones oficiales, comprobados con la suma de verificación publicada. El instalador los incluye; sin él, se descargan la primera vez que hacen falta.",
+    "mediaHint": "Whoosh Download Manager usa yt-dlp para encontrar el vídeo de una página y ffmpeg para unir vídeo y audio. Ambos son programas independientes de sus versiones oficiales, comprobados con la suma de verificación publicada. El instalador los incluye; sin él, se descargan la primera vez que hacen falta.",
     "browsers": "Navegadores",
-    "browsersHint": "Vincula Chrome, Edge, Firefox y otros navegadores para que sus descargas lleguen a Whoosh.",
+    "browsersHint": "Vincula Chrome, Edge, Firefox y otros navegadores para que sus descargas lleguen a Whoosh Download Manager.",
     "browsersOpen": "Conectar tu navegador…",
     "updates": "Actualizaciones",
-    "autoUpdateCheck": "Buscar una versión nueva de Whoosh una vez al día",
-    "autoUpdateCheckHint": "Whoosh solo te avisa de una versión nueva. Nunca la instala sin preguntar.",
+    "autoUpdateCheck": "Buscar una versión nueva de Whoosh Download Manager una vez al día",
+    "autoUpdateCheckHint": "Whoosh Download Manager solo te avisa de una versión nueva. Nunca la instala sin preguntar.",
     "checkNow": "Buscar una versión nueva",
     "checking": "Buscando…",
     "upToDate": "Tienes la versión más reciente.",
@@ -302,7 +302,7 @@
     "installFailed": "No se pudo instalar la actualización: {{message}}"
   },
   "crashNotice": {
-    "text": "Whoosh envía informes de errores anónimos para ayudar a corregir fallos. Sin nombres de archivo ni enlaces. Puedes desactivarlo en Configuración.",
+    "text": "Whoosh Download Manager envía informes de errores anónimos para ayudar a corregir fallos. Sin nombres de archivo ni enlaces. Puedes desactivarlo en Configuración.",
     "open": "Abrir Configuración"
   },
   "theme": {
@@ -334,7 +334,7 @@
     "completed": "“{{name}}” terminó de descargarse",
     "failed": "No se pudo descargar “{{name}}”",
     "expired": "El enlace de “{{name}}” caducó",
-    "updateAvailable": "Whoosh {{version}} está disponible."
+    "updateAvailable": "Whoosh Download Manager {{version}} está disponible."
   },
   "error": {
     "generic": "Algo salió mal: {{message}}"
@@ -447,12 +447,12 @@
     "same": "El inicio y el fin no pueden ser la misma hora."
   },
   "desktop": {
-    "trayNotice": "Whoosh sigue funcionando en la bandeja, así que las descargas continúan. Para salir, usa el menú de la bandeja."
+    "trayNotice": "Whoosh Download Manager sigue funcionando en la bandeja, así que las descargas continúan. Para salir, usa el menú de la bandeja."
   },
   "tray": {
-    "show": "Mostrar Whoosh",
+    "show": "Mostrar Whoosh Download Manager",
     "quit": "Salir",
-    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+    "tooltip": "WDM — ↓ {{speed}} · {{active}}"
   },
   "media": {
     "found": "Vídeo en esta página",
@@ -473,9 +473,9 @@
     "subtitleAuto": "{{name}} (generados automáticamente)",
     "size": "Unos {{size}}",
     "sizeUnknown": "Tamaño aún desconocido",
-    "viaEngine": "Whoosh lo descarga con varias conexiones; se puede pausar y reanudar.",
+    "viaEngine": "Whoosh Download Manager lo descarga con varias conexiones; se puede pausar y reanudar.",
     "viaYtDlp": "Un formato de streaming: yt-dlp lo descarga con una sola conexión.",
-    "filenameHint": "Sin la extensión; Whoosh la añade.",
+    "filenameHint": "Sin la extensión; Whoosh Download Manager la añade.",
     "live": "Es una transmisión en directo."
   },
   "mediaStep": {
@@ -492,7 +492,7 @@
     "installing": "Descargando…",
     "installingProgress": "Descargando… {{percent}}",
     "version": "Versión {{version}}",
-    "managed": "Whoosh la mantiene actualizada",
+    "managed": "Whoosh Download Manager la mantiene actualizada",
     "system": "Instalada en este equipo",
     "updateAvailable": "La versión {{version}} está disponible",
     "upToDate": "Actualizada",
@@ -502,23 +502,23 @@
     "install": "Descargar {{name}}",
     "update": "Actualizar {{name}}",
     "autoUpdate": "Buscar actualizaciones una vez al día",
-    "autoUpdateHint": "Si no, Whoosh solo busca cuando usted lo pide.",
+    "autoUpdateHint": "Si no, Whoosh Download Manager solo busca cuando usted lo pide.",
     "error": "El último intento falló: {{message}}",
     "checkFailed": "No se pudo buscar actualizaciones: {{message}}"
   },
   "browsers": {
     "title": "Conecta tu navegador",
-    "intro": "Whoosh se encarga de las descargas de tu navegador mediante la extensión de Whoosh. Cada navegador necesita la extensión y un vínculo con esta aplicación; Whoosh crea el vínculo por ti.",
+    "intro": "Whoosh Download Manager se encarga de las descargas de tu navegador mediante la extensión de WDM. Cada navegador necesita la extensión y un vínculo con esta aplicación; WDM crea el vínculo por ti.",
     "loading": "Buscando tus navegadores…",
-    "none": "No se encontró ningún navegador compatible para este usuario. Whoosh funciona con Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi y Firefox.",
+    "none": "No se encontró ningún navegador compatible para este usuario. Whoosh Download Manager funciona con Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi y Firefox.",
     "notFound": "No encontrados en este equipo: {{names}}.",
     "state": {
-      "ready": "Listo: las descargas de este navegador llegan a Whoosh",
-      "noHost": "Aún no está vinculado a Whoosh",
+      "ready": "Listo: las descargas de este navegador llegan a Whoosh Download Manager",
+      "noHost": "Aún no está vinculado a Whoosh Download Manager",
       "noExtension": "La extensión no está instalada"
     },
-    "connect": "Vincular con Whoosh",
-    "connected": "{{browser}} está vinculado a Whoosh.",
+    "connect": "Vincular con WDM",
+    "connected": "{{browser}} está vinculado a Whoosh Download Manager.",
     "connectFailed": "No se pudo vincular {{browser}}: {{message}}",
     "store": {
       "edgeAddOns": "Obtenerla en Edge Add-ons",

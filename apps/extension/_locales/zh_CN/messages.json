@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "将浏览器中的下载交给 Whoosh 下载管理器，并带上相同的 Cookie 和来源页。"
+    "message": "将浏览器中的下载交给 Whoosh Download Manager，并带上相同的 Cookie 和来源页。"
   },
   "optionsTitle": {
-    "message": "Whoosh 设置"
+    "message": "Whoosh Download Manager 设置"
   },
   "optionsIntro": {
     "message": "更改会随时保存并立即生效。"
@@ -21,7 +21,7 @@
     "message": "捕获下载"
   },
   "captureEnabled": {
-    "message": "将浏览器下载发送到 Whoosh"
+    "message": "将浏览器下载发送到 Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "关闭时，所有下载都留在浏览器中，工具栏按钮会显示“关”。"
@@ -87,7 +87,7 @@
     "message": "交给浏览器下载"
   },
   "altClickWhoosh": {
-    "message": "发送到 Whoosh，无论上面的规则如何"
+    "message": "发送到 Whoosh Download Manager，无论上面的规则如何"
   },
   "altClickOff": {
     "message": "不做特殊处理"
@@ -105,13 +105,13 @@
     "message": "指针停在下载链接上时预先建立连接"
   },
   "preconnectHelp": {
-    "message": "只会将网站地址传给 Whoosh，绝不传递链接本身。"
+    "message": "只会将网站地址传给 Whoosh Download Manager，绝不传递链接本身。"
   },
   "selfHealing": {
     "message": "修复已过期的下载链接"
   },
   "selfHealingHelp": {
-    "message": "当已暂停下载的地址过期时，Whoosh 会在其来源网页上查找新地址，不确定时会询问你。"
+    "message": "当已暂停下载的地址过期时，Whoosh Download Manager 会在其来源网页上查找新地址，不确定时会询问你。"
   },
   "saved": {
     "message": "已保存。"
@@ -132,19 +132,19 @@
     "message": "未连接"
   },
   "popupNoHost": {
-    "message": "未安装 Whoosh 的本机连接组件。"
+    "message": "未安装 Whoosh Download Manager 的本机连接组件。"
   },
   "popupAppNotRunning": {
     "message": "应用未运行"
   },
   "popupStartApp": {
-    "message": "请启动 Whoosh；在此之前，下载会留在浏览器中。"
+    "message": "请启动 Whoosh Download Manager；在此之前，下载会留在浏览器中。"
   },
   "popupConnected": {
     "message": "已连接"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "单击链接时按住 $KEY$，可无视规则发送到 Whoosh。",
+    "message": "单击链接时按住 $KEY$，可无视规则发送到 Whoosh Download Manager。",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "浏览器商店版 Whoosh 无法在此网站上使用。"
+    "message": "浏览器商店版 Whoosh Download Manager 无法在此网站上使用。"
   },
   "healTitle": {
     "message": "已过期的链接"
   },
   "healOpenPage": {
-    "message": "Whoosh 需要再次打开 $FILE$ 的下载页面。",
+    "message": "Whoosh Download Manager 需要再次打开 $FILE$ 的下载页面。",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "忽略"
   },
   "menuLink": {
-    "message": "使用 Whoosh 下载链接"
+    "message": "使用 WDM 下载链接"
   },
   "menuSelection": {
-    "message": "使用 Whoosh 下载所选链接"
+    "message": "使用 WDM 下载所选链接"
   },
   "menuPage": {
-    "message": "使用 Whoosh 下载所有链接"
+    "message": "使用 WDM 下载所有链接"
   },
   "badgeOff": {
     "message": "关"
   },
   "outcomeSent": {
-    "message": "已发送到 Whoosh"
+    "message": "已发送到 Whoosh Download Manager"
   },
   "outcomeHealed": {
-    "message": "已继续一个过期的 Whoosh 下载"
+    "message": "已继续一个过期的 Whoosh Download Manager 下载"
   },
   "outcomeSkipped": {
     "message": "已交给浏览器（$REASON$）",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "已发送到 Whoosh 的链接：$COUNT$",
+    "message": "已发送到 Whoosh Download Manager 的链接：$COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "浏览器商店版 Whoosh 不会从此网站下载。"
+    "message": "浏览器商店版 Whoosh Download Manager 不会从此网站下载。"
   },
   "errorRefused": {
-    "message": "Whoosh 未接受该地址。"
+    "message": "Whoosh Download Manager 未接受该地址。"
   }
 }

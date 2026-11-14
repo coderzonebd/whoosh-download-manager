@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "Передаёт загрузки из браузера в менеджер загрузок Whoosh с теми же файлами cookie и источником перехода."
+    "message": "Передаёт загрузки из браузера в Whoosh Download Manager с теми же файлами cookie и источником перехода."
   },
   "optionsTitle": {
-    "message": "Настройки Whoosh"
+    "message": "Настройки Whoosh Download Manager"
   },
   "optionsIntro": {
     "message": "Изменения сохраняются по мере внесения и сразу вступают в силу."
@@ -21,7 +21,7 @@
     "message": "Перехват загрузок"
   },
   "captureEnabled": {
-    "message": "Отправлять загрузки из браузера в Whoosh"
+    "message": "Отправлять загрузки из браузера в Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "Если выключено, все загрузки остаются в браузере. На кнопке панели инструментов отображается «выкл»."
@@ -87,7 +87,7 @@
     "message": "Скачать средствами браузера"
   },
   "altClickWhoosh": {
-    "message": "Отправить в Whoosh независимо от правил выше"
+    "message": "Отправить в Whoosh Download Manager независимо от правил выше"
   },
   "altClickOff": {
     "message": "Ничего особенного не делать"
@@ -105,13 +105,13 @@
     "message": "Готовить соединение, когда указатель задерживается на ссылке для загрузки"
   },
   "preconnectHelp": {
-    "message": "В Whoosh передаётся только адрес сайта, но не сама ссылка."
+    "message": "В Whoosh Download Manager передаётся только адрес сайта, но не сама ссылка."
   },
   "selfHealing": {
     "message": "Восстанавливать устаревшие ссылки на загрузки"
   },
   "selfHealingHelp": {
-    "message": "Если адрес приостановленной загрузки устарел, Whoosh ищет новый на странице, откуда она была начата, а в случае сомнений спрашивает вас."
+    "message": "Если адрес приостановленной загрузки устарел, Whoosh Download Manager ищет новый на странице, откуда она была начата, а в случае сомнений спрашивает вас."
   },
   "saved": {
     "message": "Сохранено."
@@ -132,19 +132,19 @@
     "message": "Нет подключения"
   },
   "popupNoHost": {
-    "message": "Нативный модуль Whoosh не установлен."
+    "message": "Нативный модуль Whoosh Download Manager не установлен."
   },
   "popupAppNotRunning": {
     "message": "Приложение не запущено"
   },
   "popupStartApp": {
-    "message": "Запустите Whoosh; до тех пор загрузки остаются в браузере."
+    "message": "Запустите Whoosh Download Manager; до тех пор загрузки остаются в браузере."
   },
   "popupConnected": {
     "message": "Подключено"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "Удерживайте $KEY$ при щелчке по ссылке, чтобы отправить её в Whoosh независимо от правил.",
+    "message": "Удерживайте $KEY$ при щелчке по ссылке, чтобы отправить её в Whoosh Download Manager независимо от правил.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "Whoosh из магазина расширений не работает на этом сайте."
+    "message": "Whoosh Download Manager из магазина расширений не работает на этом сайте."
   },
   "healTitle": {
     "message": "Устаревшие ссылки"
   },
   "healOpenPage": {
-    "message": "Whoosh ещё раз нужна страница загрузки для $FILE$.",
+    "message": "Whoosh Download Manager ещё раз нужна страница загрузки для $FILE$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "Скрыть"
   },
   "menuLink": {
-    "message": "Скачать ссылку с помощью Whoosh"
+    "message": "Скачать ссылку с помощью WDM"
   },
   "menuSelection": {
-    "message": "Скачать выделенные ссылки с помощью Whoosh"
+    "message": "Скачать выделенные ссылки с помощью WDM"
   },
   "menuPage": {
-    "message": "Скачать все ссылки с помощью Whoosh"
+    "message": "Скачать все ссылки с помощью WDM"
   },
   "badgeOff": {
     "message": "выкл"
   },
   "outcomeSent": {
-    "message": "отправлено в Whoosh"
+    "message": "отправлено в Whoosh Download Manager"
   },
   "outcomeHealed": {
-    "message": "продолжена устаревшая загрузка Whoosh"
+    "message": "продолжена устаревшая загрузка Whoosh Download Manager"
   },
   "outcomeSkipped": {
     "message": "оставлено браузеру ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "ссылок отправлено в Whoosh: $COUNT$",
+    "message": "ссылок отправлено в Whoosh Download Manager: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "Whoosh из магазина расширений не скачивает с этого сайта."
+    "message": "Whoosh Download Manager из магазина расширений не скачивает с этого сайта."
   },
   "errorRefused": {
-    "message": "Whoosh не принял этот адрес."
+    "message": "Whoosh Download Manager не принял этот адрес."
   }
 }

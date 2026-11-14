@@ -31,9 +31,9 @@ Where the directory ends up:
 | Bundle | Path |
 |---|---|
 | NSIS, MSI, portable zip | `<install dir>\media-tools\` |
-| macOS `.app` (dmg) | `Whoosh.app/Contents/Resources/media-tools/` |
-| deb, rpm | `/usr/lib/Whoosh/media-tools/` |
-| AppImage | `usr/lib/Whoosh/media-tools/` inside the image |
+| macOS `.app` (dmg) | `Whoosh Download Manager.app/Contents/Resources/media-tools/` |
+| deb, rpm | `/usr/lib/Whoosh Download Manager/media-tools/` |
+| AppImage | `usr/lib/Whoosh Download Manager/media-tools/` inside the image |
 
 The app passes it to the daemon (`--media-tools-dir`), which copies the
 programs into `<data dir>/media/bin` and updates them there.

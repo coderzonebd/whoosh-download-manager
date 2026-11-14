@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "Envia os downloads do navegador para o gerenciador de downloads Whoosh, com os mesmos cookies e a mesma página de origem."
+    "message": "Envia os downloads do navegador para o Whoosh Download Manager, com os mesmos cookies e a mesma página de origem."
   },
   "optionsTitle": {
-    "message": "Configurações do Whoosh"
+    "message": "Configurações do Whoosh Download Manager"
   },
   "optionsIntro": {
     "message": "As alterações são salvas na hora e valem imediatamente."
@@ -21,7 +21,7 @@
     "message": "Captura de downloads"
   },
   "captureEnabled": {
-    "message": "Enviar os downloads do navegador para o Whoosh"
+    "message": "Enviar os downloads do navegador para o Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "Quando desativado, todos os downloads ficam no navegador. O botão da barra de ferramentas mostra “OFF”."
@@ -87,7 +87,7 @@
     "message": "Deixar o navegador baixar"
   },
   "altClickWhoosh": {
-    "message": "Enviar para o Whoosh, independentemente das regras acima"
+    "message": "Enviar para o Whoosh Download Manager, independentemente das regras acima"
   },
   "altClickOff": {
     "message": "Não fazer nada de especial"
@@ -105,13 +105,13 @@
     "message": "Preparar a conexão quando o ponteiro parar sobre um link de download"
   },
   "preconnectHelp": {
-    "message": "Só o endereço do site é passado para o Whoosh, nunca o link em si."
+    "message": "Só o endereço do site é passado para o Whoosh Download Manager, nunca o link em si."
   },
   "selfHealing": {
     "message": "Reparar links de download expirados"
   },
   "selfHealingHelp": {
-    "message": "Quando o endereço de um download pausado expira, o Whoosh procura o novo na página de onde ele veio e pergunta a você quando não tem certeza."
+    "message": "Quando o endereço de um download pausado expira, o Whoosh Download Manager procura o novo na página de onde ele veio e pergunta a você quando não tem certeza."
   },
   "saved": {
     "message": "Salvo."
@@ -132,19 +132,19 @@
     "message": "Não conectado"
   },
   "popupNoHost": {
-    "message": "O host nativo do Whoosh não está instalado."
+    "message": "O host nativo do Whoosh Download Manager não está instalado."
   },
   "popupAppNotRunning": {
     "message": "O app não está aberto"
   },
   "popupStartApp": {
-    "message": "Abra o Whoosh; até lá, os downloads ficam no navegador."
+    "message": "Abra o Whoosh Download Manager; até lá, os downloads ficam no navegador."
   },
   "popupConnected": {
     "message": "Conectado"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "Segure $KEY$ ao clicar em um link para enviá-lo ao Whoosh, independentemente das regras.",
+    "message": "Segure $KEY$ ao clicar em um link para enviá-lo ao Whoosh Download Manager, independentemente das regras.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "O Whoosh da loja do navegador não funciona neste site."
+    "message": "O Whoosh Download Manager da loja do navegador não funciona neste site."
   },
   "healTitle": {
     "message": "Links expirados"
   },
   "healOpenPage": {
-    "message": "O Whoosh precisa abrir de novo a página de download de $FILE$.",
+    "message": "O Whoosh Download Manager precisa abrir de novo a página de download de $FILE$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "Dispensar"
   },
   "menuLink": {
-    "message": "Baixar link com o Whoosh"
+    "message": "Baixar link com o WDM"
   },
   "menuSelection": {
-    "message": "Baixar os links selecionados com o Whoosh"
+    "message": "Baixar os links selecionados com o WDM"
   },
   "menuPage": {
-    "message": "Baixar todos os links com o Whoosh"
+    "message": "Baixar todos os links com o WDM"
   },
   "badgeOff": {
     "message": "OFF"
   },
   "outcomeSent": {
-    "message": "enviado ao Whoosh"
+    "message": "enviado ao Whoosh Download Manager"
   },
   "outcomeHealed": {
-    "message": "retomou um download expirado do Whoosh"
+    "message": "retomou um download expirado do Whoosh Download Manager"
   },
   "outcomeSkipped": {
     "message": "deixado para o navegador ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "links enviados ao Whoosh: $COUNT$",
+    "message": "links enviados ao Whoosh Download Manager: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "O Whoosh da loja do navegador não baixa deste site."
+    "message": "O Whoosh Download Manager da loja do navegador não baixa deste site."
   },
   "errorRefused": {
-    "message": "O Whoosh não aceitou esse endereço."
+    "message": "O Whoosh Download Manager não aceitou esse endereço."
   }
 }

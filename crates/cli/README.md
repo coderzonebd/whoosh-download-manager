@@ -1,6 +1,6 @@
-# Whoosh (whoosh-cli)
+# Whoosh Download Manager command line (whoosh-cli)
 
-`whoosh` is the command-line client of the Whoosh daemon. It speaks the local API ([`docs/api/PROTOCOL.md`](../../docs/api/PROTOCOL.md)) like every other client, and starts the daemon when it is not running. License: Apache-2.0.
+`whoosh` is the command-line client of the Whoosh Download Manager daemon. It speaks the local API ([`docs/api/PROTOCOL.md`](../../docs/api/PROTOCOL.md)) like every other client, and starts the daemon when it is not running. License: Apache-2.0.
 
 ```bash
 cargo build -p whoosh-cli -p whoosh-daemon        # whoosh and whoosh-daemon side by side in target/

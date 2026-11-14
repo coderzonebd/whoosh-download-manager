@@ -302,12 +302,12 @@ describe("settings", () => {
     const { user } = await setup({ host });
     await user.click(within(nav()).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "This computer" })).toBeInTheDocument();
-    const login = await screen.findByRole("checkbox", { name: "Start Whoosh when I log in" });
+    const login = await screen.findByRole("checkbox", { name: "Start Whoosh Download Manager when I log in" });
     await waitFor(() => expect(login).toBeEnabled());
     expect(login).not.toBeChecked(); // off by default
     await user.click(login);
     expect(host.launchAtLogin?.set).toHaveBeenCalledWith(true);
-    const tray = screen.getByRole("checkbox", { name: "Closing the window keeps Whoosh in the tray" });
+    const tray = screen.getByRole("checkbox", { name: "Closing the window keeps Whoosh Download Manager in the tray" });
     expect(tray).toBeChecked();
     await user.click(tray);
     await user.click(screen.getByRole("checkbox", { name: "Quitting also stops downloads" }));
@@ -348,7 +348,7 @@ describe("settings", () => {
       },
     };
     const { user } = await setup({ host });
-    const text = await screen.findByText("Whoosh sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.");
+    const text = await screen.findByText("Whoosh Download Manager sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.");
     // Non-blocking: the list is still usable behind it.
     expect(screen.getByRole("grid", { name: "Downloads" })).not.toHaveAttribute("inert");
     await user.click(screen.getByRole("button", { name: "Open Settings" }));
@@ -442,14 +442,14 @@ describe("connect your browser and updates (desktop)", () => {
     const items = within(list).getAllByRole("listitem");
     expect(items.map((i) => within(i).getByText(/^(Google Chrome|Microsoft Edge|Firefox)$/).textContent)).toEqual(["Google Chrome", "Microsoft Edge", "Firefox"]);
     expect(screen.getByText("Not found on this computer: Vivaldi.")).toBeInTheDocument();
-    expect(within(items[2]!).getByText("Ready: downloads from this browser come to Whoosh")).toBeInTheDocument();
+    expect(within(items[2]!).getByText("Ready: downloads from this browser come to Whoosh Download Manager")).toBeInTheDocument();
 
     await user.click(within(items[1]!).getByRole("button", { name: "Get it from Edge Add-ons" }));
     expect(browsers.openStore).toHaveBeenCalledWith("edge");
 
-    await user.click(within(items[0]!).getByRole("button", { name: "Link to Whoosh" }));
+    await user.click(within(items[0]!).getByRole("button", { name: "Link to WDM" }));
     expect(browsers.connect).toHaveBeenCalledWith("chrome");
-    expect((await screen.findAllByText("Google Chrome is linked to Whoosh.")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Google Chrome is linked to Whoosh Download Manager.")).length).toBeGreaterThan(0);
     const chrome = within(await screen.findByRole("list", { name: "Connect your browser" })).getAllByRole("listitem")[0]!;
     expect(await within(chrome).findByRole("button", { name: "Download the extension" })).toBeInTheDocument();
     expect(within(chrome).getByText(/not in this browser's store yet/)).toBeInTheDocument();
@@ -480,7 +480,7 @@ describe("connect your browser and updates (desktop)", () => {
     const { user } = await setup({ host });
     await user.click(within(nav()).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Updates" })).toBeInTheDocument();
-    const daily = await screen.findByRole("checkbox", { name: "Look for a new version of Whoosh once a day" });
+    const daily = await screen.findByRole("checkbox", { name: "Look for a new version of Whoosh Download Manager once a day" });
     await waitFor(() => expect(daily).toBeChecked());
     await user.click(daily);
     expect(prefs.autoUpdateCheck).toBe(false);

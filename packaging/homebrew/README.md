@@ -19,7 +19,7 @@ filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
 
 
 ```bash
-shasum -a 256 Whoosh_0.1.0_universal.dmg            # or take it from SHA256SUMS
+shasum -a 256 Whoosh-Download-Manager_0.1.0_universal.dmg            # or take it from SHA256SUMS
 brew bump-cask-pr --version 0.1.0 whoosh            # in the tap or homebrew/cask
 brew audit --cask --new whoosh && brew style whoosh.rb
 ```
@@ -29,7 +29,7 @@ Automating the bump from `release.yml` needs a token that can push to the tap
 
 ## Placeholders until the name and signing are settled
 
-- Token `whoosh`, `name "Whoosh"`, `Whoosh.app`, the bundle id in `zap` paths
+- Token `whoosh`, `name "Whoosh Download Manager"`, `Whoosh Download Manager.app`, the bundle id in `zap` paths
   (`com.coderzonebd.whoosh`) and every `github.com/coderzonebd/whoosh-download-manager` URL.
 - Zeroed `sha256` and version `0.0.1`.
 - `depends_on macos: ">= :monterey"` follows `bundle.macOS.minimumSystemVersion`

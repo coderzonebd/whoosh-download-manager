@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "ব্রাউজারের ডাউনলোড একই কুকি ও রেফারারসহ Whoosh ডাউনলোড ম্যানেজারে পাঠায়।"
+    "message": "ব্রাউজারের ডাউনলোড একই কুকি ও রেফারারসহ Whoosh Download Manager-এ পাঠায়।"
   },
   "optionsTitle": {
-    "message": "Whoosh সেটিংস"
+    "message": "Whoosh Download Manager সেটিংস"
   },
   "optionsIntro": {
     "message": "পরিবর্তন করার সঙ্গে সঙ্গেই সংরক্ষণ হয় এবং তখনই কার্যকর হয়।"
@@ -21,7 +21,7 @@
     "message": "ডাউনলোড ধরা"
   },
   "captureEnabled": {
-    "message": "ব্রাউজারের ডাউনলোড Whoosh-এ পাঠান"
+    "message": "ব্রাউজারের ডাউনলোড Whoosh Download Manager-এ পাঠান"
   },
   "captureEnabledHelp": {
     "message": "বন্ধ থাকলে সব ডাউনলোড ব্রাউজারেই থাকে। টুলবারের বোতামে “বন্ধ” দেখায়।"
@@ -87,7 +87,7 @@
     "message": "ব্রাউজারকেই ডাউনলোড করতে দিন"
   },
   "altClickWhoosh": {
-    "message": "ওপরের নিয়ম যা-ই বলুক, Whoosh-এ পাঠান"
+    "message": "ওপরের নিয়ম যা-ই বলুক, Whoosh Download Manager-এ পাঠান"
   },
   "altClickOff": {
     "message": "আলাদা কিছু করবেন না"
@@ -105,13 +105,13 @@
     "message": "ডাউনলোড লিংকের ওপর পয়েন্টার থামলে আগেই সংযোগ তৈরি রাখুন"
   },
   "preconnectHelp": {
-    "message": "Whoosh-কে শুধু সাইটের ঠিকানা দেওয়া হয়, লিংকটি কখনো নয়।"
+    "message": "Whoosh Download Manager-কে শুধু সাইটের ঠিকানা দেওয়া হয়, লিংকটি কখনো নয়।"
   },
   "selfHealing": {
     "message": "মেয়াদ শেষ হওয়া ডাউনলোড লিংক মেরামত করুন"
   },
   "selfHealingHelp": {
-    "message": "থামানো ডাউনলোডের ঠিকানার মেয়াদ শেষ হলে Whoosh যে পেজ থেকে এসেছিল সেখানে নতুন ঠিকানা খোঁজে, আর নিশ্চিত না হলে আপনাকে জিজ্ঞেস করে।"
+    "message": "থামানো ডাউনলোডের ঠিকানার মেয়াদ শেষ হলে Whoosh Download Manager যে পেজ থেকে এসেছিল সেখানে নতুন ঠিকানা খোঁজে, আর নিশ্চিত না হলে আপনাকে জিজ্ঞেস করে।"
   },
   "saved": {
     "message": "সংরক্ষণ হয়েছে।"
@@ -132,19 +132,19 @@
     "message": "সংযুক্ত নয়"
   },
   "popupNoHost": {
-    "message": "Whoosh-এর নেটিভ হোস্ট ইনস্টল করা নেই।"
+    "message": "Whoosh Download Manager-এর নেটিভ হোস্ট ইনস্টল করা নেই।"
   },
   "popupAppNotRunning": {
     "message": "অ্যাপ চালু নেই"
   },
   "popupStartApp": {
-    "message": "Whoosh চালু করুন; ততক্ষণ ডাউনলোড ব্রাউজারেই থাকবে।"
+    "message": "Whoosh Download Manager চালু করুন; ততক্ষণ ডাউনলোড ব্রাউজারেই থাকবে।"
   },
   "popupConnected": {
     "message": "সংযুক্ত"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "নিয়ম যা-ই বলুক, Whoosh-এ পাঠাতে $KEY$ চেপে ধরে লিংকে ক্লিক করুন।",
+    "message": "নিয়ম যা-ই বলুক, Whoosh Download Manager-এ পাঠাতে $KEY$ চেপে ধরে লিংকে ক্লিক করুন।",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "ব্রাউজার-স্টোরের Whoosh এই সাইটে কাজ করে না।"
+    "message": "ব্রাউজার-স্টোরের Whoosh Download Manager এই সাইটে কাজ করে না।"
   },
   "healTitle": {
     "message": "মেয়াদ শেষ হওয়া লিংক"
   },
   "healOpenPage": {
-    "message": "$FILE$-এর জন্য Whoosh-এর ডাউনলোড পেজটি আরেকবার দরকার।",
+    "message": "$FILE$-এর জন্য Whoosh Download Manager-এর ডাউনলোড পেজটি আরেকবার দরকার।",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "বাদ দিন"
   },
   "menuLink": {
-    "message": "Whoosh দিয়ে লিংকটি ডাউনলোড করুন"
+    "message": "WDM দিয়ে লিংকটি ডাউনলোড করুন"
   },
   "menuSelection": {
-    "message": "Whoosh দিয়ে নির্বাচিত লিংকগুলো ডাউনলোড করুন"
+    "message": "WDM দিয়ে নির্বাচিত লিংকগুলো ডাউনলোড করুন"
   },
   "menuPage": {
-    "message": "Whoosh দিয়ে সব লিংক ডাউনলোড করুন"
+    "message": "WDM দিয়ে সব লিংক ডাউনলোড করুন"
   },
   "badgeOff": {
     "message": "বন্ধ"
   },
   "outcomeSent": {
-    "message": "Whoosh-এ পাঠানো হয়েছে"
+    "message": "Whoosh Download Manager-এ পাঠানো হয়েছে"
   },
   "outcomeHealed": {
-    "message": "মেয়াদ শেষ হওয়া একটি Whoosh ডাউনলোড আবার চলছে"
+    "message": "মেয়াদ শেষ হওয়া একটি Whoosh Download Manager ডাউনলোড আবার চলছে"
   },
   "outcomeSkipped": {
     "message": "ব্রাউজারকেই দেওয়া হয়েছে ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "Whoosh-এ পাঠানো লিংক: $COUNT$",
+    "message": "Whoosh Download Manager-এ পাঠানো লিংক: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "ব্রাউজার-স্টোরের Whoosh এই সাইট থেকে ডাউনলোড করে না।"
+    "message": "ব্রাউজার-স্টোরের Whoosh Download Manager এই সাইট থেকে ডাউনলোড করে না।"
   },
   "errorRefused": {
-    "message": "Whoosh ঠিকানাটি গ্রহণ করেনি।"
+    "message": "Whoosh Download Manager ঠিকানাটি গ্রহণ করেনি।"
   }
 }

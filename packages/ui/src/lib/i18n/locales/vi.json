@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Whoosh"
+    "name": "Whoosh Download Manager"
   },
   "nav": {
     "label": "Thư viện",
@@ -193,7 +193,7 @@
   },
   "add": {
     "title": "Thêm tải xuống",
-    "description": "Dán một liên kết. Whoosh sẽ kiểm tra trước để bạn xem được tệp trước khi bắt đầu.",
+    "description": "Dán một liên kết. Whoosh Download Manager sẽ kiểm tra trước để bạn xem được tệp trước khi bắt đầu.",
     "url": "Địa chỉ",
     "urlPlaceholder": "https://example.com/file.zip",
     "invalidUrl": "Nhập địa chỉ đầy đủ bắt đầu bằng http://, https:// hoặc ftp://",
@@ -259,25 +259,25 @@
     "chooseFolder": "Chọn thư mục tải xuống mặc định",
     "desktop": "Máy tính này",
     "desktopHint": "Các mục này có hiệu lực ngay và chỉ áp dụng cho ứng dụng này.",
-    "launchAtLogin": "Khởi động Whoosh khi tôi đăng nhập",
+    "launchAtLogin": "Khởi động Whoosh Download Manager khi tôi đăng nhập",
     "launchAtLoginHint": "Ứng dụng chạy trong khay hệ thống, không mở cửa sổ.",
-    "closeToTray": "Đóng cửa sổ vẫn giữ Whoosh trong khay hệ thống",
+    "closeToTray": "Đóng cửa sổ vẫn giữ Whoosh Download Manager trong khay hệ thống",
     "closeToTrayHint": "Các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống.",
     "stopDaemonOnQuit": "Thoát cũng dừng các tải xuống",
     "stopDaemonOnQuitHint": "Khi tắt: các tải xuống vẫn chạy nền cho tiện ích trình duyệt và dòng lệnh.",
     "privacy": "Quyền riêng tư",
     "crashReports": "Gửi báo cáo sự cố",
-    "crashReportsHint": "Whoosh gửi báo cáo sự cố ẩn danh để giúp sửa lỗi: lỗi, vị trí xảy ra trong Whoosh, phiên bản ứng dụng và hệ điều hành. Không có tên tệp, liên kết hay tên người dùng. Bật trừ khi bạn tắt; dịch vụ chạy nền sẽ áp dụng thay đổi vào lần khởi động tiếp theo.",
+    "crashReportsHint": "Whoosh Download Manager gửi báo cáo sự cố ẩn danh để giúp sửa lỗi: lỗi, vị trí xảy ra trong WDM, phiên bản ứng dụng và hệ điều hành. Không có tên tệp, liên kết hay tên người dùng. Bật trừ khi bạn tắt; dịch vụ chạy nền sẽ áp dụng thay đổi vào lần khởi động tiếp theo.",
     "machineTranslated": "Bản dịch máy.",
     "helpTranslate": "Giúp cải thiện bản dịch",
     "media": "Trang video và âm thanh",
-    "mediaHint": "Whoosh dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng từ bản phát hành chính thức, được kiểm tra với mã băm đã công bố. Bộ cài đặt đã kèm sẵn cả hai; nếu không có, chúng được tải về khi cần lần đầu.",
+    "mediaHint": "Whoosh Download Manager dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng từ bản phát hành chính thức, được kiểm tra với mã băm đã công bố. Bộ cài đặt đã kèm sẵn cả hai; nếu không có, chúng được tải về khi cần lần đầu.",
     "browsers": "Trình duyệt",
-    "browsersHint": "Liên kết Chrome, Edge, Firefox và các trình duyệt khác để lượt tải xuống của chúng chuyển sang Whoosh.",
+    "browsersHint": "Liên kết Chrome, Edge, Firefox và các trình duyệt khác để lượt tải xuống của chúng chuyển sang Whoosh Download Manager.",
     "browsersOpen": "Kết nối trình duyệt…",
     "updates": "Cập nhật",
-    "autoUpdateCheck": "Tìm phiên bản Whoosh mới mỗi ngày một lần",
-    "autoUpdateCheckHint": "Whoosh chỉ báo cho bạn khi có phiên bản mới. Whoosh không bao giờ tự cài đặt mà không hỏi.",
+    "autoUpdateCheck": "Tìm phiên bản Whoosh Download Manager mới mỗi ngày một lần",
+    "autoUpdateCheckHint": "Whoosh Download Manager chỉ báo cho bạn khi có phiên bản mới. WDM không bao giờ tự cài đặt mà không hỏi.",
     "checkNow": "Kiểm tra phiên bản mới",
     "checking": "Đang kiểm tra…",
     "upToDate": "Bạn đang dùng phiên bản mới nhất.",
@@ -288,7 +288,7 @@
     "installFailed": "Không thể cài đặt bản cập nhật: {{message}}"
   },
   "crashNotice": {
-    "text": "Whoosh gửi báo cáo sự cố ẩn danh để giúp sửa lỗi. Không có tên tệp hay liên kết. Tắt trong Cài đặt.",
+    "text": "Whoosh Download Manager gửi báo cáo sự cố ẩn danh để giúp sửa lỗi. Không có tên tệp hay liên kết. Tắt trong Cài đặt.",
     "open": "Mở Cài đặt"
   },
   "theme": {
@@ -316,7 +316,7 @@
     "completed": "Đã tải xong “{{name}}”",
     "failed": "“{{name}}” bị lỗi",
     "expired": "Liên kết của “{{name}}” đã hết hạn",
-    "updateAvailable": "Đã có Whoosh {{version}}."
+    "updateAvailable": "Đã có Whoosh Download Manager {{version}}."
   },
   "error": {
     "generic": "Đã xảy ra lỗi: {{message}}"
@@ -417,12 +417,12 @@
     "same": "Giờ bắt đầu và giờ kết thúc không được trùng nhau."
   },
   "desktop": {
-    "trayNotice": "Whoosh vẫn đang chạy trong khay hệ thống nên các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống."
+    "trayNotice": "Whoosh Download Manager vẫn đang chạy trong khay hệ thống nên các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống."
   },
   "tray": {
-    "show": "Hiện Whoosh",
+    "show": "Hiện Whoosh Download Manager",
     "quit": "Thoát",
-    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+    "tooltip": "WDM — ↓ {{speed}} · {{active}}"
   },
   "media": {
     "found": "Video trên trang này",
@@ -443,9 +443,9 @@
     "subtitleAuto": "{{name}} (tự động tạo)",
     "size": "Khoảng {{size}}",
     "sizeUnknown": "Chưa biết dung lượng",
-    "viaEngine": "Whoosh tải bằng nhiều kết nối; có thể tạm dừng và tiếp tục.",
+    "viaEngine": "Whoosh Download Manager tải bằng nhiều kết nối; có thể tạm dừng và tiếp tục.",
     "viaYtDlp": "Định dạng phát trực tuyến: yt-dlp tải bằng một kết nối.",
-    "filenameHint": "Không cần phần mở rộng; Whoosh tự thêm.",
+    "filenameHint": "Không cần phần mở rộng; Whoosh Download Manager tự thêm.",
     "live": "Đây là buổi phát trực tiếp."
   },
   "mediaStep": {
@@ -462,7 +462,7 @@
     "installing": "Đang tải…",
     "installingProgress": "Đang tải… {{percent}}",
     "version": "Phiên bản {{version}}",
-    "managed": "Whoosh tự cập nhật",
+    "managed": "Whoosh Download Manager tự cập nhật",
     "system": "Đã cài trên máy này",
     "updateAvailable": "Đã có phiên bản {{version}}",
     "upToDate": "Đã mới nhất",
@@ -472,23 +472,23 @@
     "install": "Tải {{name}}",
     "update": "Cập nhật {{name}}",
     "autoUpdate": "Kiểm tra cập nhật mỗi ngày một lần",
-    "autoUpdateHint": "Nếu không, Whoosh chỉ kiểm tra khi bạn yêu cầu.",
+    "autoUpdateHint": "Nếu không, Whoosh Download Manager chỉ kiểm tra khi bạn yêu cầu.",
     "error": "Lần thử gần nhất thất bại: {{message}}",
     "checkFailed": "Không thể kiểm tra cập nhật: {{message}}"
   },
   "browsers": {
     "title": "Kết nối trình duyệt của bạn",
-    "intro": "Whoosh nhận các lượt tải xuống từ trình duyệt thông qua tiện ích Whoosh. Mỗi trình duyệt cần có tiện ích và một liên kết với ứng dụng này; Whoosh sẽ tạo liên kết giúp bạn.",
+    "intro": "Whoosh Download Manager nhận các lượt tải xuống từ trình duyệt thông qua tiện ích WDM. Mỗi trình duyệt cần có tiện ích và một liên kết với ứng dụng này; WDM sẽ tạo liên kết giúp bạn.",
     "loading": "Đang tìm trình duyệt của bạn…",
-    "none": "Không tìm thấy trình duyệt được hỗ trợ nào cho người dùng này. Whoosh hoạt động với Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi và Firefox.",
+    "none": "Không tìm thấy trình duyệt được hỗ trợ nào cho người dùng này. Whoosh Download Manager hoạt động với Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi và Firefox.",
     "notFound": "Không có trên máy tính này: {{names}}.",
     "state": {
-      "ready": "Sẵn sàng: lượt tải xuống từ trình duyệt này sẽ chuyển sang Whoosh",
-      "noHost": "Chưa liên kết với Whoosh",
+      "ready": "Sẵn sàng: lượt tải xuống từ trình duyệt này sẽ chuyển sang Whoosh Download Manager",
+      "noHost": "Chưa liên kết với Whoosh Download Manager",
       "noExtension": "Chưa cài đặt tiện ích"
     },
-    "connect": "Liên kết với Whoosh",
-    "connected": "{{browser}} đã được liên kết với Whoosh.",
+    "connect": "Liên kết với WDM",
+    "connected": "{{browser}} đã được liên kết với Whoosh Download Manager.",
     "connectFailed": "Không thể liên kết {{browser}}: {{message}}",
     "store": {
       "edgeAddOns": "Tải từ Edge Add-ons",

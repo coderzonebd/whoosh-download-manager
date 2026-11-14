@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Whoosh",
+  "productName": "Whoosh Download Manager",
   "version": "0.1.2",
   "identifier": "com.coderzonebd.whoosh",
   "build": {

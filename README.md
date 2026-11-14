@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/desktop/src-tauri/icons/whoosh.svg" width="112" alt="Whoosh logo">
+<img src="apps/desktop/src-tauri/icons/whoosh.svg" width="112" alt="Whoosh Download Manager logo">
 
 # Whoosh Download Manager
 
@@ -23,9 +23,9 @@ Open-source, crash-proof, and measured against every competitor in public.
 
 ## Measured, not claimed
 
-Every number below comes from [`whoosh-bench`](crates/bench). It runs Whoosh and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
+Every number below comes from [`whoosh-bench`](crates/bench). It runs Whoosh Download Manager and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
 
-| | Whoosh | Best competitor |
+| | WDM | Best competitor |
 |---|---|---|
 | **Correct files** | **175 / 175 runs byte-exact**, 0 wrong names | Gopeed: 14 corrupt files · Surge: 1 corrupt file |
 | **Crash test**: 1,000 × `kill -9` mid-download | **0 corrupt, 0 duplicates** (1,584 downloads) | not measured by anyone else |
@@ -37,7 +37,7 @@ Every number below comes from [`whoosh-bench`](crates/bench). It runs Whoosh and
 
 <sub>Run sets <a href="docs/bench/data/2026-11-13-pop-os-phase1-gate4/report.md">2026-11-13-pop-os-phase1-gate4</a>, <a href="docs/bench/data/2026-11-13-pop-os-phase1-hardkill-9665f1b">hardkill-9665f1b</a> and <a href="docs/bench/data/2026-11-13-pop-os-phase1-cdn3/report.md">cdn3</a>: Pop!_OS laptop, loopback and real internet. Times are to the file being safely on disk. Competitors: curl, wget, aria2c, aria2-next, Mister DM, Surge, Gopeed. Lower is better.</sub>
 
-Whoosh doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
+Whoosh Download Manager doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
 
 ## What the engine does today
 
@@ -126,9 +126,9 @@ feat/your-change ──PR──▶ dev ──release PR──▶ pub ──tag�
 
 Setup, rules and commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Please report security issues privately, as described in [SECURITY.md](SECURITY.md).
 
-## Support Whoosh
+## Support Whoosh Download Manager
 
-Whoosh is free and has no ads or telemetry. If it saves you time, you can help keep it going:
+Whoosh Download Manager is free and has no ads or telemetry. If it saves you time, you can help keep it going:
 
 - [GitHub Sponsors](https://github.com/sponsors/coderzonebd)
 - [Buy Me a Coffee](https://buymeacoffee.com/devrkb21)

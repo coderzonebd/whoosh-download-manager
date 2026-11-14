@@ -4,10 +4,10 @@ Upload `dist/whoosh-firefox-<version>-store.zip` from `pnpm --filter @whoosh/ext
 
 ## Listing
 
-- **Name:** Whoosh Download Manager (WDM) (from `_locales`, `extName`; the toolbar keeps the short name "Whoosh")
+- **Name:** Whoosh Download Manager (WDM) (from `_locales`, `extName`; the toolbar keeps the short name "WDM")
 - **Add-on URL slug:** `whoosh-download-manager`
 - **Summary** (≤ 250 characters):
-  > Sends Firefox downloads to the Whoosh download manager app with the same cookies and referrer: multi-connection, resumable downloads that survive restarts, and expired links repaired from the page they came from. Needs the Whoosh app.
+  > Sends Firefox downloads to the Whoosh Download Manager app with the same cookies and referrer: multi-connection, resumable downloads that survive restarts, and expired links repaired from the page they came from. Needs the WDM app.
 - **Categories:** Download Management
 - **Tags:** download manager, downloads, accelerator, resume
 - **Support site:** https://github.com/coderzonebd/whoosh-download-manager
@@ -32,8 +32,8 @@ Same text as the Chrome Web Store description ([`chrome-web-store.md`](chrome-we
 > - Requirements: Node.js 24 or newer, pnpm (via corepack).
 > - Build: `corepack pnpm install --frozen-lockfile`, then `corepack pnpm --filter @whoosh/extension build:store`. The add-on is `apps/extension/dist/firefox/`. The output is byte-for-byte the uploaded package (`package:store` writes the same files as a deterministic zip).
 >
-> Permissions are explained in `apps/extension/store/permissions.md`. `data_collection_permissions` is `none`: nothing is sent to us or third parties; download addresses and their cookies go only to the user's own Whoosh app.
+> Permissions are explained in `apps/extension/store/permissions.md`. `data_collection_permissions` is `none`: nothing is sent to us or third parties; download addresses and their cookies go only to the user's own Whoosh Download Manager app.
 >
-> To try it without the app, the popup shows "Not connected" and downloads stay in Firefox. With the app: install Whoosh, run `whoosh-nmhost --register`, start any download of a listed type.
+> To try it without the app, the popup shows "Not connected" and downloads stay in Firefox. With the app: install Whoosh Download Manager, run `whoosh-nmhost --register`, start any download of a listed type.
 
 AMO requires the source code for bundled add-ons: upload a source archive of the repository at the release tag (`git archive`) with the submission.
