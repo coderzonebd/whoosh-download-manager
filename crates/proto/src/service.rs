@@ -75,6 +75,8 @@ pub enum Notification {
     Queues(Vec<Queue>),
     QueueFinished(QueueFinishedEvent),
     MediaTools(MediaToolsStatus),
+    /// Sent by the daemon itself (`media.offer`), never by a service.
+    MediaOffered(crate::MediaOffer),
 }
 
 impl Notification {
@@ -91,6 +93,7 @@ impl Notification {
             Self::Queues(_) => event::QUEUES,
             Self::QueueFinished(_) => event::QUEUE_FINISHED,
             Self::MediaTools(_) => event::MEDIA_TOOLS,
+            Self::MediaOffered(_) => event::MEDIA_OFFERED,
         }
     }
 
@@ -110,6 +113,7 @@ impl Notification {
             Self::Queues(v) => json(v),
             Self::QueueFinished(v) => json(v),
             Self::MediaTools(v) => json(v),
+            Self::MediaOffered(v) => json(v),
         }
     }
 

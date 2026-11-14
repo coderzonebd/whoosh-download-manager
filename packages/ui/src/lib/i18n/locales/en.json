@@ -234,6 +234,9 @@
     "later": "Download later",
     "failed": "Couldn’t do that: {{message}}"
   },
+  "prompt": {
+    "empty": "Nothing is waiting."
+  },
   "remove": {
     "titleOne": "Remove “{{name}}”?",
     "title_one": "Remove {{count}} download?",

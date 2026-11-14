@@ -229,6 +229,9 @@
     "later": "Tải sau",
     "failed": "Không thực hiện được: {{message}}"
   },
+  "prompt": {
+    "empty": "Không có gì đang chờ."
+  },
   "remove": {
     "titleOne": "Gỡ bỏ “{{name}}”?",
     "title_other": "Gỡ bỏ {{count}} tải xuống?",

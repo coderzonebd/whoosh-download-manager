@@ -10,9 +10,10 @@
 //!   token. When the daemon goes away the host fails in-flight requests,
 //!   tells the extension (`event.nm.status`) and keeps reconnecting, re-reading
 //!   the runtime file each time because the port and token may change.
-//! * When the daemon answers a `download.add` with `needsApp` (the download
-//!   waits for the user and no desktop window is there to ask), the host
-//!   starts the desktop app ([`crate::launch`]).
+//! * When the daemon answers a `download.add` or a `media.offer` with
+//!   `needsApp` (a download waits for the user, or a page waits for the
+//!   media picker, and no desktop window is there to show it), the host
+//!   starts the desktop app with its prompt window ([`crate::launch`]).
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -139,7 +140,7 @@ pub enum ConnectError {
     Task(String),
 }
 
-/// The part of a `download.add` answer the host acts on.
+/// The part of a `download.add` or `media.offer` answer the host acts on.
 #[derive(Debug, Deserialize)]
 struct AddReply {
     #[serde(default)]
@@ -307,7 +308,7 @@ struct Relay {
     /// Last daemon state the extension knows about. `None` until the first
     /// attempt finishes; that first result is not an "event".
     reported: Option<bool>,
-    /// Pending `download.add` requests (keys of `pending`).
+    /// Pending `download.add` and `media.offer` requests (keys of `pending`).
     adds: HashSet<String>,
     last_launch: Option<Instant>,
 }
@@ -381,7 +382,8 @@ impl Relay {
                 self.reply_error(id, code::METHOD_NOT_FOUND, &msg).await;
             }
         } else {
-            let is_add = method == method::DOWNLOAD_ADD;
+            // Both may answer `needsApp`.
+            let is_add = method == method::DOWNLOAD_ADD || method == method::MEDIA_OFFER;
             self.forward(text, id, is_add).await;
         }
     }
@@ -532,7 +534,7 @@ impl Relay {
         self.send_raw(text.as_bytes()).await;
     }
 
-    /// A `download.add` was answered: start the app if the download waits
+    /// A `download.add` or `media.offer` was answered: start the app if it waits
     /// for a desktop window that is not there.
     fn after_add(&mut self, text: &str) {
         let needs_app = serde_json::from_str::<AddReply>(text)

@@ -15,8 +15,11 @@ use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
-use wdm_proto::service::Notification;
-use wdm_proto::{HelloParams, HelloResult, PROTOCOL_VERSION, auth, method};
+use wdm_proto::service::{Notification, ServiceError};
+use wdm_proto::{
+    HelloParams, HelloResult, IdParams, MediaOfferParams, MediaOfferResult, PROTOCOL_VERSION, auth,
+    error_code, method,
+};
 
 use crate::limit::{Budget, is_over_budget};
 use crate::outbox::{Item, Outbox, Pushed};
@@ -45,10 +48,12 @@ pub mod close {
 /// Who is on the other end, as far as the daemon treats them differently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ClientKind {
-    /// The desktop window: it asks the user about downloads that wait.
+    /// The desktop window: it asks the user about downloads that wait and
+    /// shows the pages the extension offers.
     Desktop,
     /// The browser extension, through `wdm-nmhost`: its downloads may
-    /// wait for confirmation (`AddParams::from_browser`).
+    /// wait for confirmation (`AddParams::from_browser`), and only it may
+    /// offer pages (`media.offer`).
     Browser,
     Other,
 }
@@ -111,6 +116,73 @@ fn mark_needs_app(method_name: &str, result: &mut Value, shared: &Shared) {
     }
 }
 
+/// The daemon's own `media.offer`, `media.offers` and `media.takeOffer`
+/// (crate::offers); `None` for every other method.
+fn offer_method(
+    req: &rpc::Request,
+    kind: ClientKind,
+    shared: &Shared,
+) -> Option<Result<Value, ServiceError>> {
+    let name = req.method.as_str();
+    if ![
+        method::MEDIA_OFFER,
+        method::MEDIA_OFFERS,
+        method::MEDIA_TAKE_OFFER,
+    ]
+    .contains(&name)
+    {
+        return None;
+    }
+    let params = || req.params.clone().unwrap_or(Value::Null);
+    let parse = |e: serde_json::Error| ServiceError::invalid_params(e.to_string());
+    let browser_only = name == method::MEDIA_OFFER;
+    if browser_only != (kind == ClientKind::Browser) {
+        let message = if browser_only {
+            "only the browser extension offers pages"
+        } else {
+            "offered pages are for the app's windows"
+        };
+        return Some(Err(ServiceError::new(error_code::UNAUTHORIZED, message)));
+    }
+    let now = crate::offers::now_ms();
+    Some(match name {
+        method::MEDIA_OFFER => serde_json::from_value::<MediaOfferParams>(params())
+            .map_err(parse)
+            .and_then(|p| shared.offers.offer(p, now))
+            .map(|offer| {
+                let result = MediaOfferResult {
+                    id: offer.id,
+                    needs_app: shared.desktop_sessions.load(Ordering::SeqCst) == 0,
+                };
+                serde_json::to_value(result).unwrap_or(Value::Null)
+            }),
+        method::MEDIA_OFFERS => {
+            Ok(serde_json::to_value(shared.offers.list(now)).unwrap_or(Value::Null))
+        }
+        _ => serde_json::from_value::<IdParams>(params())
+            .map_err(parse)
+            .and_then(|p| shared.offers.take(&p.id, now))
+            .map(|offer| serde_json::to_value(offer).unwrap_or(Value::Null)),
+    })
+}
+
+/// The offers broadcast as notifications; a receiver that fell behind skips
+/// what it missed (a window asks with `media.offers` anyway).
+fn offer_events(
+    rx: tokio::sync::broadcast::Receiver<wdm_proto::MediaOffer>,
+) -> BoxStream<'static, Notification> {
+    futures::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(offer) => return Some((Notification::MediaOffered(offer), rx)),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    })
+    .boxed()
+}
+
 enum HandshakeEnd {
     Close(u16, String),
     /// The peer went away, or the socket failed.
@@ -144,6 +216,13 @@ pub(crate) async fn run<S>(
     // Subscribe before answering hello, so no event falls in between; the
     // events are only sent after the hello result.
     let events = shared.service.subscribe();
+    // Offered pages go to the app's sessions, never back to the extension.
+    let offers = (ClientKind::of(&hello.client.name) != ClientKind::Browser)
+        .then(|| offer_events(shared.offers.subscribe()));
+    let events = match offers {
+        Some(offers) => futures::stream::select(events, offers).boxed(),
+        None => events,
+    };
     let result = HelloResult {
         daemon_version: shared.config.version.clone(),
         protocol: PROTOCOL_VERSION,
@@ -422,6 +501,16 @@ fn on_text(
     }
     // Method names only: params can carry cookies and must never be logged.
     tracing::debug!(method = ?req.method, notification = req.id.is_none(), "request");
+    if let Some(result) = offer_method(&req, kind, shared) {
+        if let Some(id) = req.id {
+            let reply = match result {
+                Ok(value) => rpc::result_response(id, value),
+                Err(e) => rpc::error_response(id, e.code, &e.message),
+            };
+            outbox.push_response(reply.to_string(), permit);
+        }
+        return;
+    }
     mark_origin(&mut req, kind);
     let shared = shared.clone();
     let outbox = outbox.clone();

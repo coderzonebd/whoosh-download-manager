@@ -34,6 +34,7 @@ mod limit;
 pub mod logging;
 pub mod migrate;
 pub mod mock;
+mod offers;
 pub mod outbox;
 pub mod paths;
 pub mod rpc;

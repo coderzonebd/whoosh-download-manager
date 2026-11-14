@@ -4,8 +4,9 @@
 // `desktop_prefs` / `set_desktop_prefs` commands), launch at login, the
 // "Send crash reports" switch (`crash.rs`), opening the translation site
 // from the language picker, "Connect your browser" (`browsers.rs`), signed
-// updates (`updates.rs`) and bringing the window to the front for a browser
-// download that waits for confirmation.
+// updates (`updates.rs`) and the prompt window (`prompt.rs`), which asks about
+// a browser download that waits for confirmation or a video page the
+// extension offered, without bringing up the main window.
 import type { BrowserState, CrashReportsState, DesktopPrefs, Host, UpdateInfo } from "@wdm/ui";
 
 /** The full `desktop.json` as the shell sends it (`prefs.rs`). */
@@ -100,10 +101,16 @@ export function desktopHost(): Host {
         return true;
       },
     },
-    // A browser download waits for confirmation: show the window, also from the tray.
     // The shell's own show: on macOS it also brings the app back into the Dock.
     async showWindow() {
       await invoke("show_window");
+    },
+    // The one prompt window, opened (or brought to the front) by whichever UI hears first.
+    async openPrompt() {
+      await invoke("open_prompt");
+    },
+    async closePrompt() {
+      await invoke("close_prompt");
     },
     updates: {
       async check() {

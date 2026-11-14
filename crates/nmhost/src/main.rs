@@ -42,8 +42,8 @@ ENVIRONMENT:
     WDM_DATA_DIR           daemon data directory (holds runtime.json)
     WDM_NMHOST_LOG=debug   verbose logging on stderr
     WDM_NMHOST_NO_LAUNCH=1 never start the desktop app (it is started when a
-                              browser download waits for confirmation and no
-                              app window is open)
+                              browser download waits for confirmation, or a
+                              video page is offered, and no app window is open)
 ";
 
 fn main() -> ExitCode {

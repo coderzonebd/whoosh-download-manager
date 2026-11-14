@@ -19,6 +19,7 @@ import {
   type DownloadDetail,
   type DownloadState,
   type DownloadSummary,
+  type MediaOffer,
   type EventMap,
   type MediaAddParams,
   type MediaChoice,
@@ -267,6 +268,9 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
   const tickMs = options.tickMs ?? 250;
   const latencyMs = options.latencyMs ?? 0;
   const wallNow = options.now ?? Date.now;
+  /** `media.offer`: pages waiting for a window, oldest first. */
+  const offers: MediaOffer[] = [];
+  let offerSeq = 0;
   const rng = mulberry32(options.seed ?? 0x5eed);
 
   const settings: Settings = { ...DEFAULT_SETTINGS, ...options.settings };
@@ -1028,6 +1032,33 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
     "queue.cancelAction": (p) => {
       if (p?.name !== MAIN_QUEUE) namedQueue(p?.name);
       return null;
+    },
+    // Offered pages (the real daemon only takes them from the extension's session, and answers
+    // needsApp when no desktop window is connected; the mock has no sessions).
+    "media.offer": (p) => {
+      const url = typeof p?.url === "string" ? p.url.trim() : "";
+      if (!/^https?:\/\/[^/?#\s]/i.test(url) || /[\s\x00-\x1f\x7f]/.test(url)) throw invalidParams("url must be an http or https address");
+      const title = typeof p?.title === "string" ? p.title.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+      const at = offers.findIndex((o) => o.url === url);
+      let offer: MediaOffer;
+      if (at >= 0) {
+        offer = offers.splice(at, 1)[0] as MediaOffer;
+        if (title) offer.title = title;
+        offer.offeredAt = wallNow();
+      } else {
+        offer = { id: `of_${++offerSeq}`, url, offeredAt: wallNow() };
+        if (title) offer.title = title;
+      }
+      offers.push(offer);
+      while (offers.length > 16) offers.shift();
+      emit("event.media.offered", { ...offer });
+      return { id: offer.id };
+    },
+    "media.offers": () => offers.map((o) => ({ ...o })),
+    "media.takeOffer": (p) => {
+      const at = offers.findIndex((o) => o.id === p?.id);
+      if (at < 0) throw new WdmRpcError(ErrorCode.NotFound, `no offered page with id ${String(p?.id)}`);
+      return offers.splice(at, 1)[0] as MediaOffer;
     },
     "media.probe": (p) => mediaProbe(p?.url),
     "media.add": (p) => ({ id: mediaAdd(p) }),

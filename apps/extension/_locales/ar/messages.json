@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "يعرض ملفات الوسائط والبث في النافذة المنبثقة لشريط الأدوات، جاهزة للتنزيل."
   },
+  "videoButtonOption": {
+    "message": "إظهار زر تنزيل على مقاطع الفيديو"
+  },
+  "videoButtonOptionHelp": {
+    "message": "مرِّر المؤشر فوق فيديو لتراه. يرسل الصفحة إلى Whoosh Download Manager حيث تختار الفيديو أو الصوت والجودة."
+  },
   "preconnect": {
     "message": "تجهيز الاتصال عندما يستقر المؤشر على رابط تنزيل"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "لم يُكتشف شيء بعد."
   },
+  "popupOfferPage": {
+    "message": "تنزيل هذا الفيديو باستخدام WDM"
+  },
   "popupDownload": {
     "message": "تنزيل"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "فشل"
+  },
+  "videoButton": {
+    "message": "تنزيل باستخدام WDM"
+  },
+  "videoButtonSent": {
+    "message": "أُرسل إلى WDM"
+  },
+  "videoButtonFailed": {
+    "message": "تعذّر الوصول إلى WDM"
   },
   "popupLast": {
     "message": "الأخير: $NAME$ — $OUTCOME$",

@@ -18,8 +18,9 @@ Effective: the first version published in the Chrome Web Store or on addons.mozi
 | The site's address (origin only, e.g. `https://example.com/`) when your pointer rests on a download link | While "prepare the connection" is on | To the Whoosh Download Manager app on this computer, which opens a connection early. The link itself is not sent |
 | The links on a page and their text | When you use the context menu on that page, or when self-healing reads the page a download came from (see below) | Used inside the extension to choose the right links; the chosen link goes to the Whoosh Download Manager app |
 | The text of a download link you click | Kept in memory for one minute | Used only to recognise the same link again if that download's address later expires |
+| The address (URL) and title of the page you are on (for a player embedded in a frame, the frame's address) | Only when you click "Download with WDM" on a video, or "Download this video with WDM" in the toolbar popup | To the Whoosh Download Manager app on this computer, which shows the page in its add dialog so you can choose what to download. No cookies are sent with it. The button over videos only looks at the size and position of video elements on the page; nothing is sent until you click it, and it can be turned off on the options page |
 
-The extension does not read page contents beyond links, does not record your browsing history, and does not see what you type.
+The extension does not read page contents beyond links (and, for the button over videos, where the video elements are), does not record your browsing history, and does not see what you type.
 
 ## What the extension stores on your computer
 

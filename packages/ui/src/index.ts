@@ -2,6 +2,7 @@
 // Public surface of @wdm/ui. Import "@wdm/ui/styles.css" once in the host.
 
 export { default as App } from "./components/App.svelte";
+export { default as PromptApp } from "./components/PromptApp.svelte";
 export { default as DownloadList } from "./components/DownloadList.svelte";
 export { default as SegmentBar } from "./components/SegmentBar.svelte";
 export { default as StatusBadge } from "./components/StatusBadge.svelte";

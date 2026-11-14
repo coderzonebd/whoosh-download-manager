@@ -1469,3 +1469,98 @@ async fn only_the_browser_session_marks_downloads_and_needs_app_follows_desktop_
     assert_eq!(r["result"]["needsApp"], true, "{r}");
     d.shutdown().await;
 }
+
+// ------------------------------------------------------------ media offers
+
+/// Reads until the response `id`, returning the notifications on the way.
+async fn events_until(ws: &mut common::Ws, id: i64) -> Vec<Value> {
+    let mut seen = Vec::new();
+    loop {
+        let v = next_json(ws).await;
+        if v.get("method").is_none() {
+            assert_eq!(v["id"], id, "{v}");
+            return seen;
+        }
+        seen.push(v);
+    }
+}
+
+#[tokio::test]
+async fn only_the_extension_offers_pages_and_the_app_takes_them() {
+    let dir = TempDir::new("offers");
+    let d = start(mock(), dir.path()).await;
+    let page = "https://www.youtube.com/watch?v=abc";
+
+    // Nobody but the extension may offer, and it may not take.
+    let mut cli = session_as(&d, "cli").await;
+    let r = call(&mut cli, 1, "media.offer", json!({ "url": page })).await;
+    assert_eq!(r["error"]["code"], error_code::UNAUTHORIZED, "{r}");
+
+    // From the extension, with no desktop window: the host must start the app.
+    let mut ext = session_as(&d, "extension-chromium").await;
+    let r = call(
+        &mut ext,
+        2,
+        "media.offer",
+        json!({ "url": page, "title": " A  video " }),
+    )
+    .await;
+    assert_eq!(r["result"]["needsApp"], true, "{r}");
+    let first = r["result"]["id"].as_str().unwrap().to_owned();
+    let r = call(&mut ext, 3, "media.offers", json!({})).await;
+    assert_eq!(r["error"]["code"], error_code::UNAUTHORIZED, "{r}");
+    let r = call(
+        &mut ext,
+        4,
+        "media.offer",
+        json!({ "url": "file:///etc/passwd" }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], -32602, "{r}");
+
+    // A window that connects later finds it waiting.
+    let mut desktop = session_as(&d, "desktop").await;
+    let r = call(&mut desktop, 5, "media.offers", Value::Null).await;
+    let list = r["result"].as_array().expect("a list");
+    assert_eq!(list.len(), 1, "{r}");
+    assert_eq!(list[0]["id"], first.as_str());
+    assert_eq!(list[0]["url"], page);
+    assert_eq!(list[0]["title"], "A video");
+    assert!(list[0]["offeredAt"].as_i64().unwrap() > 0);
+
+    // With a window there: no app to start, and the window hears of it.
+    let other = "https://vimeo.com/123";
+    let r = call(&mut ext, 6, "media.offer", json!({ "url": other })).await;
+    assert!(r["result"].get("needsApp").is_none(), "{r}");
+    let second = r["result"]["id"].as_str().unwrap().to_owned();
+    let ev = loop {
+        let v = next_json(&mut desktop).await;
+        if v["method"] == "event.media.offered" {
+            break v;
+        }
+    };
+    assert_eq!(ev["params"]["id"], second.as_str());
+    assert_eq!(ev["params"]["url"], other);
+    // ... the CLI too, but never the extension.
+    let r = call(&mut ext, 7, "stats.get", Value::Null).await;
+    assert!(r.get("result").is_some(), "{r}");
+    send(
+        &mut ext,
+        &json!({"jsonrpc": "2.0", "id": 8, "method": "stats.get"}),
+    )
+    .await;
+    let seen = events_until(&mut ext, 8).await;
+    assert!(
+        seen.iter().all(|e| e["method"] != "event.media.offered"),
+        "{seen:?}"
+    );
+
+    // Taken once.
+    let r = call(&mut desktop, 9, "media.takeOffer", json!({ "id": first })).await;
+    assert_eq!(r["result"]["url"], page, "{r}");
+    let r = call(&mut desktop, 10, "media.takeOffer", json!({ "id": first })).await;
+    assert_eq!(r["error"]["code"], error_code::NOT_FOUND, "{r}");
+    let r = call(&mut desktop, 11, "media.offers", Value::Null).await;
+    assert_eq!(r["result"].as_array().unwrap().len(), 1, "{r}");
+    d.shutdown().await;
+}

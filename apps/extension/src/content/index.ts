@@ -6,11 +6,18 @@
 //  * Clicking a download-looking link → its text, for self-healing.
 //  * Hovering a download-looking link for ~150 ms → ask for a preconnect.
 //  * Answer "collect links" for the context menus.
+//  * "Download with WDM" over videos (video-button.ts): hands the page to the
+//    app's media picker, unless turned off, the site is excluded, or (store
+//    build) the site is store-blocked.
 
+import { t } from "../shared/i18n";
 import { looksLikeDownloadLink, PreconnectThrottle } from "../shared/links";
-import type { CollectLinksMessage, CollectLinksReply, ContentMessage } from "../shared/messages";
+import { MAX_TITLE, type ActionReply, type CollectLinksMessage, type CollectLinksReply, type ContentMessage } from "../shared/messages";
+import { blockedByStorePolicy } from "../shared/policy";
 import { DEFAULT_SETTINGS, normalizeSettings, SETTINGS_KEY, type Settings } from "../shared/settings";
+import { isSiteExcluded } from "../shared/url";
 import { collectLinks, linkFromTarget } from "./links";
+import { buttonAllowed, VideoButtonController } from "./video-button";
 
 const HOVER_MS = 150;
 const MARK = Symbol.for("wdm.content");
@@ -94,6 +101,30 @@ function start(api: Api): void {
     },
     { capture: true, passive: true },
   );
+
+  // The button over videos. The policy is read at each show: settings change, and single-page
+  // sites change their address without reloading this script.
+  const videoButton = new VideoButtonController({
+    doc: document,
+    win: window,
+    allowed: () =>
+      buttonAllowed({
+        enabled: settings.videoButton,
+        excluded: isSiteExcluded([location.href], settings.excludedSites),
+        blocked: blockedByStorePolicy(location.href),
+      }),
+    activate: async () => {
+      const message: ContentMessage = { type: "wdm/offer-video", url: location.href, title: document.title.slice(0, MAX_TITLE) };
+      try {
+        const reply = (await api.runtime.sendMessage(message)) as ActionReply | undefined;
+        return reply ?? { ok: false, error: t("videoButtonFailed") };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    text: { label: t("videoButton"), sent: t("videoButtonSent"), failed: t("videoButtonFailed") },
+  });
+  videoButton.start();
 
   api.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     const m = message as Partial<CollectLinksMessage> | null;

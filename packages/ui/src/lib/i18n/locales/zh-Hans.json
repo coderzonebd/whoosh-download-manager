@@ -229,6 +229,9 @@
     "later": "稍后下载",
     "failed": "无法完成：{{message}}"
   },
+  "prompt": {
+    "empty": "没有等待处理的内容。"
+  },
   "remove": {
     "titleOne": "移除“{{name}}”？",
     "title_other": "移除 {{count}} 个下载？",

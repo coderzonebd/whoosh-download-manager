@@ -46,6 +46,12 @@ export const MediaMethod = {
   CheckUpdates: "media.checkUpdates",
   UpdateTools: "media.updateTools",
   Configure: "media.configure",
+  /** The browser extension hands a page to the app's media picker (only its session may call it). */
+  Offer: "media.offer",
+  /** Pages offered by the extension that no window has taken yet. */
+  Offers: "media.offers",
+  /** A window takes one offered page to show it. */
+  TakeOffer: "media.takeOffer",
 } as const;
 
 /** `HelloResult.capabilities` entry of daemons with media support. */
@@ -66,6 +72,8 @@ export const Event = {
   QueueFinished: "event.queue.finished",
   /** `MediaToolsStatus` after any change to the media tools. */
   MediaTools: "event.media.tools",
+  /** `MediaOffer`: the extension offered a page (`media.offer`); never sent to the extension. */
+  MediaOffered: "event.media.offered",
 } as const;
 export type EventName = (typeof Event)[keyof typeof Event];
 
@@ -548,6 +556,33 @@ export interface MediaConfigureParams {
   autoUpdate: boolean;
 }
 
+/**
+ * `media.offer`: a page the user wants video or audio from ("Download with WDM" on a video in the
+ * browser). The daemon downloads nothing: it keeps the page until a desktop window takes it and
+ * opens the add dialog for it, which probes the page and lets the user choose.
+ */
+export interface MediaOfferParams {
+  /** http(s); for a player embedded in a frame, the frame's address. */
+  url: string;
+  /** The page's title, a hint until the probe answers. */
+  title?: string;
+}
+
+export interface MediaOfferResult {
+  /** The offer's id; the same again when this page was already waiting. */
+  id: string;
+  /** No desktop window is connected to show it: the native host starts the app. */
+  needsApp?: boolean;
+}
+
+/** A page waiting for a desktop window (`media.offers`, `event.media.offered`, `media.takeOffer`). */
+export interface MediaOffer {
+  id: string;
+  url: string;
+  title?: string;
+  offeredAt: UnixMillis;
+}
+
 // ------------------------------------------------------------ typed method map
 
 export interface MethodMap {
@@ -581,6 +616,9 @@ export interface MethodMap {
   "media.checkUpdates": { params: undefined; result: MediaToolsStatus };
   "media.updateTools": { params: MediaUpdateParams; result: MediaToolsStatus };
   "media.configure": { params: MediaConfigureParams; result: MediaToolsStatus };
+  "media.offer": { params: MediaOfferParams; result: MediaOfferResult };
+  "media.offers": { params: undefined; result: MediaOffer[] };
+  "media.takeOffer": { params: { id: string }; result: MediaOffer };
 }
 
 export interface EventMap {
@@ -595,6 +633,7 @@ export interface EventMap {
   "event.queues": Queue[];
   "event.queue.finished": QueueFinishedEvent;
   "event.media.tools": MediaToolsStatus;
+  "event.media.offered": MediaOffer;
 }
 
 /** Extra methods and events available only through the native messaging host. */

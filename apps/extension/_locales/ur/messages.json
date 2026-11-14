@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "میڈیا فائلیں اور اسٹریمز ٹول بار پاپ اپ میں دکھاتا ہے، ڈاؤن لوڈ کے لیے تیار۔"
   },
+  "videoButtonOption": {
+    "message": "ویڈیوز پر ڈاؤن لوڈ بٹن دکھائیں"
+  },
+  "videoButtonOptionHelp": {
+    "message": "بٹن دیکھنے کے لیے پوائنٹر ویڈیو پر لے جائیں۔ یہ صفحہ Whoosh Download Manager کو بھیجتا ہے، جہاں آپ ویڈیو یا آڈیو اور کوالٹی چنتے ہیں۔"
+  },
   "preconnect": {
     "message": "جب پوائنٹر کسی ڈاؤن لوڈ لنک پر رکے تو کنکشن تیار کریں"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "ابھی تک کچھ نہیں ملا۔"
   },
+  "popupOfferPage": {
+    "message": "یہ ویڈیو WDM سے ڈاؤن لوڈ کریں"
+  },
   "popupDownload": {
     "message": "ڈاؤن لوڈ کریں"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "ناکام"
+  },
+  "videoButton": {
+    "message": "WDM سے ڈاؤن لوڈ کریں"
+  },
+  "videoButtonSent": {
+    "message": "WDM کو بھیج دیا گیا"
+  },
+  "videoButtonFailed": {
+    "message": "WDM سے رابطہ نہیں ہو سکا"
   },
   "popupLast": {
     "message": "آخری: $NAME$ — $OUTCOME$",

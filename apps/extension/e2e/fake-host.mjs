@@ -99,6 +99,8 @@ function handle(msg) {
       return expireLater(msg.params?.id);
     case "download.list":
       return reply(control().list ?? []);
+    case "media.offer":
+      return reply({ id: `of_e2e_${msg.id}` });
     default:
       return reply(null);
   }

@@ -4,6 +4,8 @@
 // no app, extension or package export includes it.
 //
 //   ?client=mock (default)  the mock daemon. ?lang=bn  ?theme=light|dark
+//   ?view=prompt            the desktop app's prompt window (PromptApp), which
+//                           stays open when nothing is left (no shell to close it).
 //   ?client=live            a real wdm-daemon. The suite injects the
 //                           address and token as window.__WDM_E2E__ before
 //                           the page loads (never in the URL).
@@ -14,7 +16,7 @@ import type { WdmClient } from "@wdm/api-client";
 import { createMockClient } from "@wdm/api-client/mock";
 import { connectWs } from "@wdm/api-client/ws";
 import { mount } from "svelte";
-import { App, type AppState, type Host } from "../src/index.ts";
+import { App, PromptApp, type AppState, type Host } from "../src/index.ts";
 import "../src/styles/global.css";
 
 declare global {
@@ -80,15 +82,14 @@ const mockHost: Host = {
 
 const target = document.getElementById("app");
 if (!target) throw new Error("#app missing");
-mount(App, {
-  target,
-  props: {
-    client: client(),
-    mode: live ? "live" : "mock",
-    storage: null,
-    ...(live ? {} : { host: mockHost }),
-    onready: (app: AppState) => {
-      window.__wdmApp = app;
-    },
+const props = {
+  client: client(),
+  mode: live ? ("live" as const) : ("mock" as const),
+  storage: null,
+  ...(live ? {} : { host: mockHost }),
+  onready: (app: AppState) => {
+    window.__wdmApp = app;
   },
-});
+};
+if (q.get("view") === "prompt") mount(PromptApp, { target, props });
+else mount(App, { target, props });

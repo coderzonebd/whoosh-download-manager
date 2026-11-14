@@ -1,22 +1,25 @@
-//! Starting the desktop app when a browser download waits for the user.
+//! Starting the desktop app when the browser needs it.
 //!
 //! With "Ask before downloading from the browser" on, `download.add` from
 //! the extension answers `awaitingConfirmation` and, when no desktop window
 //! is connected to the daemon to ask, `needsApp` (PROTOCOL.md,
-//! `download.confirm`). The relay then calls [`launch_app`] (at most once
-//! every [`MIN_GAP`]), which starts the app that shipped with this host:
+//! `download.confirm`); `media.offer` ("Download with WDM" on a video)
+//! answers `needsApp` the same way. The relay then calls [`launch_app`] (at
+//! most once every [`MIN_GAP`]), which starts the app that shipped with this
+//! host with [`PROMPT_ARG`]: the app then stays in the tray with its main
+//! window hidden and only opens its small prompt window (the confirmation,
+//! or the media picker), like IDM's "Download File Info":
 //!
 //! * **macOS**: the `.app` bundle this host is inside
-//!   (`<bundle>/Contents/MacOS/wdm-nmhost`) with `open`, which also
-//!   brings an app that is already running to the front; a host outside a
-//!   bundle asks Launch Services for the bundle id instead (`open -b`), which
-//!   fails quietly when the app is not installed.
-//! * **Windows and Linux**: `wdm-desktop` next to this host (the
+//!   (`<bundle>/Contents/MacOS/wdm-nmhost`) with `open … --args --prompt`;
+//!   a host outside a bundle asks Launch Services for the bundle id instead
+//!   (`open -b`), which fails quietly when the app is not installed.
+//! * **Windows and Linux**: `wdm-desktop --prompt` next to this host (the
 //!   installers, `.deb`/`.rpm`, AUR and Scoop put both in one directory).
-//!   A second start of the app hands over to the running one
-//!   (single-instance), which shows its window. On Windows it is started
-//!   outside the browser's job object, so closing the browser does not
-//!   close the app.
+//!   A second start of the app hands its arguments over to the running one
+//!   (single-instance), which opens its prompt window. On Windows it is
+//!   started outside the browser's job object, so closing the browser does
+//!   not close the app.
 //!
 //! Nothing is started when no app is found (CLI-only installs, or an
 //! AppImage, whose host runs from a copy in the data directory): the
@@ -39,6 +42,9 @@ pub const APP_EXES: [&str; 2] = if cfg!(windows) {
     ["wdm-desktop", "Whoosh Download Manager"]
 };
 
+/// Asks the app to start in the tray and open only its prompt window.
+pub const PROMPT_ARG: &str = "--prompt";
+
 /// The relay starts the app at most this often.
 pub const MIN_GAP: Duration = Duration::from_secs(30);
 
@@ -51,10 +57,11 @@ pub fn plan(host_exe: &Path, exists: impl Fn(&Path) -> bool) -> Option<(PathBuf,
             .ancestors()
             .find(|p| p.extension().is_some_and(|e| e == "app"))
             .filter(|b| host_exe.starts_with(b.join("Contents").join("MacOS")));
-        let args = match bundle {
+        let mut args = match bundle {
             Some(b) => vec![b.to_string_lossy().into_owned()],
             None => vec!["-b".into(), BUNDLE_ID.into()],
         };
+        args.extend(["--args".into(), PROMPT_ARG.into()]);
         return Some((PathBuf::from("/usr/bin/open"), args));
     }
     let dir = host_exe.parent()?;
@@ -62,7 +69,7 @@ pub fn plan(host_exe: &Path, exists: impl Fn(&Path) -> bool) -> Option<(PathBuf,
         .iter()
         .map(|name| dir.join(name))
         .find(|app| exists(app))
-        .map(|app| (app, Vec::new()))
+        .map(|app| (app, vec![PROMPT_ARG.into()]))
 }
 
 /// Starts the desktop app (see the module docs). Never blocks for long and
@@ -140,9 +147,16 @@ mod tests {
         let host = Path::new("/Applications/Whoosh Download Manager.app/Contents/MacOS/wdm-nmhost");
         let (program, args) = plan(host, |_| false).unwrap();
         assert_eq!(program, Path::new("/usr/bin/open"));
-        assert_eq!(args, ["/Applications/Whoosh Download Manager.app"]);
+        assert_eq!(
+            args,
+            [
+                "/Applications/Whoosh Download Manager.app",
+                "--args",
+                PROMPT_ARG
+            ]
+        );
         let (_, args) = plan(Path::new("/opt/homebrew/bin/wdm-nmhost"), |_| false).unwrap();
-        assert_eq!(args, ["-b", BUNDLE_ID]);
+        assert_eq!(args, ["-b", BUNDLE_ID, "--args", PROMPT_ARG]);
     }
 
     #[test]
@@ -152,7 +166,7 @@ mod tests {
         let app = Path::new("/usr/bin").join(APP_EXES[0]);
         let (program, args) = plan(host, |p| p == app).unwrap();
         assert_eq!(program, app);
-        assert!(args.is_empty());
+        assert_eq!(args, [PROMPT_ARG]);
         assert_eq!(plan(host, |_| false), None);
     }
 }

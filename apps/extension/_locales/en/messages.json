@@ -117,6 +117,14 @@
   "sniffMediaHelp": {
     "message": "Lists media files and streams in the toolbar popup, ready to download."
   },
+  "videoButtonOption": {
+    "message": "Show a download button on videos",
+    "description": "Options page switch."
+  },
+  "videoButtonOptionHelp": {
+    "message": "Point at a video to see it. It sends the page to Whoosh Download Manager, where you choose video or audio and the quality.",
+    "description": "Help under the switch."
+  },
   "preconnect": {
     "message": "Prepare the connection when the pointer rests on a download link"
   },
@@ -209,6 +217,10 @@
     "message": "None detected yet.",
     "description": "Popup: no audio or video found on the page."
   },
+  "popupOfferPage": {
+    "message": "Download this video with WDM",
+    "description": "Popup button at the top of “Media on this page”: the app asks which quality to download."
+  },
   "popupDownload": {
     "message": "Download",
     "description": "Button next to a detected media file."
@@ -220,6 +232,18 @@
   "popupFailed": {
     "message": "Failed",
     "description": "The button after handing the file over failed."
+  },
+  "videoButton": {
+    "message": "Download with WDM",
+    "description": "The button shown over a video on web pages. Keep it short; it shrinks to an icon on small videos."
+  },
+  "videoButtonSent": {
+    "message": "Sent to WDM",
+    "description": "The video button and the popup button after the page went to the app."
+  },
+  "videoButtonFailed": {
+    "message": "Could not reach WDM",
+    "description": "The video button when the app could not be reached."
   },
   "popupLast": {
     "message": "Last: $NAME$ — $OUTCOME$",

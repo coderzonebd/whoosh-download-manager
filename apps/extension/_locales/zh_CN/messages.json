@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "在工具栏弹出窗口中列出媒体文件和媒体流，可直接下载。"
   },
+  "videoButtonOption": {
+    "message": "在视频上显示下载按钮"
+  },
+  "videoButtonOptionHelp": {
+    "message": "将指针移到视频上即可看到。它会把页面发送到 Whoosh Download Manager，你可在那里选择视频或音频以及画质。"
+  },
   "preconnect": {
     "message": "指针停在下载链接上时预先建立连接"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "尚未检测到。"
   },
+  "popupOfferPage": {
+    "message": "使用 WDM 下载此视频"
+  },
   "popupDownload": {
     "message": "下载"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "失败"
+  },
+  "videoButton": {
+    "message": "使用 WDM 下载"
+  },
+  "videoButtonSent": {
+    "message": "已发送到 WDM"
+  },
+  "videoButtonFailed": {
+    "message": "无法连接 WDM"
   },
   "popupLast": {
     "message": "最近：$NAME$ — $OUTCOME$",

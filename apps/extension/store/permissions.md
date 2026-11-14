@@ -13,7 +13,7 @@ For the Chrome Web Store "Privacy practices" tab and AMO review notes. The same 
 | `contextMenus` | The menu items "Download link with WDM", "Download selected links with WDM" and "Download all links with WDM". |
 | `scripting` | To add the link-collecting content script to tabs that were open before the extension was installed, when the user uses a context-menu item there. |
 | `storage` | The user's settings; a list of downloads handed over (for repairing expired links, see the privacy policy); detected media per tab in session storage. |
-| Host access `http://*/*`, `https://*/*` | Downloads can come from any site. Needed for the cookies of the downloaded address, for the content script (Alt+click, hover-to-prepare, link collection for the context menus), and to read the page a download came from when its address expired (self-healing). |
+| Host access `http://*/*`, `https://*/*` | Downloads can come from any site. Needed for the cookies of the downloaded address, for the content script (Alt+click, hover-to-prepare, link collection for the context menus, the optional "Download with WDM" button over videos, which on click passes the page's address and title to the app), and to read the page a download came from when its address expired (self-healing). |
 
 **Remote code:** none. All code is in the package; the bundles are not minified so they can be reviewed.
 
@@ -21,4 +21,4 @@ For the Chrome Web Store "Privacy practices" tab and AMO review notes. The same 
 
 **Firefox `data_collection_permissions`:** `required: ["none"]` — nothing is transmitted to the developer or third parties.
 
-**Store build:** the Web Store / AMO packages (`build:store`) do not capture, detect or offer downloads on YouTube or similar streaming sites (list in `src/shared/store-blocklist.json`, MASTER-PLAN §6), and do not run their content script there.
+**Store build:** the Web Store / AMO packages (`build:store`) do not capture, detect or offer downloads on YouTube or similar streaming sites (list in `src/shared/store-blocklist.json`, MASTER-PLAN §6), and do not run their content script there: no button over videos and no "Download this video with WDM" in the popup on those sites.

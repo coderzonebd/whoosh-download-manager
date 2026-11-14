@@ -293,10 +293,85 @@ pub struct MediaConfigureParams {
     pub auto_update: bool,
 }
 
+// ---------------------------------------------------------------- media.offer
+
+/// `media.offer`: a page the user wants to download video or audio from,
+/// handed over by the browser extension ("Download with WDM" on a video).
+/// The daemon keeps it until a desktop window takes it and opens its add
+/// dialog (which probes the page and lets the user choose).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaOfferParams {
+    /// The page (`http` or `https`); for a player embedded in a frame, the
+    /// frame's address.
+    pub url: String,
+    /// The page's title, as a hint until the probe answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+/// `media.offer`'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaOfferResult {
+    /// The offer's id (`MediaOffer::id`); the same one again when this page
+    /// was already waiting.
+    pub id: String,
+    /// No desktop window is connected to show it: the native host starts
+    /// the app (as for `download.add`'s `needsApp`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub needs_app: bool,
+}
+
+/// A page waiting for a desktop window (`media.offers`,
+/// `event.media.offered`, `media.takeOffer`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaOffer {
+    pub id: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub offered_at: UnixMillis,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn media_offer_wire_format() {
+        let p: MediaOfferParams =
+            serde_json::from_value(json!({"url": "https://v.example/watch?v=1"})).unwrap();
+        assert_eq!(p.title, None);
+        let r = MediaOfferResult {
+            id: "of_1".into(),
+            needs_app: false,
+        };
+        assert_eq!(serde_json::to_value(&r).unwrap(), json!({"id": "of_1"}));
+        let r = MediaOfferResult {
+            needs_app: true,
+            ..r
+        };
+        assert_eq!(
+            serde_json::to_value(&r).unwrap(),
+            json!({"id": "of_1", "needsApp": true})
+        );
+        let o = MediaOffer {
+            id: "of_1".into(),
+            url: "https://v.example/".into(),
+            title: Some("A video".into()),
+            offered_at: 5,
+        };
+        assert_eq!(
+            serde_json::to_value(&o).unwrap(),
+            json!({"id": "of_1", "url": "https://v.example/", "title": "A video", "offeredAt": 5})
+        );
+        let n = crate::service::Notification::MediaOffered(o);
+        assert_eq!(n.method(), "event.media.offered");
+        assert!(!n.is_lossy());
+    }
 
     #[test]
     fn choices_are_tagged_by_kind() {

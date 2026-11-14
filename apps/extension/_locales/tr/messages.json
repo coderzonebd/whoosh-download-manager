@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "Medya dosyalarını ve yayınları araç çubuğu penceresinde, indirmeye hazır olarak listeler."
   },
+  "videoButtonOption": {
+    "message": "Videolarda indirme düğmesi göster"
+  },
+  "videoButtonOptionHelp": {
+    "message": "Görmek için işaretçiyi bir videonun üzerine getirin. Sayfayı Whoosh Download Manager'a gönderir; video mu ses mi ve kaliteyi orada seçersiniz."
+  },
   "preconnect": {
     "message": "İşaretçi bir indirme bağlantısının üzerinde durduğunda sunucuya önceden bağlan"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "Henüz bir şey algılanmadı."
   },
+  "popupOfferPage": {
+    "message": "Bu videoyu WDM ile indir"
+  },
   "popupDownload": {
     "message": "İndir"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "Başarısız"
+  },
+  "videoButton": {
+    "message": "WDM ile indir"
+  },
+  "videoButtonSent": {
+    "message": "WDM'ye gönderildi"
+  },
+  "videoButtonFailed": {
+    "message": "WDM'ye ulaşılamadı"
   },
   "popupLast": {
     "message": "Son: $NAME$ — $OUTCOME$",
