@@ -64,6 +64,18 @@ fn main() {
         ("install_refuses_a_checksum_mismatch", || {
             Box::pin(install_refuses_a_checksum_mismatch())
         }),
+        ("bundled_tools_are_copied_and_checked", || {
+            Box::pin(bundled_tools_are_copied_and_checked())
+        }),
+        ("bundled_mismatch_falls_back_to_download", || {
+            Box::pin(bundled_mismatch_falls_back_to_download())
+        }),
+        ("tar_bundled_tools_are_unpacked_and_checked", || {
+            Box::pin(tar_bundled_tools_are_unpacked_and_checked())
+        }),
+        ("newer_bundled_tools_replace_older_copies", || {
+            Box::pin(newer_bundled_tools_replace_older_copies())
+        }),
         ("unsupported_without_media", || {
             Box::pin(unsupported_without_media())
         }),
@@ -765,6 +777,7 @@ fn tools_config(dir: &Path) -> ToolsConfig {
         system: false,
         yt_dlp: None,
         ffmpeg: None,
+        bundled: None,
     }
 }
 
@@ -837,6 +850,310 @@ async fn install_refuses_a_checksum_mismatch() {
     assert!(
         left.is_empty(),
         "nothing installed or left behind: {left:?}"
+    );
+}
+
+// ------------------------------------------------------------ bundled tools
+
+fn exe(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// An installer's `media-tools` directory: yt-dlp, ffmpeg and ffprobe with
+/// a manifest. `bad` gets a wrong checksum in the manifest.
+fn bundle_dir(dir: &Path, yt_dlp_version: &str, bad: Option<&str>) -> PathBuf {
+    bundle_dir_as(dir, yt_dlp_version, bad, false)
+}
+
+/// As [`bundle_dir`]; with `tar`, each program is in an uncompressed
+/// `<name>.tar` as on Linux.
+fn bundle_dir_as(dir: &Path, yt_dlp_version: &str, bad: Option<&str>, tar: bool) -> PathBuf {
+    let b = dir.join("media-tools");
+    std::fs::create_dir_all(&b).unwrap();
+    let mut tools = serde_json::Map::new();
+    for (tool, version, files) in [
+        ("yt-dlp", yt_dlp_version, vec![exe("yt-dlp")]),
+        ("ffmpeg", "9.0", vec![exe("ffmpeg"), exe("ffprobe")]),
+    ] {
+        let mut sums = serde_json::Map::new();
+        let mut tars = serde_json::Map::new();
+        for f in files {
+            let body = format!("#!/bin/sh\necho bundled {f} {version}\n").into_bytes();
+            std::fs::write(b.join(&f), &body).unwrap();
+            let sha = if bad == Some(tool) {
+                "cd".repeat(32)
+            } else {
+                sha256_hex(&body)
+            };
+            if tar {
+                let packed = b.join(format!("{f}.tar"));
+                let ok = std::process::Command::new("tar")
+                    .arg("-cf")
+                    .arg(&packed)
+                    .arg("-C")
+                    .arg(&b)
+                    .arg(&f)
+                    .status()
+                    .unwrap()
+                    .success();
+                assert!(ok, "tar");
+                std::fs::remove_file(b.join(&f)).unwrap();
+                tars.insert(
+                    f.clone(),
+                    sha256_hex(&std::fs::read(&packed).unwrap()).into(),
+                );
+            }
+            sums.insert(f, sha.into());
+        }
+        tools.insert(
+            tool.into(),
+            serde_json::json!({
+                "version": version,
+                "upstream": "example",
+                "license": "test",
+                "sources": [{ "url": format!("https://up.example.test/{tool}"), "sha256": "0".repeat(64) }],
+                "files": sums,
+                "tars": tars,
+            }),
+        );
+    }
+    let manifest = serde_json::json!({
+        "target": "test", "fetchedAt": 1, "tools": tools,
+    });
+    std::fs::write(
+        b.join(whoosh_media::bundle::MANIFEST),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    b
+}
+
+/// An upstream that serves nothing: any network use fails.
+fn offline() -> Arc<FakeUpstream> {
+    Arc::new(FakeUpstream {
+        files: BTreeMap::new(),
+        resolved: BTreeMap::new(),
+        fetched: Mutex::new(Vec::new()),
+    })
+}
+
+async fn wait_until(what: &str, mut ok: impl FnMut() -> bool) {
+    for _ in 0..500 {
+        if ok() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+/// The installer's tools show as ready at once, are copied into `bin`
+/// (checked against the manifest) without touching the network, and are
+/// managed copies from then on.
+async fn bundled_tools_are_copied_and_checked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bundle = bundle_dir(tmp.path(), "2026.10.26", None);
+    let data = tmp.path().join("media");
+    let up = offline();
+    let mut cfg = tools_config(&data);
+    cfg.bundled = Some(bundle.clone());
+    let tools = Tools::open(cfg.clone(), up.clone()).await;
+    let status = tools.status();
+    for t in &status.tools {
+        assert_eq!(t.state, MediaToolState::Ready, "{t:?}");
+        assert_eq!(t.source, Some(MediaToolSource::Managed));
+    }
+    assert_eq!(status.tools[0].version.as_deref(), Some("2026.10.26"));
+    assert_eq!(status.tools[1].version.as_deref(), Some("9.0"));
+
+    let yt = tools.ensure(Kind::YtDlp).await.unwrap();
+    assert_eq!(yt.program, data.join("bin").join(exe("yt-dlp")));
+    assert_eq!(
+        std::fs::read(&yt.program).unwrap(),
+        std::fs::read(bundle.join(exe("yt-dlp"))).unwrap()
+    );
+    let ff = tools.ensure(Kind::Ffmpeg).await.unwrap();
+    assert!(ff.program.starts_with(data.join("bin")));
+    assert!(data.join("bin").join(exe("ffprobe")).is_file());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&ff.program).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o755);
+    }
+    assert!(
+        up.fetched.lock().unwrap().is_empty(),
+        "no network: {:?}",
+        up.fetched.lock().unwrap()
+    );
+    let left: Vec<_> = std::fs::read_dir(data.join("bin"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with('.'))
+        .collect();
+    assert!(left.is_empty(), "work directories left behind: {left:?}");
+
+    // Next start: the managed copy, nothing copied again.
+    let again = Tools::open(cfg, up.clone()).await;
+    assert_eq!(again.get(Kind::YtDlp), Some(yt));
+    assert_eq!(
+        again.status().tools[0].path.as_deref(),
+        Some(
+            data.join("bin")
+                .join(exe("yt-dlp"))
+                .display()
+                .to_string()
+                .as_str()
+        )
+    );
+}
+
+/// A bundled file that does not match the manifest is never used: the tool
+/// is downloaded (and checked) as without a bundle. A bundle without a
+/// manifest is no bundle.
+async fn bundled_mismatch_falls_back_to_download() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bundle = bundle_dir(tmp.path(), "2026.01.01", Some("yt-dlp"));
+    let data = tmp.path().join("media");
+    let (up, body) = upstream(None);
+    let mut cfg = tools_config(&data);
+    cfg.bundled = Some(bundle.clone());
+    let tools = Tools::open(cfg, up.clone()).await;
+    let yt = tools.ensure(Kind::YtDlp).await.unwrap();
+    assert_eq!(std::fs::read(&yt.program).unwrap(), body);
+    assert!(
+        up.fetched
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|u| u.ends_with(whoosh_media::upstream::yt_dlp_asset_name().unwrap())),
+        "downloaded from upstream"
+    );
+    assert_eq!(
+        tools.status().tools[0].version.as_deref(),
+        Some("2026.10.26")
+    );
+    // ffmpeg's files matched: copied.
+    wait_until("ffmpeg copied", || {
+        data.join("bin").join(exe("ffmpeg")).is_file()
+    })
+    .await;
+
+    // No manifest: nothing shows as ready, first use downloads.
+    let tmp2 = tempfile::tempdir().unwrap();
+    let empty = tmp2.path().join("media-tools");
+    std::fs::create_dir_all(&empty).unwrap();
+    std::fs::write(empty.join(exe("yt-dlp")), b"x").unwrap();
+    let mut cfg = tools_config(&tmp2.path().join("media"));
+    cfg.bundled = Some(empty);
+    let tools = Tools::open(cfg, up).await;
+    assert_eq!(tools.status().tools[0].state, MediaToolState::Missing);
+}
+
+/// Linux ships each program in a tar (linuxdeploy rewrites ELF programs in
+/// an AppImage): unpacked and checked against the manifest, without the
+/// network; `verify` checks tar and contents; a tampered program inside the
+/// tar is never used, the tool is downloaded instead.
+async fn tar_bundled_tools_are_unpacked_and_checked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bundle = bundle_dir_as(tmp.path(), "2026.10.26", None, true);
+    assert!(!bundle.join(exe("ffmpeg")).exists());
+    assert!(bundle.join(format!("{}.tar", exe("ffmpeg"))).is_file());
+    let m = whoosh_media::bundle::verify(&bundle).await.unwrap();
+    assert_eq!(m.tools["ffmpeg"].tars.len(), 2);
+    let data = tmp.path().join("media");
+    let up = offline();
+    let mut cfg = tools_config(&data);
+    cfg.bundled = Some(bundle.clone());
+    let tools = Tools::open(cfg, up.clone()).await;
+    assert_eq!(tools.status().tools[1].state, MediaToolState::Ready);
+    let ff = tools.ensure(Kind::Ffmpeg).await.unwrap();
+    assert_eq!(ff.program, data.join("bin").join(exe("ffmpeg")));
+    assert_eq!(
+        std::fs::read(&ff.program).unwrap(),
+        format!("#!/bin/sh\necho bundled {} 9.0\n", exe("ffmpeg")).into_bytes()
+    );
+    assert!(data.join("bin").join(exe("ffprobe")).is_file());
+    tools.ensure(Kind::YtDlp).await.unwrap();
+    assert!(up.fetched.lock().unwrap().is_empty(), "no network");
+    let left: Vec<_> = std::fs::read_dir(data.join("bin"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with('.'))
+        .collect();
+    assert!(left.is_empty(), "work directories left behind: {left:?}");
+
+    // The program in the tar does not match the manifest.
+    let tmp = tempfile::tempdir().unwrap();
+    let bundle = bundle_dir_as(tmp.path(), "2026.01.01", Some("yt-dlp"), true);
+    let e = whoosh_media::bundle::verify(&bundle).await.unwrap_err();
+    assert!(e.contains("yt-dlp"), "{e}");
+    // A tampered tar fails its own checksum.
+    let tmp2 = tempfile::tempdir().unwrap();
+    let other = bundle_dir_as(tmp2.path(), "2026.01.01", None, true);
+    let packed = other.join(format!("{}.tar", exe("ffmpeg")));
+    let mut bytes = std::fs::read(&packed).unwrap();
+    bytes.extend_from_slice(&[0u8; 512]);
+    std::fs::write(&packed, bytes).unwrap();
+    assert!(whoosh_media::bundle::verify(&other).await.is_err());
+
+    let data = tmp.path().join("media");
+    let (up, body) = upstream(None);
+    let mut cfg = tools_config(&data);
+    cfg.bundled = Some(bundle);
+    let tools = Tools::open(cfg, up.clone()).await;
+    let yt = tools.ensure(Kind::YtDlp).await.unwrap();
+    assert_eq!(std::fs::read(&yt.program).unwrap(), body);
+    assert_eq!(
+        tools.status().tools[0].version.as_deref(),
+        Some("2026.10.26")
+    );
+}
+
+/// An app update with newer tools replaces older managed copies; older
+/// bundled tools never replace newer ones.
+async fn newer_bundled_tools_replace_older_copies() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("media");
+    let (up, body) = upstream(None);
+    let tools = Tools::open(tools_config(&data), up.clone()).await;
+    tools.ensure(Kind::YtDlp).await.unwrap();
+    drop(tools);
+    let program = data.join("bin").join(exe("yt-dlp"));
+
+    let old = tmp.path().join("old");
+    std::fs::create_dir_all(&old).unwrap();
+    let mut cfg = tools_config(&data);
+    cfg.bundled = Some(bundle_dir(&old, "2026.01.01", None));
+    let tools = Tools::open(cfg, up.clone()).await;
+    // ffmpeg (not there yet) is copied; yt-dlp stays.
+    wait_until("ffmpeg copied", || {
+        data.join("bin").join(exe("ffmpeg")).is_file()
+    })
+    .await;
+    assert_eq!(std::fs::read(&program).unwrap(), body);
+    assert_eq!(
+        tools.status().tools[0].version.as_deref(),
+        Some("2026.10.26")
+    );
+    drop(tools);
+
+    let new = tmp.path().join("new");
+    std::fs::create_dir_all(&new).unwrap();
+    let mut cfg = tools_config(&data);
+    let bundle = bundle_dir(&new, "2026.11.30", None);
+    cfg.bundled = Some(bundle.clone());
+    let tools = Tools::open(cfg, up).await;
+    wait_until("yt-dlp replaced", || {
+        tools.status().tools[0].version.as_deref() == Some("2026.11.30")
+            && tools.get(Kind::YtDlp).is_some()
+    })
+    .await;
+    assert_eq!(
+        std::fs::read(&program).unwrap(),
+        std::fs::read(bundle.join(exe("yt-dlp"))).unwrap()
     );
 }
 

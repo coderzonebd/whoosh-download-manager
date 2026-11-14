@@ -58,6 +58,13 @@ struct Args {
           value_parser = BoolishValueParser::new())]
     no_media: bool,
 
+    /// yt-dlp and ffmpeg shipped with the desktop app (a directory with a
+    /// manifest.json): copied into the data directory at start instead of
+    /// downloaded on first use. The desktop app passes its own; without it
+    /// the tools are downloaded when first needed.
+    #[arg(long, env = "WHOOSH_MEDIA_TOOLS_DIR", value_name = "DIR")]
+    media_tools_dir: Option<PathBuf>,
+
     /// Started in the background by `whoosh`: no logging to stderr, and SIGHUP
     /// is ignored.
     #[arg(long, hide = true)]
@@ -159,7 +166,8 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
             ..MockOptions::default()
         })
     } else {
-        match start_engine(&data_dir, &mut startup.store, !args.no_media).await {
+        let media = (!args.no_media).then(|| args.media_tools_dir.clone());
+        match start_engine(&data_dir, &mut startup.store, media).await {
             Ok(engine) => engine,
             Err(e) => {
                 tracing::error!(error = %e, "cannot start the download engine");
@@ -214,10 +222,12 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
 
 /// The real service: whoosh-engine over whoosh-net and whoosh-store, with its state
 /// in the data directory (`state.db`, `journal/`).
+/// `media`: `None` turns media downloads off, else where the installer's
+/// tools are, if anywhere.
 async fn start_engine(
     data_dir: &Path,
     store_ms: &mut f64,
-    media: bool,
+    media: Option<Option<PathBuf>>,
 ) -> std::io::Result<Arc<dyn Service>> {
     let net = whoosh_net::NetConfig::default();
     let mut capabilities: Vec<String> = vec!["http".into(), "https".into(), "preconnect".into()];
@@ -264,17 +274,18 @@ async fn start_engine(
 async fn with_media(
     engine: Arc<dyn Service>,
     data_dir: &Path,
-    on: bool,
+    media: Option<Option<PathBuf>>,
 ) -> std::io::Result<Arc<dyn Service>> {
-    if !on {
+    let Some(bundled) = media else {
         tracing::info!("media downloads turned off");
         return Ok(engine);
+    };
+    let mut config = whoosh_media::MediaConfig::new(data_dir.join("media"));
+    if let Some(dir) = &bundled {
+        tracing::info!(dir = %dir.display(), "media tools shipped with the app");
     }
-    let media = whoosh_media::MediaService::start(
-        engine,
-        whoosh_media::MediaConfig::new(data_dir.join("media")),
-    )
-    .await?;
+    config.bundled_tools = bundled;
+    let media = whoosh_media::MediaService::start(engine, config).await?;
     tracing::info!("media downloads available");
     Ok(media)
 }
@@ -283,7 +294,7 @@ async fn with_media(
 async fn with_media(
     engine: Arc<dyn Service>,
     _data_dir: &Path,
-    _on: bool,
+    _media: Option<Option<PathBuf>>,
 ) -> std::io::Result<Arc<dyn Service>> {
     Ok(engine)
 }

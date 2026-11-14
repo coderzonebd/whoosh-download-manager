@@ -271,7 +271,7 @@
     "machineTranslated": "机器翻译。",
     "helpTranslate": "帮助改进翻译",
     "media": "视频和音频网站",
-    "mediaHint": "Whoosh 用 yt-dlp 查找页面上的视频，用 ffmpeg 合并视频和音频。两者都是独立程序，首次需要时从官方发布页下载，并用公布的校验和核对。",
+    "mediaHint": "Whoosh 用 yt-dlp 查找页面上的视频，用 ffmpeg 合并视频和音频。两者都是来自官方发布的独立程序，并用公布的校验和核对。安装程序已包含它们；没有安装程序时，会在首次需要时下载。",
     "browsers": "浏览器",
     "browsersHint": "连接 Chrome、Edge、Firefox 等浏览器，让它们的下载交给 Whoosh。",
     "browsersOpen": "连接你的浏览器…",
