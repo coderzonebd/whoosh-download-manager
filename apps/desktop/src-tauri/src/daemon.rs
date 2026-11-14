@@ -12,8 +12,16 @@
 //! The installers ship yt-dlp and ffmpeg in the app's resources
 //! (`media-tools/`, see crates/media's `bundle` module); the daemon is told
 //! where with `--media-tools-dir` and copies them into its data directory.
+//!
+//! The UI's reconnect loop is not enough on its own: while the window is
+//! hidden in the tray the webview's timers are throttled, so a daemon that
+//! crashed there would stay down and its downloads with it. [`supervise`]
+//! watches from the shell instead.
 
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{Manager, Runtime};
@@ -93,6 +101,48 @@ pub async fn shutdown(data_dir: &Path) -> Result<(), String> {
     }
 }
 
+/// How often the shell looks for the daemon.
+const WATCH_EVERY: Duration = Duration::from_secs(5);
+
+/// Whether the daemon `data_dir` describes is up: its runtime file names a
+/// port and something accepts connections there. A cheap look (no hello, so
+/// the daemon's log stays quiet); [`connection`] does the real check when
+/// this says no.
+fn looks_alive(data_dir: &Path) -> bool {
+    let Ok(whoosh_client::runtime::Lookup::Found(info)) = whoosh_client::runtime::read(data_dir)
+    else {
+        return false;
+    };
+    let addr = SocketAddr::from(([127, 0, 0, 1], info.port));
+    TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok()
+}
+
+/// Starts the daemon again whenever it is found gone, until `stop` is set
+/// (the app quitting, which may stop the daemon on purpose). Runs on its own
+/// thread for the life of the app.
+pub fn supervise<R: Runtime>(app: &tauri::AppHandle<R>, stop: &'static AtomicBool) {
+    let media_tools = media_tools_dir(app);
+    std::thread::spawn(move || {
+        let Ok(dir) = data_dir() else { return };
+        let exe = daemon::daemon_exe();
+        loop {
+            std::thread::sleep(WATCH_EVERY);
+            if stop.load(Ordering::SeqCst) {
+                return;
+            }
+            if looks_alive(&dir) {
+                continue;
+            }
+            match tauri::async_runtime::block_on(connection(&dir, &exe, media_tools.as_deref())) {
+                Ok(_) => eprintln!("whoosh-desktop: the daemon was not running; started it again"),
+                Err(err) => eprintln!(
+                    "whoosh-desktop: the daemon is not running and could not be started: {err}"
+                ),
+            }
+        }
+    });
+}
+
 /// Called by the UI before every (re)connection.
 #[tauri::command]
 pub async fn daemon_connection<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Connection, String> {
@@ -103,6 +153,14 @@ pub async fn daemon_connection<R: Runtime>(app: tauri::AppHandle<R>) -> Result<C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_runtime_file_is_not_alive() {
+        let dir = std::env::temp_dir().join(format!("whoosh-supervise-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!looks_alive(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn identifies_as_desktop() {
