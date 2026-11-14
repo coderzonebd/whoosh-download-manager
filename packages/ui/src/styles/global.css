@@ -222,6 +222,9 @@ p {
 
 .vy-field {
   display: grid;
+  /* Rows keep their own height when the field is stretched (in a grid row
+     whose neighbour has a longer hint), so the input does not grow. */
+  align-content: start;
   gap: var(--vy-space-1);
 }
 .vy-label {
@@ -339,9 +342,11 @@ p {
 /* ------------------------------------------------------------------ checkbox */
 
 /* A drawn checkbox: on a row it adds the row to the selection; in the toolbar
-   it selects everything or clears the selection. State comes from aria-checked
-   on the box itself or on the control around it. */
-.vy-check {
+   it selects everything or clears the selection. Not .vy-check, which is a
+   label around a real checkbox: sharing that name squeezed every label to
+   1rem wide. State comes from aria-checked on the box itself or on the
+   control around it. */
+.vy-pick {
   position: relative;
   flex: none;
   inline-size: 1rem;
@@ -354,14 +359,14 @@ p {
     background-color var(--vy-duration-fast) var(--vy-ease-standard),
     border-color var(--vy-duration-fast) var(--vy-ease-standard);
 }
-.vy-check[aria-checked="true"],
-[aria-checked="true"] > .vy-check,
-[aria-checked="mixed"] > .vy-check {
+.vy-pick[aria-checked="true"],
+[aria-checked="true"] > .vy-pick,
+[aria-checked="mixed"] > .vy-pick {
   border-color: var(--vy-color-accent);
   background: var(--vy-color-accent);
 }
-.vy-check[aria-checked="true"]::after,
-[aria-checked="true"] > .vy-check::after {
+.vy-pick[aria-checked="true"]::after,
+[aria-checked="true"] > .vy-pick::after {
   content: "";
   position: absolute;
   inset-inline-start: 0.28rem;
@@ -372,7 +377,7 @@ p {
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
-[aria-checked="mixed"] > .vy-check::after {
+[aria-checked="mixed"] > .vy-pick::after {
   content: "";
   position: absolute;
   inset-inline: 0.2rem;
@@ -381,7 +386,7 @@ p {
   background: var(--vy-color-text-on-accent);
 }
 @media (hover: hover) and (pointer: fine) {
-  .vy-check:hover {
+  .vy-pick:hover {
     border-color: var(--vy-color-accent);
   }
 }

@@ -263,7 +263,7 @@
             <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
           </div>
           {#if app.host.pickFolder}
-            <button type="button" class="vy-btn" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
+            <button type="button" class="vy-btn vy-btn--secondary" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
           {/if}
         </div>
       </div>
@@ -303,7 +303,7 @@
               <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
             </div>
             {#if app.host.pickFolder}
-              <button type="button" class="vy-btn" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
+              <button type="button" class="vy-btn vy-btn--secondary" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
             {/if}
           </div>
         </div>
