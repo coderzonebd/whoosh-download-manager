@@ -95,6 +95,8 @@ export function manifestFor(target, { version, store }) {
         // user's own whoosh app through native messaging.
         data_collection_permissions: { required: ["none"] },
       },
+      // Firefox for Android reads data_collection_permissions from 142 on.
+      gecko_android: { strict_min_version: "142.0" },
     },
   };
 }

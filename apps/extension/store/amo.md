@@ -1,6 +1,6 @@
 # Firefox Add-ons (AMO) listing
 
-Upload `dist/whoosh-firefox-<version>-store.zip` from `pnpm --filter @whoosh/extension package:store`. The add-on ID is fixed in the manifest (`whoosh@coderzonebd.com`); `whoosh-nmhost --register` already allows it. Minimum Firefox: 140.
+Upload `dist/whoosh-firefox-<version>-store.zip` from `pnpm --filter @whoosh/extension package:store`. The add-on ID is fixed in the manifest (`whoosh@coderzonebd.com`); `whoosh-nmhost --register` already allows it. Minimum Firefox: 140 (Firefox for Android: 142).
 
 ## Listing
 
