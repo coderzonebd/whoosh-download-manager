@@ -34,6 +34,7 @@ impl EngineConfig {
                 language: "en".into(),
                 theme: "system".into(),
                 durability: Default::default(),
+                speed_schedule: Vec::new(),
             },
             tuning: Tuning::default(),
             capabilities: vec!["http".into(), "https".into(), "preconnect".into()],

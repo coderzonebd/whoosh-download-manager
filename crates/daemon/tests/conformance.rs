@@ -1095,3 +1095,31 @@ async fn the_data_dir_is_made_private_or_refused() {
         other => panic!("a symlinked data dir was accepted: {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn queue_methods_are_unsupported_until_the_service_has_them() {
+    let dir = TempDir::new("queues");
+    let d = start(ScriptedService::new(), dir.path()).await;
+    let mut ws = authed(&d).await;
+    for (id, (method, params)) in [
+        ("queue.list", json!({})),
+        ("queue.create", json!({"name": "Night"})),
+        ("queue.update", json!({"name": "Night", "maxActive": 2})),
+        ("queue.rename", json!({"name": "Night", "newName": "Late"})),
+        ("queue.remove", json!({"name": "Late"})),
+        ("queue.start", json!({"name": "Late"})),
+        ("queue.stop", json!({"name": "Late"})),
+        ("queue.cancelAction", json!({"name": "Late"})),
+        ("download.setQueue", json!({"ids": ["x"], "queue": "Late"})),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let reply = call(&mut ws, id as i64 + 1, method, params).await;
+        assert_eq!(reply["error"]["code"], -32006, "{method}: {reply}");
+    }
+    // Malformed params are still invalid params, not "unsupported".
+    let reply = call(&mut ws, 99, "queue.create", json!({"maxActive": 1})).await;
+    assert_eq!(reply["error"]["code"], -32602);
+    d.shutdown().await;
+}

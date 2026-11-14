@@ -276,3 +276,59 @@ describe("categoryForFilename", () => {
     expect(categoryForFilename(name)).toBe(cat);
   });
 });
+
+describe("mock queues", () => {
+  it("lists the main queue first and creates, renames and removes named queues", async () => {
+    const c = mock({ scenario: "empty" });
+    const events = record(c, "event.queues");
+    expect((await c.call("queue.list", undefined)).map((q) => q.name)).toEqual(["main"]);
+    const night = await c.call("queue.create", { name: "Night", schedule: { start: { at: "01:00" }, afterDone: "sleep" } });
+    expect(night).toEqual({ name: "Night", maxActive: 1, running: true, schedule: { start: { at: "01:00" }, afterDone: "sleep" } });
+    await expect(c.call("queue.create", { name: "Night" })).rejects.toBeInstanceOf(WhooshRpcError);
+    await expect(c.call("queue.create", { name: "main" })).rejects.toBeInstanceOf(WhooshRpcError);
+
+    const { id } = await c.call("download.add", { url: "https://example.com/a.iso", queue: "Night" });
+    expect((await c.call("download.get", { id })).queue).toBe("Night");
+
+    await c.call("queue.rename", { name: "Night", newName: "Late" });
+    expect((await c.call("download.get", { id })).queue).toBe("Late");
+    await c.call("queue.remove", { name: "Late" });
+    expect((await c.call("download.get", { id })).queue).toBeUndefined();
+    expect(events.at(-1)?.map((q) => q.name)).toEqual(["main"]);
+  });
+
+  it("updates schedules and validates them", async () => {
+    const c = mock({ scenario: "empty" });
+    await c.call("queue.create", { name: "Q" });
+    const q = await c.call("queue.update", { name: "Q", maxActive: 3, schedule: { stop: { at: "07:30", days: [1, 2] } } });
+    expect(q.maxActive).toBe(3);
+    expect(q.schedule?.stop).toEqual({ at: "07:30", days: [1, 2] });
+    expect((await c.call("queue.update", { name: "Q" })).schedule).toBeUndefined();
+    await expect(c.call("queue.update", { name: "Q", schedule: { start: { at: "25:00" } } })).rejects.toBeInstanceOf(WhooshRpcError);
+    await expect(c.call("queue.update", { name: "Q", maxActive: 0 })).rejects.toBeInstanceOf(WhooshRpcError);
+    await expect(c.call("queue.update", { name: "nope" })).rejects.toBeInstanceOf(WhooshRpcError);
+  });
+
+  it("moves downloads between queues and stops and starts a queue", async () => {
+    const c = mock({ scenario: "empty" });
+    await c.call("queue.create", { name: "Q" });
+    const { id } = await c.call("download.add", { url: "https://example.com/b.zip" });
+    await c.call("download.setQueue", { ids: [id], queue: "Q" });
+    expect((await c.call("download.get", { id })).queue).toBe("Q");
+    await c.call("download.setQueue", { ids: [id] });
+    expect((await c.call("download.get", { id })).queue).toBeUndefined();
+    await c.call("queue.stop", { name: "Q" });
+    expect((await c.call("queue.list", undefined)).find((q) => q.name === "Q")?.running).toBe(false);
+    await c.call("queue.start", { name: "Q" });
+    expect((await c.call("queue.list", undefined)).find((q) => q.name === "Q")?.running).toBe(true);
+  });
+
+  it("keeps a speed schedule in the settings", async () => {
+    const c = mock({ scenario: "empty" });
+    const s = await c.call("settings.get", undefined);
+    const window = { days: [0, 6], from: "09:00", to: "17:00", limitBps: 1_000_000 };
+    expect((await c.call("settings.set", { ...s, speedSchedule: [window] })).speedSchedule).toEqual([window]);
+    await expect(c.call("settings.set", { ...s, speedSchedule: [{ ...window, from: "9:00" }] })).rejects.toBeInstanceOf(WhooshRpcError);
+    expect((await c.call("settings.set", { ...s, speedSchedule: [] })).speedSchedule).toBeUndefined();
+  });
+});
