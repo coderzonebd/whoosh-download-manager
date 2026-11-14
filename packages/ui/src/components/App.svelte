@@ -8,12 +8,20 @@
   import type { WhooshClient } from "@whoosh/api-client";
   import { onDestroy, untrack } from "svelte";
   import { AppState, provideApp, type AppOptions } from "../lib/state/app.svelte.ts";
+  import type { Host } from "../lib/host.ts";
   import AddDownloadDialog from "./AddDownloadDialog.svelte";
+  import AfterDoneBanner from "./AfterDoneBanner.svelte";
+  import ClearHistoryDialog from "./ClearHistoryDialog.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import DetailPanel from "./DetailPanel.svelte";
   import DownloadList from "./DownloadList.svelte";
+  import HistoryView from "./HistoryView.svelte";
+  import MoveQueueDialog from "./MoveQueueDialog.svelte";
+  import QueueBar from "./QueueBar.svelte";
+  import QueueDialog from "./QueueDialog.svelte";
   import RefreshLinkDialog from "./RefreshLinkDialog.svelte";
   import RemoveDialog from "./RemoveDialog.svelte";
+  import RemoveQueueDialog from "./RemoveQueueDialog.svelte";
   import SettingsView from "./SettingsView.svelte";
   import ShortcutsDialog from "./ShortcutsDialog.svelte";
   import Sidebar from "./Sidebar.svelte";
@@ -33,13 +41,16 @@
     manageDocument?: boolean;
     /** Receive the AppState, e.g. for host integrations and tests. */
     onready?: (app: AppState) => void;
+    /** What the host shell adds: folder picker, desktop settings (see lib/host.ts). */
+    host?: Host;
   }
-  let { client, mode = "live", storage, locale, manageDocument = true, onready }: Props = $props();
+  let { client, mode = "live", storage, locale, manageDocument = true, onready, host }: Props = $props();
 
   const app = untrack(() => {
     const opts: AppOptions = { mode };
     if (storage !== undefined) opts.storage = storage;
     if (locale !== undefined) opts.locale = locale;
+    if (host !== undefined) opts.host = host;
     return provideApp(new AppState(client, opts));
   });
   untrack(() => onready?.(app));
@@ -48,8 +59,17 @@
   const { store, prefs, i18n } = app;
 
   const detail = $derived(app.view === "downloads" && prefs.detailOpen ? store.get(store.activeId) : undefined);
-  const modal = $derived(app.addOpen || app.shortcutsOpen || app.removeIds !== undefined || app.refreshId !== undefined);
-  let pastedUrl = $state("");
+  const modal = $derived(
+    app.addOpen ||
+      app.shortcutsOpen ||
+      app.removeIds !== undefined ||
+      app.refreshId !== undefined ||
+      app.queueDialog !== undefined ||
+      app.removeQueueName !== undefined ||
+      app.moveIds !== undefined ||
+      app.clearIds !== undefined,
+  );
+  const queueView = $derived(app.view === "downloads" && store.view.kind === "queue" && app.queues.enabled ? store.view.queue : undefined);
 
   $effect(() => {
     if (!manageDocument) return;
@@ -71,8 +91,7 @@
     const key = e.key.toLowerCase();
     if (mod && key === "n") {
       e.preventDefault();
-      pastedUrl = "";
-      app.addOpen = true;
+      app.openAdd();
     } else if ((mod && key === "f") || (key === "/" && !inField(e))) {
       e.preventDefault();
       app.view = "downloads";
@@ -95,8 +114,7 @@
     const text = e.clipboardData?.getData("text/plain")?.trim() ?? "";
     if (!/^(https?|ftp):\/\/\S+$/i.test(text)) return;
     e.preventDefault();
-    pastedUrl = text;
-    app.addOpen = true;
+    app.openAdd(text);
   }
 </script>
 
@@ -111,11 +129,17 @@
     {/if}
     <main class="main">
       <Toolbar />
+      <AfterDoneBanner />
       <div class="content">
         {#if app.view === "settings"}
           <SettingsView />
+        {:else if app.view === "history"}
+          <HistoryView />
         {:else}
-          <DownloadList />
+          <div class="list-col">
+            {#if queueView !== undefined}<QueueBar name={queueView} />{/if}
+            <DownloadList />
+          </div>
           {#if detail}
             <DetailPanel download={detail} />
           {/if}
@@ -133,13 +157,25 @@
     {/key}
   {/if}
   {#if app.addOpen}
-    <AddDownloadDialog initialUrl={pastedUrl} onclose={() => (app.addOpen = false)} />
+    <AddDownloadDialog initialUrl={app.addUrl} onclose={() => (app.addOpen = false)} />
   {/if}
   {#if app.removeIds}
     <RemoveDialog ids={app.removeIds} onclose={() => (app.removeIds = undefined)} />
   {/if}
   {#if app.refreshId}
     <RefreshLinkDialog id={app.refreshId} onclose={() => (app.refreshId = undefined)} />
+  {/if}
+  {#if app.queueDialog}
+    <QueueDialog dialog={app.queueDialog} onclose={() => (app.queueDialog = undefined)} />
+  {/if}
+  {#if app.removeQueueName !== undefined}
+    <RemoveQueueDialog name={app.removeQueueName} onclose={() => (app.removeQueueName = undefined)} />
+  {/if}
+  {#if app.moveIds}
+    <MoveQueueDialog ids={app.moveIds} onclose={() => (app.moveIds = undefined)} />
+  {/if}
+  {#if app.clearIds}
+    <ClearHistoryDialog ids={app.clearIds} onclose={() => (app.clearIds = undefined)} />
   {/if}
   {#if app.shortcutsOpen}
     <ShortcutsDialog onclose={() => (app.shortcutsOpen = false)} />
@@ -176,6 +212,13 @@
   }
   .status {
     grid-area: status;
+  }
+  .list-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    min-block-size: 0;
   }
   .nav-scrim {
     display: none;

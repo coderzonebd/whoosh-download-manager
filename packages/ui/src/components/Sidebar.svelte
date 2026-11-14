@@ -29,10 +29,10 @@
   };
 
   function same(a: View, b: View): boolean {
-    if (a.kind !== b.kind) return false;
     if (a.kind === "group" && b.kind === "group") return a.group === b.group;
     if (a.kind === "category" && b.kind === "category") return a.category === b.category;
-    return a.kind === "queue";
+    if (a.kind === "queue" && b.kind === "queue") return a.queue === b.queue;
+    return false;
   }
 
   function current(v: View): "page" | undefined {
@@ -46,6 +46,13 @@
   }
 
   const counts = $derived(store.counts);
+  const queues = app.queues;
+  const queueNames = $derived(["main", ...(queues.enabled ? queues.named.map((q) => q.name) : [])]);
+
+  function foot(view: "history" | "settings"): void {
+    app.view = view;
+    app.navOpen = false;
+  }
 </script>
 
 <nav class="sidebar" aria-label={t("nav.label")}>
@@ -92,28 +99,42 @@
     </section>
 
     <section aria-labelledby="vy-nav-queues">
-      <h2 id="vy-nav-queues">{t("nav.queues")}</h2>
-      <ul>
-        <li>
-          <button class="item" aria-current={current({ kind: "queue", queue: "main" })} onclick={() => go({ kind: "queue", queue: "main" })}>
-            <Icon name="layers" size={16} />
-            <span class="label vy-truncate">{t("queue.main")}</span>
-            {#if counts.mainQueue > 0}<span class="count vy-num">{i18n.number(counts.mainQueue)}</span>{/if}
+      <div class="section-head">
+        <h2 id="vy-nav-queues">{t("nav.queues")}</h2>
+        {#if queues.enabled}
+          <button class="vy-btn vy-btn--icon vy-btn--sm add" aria-label={t("queue.new")} title={t("queue.new")} onclick={() => (app.queueDialog = { mode: "create" })}>
+            <Icon name="plus" size={14} />
           </button>
-        </li>
+        {/if}
+      </div>
+      <ul>
+        {#each queueNames as name (name)}
+          {@const v: View = { kind: "queue", queue: name }}
+          {@const q = queues.get(name)}
+          {@const n = counts.queues[name] ?? 0}
+          <li>
+            <button class="item" aria-current={current(v)} onclick={() => go(v)}>
+              <Icon name="layers" size={16} />
+              <span class="label vy-truncate" dir="auto">{app.queueLabel(name)}</span>
+              {#if q && q.name !== "main" && !q.running}
+                <span class="state" title={t("queue.stopped")}><Icon name="pause" size={12} /><span class="vy-sr-only">{t("queue.stopped")}</span></span>
+              {:else if q?.schedule}
+                <span class="state" title={t("queue.scheduled")}><Icon name="clock" size={12} /><span class="vy-sr-only">{t("queue.scheduled")}</span></span>
+              {/if}
+              {#if n > 0}<span class="count vy-num">{i18n.number(n)}</span>{/if}
+            </button>
+          </li>
+        {/each}
       </ul>
     </section>
   </div>
 
   <div class="foot">
-    <button
-      class="item"
-      aria-current={app.view === "settings" ? "page" : undefined}
-      onclick={() => {
-        app.view = "settings";
-        app.navOpen = false;
-      }}
-    >
+    <button class="item" aria-current={app.view === "history" ? "page" : undefined} onclick={() => foot("history")}>
+      <Icon name="history" size={16} />
+      <span class="label">{t("nav.history")}</span>
+    </button>
+    <button class="item" aria-current={app.view === "settings" ? "page" : undefined} onclick={() => foot("settings")}>
       <Icon name="settings" size={16} />
       <span class="label">{t("nav.settings")}</span>
     </button>
@@ -243,7 +264,23 @@
   }
   .foot {
     flex: none;
+    display: grid;
+    gap: 1px;
     padding: var(--vy-space-2);
     border-block-start: 1px solid var(--vy-color-border);
+  }
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline-end: var(--vy-space-2);
+  }
+  .section-head .add {
+    color: var(--vy-color-text-subtle);
+  }
+  .state {
+    display: inline-flex;
+    flex: none;
+    color: var(--vy-color-text-subtle);
   }
 </style>

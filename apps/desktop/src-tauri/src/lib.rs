@@ -7,7 +7,9 @@
 //! launch shows the first one's window. Closing the window hides it to the
 //! tray while downloads go on; Quit leaves the daemon running unless the
 //! user asked otherwise ([`prefs`]). Window size, position and maximised
-//! state are remembered.
+//! state are remembered. `whoosh://add?url=…` links open the add dialog
+//! ([`deep_links`]); launch at login is off until the user turns it on, and
+//! then starts hidden in the tray ([`AUTOSTART_ARG`]).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -17,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 mod daemon;
+mod deep_links;
 mod prefs;
 mod window_size;
 
@@ -29,6 +32,10 @@ pub const EVENT_HIDDEN_TO_TRAY: &str = "desktop://hidden-to-tray";
 static TRAY_SHOWN: AtomicBool = AtomicBool::new(false);
 /// Set once Quit has started, so closing the window then really closes it.
 static QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// Passed by the login item (`tauri-plugin-autostart`): start in the tray,
+/// without showing the window.
+pub const AUTOSTART_ARG: &str = "--autostart";
 
 /// Tray icon id, so commands can find it again.
 pub const TRAY_ID: &str = "whoosh-tray";
@@ -52,7 +59,7 @@ fn set_tray_tooltip<R: Runtime>(app: AppHandle<R>, text: String) -> Result<(), S
     }
 }
 
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         // Best effort: a failure here leaves the window as it was.
         let _ = window.unminimize();
@@ -157,10 +164,18 @@ fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
 pub fn run() {
     let app = tauri::Builder::default()
         // First, so a second launch hands over before anything else starts.
+        // With its `deep-link` feature, a second launch's whoosh:// link
+        // reaches `deep_links` through the deep-link plugin.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main_window(app);
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
         // Position and maximised state; the size is handled by `window_size`.
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -183,11 +198,20 @@ pub fn run() {
             if let Err(err) = build_tray(app) {
                 eprintln!("whoosh-desktop: no tray icon: {err}");
             }
+            deep_links::setup(app);
+            // Started at login: stay in the tray (when there is one).
+            if TRAY_SHOWN.load(Ordering::SeqCst)
+                && std::env::args().any(|a| a == AUTOSTART_ARG)
+                && let Some(window) = app.get_webview_window(MAIN_WINDOW)
+            {
+                let _ = window.hide();
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             set_tray_tooltip,
             daemon::daemon_connection,
+            deep_links::take_deep_links,
             prefs::desktop_prefs,
             prefs::set_desktop_prefs,
         ])

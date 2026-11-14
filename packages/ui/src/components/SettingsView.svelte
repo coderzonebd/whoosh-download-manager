@@ -2,11 +2,15 @@
 <!--
   Daemon settings (`Settings` in the protocol) are edited as a draft and
   saved with settings.set; device-only preferences (layout, high contrast)
-  apply immediately because they never leave this window.
+  and the desktop app's own settings (tray, launch at login) apply
+  immediately because they never reach the daemon.
 -->
 <script lang="ts">
-  import type { Settings } from "@whoosh/api-client";
+  import type { Settings, SpeedWindow } from "@whoosh/api-client";
+  import type { DesktopPrefs } from "../lib/host.ts";
+  import { normalizeDays, windowProblem } from "../lib/schedule.ts";
   import { getApp } from "../lib/state/app.svelte.ts";
+  import DaysPicker from "./DaysPicker.svelte";
   import Icon from "./Icon.svelte";
 
   const app = getApp();
@@ -14,6 +18,13 @@
   const { t } = i18n;
 
   type Unit = "KB" | "MB";
+  interface WindowDraft {
+    days: number[];
+    from: string;
+    to: string;
+    value: string;
+    unit: Unit;
+  }
   interface Draft {
     defaultDirectory: string;
     maxActive: string;
@@ -23,13 +34,26 @@
     limitOn: boolean;
     limitValue: string;
     limitUnit: Unit;
+    windows: WindowDraft[];
   }
 
   const UNIT: Record<Unit, number> = { KB: 1024, MB: 1024 * 1024 };
 
+  function unitFor(bps: number | undefined): Unit {
+    return bps !== undefined && bps >= UNIT.MB && bps % (UNIT.MB / 10) === 0 ? "MB" : "KB";
+  }
+  function valueIn(bps: number, unit: Unit): string {
+    return String(Math.round((bps / UNIT[unit]) * 10) / 10);
+  }
+
+  function toWindow(w: SpeedWindow): WindowDraft {
+    const unit = unitFor(w.limitBps);
+    return { days: [...(w.days ?? [])], from: w.from, to: w.to, value: valueIn(w.limitBps, unit), unit };
+  }
+
   function toDraft(s: Settings): Draft {
     const bps = s.speedLimitBps;
-    const unit: Unit = bps !== undefined && bps >= UNIT.MB && bps % (UNIT.MB / 10) === 0 ? "MB" : "KB";
+    const unit = unitFor(bps);
     return {
       defaultDirectory: s.defaultDirectory,
       maxActive: String(s.maxActiveDownloads),
@@ -37,8 +61,9 @@
       language: s.language,
       theme: s.theme,
       limitOn: bps !== undefined,
-      limitValue: bps === undefined ? "1" : String(Math.round((bps / UNIT[unit]) * 10) / 10),
+      limitValue: bps === undefined ? "1" : valueIn(bps, unit),
       limitUnit: unit,
+      windows: (s.speedSchedule ?? []).map(toWindow),
     };
   }
 
@@ -63,6 +88,22 @@
     return n >= min && n <= max ? n : undefined;
   }
 
+  function limitOk(v: string): boolean {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 && n <= 1_000_000;
+  }
+
+  /** Per window: what is wrong with its times and its limit. */
+  const windowErrors = $derived(
+    (draft?.windows ?? []).map((w) => {
+      const p = windowProblem(w);
+      return {
+        time: p === "time" ? t("schedule.badTime") : p === "same" ? t("speedSchedule.same") : undefined,
+        limit: limitOk(String(w.value)) ? undefined : t("settings.range", { min: i18n.number(1), max: i18n.number(1_000_000) }),
+      };
+    }),
+  );
+
   const errors = $derived.by(() => {
     const e: Partial<Record<"defaultDirectory" | "maxActive" | "maxConnections" | "limitValue", string>> = {};
     if (!draft) return e;
@@ -73,14 +114,24 @@
     if (draft.limitOn && !(Number.isFinite(lv) && lv > 0 && lv <= 1_000_000)) e.limitValue = t("settings.range", { min: i18n.number(1), max: i18n.number(1_000_000) });
     return e;
   });
-  const valid = $derived(Object.keys(errors).length === 0);
+  const valid = $derived(Object.keys(errors).length === 0 && windowErrors.every((w) => !w.time && !w.limit));
 
   function build(d: Draft): Settings | undefined {
     const maxActiveDownloads = int(d.maxActive, 1, 64);
     const maxConnectionsPerDownload = int(d.maxConnections, 1, 64);
     if (maxActiveDownloads === undefined || maxConnectionsPerDownload === undefined) return undefined;
-    const s: Settings = { defaultDirectory: d.defaultDirectory.trim(), maxActiveDownloads, maxConnectionsPerDownload, language: d.language, theme: d.theme };
+    // Start from what the daemon sent, so fields this screen doesn't show (durability, …) survive a save.
+    const s: Settings = { ...baseline, defaultDirectory: d.defaultDirectory.trim(), maxActiveDownloads, maxConnectionsPerDownload, language: d.language, theme: d.theme };
+    delete s.speedLimitBps;
+    delete s.speedSchedule;
     if (d.limitOn) s.speedLimitBps = Math.max(1, Math.round(Number(d.limitValue) * UNIT[d.limitUnit]));
+    const windows = d.windows.map((w): SpeedWindow => {
+      const out: SpeedWindow = { from: w.from, to: w.to, limitBps: Math.max(1, Math.round(Number(w.value) * UNIT[w.unit])) };
+      const days = normalizeDays(w.days);
+      if (days) out.days = days;
+      return out;
+    });
+    if (windows.length > 0) s.speedSchedule = windows;
     return s;
   }
 
@@ -88,8 +139,86 @@
   const dirty = $derived.by(() => {
     if (!draft || !baseline) return false;
     const a = toDraft(baseline);
-    return (Object.keys(a) as (keyof Draft)[]).some((k) => String(a[k]) !== String(draft?.[k]));
+    return (Object.keys(a) as (keyof Draft)[]).some((k) => JSON.stringify(norm(a[k])) !== JSON.stringify(norm(draft?.[k])));
   });
+
+  /** Number inputs hand back numbers; compare everything as text. */
+  function norm(v: unknown): unknown {
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]));
+    return String(v);
+  }
+
+  function addWindow(): void {
+    if (!draft) return;
+    draft.windows.push({ days: [1, 2, 3, 4, 5], from: "09:00", to: "18:00", value: "512", unit: "KB" });
+    const n = draft.windows.length;
+    queueMicrotask(() => document.getElementById(`vy-win-${n - 1}-from`)?.focus());
+  }
+
+  function removeWindow(i: number): void {
+    draft?.windows.splice(i, 1);
+    queueMicrotask(() => document.getElementById("vy-win-add")?.focus());
+  }
+
+  // ------------------------------------------------------------ folder picker
+
+  let picking = $state(false);
+  async function chooseFolder(): Promise<void> {
+    const pick = app.host.pickFolder;
+    if (!pick || !draft || picking) return;
+    picking = true;
+    try {
+      const dir = await pick({ title: t("settings.chooseFolder"), defaultPath: draft.defaultDirectory.trim() || undefined });
+      if (dir && draft) draft.defaultDirectory = dir;
+    } catch (e) {
+      app.report(e);
+    } finally {
+      picking = false;
+    }
+  }
+
+  // ------------------------------------------------------------ this computer (desktop app only)
+
+  const host = app.host;
+  const hasDesktop = host.desktopPrefs !== undefined || host.launchAtLogin !== undefined;
+  let desktop = $state<DesktopPrefs | undefined>(undefined);
+  let atLogin = $state<boolean | undefined>(undefined);
+
+  $effect(() => {
+    host.desktopPrefs
+      ?.get()
+      .then((p) => (desktop = p))
+      .catch(() => (desktop = undefined));
+    host.launchAtLogin
+      ?.get()
+      .then((on) => (atLogin = on))
+      .catch(() => (atLogin = undefined));
+  });
+
+  async function setDesktop(key: keyof DesktopPrefs, value: boolean): Promise<void> {
+    if (!host.desktopPrefs || !desktop) return;
+    const before = desktop;
+    desktop = { ...desktop, [key]: value };
+    try {
+      desktop = await host.desktopPrefs.set(desktop);
+    } catch (e) {
+      desktop = before;
+      app.toasts.push({ tone: "error", message: t("settings.saveFailed", { message: app.describe(e) }) });
+    }
+  }
+
+  async function setAtLogin(on: boolean): Promise<void> {
+    if (!host.launchAtLogin) return;
+    const before = atLogin;
+    atLogin = on;
+    try {
+      await host.launchAtLogin.set(on);
+    } catch (e) {
+      atLogin = before;
+      app.toasts.push({ tone: "error", message: t("settings.saveFailed", { message: app.describe(e) }) });
+    }
+  }
 
   async function save(e: SubmitEvent): Promise<void> {
     e.preventDefault();
@@ -170,14 +299,21 @@
         <div class="grid">
           <div class="vy-field wide">
             <label class="vy-label" for="vy-set-dir">{t("settings.defaultDirectory")}</label>
-            <input
-              id="vy-set-dir"
-              class="vy-input"
-              dir="auto"
-              bind:value={draft.defaultDirectory}
-              aria-invalid={errors.defaultDirectory !== undefined}
-              aria-describedby={errors.defaultDirectory ? "vy-set-dir-err" : undefined}
-            />
+            <div class="folder-row">
+              <input
+                id="vy-set-dir"
+                class="vy-input"
+                dir="auto"
+                bind:value={draft.defaultDirectory}
+                aria-invalid={errors.defaultDirectory !== undefined}
+                aria-describedby={errors.defaultDirectory ? "vy-set-dir-err" : undefined}
+              />
+              {#if host.pickFolder}
+                <button type="button" class="vy-btn" disabled={picking} onclick={chooseFolder}>
+                  <Icon name="folder" size={15} />{t("action.browse")}
+                </button>
+              {/if}
+            </div>
             {#if errors.defaultDirectory}<span id="vy-set-dir-err" class="vy-error">{errors.defaultDirectory}</span>{/if}
           </div>
           <div class="vy-field">
@@ -244,7 +380,97 @@
             </div>
           {/if}
         </div>
+
+        <div class="windows" role="group" aria-labelledby="vy-set-sched" aria-describedby="vy-set-sched-hint">
+          <h3 id="vy-set-sched">{t("speedSchedule.title")}</h3>
+          <p id="vy-set-sched-hint" class="vy-hint">{t("speedSchedule.hint")}</p>
+          {#each draft.windows as w, i (i)}
+            {@const err = windowErrors[i]}
+            <div class="window" role="group" aria-label={t("speedSchedule.window", { n: i18n.number(i + 1) })}>
+              <div class="row">
+                <div class="vy-field">
+                  <label class="vy-label" for="vy-win-{i}-from">{t("speedSchedule.from")}</label>
+                  <input id="vy-win-{i}-from" class="vy-input time" type="time" bind:value={w.from} aria-invalid={err?.time !== undefined} />
+                </div>
+                <div class="vy-field">
+                  <label class="vy-label" for="vy-win-{i}-to">{t("speedSchedule.to")}</label>
+                  <input id="vy-win-{i}-to" class="vy-input time" type="time" bind:value={w.to} aria-invalid={err?.time !== undefined} />
+                </div>
+                <div class="vy-field">
+                  <label class="vy-label" for="vy-win-{i}-limit">{t("speedSchedule.limit")}</label>
+                  <div class="limit">
+                    <input
+                      id="vy-win-{i}-limit"
+                      class="vy-input num"
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      inputmode="decimal"
+                      bind:value={w.value}
+                      aria-invalid={err?.limit !== undefined}
+                    />
+                    <select class="vy-select unit" bind:value={w.unit} aria-label={t("speedSchedule.unit")}>
+                      <option value="KB">{t("unit.speed", { size: "KB" })}</option>
+                      <option value="MB">{t("unit.speed", { size: "MB" })}</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="vy-btn vy-btn--icon remove"
+                  aria-label={t("speedSchedule.remove", { n: i18n.number(i + 1) })}
+                  title={t("speedSchedule.remove", { n: i18n.number(i + 1) })}
+                  onclick={() => removeWindow(i)}
+                >
+                  <Icon name="trash" size={15} />
+                </button>
+              </div>
+              {#if err?.time}<span class="vy-error">{err.time}</span>{/if}
+              {#if err?.limit}<span class="vy-error">{err.limit}</span>{/if}
+              <DaysPicker bind:days={w.days} legend={t("speedSchedule.days")} />
+            </div>
+          {/each}
+          <div>
+            <button id="vy-win-add" type="button" class="vy-btn" onclick={addWindow}>
+              <Icon name="plus" size={15} />{t("speedSchedule.add")}
+            </button>
+          </div>
+        </div>
       </section>
+
+      {#if hasDesktop}
+        <section aria-labelledby="vy-set-desktop">
+          <h2 id="vy-set-desktop">{t("settings.desktop")}</h2>
+          <div class="checks">
+            {#if host.launchAtLogin}
+              <div class="vy-field">
+                <label class="vy-check">
+                  <input type="checkbox" checked={atLogin === true} disabled={atLogin === undefined} onchange={(e) => setAtLogin(e.currentTarget.checked)} aria-describedby="vy-set-login-hint" />
+                  {t("settings.launchAtLogin")}
+                </label>
+                <span id="vy-set-login-hint" class="vy-hint">{t("settings.launchAtLoginHint")}</span>
+              </div>
+            {/if}
+            {#if host.desktopPrefs}
+              <div class="vy-field">
+                <label class="vy-check">
+                  <input type="checkbox" checked={desktop?.closeToTray === true} disabled={!desktop} onchange={(e) => setDesktop("closeToTray", e.currentTarget.checked)} aria-describedby="vy-set-tray-hint" />
+                  {t("settings.closeToTray")}
+                </label>
+                <span id="vy-set-tray-hint" class="vy-hint">{t("settings.closeToTrayHint")}</span>
+              </div>
+              <div class="vy-field">
+                <label class="vy-check">
+                  <input type="checkbox" checked={desktop?.stopDaemonOnQuit === true} disabled={!desktop} onchange={(e) => setDesktop("stopDaemonOnQuit", e.currentTarget.checked)} aria-describedby="vy-set-quit-hint" />
+                  {t("settings.stopDaemonOnQuit")}
+                </label>
+                <span id="vy-set-quit-hint" class="vy-hint">{t("settings.stopDaemonOnQuitHint")}</span>
+              </div>
+            {/if}
+          </div>
+          <p class="vy-hint applies">{t("settings.desktopHint")}</p>
+        </section>
+      {/if}
 
     </form>
   {/if}
@@ -358,6 +584,52 @@
   }
   .unit {
     inline-size: auto;
+  }
+  .folder-row {
+    display: flex;
+    gap: var(--vy-space-2);
+  }
+  .folder-row input {
+    flex: 1;
+    min-inline-size: 0;
+  }
+  .windows {
+    display: grid;
+    gap: var(--vy-space-3);
+    margin-block-start: var(--vy-space-5);
+    padding-block-start: var(--vy-space-4);
+    border-block-start: 1px solid var(--vy-color-border);
+  }
+  h3 {
+    font-size: var(--vy-font-size-base, inherit);
+    font-weight: var(--vy-font-weight-semibold);
+  }
+  .window {
+    display: grid;
+    gap: var(--vy-space-2);
+    padding: var(--vy-space-3);
+    border-radius: var(--vy-radius-md);
+    border: 1px solid var(--vy-color-border);
+    background: var(--vy-color-bg);
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--vy-space-3);
+  }
+  .time {
+    inline-size: 9rem;
+  }
+  .remove {
+    margin-inline-start: auto;
+  }
+  .checks {
+    display: grid;
+    gap: var(--vy-space-4);
+  }
+  .applies {
+    margin-block-start: var(--vy-space-4);
   }
   .bar {
     position: sticky;

@@ -14,7 +14,17 @@ mount(App, { target, props: { client, mode: "live" } }); // any WhooshClient: ws
 
 Props: `client`, `mode` (`"mock"` shows "Demo data"), `storage` (where device
 prefs persist; `null` disables), `locale`, `manageDocument` (set
-`lang`/`dir`/`data-theme` on `<html>`; turn off when embedding), `onready(app)`.
+`lang`/`dir`/`data-theme` on `<html>`; turn off when embedding), `onready(app)`,
+`host` (optional shell extras, see below).
+
+### Host extras
+
+`host` (`Host` in `src/lib/host.ts`) is how a shell adds what a browser tab
+can't do. Every part is optional and its controls are hidden without it:
+`pickFolder` (Browse… buttons), `desktopPrefs` (close to tray, Quit also
+stops downloads) and `launchAtLogin` (both under Settings → *This
+computer*). `app.openAdd(url)` opens the add dialog prefilled; the desktop
+app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 
 ## What is in it
 
@@ -36,8 +46,24 @@ prefs persist; `null` disables), `locale`, `manageDocument` (set
   per-segment table, error explanation, copyable address, actions.
 - **Expired links:** `needs_refresh` raises a toast and a "Refresh link…"
   action that continues the download from where it stopped.
+- **Queues:** the main queue and named queues in the sidebar, with counts
+  of what is still to do. Create, rename and delete; a bar above the list
+  shows whether a queue runs and its schedule in words, with Start/Stop.
+  "Move to queue…" in the context menu, and a queue picker in the add dialog.
+- **Scheduler:** per queue, start and stop times on chosen days and the
+  after-done action (nothing, sleep, shut down). `event.queue.finished`
+  shows a banner with a countdown and Cancel (`queue.cancelAction`); the
+  sentence is announced once, the seconds are visual only.
+- **Without queues:** the UI learns from the hello's `capabilities` (or a
+  -32006 answer to `queue.list`) that the daemon has no queues, and then
+  shows only the main queue, with no error.
+- **History:** finished and failed downloads, newest first, with search and
+  an All/Completed/Failed filter; clear one entry or everything shown
+  (`download.remove` with `deleteFiles: false`, after a confirmation).
 - **Settings:** bound to the protocol's `Settings` (validated, Save/Revert,
-  unsaved indicator) plus device-only layout and high contrast.
+  unsaved indicator; fields the screen doesn't show are kept), including
+  speed limits by time of day (`speedSchedule`), plus device-only layout and
+  high contrast.
 - **Toasts:** completions, failures, expiries; timers pause on hover/focus
   and while the window is hidden; announced via persistent live regions.
 - **Context menu:** right-click, `Shift+F10` or the Menu key.

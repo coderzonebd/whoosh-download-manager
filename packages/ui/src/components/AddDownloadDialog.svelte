@@ -5,7 +5,8 @@
   name and category follow the probe until you edit them yourself.
 -->
 <script lang="ts">
-  import type { ProbeResult } from "@whoosh/api-client";
+  import { MAIN_QUEUE, type ProbeResult } from "@whoosh/api-client";
+  import { isDownloadUrl } from "../lib/host.ts";
   import { CATEGORIES, categoryForFilename, type Category } from "@whoosh/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Dialog from "./Dialog.svelte";
@@ -35,6 +36,9 @@
   let category = $state<Category>("other");
   let categoryEdited = $state(false);
   let startNow = $state(true);
+  // Adding from a named queue's view puts the download in that queue.
+  let queue = $state(untrackQueue());
+  let picking = $state(false);
   let probe = $state<Probe>({ status: "idle" });
   let submitting = $state(false);
   let submitError = $state<string | undefined>(undefined);
@@ -45,12 +49,25 @@
     return initialUrl;
   }
 
-  function isUrl(s: string): boolean {
+  function untrackQueue(): string {
+    const v = app.store.view;
+    return v.kind === "queue" && app.queues.has(v.queue) ? v.queue : MAIN_QUEUE;
+  }
+
+  const isUrl = isDownloadUrl;
+  const queueNames = $derived(app.queues.enabled ? [MAIN_QUEUE, ...app.queues.named.map((q) => q.name)] : []);
+
+  async function chooseFolder(): Promise<void> {
+    const pick = app.host.pickFolder;
+    if (!pick || picking) return;
+    picking = true;
     try {
-      const u = new URL(s);
-      return ["http:", "https:", "ftp:"].includes(u.protocol) && u.hostname !== "";
-    } catch {
-      return false;
+      const dir = await pick({ title: t("add.chooseFolder"), defaultPath: directory.trim() || undefined });
+      if (dir) directory = dir;
+    } catch (e) {
+      app.report(e);
+    } finally {
+      picking = false;
     }
   }
 
@@ -103,6 +120,7 @@
       const params: Parameters<typeof app.add>[0] = { url: trimmed, start: startNow, category };
       if (filename.trim()) params.filename = filename.trim();
       if (directory.trim()) params.directory = directory.trim();
+      if (queue !== MAIN_QUEUE && app.queues.has(queue)) params.queue = queue;
       const id = await app.add(params);
       app.toasts.push({ tone: "success", message: t("add.added", { name: app.store.get(id)?.data.filename ?? filename }) }, 3000);
       onclose();
@@ -171,9 +189,14 @@
       <div class="two">
         <div class="vy-field">
           <label class="vy-label" for="vy-add-dir">{t("add.folder")}</label>
-          <div class="with-icon">
-            <Icon name="folder" size={15} />
-            <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
+          <div class="folder-row">
+            <div class="with-icon">
+              <Icon name="folder" size={15} />
+              <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
+            </div>
+            {#if app.host.pickFolder}
+              <button type="button" class="vy-btn" disabled={picking} onclick={chooseFolder}>{t("action.browse")}</button>
+            {/if}
           </div>
         </div>
         <div class="vy-field">
@@ -185,6 +208,16 @@
           </select>
         </div>
       </div>
+      {#if queueNames.length > 1}
+        <div class="vy-field">
+          <label class="vy-label" for="vy-add-queue">{t("add.queue")}</label>
+          <select id="vy-add-queue" class="vy-select queue" bind:value={queue}>
+            {#each queueNames as n (n)}
+              <option value={n}>{app.queueLabel(n)}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
     {/if}
 
     {#if submitError}<p class="vy-error" role="alert">{submitError}</p>{/if}
@@ -265,6 +298,17 @@
     .two {
       grid-template-columns: 1fr;
     }
+  }
+  .folder-row {
+    display: flex;
+    gap: var(--vy-space-2);
+  }
+  .folder-row .with-icon {
+    flex: 1;
+    min-inline-size: 0;
+  }
+  .queue {
+    max-inline-size: 280px;
   }
   .with-icon {
     position: relative;

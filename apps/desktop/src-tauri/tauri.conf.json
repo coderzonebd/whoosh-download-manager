@@ -26,6 +26,13 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:*"
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["whoosh"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

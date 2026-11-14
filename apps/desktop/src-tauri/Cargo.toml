@@ -21,8 +21,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
-tauri-plugin-single-instance = "2"
+# `deep-link`: a second launch with a whoosh:// URL hands it to the first.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-window-state = "2"
 serde.workspace = true
 serde_json.workspace = true
