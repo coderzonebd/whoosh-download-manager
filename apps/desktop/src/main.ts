@@ -19,6 +19,7 @@ import { createMockClient } from "@whoosh/api-client/mock";
 import { connectWs } from "@whoosh/api-client/ws";
 import { App, type AppState } from "@whoosh/ui";
 import { mount } from "svelte";
+import { startCrashReports } from "./crash.ts";
 import { startDeepLinks } from "./deeplinks.ts";
 import { desktopHost } from "./host.ts";
 import { startShellLanguage } from "./shell-language.svelte.ts";
@@ -63,6 +64,7 @@ function mockClient(): WhooshClient {
 }
 
 const live = inTauri();
+if (live) startCrashReports();
 const client = live ? liveClient() : mockClient();
 
 const target = document.getElementById("app");

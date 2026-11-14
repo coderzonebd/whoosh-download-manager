@@ -28,6 +28,7 @@ clap = { version = "4", features = ["derive"] }
 
 whoosh-client = { path = "crates/client" }
 whoosh-core = { path = "crates/core" }
+whoosh-crash = { path = "crates/crash" }
 whoosh-engine = { path = "crates/engine" }
 whoosh-media = { path = "crates/media" }
 whoosh-net = { path = "crates/net" }

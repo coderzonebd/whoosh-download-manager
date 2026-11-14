@@ -20,5 +20,5 @@ export { Prefs, type Layout } from "./lib/state/prefs.svelte.ts";
 export { I18n, dirOf, flattenMessages, type AvailableLocale, type FlatMessages, type LocaleInfo, type MessageKey } from "./lib/i18n/i18n.svelte.ts";
 export { LANGUAGES, TRANSLATE_URL, translateUrl, type LanguageMeta } from "./lib/i18n/languages.ts";
 export { scaleBytes, splitDuration } from "./lib/format.ts";
-export { parseDeepLink, isDownloadUrl, type DeepLink, type DesktopPrefs, type Host } from "./lib/host.ts";
+export { parseDeepLink, isDownloadUrl, type CrashReportsState, type DeepLink, type DesktopPrefs, type Host } from "./lib/host.ts";
 export { QueueStore, type PendingAction } from "./lib/state/queues.svelte.ts";

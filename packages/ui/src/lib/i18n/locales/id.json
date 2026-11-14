@@ -265,10 +265,17 @@
     "closeToTrayHint": "Unduhan tetap berjalan. Keluar melalui menu baki sistem.",
     "stopDaemonOnQuit": "Keluar juga menghentikan unduhan",
     "stopDaemonOnQuitHint": "Jika nonaktif: unduhan tetap berjalan di latar belakang untuk ekstensi browser dan baris perintah.",
+    "privacy": "Privasi",
+    "crashReports": "Kirim laporan kerusakan",
+    "crashReportsHint": "Whoosh mengirim laporan kerusakan anonim untuk membantu memperbaiki bug: galatnya, di bagian Whoosh mana terjadi, versi aplikasi, dan sistem operasi. Tanpa nama file, tautan, atau nama pengguna. Aktif kecuali Anda mematikannya; layanan latar belakang mengikuti perubahan saat dijalankan berikutnya.",
     "machineTranslated": "Diterjemahkan oleh mesin.",
     "helpTranslate": "Bantu sempurnakan terjemahan",
     "media": "Situs video dan audio",
     "mediaHint": "Whoosh memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah, diunduh dari rilis resminya saat pertama kali dibutuhkan dan dicocokkan dengan checksum yang diterbitkan."
+  },
+  "crashNotice": {
+    "text": "Whoosh mengirim laporan kerusakan anonim untuk membantu memperbaiki bug. Tanpa nama file atau tautan. Matikan di Pengaturan.",
+    "open": "Buka Pengaturan"
   },
   "theme": {
     "system": "Ikuti sistem",

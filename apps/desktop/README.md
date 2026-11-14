@@ -48,6 +48,15 @@ GPL-3.0-or-later.
 - **What the UI gets from the shell** is in `src/host.ts` (the `Host`
   interface of `@whoosh/ui`); in a plain browser none of it is passed, so
   those controls are hidden.
+- **Crash reports (on by default, can be turned off).** Settings → Privacy
+  → *Send crash reports*, shown only in builds made with `WHOOSH_CRASH_DSN`;
+  a one-time first-run notice links to it (`dismiss_crash_notice`).
+  The shell's own panics and uncaught errors in the web view (forwarded over
+  IPC by `src/crash.ts`; the CSP keeps the web view off the network) are
+  sent, scrubbed, by `src-tauri/src/crash.rs` through
+  [`whoosh-crash`](../../crates/crash/README.md). The choice is saved in the
+  daemon's data directory so the daemon follows it too. See
+  [docs/privacy.md](../../docs/privacy.md).
 - **Notifications.** A download that finishes or fails while the window is
   not in front raises a system notification, in the UI's language.
 - In a plain browser (`pnpm --filter @whoosh/desktop dev`) there is no shell,

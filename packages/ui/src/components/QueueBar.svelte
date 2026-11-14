@@ -28,7 +28,7 @@
   <section class="bar" aria-labelledby="vy-queue-title">
     <span class="icon" aria-hidden="true"><Icon name="layers" size={18} /></span>
     <div class="text">
-      <h2 id="vy-queue-title" class="vy-truncate" dir="auto">{app.queueLabel(name)}</h2>
+      <h1 id="vy-queue-title" class="vy-truncate" dir="auto">{app.queueLabel(name)}</h1>
       <p class="meta">
         {#if !isMain}
           <span class="pill" class:stopped={!queue.running}>{queue.running ? t("queue.running") : t("queue.stopped")}</span>
@@ -88,7 +88,7 @@
     flex: 1;
     min-inline-size: 0;
   }
-  h2 {
+  h1 {
     font-size: var(--vy-font-size-md);
     font-weight: var(--vy-font-weight-semibold);
   }

@@ -31,6 +31,8 @@ tauri-plugin-window-state = "2"
 serde.workspace = true
 serde_json.workspace = true
 whoosh-client.workspace = true
+# Crash reports (on by default, can be turned off; inert without WHOOSH_CRASH_DSN).
+whoosh-crash.workspace = true
 whoosh-proto.workspace = true
 
 [lints]

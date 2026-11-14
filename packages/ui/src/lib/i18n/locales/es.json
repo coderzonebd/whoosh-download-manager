@@ -279,10 +279,17 @@
     "closeToTrayHint": "Las descargas continúan. Para salir, usa el menú de la bandeja.",
     "stopDaemonOnQuit": "Al salir, también se detienen las descargas",
     "stopDaemonOnQuitHint": "Desactivado: las descargas siguen en segundo plano para la extensión del navegador y la línea de comandos.",
+    "privacy": "Privacidad",
+    "crashReports": "Enviar informes de errores",
+    "crashReportsHint": "Whoosh envía informes de errores anónimos para ayudar a corregir fallos: el error, en qué parte de Whoosh ocurrió, la versión de la aplicación y el sistema operativo. Sin nombres de archivo, enlaces ni nombre de usuario. Activado salvo que lo desactives; el servicio en segundo plano aplicará el cambio la próxima vez que se inicie.",
     "machineTranslated": "Traducción automática.",
     "helpTranslate": "Ayuda a mejorar la traducción",
     "media": "Sitios de vídeo y audio",
     "mediaHint": "Whoosh usa yt-dlp para encontrar el vídeo de una página y ffmpeg para unir vídeo y audio. Ambos son programas independientes que se descargan de sus versiones oficiales la primera vez que hacen falta y se comprueban con la suma de verificación publicada."
+  },
+  "crashNotice": {
+    "text": "Whoosh envía informes de errores anónimos para ayudar a corregir fallos. Sin nombres de archivo ni enlaces. Puedes desactivarlo en Configuración.",
+    "open": "Abrir Configuración"
   },
   "theme": {
     "system": "Igual que el sistema",

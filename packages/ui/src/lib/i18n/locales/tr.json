@@ -272,10 +272,17 @@
     "closeToTrayHint": "İndirmeler sürer. Çıkmak için tepsi menüsünü kullanın.",
     "stopDaemonOnQuit": "Çıkınca indirmeler de dursun",
     "stopDaemonOnQuitHint": "Kapalıyken: indirmeler tarayıcı eklentisi ve komut satırı için arka planda sürer.",
+    "privacy": "Gizlilik",
+    "crashReports": "Çökme raporları gönder",
+    "crashReportsHint": "Whoosh, hataları düzeltmeye yardımcı olmak için anonim çökme raporları gönderir: hata, Whoosh'un neresinde oluştuğu, uygulama sürümü ve işletim sistemi. Dosya adı, bağlantı veya kullanıcı adı yok. Siz kapatmadıkça açıktır; arka plan hizmeti değişikliği bir sonraki başlatılışında uygular.",
     "machineTranslated": "Makine çevirisi.",
     "helpTranslate": "Çeviriyi iyileştirmeye yardım edin",
     "media": "Video ve ses siteleri",
     "mediaHint": "Whoosh, bir sayfadaki videoyu bulmak için yt-dlp'yi, video ile sesi birleştirmek için ffmpeg'i kullanır. İkisi de ayrı programlardır; ilk gerektiklerinde resmi sürümlerinden indirilir ve yayımlanan sağlama toplamıyla doğrulanır."
+  },
+  "crashNotice": {
+    "text": "Whoosh, hataları düzeltmeye yardımcı olmak için anonim çökme raporları gönderir. Dosya adı veya bağlantı yok. Ayarlar'dan kapatabilirsiniz.",
+    "open": "Ayarları aç"
   },
   "theme": {
     "system": "Sisteme uy",

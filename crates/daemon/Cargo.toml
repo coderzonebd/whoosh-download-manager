@@ -30,6 +30,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 clap = { workspace = true, features = ["env"] }
 whoosh-proto.workspace = true
+# Crash reports: on by default, can be turned off; inert without a build-time DSN.
+whoosh-crash.workspace = true
 # The real service, wired only in the binary (src/main.rs; ADR 0005).
 whoosh-engine.workspace = true
 whoosh-net.workspace = true
