@@ -112,12 +112,12 @@ async fn fetch(client: &Client, id: &str) -> Result<Option<DownloadSummary>> {
         .await
     {
         Ok(d) => Ok(Some(d.summary)),
-        Err(CliError::Rpc { code, .. })
+        Err(whoosh_client::ClientError::Rpc { code, .. })
             if code == i64::from(whoosh_proto::error_code::NOT_FOUND) =>
         {
             Ok(None)
         }
-        Err(e) => Err(e),
+        Err(e) => Err(e.into()),
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "whoosh-desktop"
-description = "Whoosh desktop app: a Tauri 2 window around the shared Svelte UI"
+description = "Whoosh desktop app: the shared Svelte UI over the whoosh daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,9 +21,13 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 serde.workspace = true
 serde_json.workspace = true
+whoosh-client.workspace = true
+whoosh-proto.workspace = true
 
 [lints]
 workspace = true

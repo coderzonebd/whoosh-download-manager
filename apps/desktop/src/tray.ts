@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Mirrors the total speed into the tray icon's tooltip. A stub until the
-// daemon owns the tray: today the numbers come from the mock. (Linux app
+// Mirrors the daemon's total speed into the tray icon's tooltip. (Linux app
 // indicators do not show tooltips; see the README.)
 import type { WhooshClient } from "@whoosh/api-client";
 

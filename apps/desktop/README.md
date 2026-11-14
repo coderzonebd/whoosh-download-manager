@@ -1,8 +1,30 @@
 # Whoosh desktop (`apps/desktop`)
 
-The Tauri 2 desktop app. Today it renders [`@whoosh/ui`](../../packages/ui) on
-the mock daemon; in Phase 1 it links the engine and talks to the real API.
+The Tauri 2 desktop app: [`@whoosh/ui`](../../packages/ui) as a client of
+`whoosh-daemon` over its WebSocket API ([ADR 0007](../../docs/adr/0007-phase2-plan.md)).
 GPL-3.0-or-later.
+
+- **The daemon.** Before every (re)connection the UI calls the
+  `daemon_connection` command, which reads the daemon's `runtime.json` and
+  starts the daemon if none answers (`whoosh_client::daemon::ensure`, shared
+  with the CLI). A daemon that crashed or was stopped is back on the next
+  attempt. The daemon is found next to the app (installers put it there, see
+  *Release* below), else at `$WHOOSH_DAEMON_BIN`, else on `PATH`; a
+  development build finds `target/debug/whoosh-daemon` once
+  `cargo build -p whoosh-daemon` has run. `WHOOSH_DATA_DIR` picks another
+  data directory, as for the CLI.
+- **One instance.** A second launch shows the first one's window and exits.
+- **Closing and quitting.** Closing the window hides it to the tray, and
+  downloads go on; the first time, a notification says so. Without a tray
+  (a Linux desktop with no status notifier) closing quits. *Quit* in the tray
+  leaves the daemon running for the CLI and the browser extension, unless
+  `stopDaemonOnQuit` is set. These two choices are in
+  `<app config dir>/desktop.json` (`desktop_prefs` / `set_desktop_prefs`;
+  the settings screen comes in Phase 2's desktop-features work).
+- **Notifications.** A download that finishes or fails while the window is
+  not in front raises a system notification, in the UI's language.
+- In a plain browser (`pnpm --filter @whoosh/desktop dev`) there is no shell,
+  so the UI runs on the mock daemon, labelled "Demo data".
 
 - Window size, position and maximised state are remembered, from Rust (no
   JS permission). Position/maximised use `tauri-plugin-window-state`; the
@@ -11,8 +33,9 @@ GPL-3.0-or-later.
   the plugin's round trip grew the window by ~40×77 px per launch. Wayland
   does not let apps read or set their position, so only size and maximised
   state apply there.
-- Tray icon with *Show Whoosh* / *Quit*; left-click shows the window. The UI
-  pushes "Whoosh — ↓ 12.5 MB/s · 3 active" into the tooltip once a second
+- Tray icon with *Show Whoosh* / *Quit*; left-click shows the window (and
+  on macOS, so does the Dock icon). The UI pushes "Whoosh — ↓ 12.5 MB/s ·
+  3 active" from the daemon's stats into the tooltip once a second
   (`set_tray_tooltip` command). Linux app indicators do not display
   tooltips, so on Linux the text is set but not visible yet.
 - Fonts (Inter, Noto Sans Bengali) are bundled, so Bangla renders the same on
@@ -32,6 +55,19 @@ cd apps/desktop && corepack pnpm tauri build --debug --no-bundle   # debug binar
 Linux needs the WebKitGTK 4.1 / GTK 3 development packages (see
 `CONTRIBUTING.md`) and, for the tray, `libayatana-appindicator3`.
 On a memory-constrained machine: `export CARGO_BUILD_JOBS=2`.
+
+## Release
+
+Installers ship `whoosh-daemon` and `whoosh-nmhost` next to the app through
+Tauri's `externalBin`, kept out of `tauri.conf.json` so that development
+builds and CI do not need them:
+
+```bash
+node apps/desktop/scripts/sidecars.mjs [--target <triple>]   # → src-tauri/binaries/
+cd apps/desktop && pnpm tauri build --config src-tauri/tauri.sidecars.conf.json
+```
+
+`release.yml` does both.
 
 ## Check
 
