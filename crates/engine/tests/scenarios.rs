@@ -124,6 +124,64 @@ async fn connection_cap_with_resets_is_learned() {
     assert!(src.opens() < 24, "opens {}", src.opens());
 }
 
+/// labserver's conn-cap-trickle: two connections stream, any more get their
+/// headers and then 200 B/s, never silent long enough to look stalled.
+fn trickle_cap(data: bytes::Bytes) -> Arc<FaultSource> {
+    Arc::new(FaultSource::new(data).cfg(|c| {
+        c.cap = Some((2, Cap::Trickle(200)));
+        c.per_conn_bps = Some(4 * MIB);
+        c.ttfb = Duration::from_millis(20);
+    }))
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_connection_cap_that_trickles_is_learned() {
+    let lab = Lab::new(config()).await;
+    let size = 32 * MIB;
+    let data = content(size, 6);
+    let src = lab.serve(URL, trickle_cap(data.clone()));
+    let id = lab.add(URL).await;
+    let (_, took) = finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    // Two connections at 4 MiB/s: 4 s is the floor. The starved ones are
+    // noticed a second after their headers, and their ranges taken over.
+    assert!(took < Duration::from_secs(6), "took {took:?}");
+    // Six in the first wave of eight, eight more in the first climb's
+    // trial of 16; none once the count is capped.
+    assert!(src.trickled() <= 14, "trickled {}", src.trickled());
+    let p = lab.state.host_profile(host()).await.unwrap().unwrap();
+    assert_eq!(p.max_ok_connections, Some(2), "{p:?}");
+    assert_eq!(p.best_connections, Some(2), "{p:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn slow_connections_are_not_taken_for_starved_ones() {
+    // Every fourth connection gets a tenth of the others' rate (a congested
+    // path): slow, but real. Nothing is capped.
+    let lab = Lab::new(config()).await;
+    let size = 96 * MIB;
+    let data = content(size, 7);
+    lab.serve(
+        URL,
+        Arc::new(
+            FaultSource::new(data.clone())
+                .cfg(|c| {
+                    c.per_conn_bps = Some(4 * MIB);
+                    c.ttfb = Duration::from_millis(20);
+                })
+                .script(|n, _| ReqPlan {
+                    rate: (n % 4 == 3).then_some(4 * MIB / 10),
+                    ..ReqPlan::default()
+                }),
+        ),
+    );
+    let id = lab.add(URL).await;
+    finish(&lab.engine, &id, LONG).await;
+    assert_same(&lab.file("data.bin").unwrap(), &data);
+    let p = lab.state.host_profile(host()).await.unwrap().unwrap();
+    assert_eq!(p.max_ok_connections, None, "{p:?}");
+}
+
 #[tokio::test(start_paused = true)]
 async fn random_resets_are_retried() {
     let lab = Lab::new(config()).await;

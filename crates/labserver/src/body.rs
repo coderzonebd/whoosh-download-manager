@@ -45,6 +45,9 @@ pub(crate) struct BodyPlan {
     pub end: u64,
     pub conn: Arc<ConnCtl>,
     pub guard: Option<ActiveGuard>,
+    /// Over the client's cap with `refuse = "trickle"`: this many bytes per
+    /// second, in chunks of a tenth of that.
+    pub trickle: Option<u64>,
 }
 
 /// Small deterministic RNG (SplitMix64).
@@ -90,6 +93,7 @@ struct St {
     chunk_delay: Option<Duration>,
     conn_bucket: Option<Arc<TokenBucket>>,
     global_bucket: Option<Arc<TokenBucket>>,
+    trickle_bucket: Option<Arc<TokenBucket>>,
     reset_at: Option<u64>,
     stall_at: Option<u64>,
     rng: Rng,
@@ -121,6 +125,11 @@ impl St {
         {
             chunk = chunk.min(TokenBucket::chunk_hint(rate) as u64);
         }
+        let trickle_bucket = plan.trickle.map(|r| Arc::new(TokenBucket::new(r)));
+        if let Some(r) = plan.trickle {
+            // A few bytes every 100 ms: never silent for long.
+            chunk = chunk.min((r / 10).max(1));
+        }
         let reset_at = sc
             .resets
             .and_then(|r| min_opt(r.after_bytes.map(|s| s.0), rng.gap(r.prob_per_mb)));
@@ -135,6 +144,7 @@ impl St {
                 .then(|| Duration::from_millis(sc.latency.chunk_ms)),
             conn_bucket,
             global_bucket,
+            trickle_bucket,
             reset_at,
             stall_at,
             rng,
@@ -189,7 +199,7 @@ impl St {
         if let Some(d) = self.chunk_delay {
             tokio::time::sleep(d).await;
         }
-        let ready = [&self.conn_bucket, &self.global_bucket]
+        let ready = [&self.conn_bucket, &self.global_bucket, &self.trickle_bucket]
             .into_iter()
             .flatten()
             .map(|b| b.reserve(len))

@@ -353,6 +353,83 @@ async fn connection_caps_refuse_with_503_429_or_reset() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_connection_over_a_trickle_cap_gets_headers_then_a_trickle() {
+    use http_body_util::BodyExt;
+    let s = format!("{CAPPED}refuse = \"trickle\"\ntrickle_rate = \"1kB/s\"");
+    let lab = lab(&[("ctr", &s)]).await;
+    let addr = lab.http_addr();
+    let path = "/s/ctr/f";
+    let f = lab.file("ctr", "f").unwrap();
+
+    // Two slow downloads hold both slots; their bodies stay unread.
+    let mut c1 = Client::h1(addr).await;
+    let mut c2 = Client::h1(addr).await;
+    let h1 = c1.send(Method::GET, path, &[]).await.unwrap();
+    let h2 = c2.send(Method::GET, path, &[]).await.unwrap();
+    assert_eq!((h1.status(), h2.status()), (StatusCode::OK, StatusCode::OK));
+
+    // The third is accepted like the others (a 206 with the right length),
+    // then gets ~1 kB/s, a few bytes at a time and never silent for long.
+    let mut c3 = Client::h1(addr).await;
+    let third = c3
+        .send(Method::GET, path, &[("range", "bytes=1000-")])
+        .await
+        .unwrap();
+    assert_eq!(third.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        third.headers().get("content-length").unwrap(),
+        &(2_000_000 - 1000).to_string()
+    );
+    let mut body = third.into_body();
+    let mut got = Vec::new();
+    let mut gaps = Duration::ZERO;
+    let t0 = Instant::now();
+    let mut last = t0;
+    while t0.elapsed() < Duration::from_millis(1500) {
+        let frame = tokio::time::timeout(Duration::from_secs(1), body.frame())
+            .await
+            .expect("a trickle, not a stall")
+            .unwrap()
+            .unwrap();
+        if let Ok(d) = frame.into_data() {
+            got.extend_from_slice(&d);
+            gaps = gaps.max(last.elapsed());
+            last = Instant::now();
+        }
+    }
+    let rate = got.len() as f64 / t0.elapsed().as_secs_f64();
+    assert!((500.0..2000.0).contains(&rate), "trickle at {rate:.0} B/s");
+    assert!(gaps < Duration::from_millis(300), "longest gap {gaps:?}");
+    assert_eq!(f.verify(1000, &got), Ok(()));
+
+    // Over the cap, but holding no slot.
+    let st = lab.stats("ctr").unwrap();
+    assert_eq!(st.refused, 1);
+    assert_eq!(st.active_requests, 2);
+
+    // Once a slot is free, a new request streams at full speed again.
+    drop((h1, c1, body, c3));
+    assert!(
+        eventually(Duration::from_secs(3), || lab
+            .stats("ctr")
+            .unwrap()
+            .active_requests
+            == 1)
+        .await,
+        "slot not released"
+    );
+    let after = get(addr, path, &[("range", "bytes=0-99999")]).await;
+    assert_eq!(after.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(f.verify(0, &after.body), Ok(()));
+    assert!(
+        after.elapsed < Duration::from_millis(600),
+        "100 kB at 500 kB/s took {:?}",
+        after.elapsed
+    );
+    drop((h2, c2));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resets_after_n_bytes_are_real_tcp_resets() {
     let lab = lab(&[
         (
@@ -858,6 +935,7 @@ async fn control_api_lists_reports_and_resets() {
         "clean",
         "per-conn-throttle",
         "conn-cap-2",
+        "conn-cap-trickle",
         "flaky",
         "stall",
         "high-latency",

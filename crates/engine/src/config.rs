@@ -163,6 +163,18 @@ pub struct Tuning {
     /// after `max(stall_min, stall_factor × expected gap between chunks)`.
     pub stall_min: Duration,
     pub stall_factor: f64,
+    /// An owning connection, accepted by the server (headers in), that has
+    /// delivered under `starved_share` (5 %) of what the streaming
+    /// connections typically do, since its headers and in its recent rate,
+    /// for `max(starved_time, starved_rtts × median TTFB)` (at most
+    /// `max(starved_time, tune_window_max)`) while others stream, is
+    /// starved: a server that serves only so many connections per client
+    /// and parks the rest. It counts as refused: the count is capped at the
+    /// connections streaming, and the starved ones are cancelled (their
+    /// ranges go to the others).
+    pub starved_share: f64,
+    pub starved_time: Duration,
+    pub starved_rtts: f64,
     /// A connection still waiting for its first byte is stalled after
     /// `max(stall_min, first_byte_factor × median time-to-first-byte)`, or
     /// after `first_byte_timeout` while no time-to-first-byte is known yet.
@@ -279,6 +291,9 @@ impl Default for Tuning {
             climb_gain: 0.04,
             keep_ratio: 0.97,
             ewma_tau: Duration::from_millis(400),
+            starved_share: 0.05,
+            starved_time: Duration::from_secs(1),
+            starved_rtts: 8.0,
             stall_min: Duration::from_millis(250),
             stall_factor: 12.0,
             first_byte_factor: 4.0,

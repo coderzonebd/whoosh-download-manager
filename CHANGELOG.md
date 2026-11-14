@@ -62,6 +62,7 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - `scripts/i18n-import-ts.mjs` converts strings still written in the old `en.ts`/`bn.ts` format.
 
 ### Engine
+- Servers that accept extra connections but starve them are learned: a connection that got its headers and then trickles (under 5 % of the median streaming connection, for about a second or 8 round trips) while others stream counts as refused, so the count is capped at the connections that stream and the starved ones' ranges go to them. Seen on a server that parks every connection beyond two per client at ~190 B/s, where Whoosh settled on one connection instead of two. The labserver reproduces it with `refuse = "trickle"` (scenario `conn-cap-trickle`).
 - Queues and the scheduler: named queues, each running up to its own `maxActive`, kept across restarts; queues started and stopped at local clock times on chosen days (DST, time-zone changes and a sleeping machine handled); speed-limit windows by time of day, also over midnight; after-done actions (sleep or shut down) announced with `event.queue.finished` and run 60 s later unless cancelled. The daemon now advertises the `queues` capability.
 
 ### Browser extension
