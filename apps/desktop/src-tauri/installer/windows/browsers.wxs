@@ -14,6 +14,9 @@
         <RegistryValue Root="HKLM" Key="Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.coderzonebd.whoosh" Type="string" Value="[INSTALLDIR]com.coderzonebd.whoosh.chromium.json" />
         <RegistryValue Root="HKLM" Key="Software\Mozilla\NativeMessagingHosts\com.coderzonebd.whoosh" Type="string" Value="[INSTALLDIR]com.coderzonebd.whoosh.firefox.json" />
       </Component>
+      <Component Id="WhooshStoreOffer0" Guid="5963E2FE-258F-585B-A42F-A11E6CC340D2">
+        <RegistryValue Root="HKLM" Key="Software\Wow6432Node\Microsoft\Edge\Extensions\lbcnfampnnfcbfacehkdjlggmbigpbdh" Name="update_url" Type="string" Value="https://edge.microsoft.com/extensionwebstorebase/v1/crx" KeyPath="yes" />
+      </Component>
     </ComponentGroup>
   </Fragment>
 </Wix>
