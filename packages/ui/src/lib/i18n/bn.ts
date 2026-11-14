@@ -223,4 +223,6 @@ export const bn: Messages = {
   "shortcuts.menu": "বিকল্পের মেনু খুলুন",
   "shortcuts.escape": "প্যানেল বন্ধ করুন বা নির্বাচন বাতিল করুন",
   "shortcuts.help": "এই তালিকা দেখান",
+
+  "desktop.trayNotice": "Whoosh ট্রে-তে চালু আছে, তাই ডাউনলোড চলতে থাকবে। বন্ধ করতে ট্রে মেনু থেকে Quit বেছে নিন।",
 };

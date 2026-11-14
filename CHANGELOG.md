@@ -2,6 +2,18 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); releases are cut on `pub` (see [ADR 0006](docs/adr/0006-dev-and-pub-branches.md)).
 
+## Unreleased: Phase 2
+
+### Desktop app
+- The desktop app is a client of the daemon ([ADR 0007](docs/adr/0007-phase2-plan.md)). It starts the bundled `whoosh-daemon` when none is running, and finds it again after a restart.
+- One instance per user: a second launch shows the first window.
+- Closing the window hides it to the tray and downloads go on. Quit leaves the daemon running unless the user chose otherwise.
+- System notifications when a download finishes or fails while the window is in the background.
+- Installers ship `whoosh-daemon` and `whoosh-nmhost` next to the app.
+
+### Internal
+- New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
+
 ## 0.1.0: Phase 1, the engine
 
 Tagged `v0.1.0` as the engine milestone; not published as a release. The first public release comes with the desktop app (Phase 2). Contents: the download engine, its daemon and the command line, all measured against nine other downloaders in a public, reproducible benchmark (gate: [MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
