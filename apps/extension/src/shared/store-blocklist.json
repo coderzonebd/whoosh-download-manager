@@ -1,0 +1,19 @@
+{
+  "comment": "Sites the store build (build:store) never captures, sniffs, offers or heals on. MASTER-PLAN §6; see src/shared/policy.ts and store/README.md. A host covers its subdomains.",
+  "sites": [
+    "youtube.com",
+    "youtu.be",
+    "youtube-nocookie.com",
+    "youtubekids.com",
+    "googlevideo.com",
+    "ytimg.com",
+    "netflix.com",
+    "nflxvideo.net",
+    "primevideo.com",
+    "disneyplus.com",
+    "hulu.com",
+    "max.com",
+    "spotify.com",
+    "scdn.co"
+  ]
+}

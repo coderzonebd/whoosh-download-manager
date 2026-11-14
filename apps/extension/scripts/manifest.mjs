@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The extension manifest, generated per browser from one description.
 
+import { readFileSync } from "node:fs";
+
 /**
  * Public half of the development signing key. It pins the unpacked Chromium
  * extension to ID clhjgofaikdmabdnebgcmdffdjenagfl, which `whoosh-nmhost
@@ -15,9 +17,24 @@ export const GECKO_ID = "whoosh@coderzonebd.com";
 
 const HTTP = ["http://*/*", "https://*/*"];
 
+/** Sites the store build stays away from (shared with src/shared/policy.ts). */
+export const STORE_BLOCKED_SITES = JSON.parse(
+  readFileSync(new URL("../src/shared/store-blocklist.json", import.meta.url), "utf8"),
+).sites;
+
+/**
+ * `exclude_matches` patterns for a list of sites. In a match pattern,
+ * `*.example.com` covers `example.com` itself and every subdomain.
+ */
+export function excludeMatchPatterns(sites) {
+  return sites.map((site) => `*://*.${site}/*`);
+}
+
 /**
  * @param {"chromium" | "firefox"} target
  * @param {{ version: string, store: boolean }} options
+ *   `store`: the Chrome Web Store / AMO build — no development `key`, and the
+ *   video-site blocklist applied (MASTER-PLAN §6).
  */
 export function manifestFor(target, { version, store }) {
   const icons = { 16: "icons/16.png", 32: "icons/32.png", 48: "icons/48.png", 128: "icons/128.png" };
@@ -43,9 +60,13 @@ export function manifestFor(target, { version, store }) {
       "webRequest",
     ],
     host_permissions: HTTP,
+    options_ui: { page: "options.html", open_in_tab: true },
     content_scripts: [
       {
         matches: HTTP,
+        // The store build does not even run its content script (hover
+        // preconnect, Alt+click, link collection) on blocked sites.
+        ...(store ? { exclude_matches: excludeMatchPatterns(STORE_BLOCKED_SITES) } : {}),
         js: ["content.js"],
         run_at: "document_start",
         all_frames: true,

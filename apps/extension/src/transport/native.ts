@@ -30,6 +30,12 @@ export interface NativeOptions {
   idleMs?: number;
   /** After the host failed to start, fail at once for this long instead of retrying. */
   failFastMs?: number;
+  /**
+   * Asked when the idle timer fires: true keeps the port open (and with it
+   * the event stream), e.g. while downloads the extension handed over are
+   * still running.
+   */
+  holdOpen?: () => boolean;
   now?: () => number;
 }
 
@@ -59,7 +65,8 @@ function describe(kind: TransportErrorKind, message: string | undefined): string
 export class NativeMessagingTransport implements Transport {
   readonly mode = "pro" as const;
 
-  private readonly opts: Required<Omit<NativeOptions, "lastError">> & Pick<NativeOptions, "lastError">;
+  private readonly opts: Required<Omit<NativeOptions, "lastError" | "holdOpen">> &
+    Pick<NativeOptions, "lastError" | "holdOpen">;
   private readonly peer: RpcPeer;
   private port: NativePort | undefined;
   /** Whether the current port has delivered at least one message. */
@@ -68,6 +75,7 @@ export class NativeMessagingTransport implements Transport {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private closed = false;
   private readonly statusListeners = new Set<(status: ConnectionStatus) => void>();
+  private readonly openListeners = new Set<() => void>();
 
   constructor(options: NativeOptions) {
     this.opts = {
@@ -95,6 +103,21 @@ export class NativeMessagingTransport implements Transport {
   /** Events flow only while the port is open (it opens on the first call). */
   on<E extends keyof EventMap>(event: E, handler: (payload: EventMap[E]) => void): () => void {
     return this.peer.onNotification(event, handler as (params: unknown) => void);
+  }
+
+  /**
+   * Called each time a new native port opens. Events sent while no port was
+   * open are lost, so this is the moment to catch up (`download.list`).
+   * Runs after the request that opened the port has been sent.
+   */
+  onOpen(handler: () => void): () => void {
+    this.openListeners.add(handler);
+    return () => this.openListeners.delete(handler);
+  }
+
+  /** Whether a native port is open now (events can arrive). */
+  get connected(): boolean {
+    return this.port !== undefined;
   }
 
   onStatus(handler: (status: ConnectionStatus) => void): () => void {
@@ -166,6 +189,16 @@ export class NativeMessagingTransport implements Transport {
       this.peer.handleIncoming(message);
     });
     port.onDisconnect.addListener((p) => this.onDisconnect(port, p));
+    setTimeout(() => {
+      if (this.port !== port) return;
+      for (const listener of this.openListeners) {
+        try {
+          listener();
+        } catch (e) {
+          console.error("whoosh: open listener failed", e);
+        }
+      }
+    }, 0);
   }
 
   private onDisconnect(port: NativePort, reported: NativePort): void {
@@ -192,12 +225,20 @@ export class NativeMessagingTransport implements Transport {
     if (this.opts.idleMs <= 0) return;
     this.clearIdle();
     this.idleTimer = setTimeout(() => {
-      if (this.peer.pendingCount > 0) {
+      if (this.peer.pendingCount > 0 || this.shouldHold()) {
         this.touch();
       } else {
         this.closePort(new TransportError("closed", "closed after being idle"));
       }
     }, this.opts.idleMs);
+  }
+
+  private shouldHold(): boolean {
+    try {
+      return this.opts.holdOpen?.() === true;
+    } catch {
+      return false;
+    }
   }
 
   private clearIdle(): void {
