@@ -271,6 +271,7 @@ pub async fn add(ctx: &Ctx, urls: Vec<String>, opts: &DownloadOpts, paused: bool
                 results.push(json!({ "url": url, "id": added.id }));
             }
             Err(e) => {
+                let e = CliError::from(e);
                 if !ctx.json {
                     eprintln!("whoosh: {url}: {e}");
                 }
