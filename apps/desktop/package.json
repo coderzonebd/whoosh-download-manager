@@ -9,7 +9,7 @@
     "build": "node ../../packaging/browsers/generate.mjs --check && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --test ../../packaging/browsers/generate.test.mjs ../../.github/scripts/package-manifests.test.mjs",
+    "test": "node --test ../../packaging/browsers/generate.test.mjs ../../.github/scripts/package-manifests.test.mjs ../../.github/scripts/updater-feed.test.mjs",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
   },
   "dependencies": {

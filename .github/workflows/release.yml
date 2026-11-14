@@ -93,7 +93,11 @@ jobs:
   desktop:
     name: Desktop (${{ matrix.platform }})
     needs: meta
-    environment: release
+    # Secrets (signing keys) only for a v* tag. A dry run (workflow_dispatch
+    # on a branch) uses no environment, so it builds everything unsigned and
+    # never needs the environment's tag-only deployment rule relaxed.
+    # An empty environment name means "no environment".
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -242,6 +246,10 @@ jobs:
         run: |
           mkdir -p staging/exe
           cp "target/$TARGET/release/whoosh-desktop.exe" staging/exe/
+          # The sidecars go into the installers too; SignPath signs every .exe.
+          for b in whoosh-daemon whoosh-nmhost; do
+            cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" staging/exe/
+          done
       - name: Upload the unsigned executable
         id: unsigned-exe
         if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
@@ -264,7 +272,11 @@ jobs:
           output-artifact-directory: signed/exe
       - name: Use the signed executable
         if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
-        run: cp signed/exe/whoosh-desktop.exe "target/$TARGET/release/whoosh-desktop.exe"
+        run: |
+          cp signed/exe/whoosh-desktop.exe "target/$TARGET/release/whoosh-desktop.exe"
+          for b in whoosh-daemon whoosh-nmhost; do
+            cp "signed/exe/$b-$TARGET.exe" "apps/desktop/src-tauri/binaries/$b-$TARGET.exe"
+          done
       - name: Bundle the installers
         if: runner.os == 'Windows'
         working-directory: apps/desktop
@@ -353,7 +365,11 @@ jobs:
   binaries:
     name: CLI and native host (${{ matrix.platform }})
     needs: meta
-    environment: release
+    # Secrets (signing keys) only for a v* tag. A dry run (workflow_dispatch
+    # on a branch) uses no environment, so it builds everything unsigned and
+    # never needs the environment's tag-only deployment rule relaxed.
+    # An empty environment name means "no environment".
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -636,7 +652,8 @@ jobs:
   release:
     name: Draft GitHub release
     needs: [meta, desktop, binaries, extension, sbom, manifests]
-    if: github.ref_type == 'tag'
+    # Never on a dry run: only a v* tag creates (or refreshes) a draft release.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
