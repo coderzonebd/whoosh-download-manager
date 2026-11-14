@@ -8,7 +8,7 @@
 // --zip    also write <out>/whoosh-<target>-<version>[-store].zip
 // --out    output directory (default: dist)
 
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -77,6 +77,8 @@ export async function buildExtension({ targets = ["chromium", "firefox"], store 
     }
 
     for (const [to, from] of Object.entries(STATIC)) copyFileSync(join(root, from), join(out, to));
+    // Translations (WebExtension i18n): _locales/<lang>/messages.json.
+    cpSync(join(root, "_locales"), join(out, "_locales"), { recursive: true });
     for (const size of [16, 32, 48, 128]) writeFileSync(join(out, "icons", `${size}.png`), iconPng(size));
     const manifest = manifestFor(target, { version, store });
     writeFileSync(join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

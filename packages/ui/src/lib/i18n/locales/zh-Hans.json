@@ -1,0 +1,395 @@
+{
+  "app": {
+    "name": "Whoosh"
+  },
+  "nav": {
+    "label": "资料库",
+    "downloads": "下载",
+    "categories": "分类",
+    "queues": "队列",
+    "settings": "设置",
+    "history": "历史记录",
+    "open": "显示导航栏",
+    "close": "隐藏导航栏"
+  },
+  "group": {
+    "all": "全部下载",
+    "active": "下载中",
+    "queued": "排队中",
+    "paused": "已暂停",
+    "completed": "已完成",
+    "attention": "需要处理"
+  },
+  "category": {
+    "video": "视频",
+    "music": "音乐",
+    "documents": "文档",
+    "compressed": "压缩文件",
+    "programs": "程序",
+    "images": "图片",
+    "other": "其他"
+  },
+  "queue": {
+    "main": "主队列",
+    "new": "新建队列",
+    "create": "创建队列",
+    "createTitle": "新建队列",
+    "editTitle": "“{{name}}”设置",
+    "description": "每个队列独立下载其中的文件，默认一次一个（可以调高），还能按计划自动开始和停止。",
+    "mainDescription": "如果不选择其他队列，下载会进入主队列。",
+    "name": "名称",
+    "nameTaken": "已经有一个名为“{{name}}”的队列。",
+    "nameTooLong": "最多 64 个字符。",
+    "nameInvalid": "名称不能包含控制字符。",
+    "maxActive": "同时下载数",
+    "maxActiveHint": "其余的按添加顺序依次等待。",
+    "created": "已创建队列“{{name}}”",
+    "saved": "已保存“{{name}}”",
+    "saveFailed": "无法保存队列：{{message}}",
+    "removed": "已删除队列“{{name}}”",
+    "remove": "删除队列",
+    "removeNamed": "删除队列“{{name}}”",
+    "removeTitle": "删除队列“{{name}}”？",
+    "removeBody_other": "其中的 {{count}} 个下载将移到主队列。磁盘上的文件不会被删除。",
+    "removeBodyEmpty": "该队列为空。磁盘上的文件不会被删除。",
+    "running": "运行中",
+    "stopped": "已停止",
+    "scheduled": "已设置计划",
+    "start": "开始",
+    "stop": "停止",
+    "edit": "设置…",
+    "editSchedule": "计划…",
+    "count_other": "{{count}} 个等待中",
+    "mainSummary_other": "同时运行 {{count}} 个下载"
+  },
+  "toolbar": {
+    "label": "下载操作",
+    "add": "添加下载",
+    "resume": "继续",
+    "pause": "暂停",
+    "remove": "移除",
+    "search": "搜索下载",
+    "searchPlaceholder": "搜索",
+    "layout": "列表布局",
+    "details": "详细信息面板",
+    "shortcuts": "键盘快捷键"
+  },
+  "layout": {
+    "classic": "经典",
+    "modern": "现代"
+  },
+  "list": {
+    "label": "下载",
+    "loading": "正在加载下载…",
+    "loadError": "无法加载下载：{{message}}",
+    "empty": {
+      "title": "这里还没有下载",
+      "body": "按 {{shortcut}} 粘贴链接，或让浏览器扩展发送过来。",
+      "action": "添加下载"
+    },
+    "noMatch": {
+      "title": "没有与“{{query}}”匹配的内容",
+      "body": "换个名称试试，或清除搜索。",
+      "clear": "清除搜索"
+    },
+    "selected_other": "已选择 {{count}} 项"
+  },
+  "col": {
+    "name": "名称",
+    "size": "大小",
+    "progress": "进度",
+    "status": "状态",
+    "speed": "速度",
+    "eta": "剩余时间",
+    "connections": "连接数",
+    "added": "添加时间",
+    "resize": "调整“{{column}}”列宽"
+  },
+  "state": {
+    "queued": "排队中",
+    "probing": "正在开始",
+    "downloading": "下载中",
+    "paused": "已暂停",
+    "needs_refresh": "链接已过期",
+    "verifying": "正在校验",
+    "completed": "已完成",
+    "failed": "失败"
+  },
+  "unit": {
+    "byte": "字节",
+    "speed": "{{size}}/s"
+  },
+  "size": {
+    "unknown": "大小未知"
+  },
+  "eta": {
+    "unknown": "—",
+    "s": "{{s}} 秒",
+    "m": "{{m}} 分",
+    "ms": "{{m}} 分 {{s}} 秒",
+    "hm": "{{h}} 小时 {{m}} 分",
+    "dh": "{{d}} 天 {{h}} 小时",
+    "left": "剩余 {{eta}}"
+  },
+  "progress": {
+    "of": "{{done}} / {{total}}",
+    "value": "{{percent}} · {{done}} / {{total}}",
+    "indeterminate": "已下载 {{done}}"
+  },
+  "connections": {
+    "count_other": "{{count}} 个连接"
+  },
+  "detail": {
+    "label": "下载详细信息",
+    "close": "关闭详细信息",
+    "empty": "选择一个下载以查看其详细信息。",
+    "speed": "速度",
+    "eta": "剩余时间",
+    "connections": "连接数",
+    "size": "大小",
+    "downloaded": "已下载",
+    "resumable": {
+      "label": "暂停和继续",
+      "yes": "支持",
+      "no": "不支持——暂停后将重新开始"
+    },
+    "savedTo": "保存位置",
+    "source": "地址",
+    "added": "添加时间",
+    "finished": "完成时间",
+    "speedHistory": "速度（最近 30 秒）",
+    "peak": "峰值 {{speed}}",
+    "segmentMap": "分段图",
+    "segments": "分段",
+    "segment": "分段 {{n}}",
+    "segmentRange": "{{from}} – {{to}}",
+    "segmentsNone": "下载开始后将显示分段详细信息。",
+    "copied": "已复制地址",
+    "errorCode": "错误代码：{{code}}"
+  },
+  "action": {
+    "resume": "继续",
+    "pause": "暂停",
+    "retry": "重试",
+    "remove": "移除…",
+    "refreshLink": "刷新链接…",
+    "copyLink": "复制地址",
+    "details": "显示详细信息",
+    "cancel": "取消",
+    "close": "关闭",
+    "save": "保存",
+    "revert": "还原",
+    "dismiss": "忽略",
+    "show": "显示",
+    "browse": "浏览…",
+    "moveToQueue": "移到队列…"
+  },
+  "menu": {
+    "label": "“{{name}}”的操作"
+  },
+  "add": {
+    "title": "添加下载",
+    "description": "粘贴链接。Whoosh 会先检查链接，让你在开始下载前看到文件信息。",
+    "url": "地址",
+    "urlPlaceholder": "https://example.com/file.zip",
+    "invalidUrl": "请输入以 http://、https:// 或 ftp:// 开头的完整地址",
+    "checking": "正在检查链接…",
+    "probeFailed": "无法检查此链接：{{message}}",
+    "retry": "重新检查",
+    "filename": "文件名",
+    "folder": "保存到文件夹",
+    "category": "分类",
+    "startNow": "立即开始下载",
+    "submit": "下载",
+    "submitPaused": "添加为暂停",
+    "unknownSize": "大小未知",
+    "resumable": "支持暂停和继续",
+    "notResumable": "暂停后此下载将重新开始",
+    "added": "已添加“{{name}}”",
+    "failed": "无法添加下载：{{message}}",
+    "chooseFolder": "选择文件的保存位置",
+    "queue": "队列"
+  },
+  "remove": {
+    "titleOne": "移除“{{name}}”？",
+    "title_other": "移除 {{count}} 个下载？",
+    "body": "它们将从列表中消失。除非你另行选择，已完成的文件会保留在磁盘上。",
+    "deleteFiles": "同时从磁盘删除文件",
+    "confirm": "移除",
+    "doneOne": "已移除“{{name}}”",
+    "done_other": "已移除 {{count}} 个下载"
+  },
+  "refresh": {
+    "title": "刷新链接",
+    "body": "“{{name}}”的地址已过期。粘贴同一文件的新链接，下载将从中断处继续。",
+    "url": "新地址",
+    "submit": "继续下载"
+  },
+  "settings": {
+    "title": "设置",
+    "appearance": "外观和语言",
+    "language": "语言",
+    "theme": "主题",
+    "highContrast": "高对比度",
+    "highContrastHint": "颜色和轮廓更鲜明。仅对此设备生效。",
+    "layout": "下载列表",
+    "downloads": "下载",
+    "defaultDirectory": "默认文件夹",
+    "maxActive": "同时下载数",
+    "maxActiveHint": "有下载完成后，下一个排队的下载就会开始。",
+    "maxConnections": "每个下载的连接数",
+    "maxConnectionsHint": "连接数越多通常越快。有些服务器只允许少量连接。",
+    "speed": "速度",
+    "speedLimit": "限制总下载速度",
+    "speedLimitValue": "最大速度",
+    "range": "请输入 {{min}} 到 {{max}} 之间的整数。",
+    "required": "此项不能为空。",
+    "unsaved": "有未保存的更改",
+    "saved": "设置已保存",
+    "saveFailed": "无法保存设置：{{message}}",
+    "loading": "正在加载设置…",
+    "chooseFolder": "选择默认下载文件夹",
+    "desktop": "本机",
+    "desktopHint": "这些设置立即生效，且仅对此应用有效。",
+    "launchAtLogin": "登录时启动 Whoosh",
+    "launchAtLoginHint": "启动后驻留在托盘中，不打开窗口。",
+    "closeToTray": "关闭窗口时将 Whoosh 保留在托盘中",
+    "closeToTrayHint": "下载会继续进行。请从托盘菜单退出。",
+    "stopDaemonOnQuit": "退出时同时停止下载",
+    "stopDaemonOnQuitHint": "关闭时：下载会在后台继续，供浏览器扩展和命令行使用。",
+    "machineTranslated": "机器翻译。",
+    "helpTranslate": "帮助改进翻译"
+  },
+  "theme": {
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
+  },
+  "status": {
+    "label": "状态",
+    "speed": "总下载速度",
+    "active_other": "{{count}} 个进行中",
+    "queued_other": "{{count}} 个排队中",
+    "limit": "限速 {{speed}}",
+    "noLimit": "不限速"
+  },
+  "conn": {
+    "demo": "演示数据",
+    "open": "已连接",
+    "connecting": "正在连接…",
+    "reconnecting": "正在重新连接…",
+    "closed": "已断开连接"
+  },
+  "toast": {
+    "region": "通知",
+    "completed": "“{{name}}”已下载完成",
+    "failed": "“{{name}}”下载失败",
+    "expired": "“{{name}}”的链接已过期"
+  },
+  "error": {
+    "generic": "出现问题：{{message}}"
+  },
+  "shortcuts": {
+    "title": "键盘快捷键",
+    "add": "添加下载",
+    "search": "搜索",
+    "settings": "设置",
+    "move": "在列表中移动",
+    "extend": "扩展选择范围",
+    "selectAll": "全选",
+    "toggle": "暂停或继续所选项",
+    "details": "打开详细信息",
+    "remove": "移除所选项",
+    "menu": "打开操作菜单",
+    "escape": "关闭面板或取消选择",
+    "help": "显示此列表"
+  },
+  "schedule": {
+    "title": "计划",
+    "start": "开始于",
+    "stop": "停止于",
+    "startTime": "开始时间",
+    "stopTime": "停止时间",
+    "startDays": "开始日期",
+    "stopDays": "停止日期",
+    "everyDay": "不勾选任何一天即表示每天。",
+    "someDays": "仅在勾选的日期。",
+    "everyDayShort": "每天",
+    "badTime": "请输入时间，例如 23:30。",
+    "afterDone": "队列完成后",
+    "afterDoneHint": "会提前一分钟提醒你，并提供取消按钮。",
+    "localTime": "时间以执行下载的电脑上的时钟为准。",
+    "none": "无计划",
+    "atOn": "{{days}} {{time}}",
+    "startsAt": "{{when}} 开始",
+    "stopsAt": "{{when}} 停止",
+    "thenSleep": "然后睡眠",
+    "thenShutdown": "然后关机"
+  },
+  "afterDone": {
+    "none": "不执行任何操作",
+    "sleep": "让电脑进入睡眠",
+    "shutdown": "关闭电脑",
+    "sleepSoon": "队列“{{name}}”已完成。电脑将在 {{secs}} 秒后进入睡眠。",
+    "shutdownSoon": "队列“{{name}}”已完成。电脑将在 {{secs}} 秒后关机。",
+    "now": "立即",
+    "cancel": "取消",
+    "cancelled": "已取消。电脑将保持开机。"
+  },
+  "move": {
+    "titleOne": "将“{{name}}”移到队列",
+    "title_other": "将 {{count}} 个下载移到队列",
+    "description": "队列中的下载会按该队列的顺序和计划等待执行。",
+    "queue": "队列",
+    "current": "当前",
+    "submit": "移动",
+    "doneOne": "已移到“{{queue}}”",
+    "done_other": "已将 {{count}} 个下载移到“{{queue}}”"
+  },
+  "history": {
+    "title": "历史记录",
+    "search": "搜索历史记录",
+    "filter": {
+      "label": "显示",
+      "all": "全部",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "count_other": "{{count}} 条记录",
+    "clear": "清除历史记录…",
+    "clearShown": "清除这些…",
+    "clearTitle_other": "从历史记录中清除 {{count}} 条记录？",
+    "clearBody": "它们将从列表中移除。已下载的文件会保留在磁盘上。",
+    "clearConfirm": "清除",
+    "cleared_other": "已清除 {{count}} 条记录",
+    "removeOne": "从历史记录中移除“{{name}}”",
+    "showInList": "显示",
+    "more_other": "再显示 {{count}} 条",
+    "empty": {
+      "title": "还没有已结束的下载",
+      "body": "已完成和失败的下载会显示在这里。"
+    },
+    "noMatch": "没有匹配的记录"
+  },
+  "speedSchedule": {
+    "title": "按时段限速",
+    "hint": "在时段内，该时段的限速会取代上面的限速。时段重叠时，以最低的限速为准。结束时间早于开始时间的时段会跨越午夜。",
+    "window": "时段 {{n}}",
+    "from": "从",
+    "to": "到",
+    "limit": "限速",
+    "unit": "单位",
+    "days": "日期",
+    "add": "添加时段",
+    "remove": "移除时段 {{n}}",
+    "same": "开始时间和结束时间不能相同。"
+  },
+  "desktop": {
+    "trayNotice": "Whoosh 仍在托盘中运行，下载会继续进行。请从托盘菜单退出。"
+  },
+  "tray": {
+    "show": "显示 Whoosh",
+    "quit": "退出",
+    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  }
+}

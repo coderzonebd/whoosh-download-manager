@@ -66,10 +66,13 @@ export function fraction(done: number, total: number | undefined): number | unde
   return Math.min(1, Math.max(0, done / total));
 }
 
-/** `{name}` placeholder substitution. Unknown placeholders are left as they are. */
+/**
+ * `{{name}}` placeholder substitution (i18next style, which Weblate checks).
+ * Unknown placeholders are left as they are.
+ */
 export function interpolate(template: string, params?: Record<string, string | number>): string {
   if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (whole, key: string) => {
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (whole, key: string) => {
     const v = params[key];
     return v === undefined ? whole : String(v);
   });

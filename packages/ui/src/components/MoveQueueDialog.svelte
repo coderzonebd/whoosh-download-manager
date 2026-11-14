@@ -36,7 +36,7 @@
 </script>
 
 <Dialog
-  title={t("move.title", { count: ids.length, name })}
+  title={ids.length === 1 ? t("move.titleOne", { name }) : t("move.title", { count: ids.length })}
   description={t("move.description")}
   closeLabel={t("action.close")}
   size="sm"

@@ -1,0 +1,378 @@
+{
+  "extName": {
+    "message": "Whoosh",
+    "description": "Extension name in the browser and the stores. A brand name: keep it as it is unless your script needs a transliteration."
+  },
+  "extDescription": {
+    "message": "Hands your browser downloads to the Whoosh download manager, with the same cookies and referrer.",
+    "description": "Store and extensions-page description. At most 132 characters."
+  },
+  "optionsTitle": {
+    "message": "Whoosh settings",
+    "description": "Title of the options page."
+  },
+  "optionsIntro": {
+    "message": "Changes are saved as you make them and apply at once."
+  },
+  "storeNote": {
+    "message": "This is the browser-store edition. It does not catch, detect or download media on YouTube and similar streaming sites."
+  },
+  "captureLegend": {
+    "message": "Catching downloads",
+    "description": "Options section heading."
+  },
+  "captureEnabled": {
+    "message": "Send browser downloads to Whoosh"
+  },
+  "captureEnabledHelp": {
+    "message": "When off, every download stays in the browser. The toolbar button shows “off”.",
+    "description": "“off” is the badge text (message badgeOff)."
+  },
+  "captureIncognito": {
+    "message": "Also in private windows"
+  },
+  "captureIncognitoHelp": {
+    "message": "Off by default. Downloads from private windows are never remembered for self-healing."
+  },
+  "minSizeLegend": {
+    "message": "Minimum file size",
+    "description": "Options section heading."
+  },
+  "minSize": {
+    "message": "Leave smaller files to the browser"
+  },
+  "minSizeUnit": {
+    "message": "Unit",
+    "description": "Label of the KB/MB/GB menu (read by screen readers only)."
+  },
+  "minSizeHelp": {
+    "message": "0 means no minimum. Files whose size is not known in advance are always sent."
+  },
+  "minSizeInvalid": {
+    "message": "Enter a number of 0 or more."
+  },
+  "fileTypesLegend": {
+    "message": "File types",
+    "description": "Options section heading."
+  },
+  "fileTypes": {
+    "message": "Extensions to catch",
+    "description": "File name extensions such as zip or mp4."
+  },
+  "fileTypesHelp": {
+    "message": "Separated by spaces or commas, without the dot (zip iso mp4). Leave empty to catch every type.",
+    "description": "Keep “zip iso mp4” as it is: these are typed literally."
+  },
+  "fileTypesReset": {
+    "message": "Restore the default list"
+  },
+  "fileTypesEmpty": {
+    "message": "Every file type will be caught."
+  },
+  "sitesLegend": {
+    "message": "Sites",
+    "description": "Options section heading."
+  },
+  "excludedSites": {
+    "message": "Never catch downloads from these sites"
+  },
+  "excludedSitesHelp": {
+    "message": "One per line, e.g. example.com. A site includes its subdomains.",
+    "description": "Keep example.com as it is."
+  },
+  "excludedSitesInvalid": {
+    "message": "Not a site name: $SITES$",
+    "description": "Shown under the list of excluded sites.",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "Alt+click on a link",
+    "description": "Options section heading. Alt is the keyboard key."
+  },
+  "altClickBrowser": {
+    "message": "Let the browser download it"
+  },
+  "altClickWhoosh": {
+    "message": "Send it to Whoosh, whatever the rules above say"
+  },
+  "altClickOff": {
+    "message": "Do nothing special"
+  },
+  "extrasLegend": {
+    "message": "Media and links",
+    "description": "Options section heading."
+  },
+  "sniffMedia": {
+    "message": "Detect audio and video on pages"
+  },
+  "sniffMediaHelp": {
+    "message": "Lists media files and streams in the toolbar popup, ready to download."
+  },
+  "preconnect": {
+    "message": "Prepare the connection when the pointer rests on a download link"
+  },
+  "preconnectHelp": {
+    "message": "Only the site's address is passed to Whoosh, never the link itself."
+  },
+  "selfHealing": {
+    "message": "Repair expired download links"
+  },
+  "selfHealingHelp": {
+    "message": "When a paused download's address has expired, Whoosh looks for the fresh one on the page it came from, and asks you when unsure."
+  },
+  "saved": {
+    "message": "Saved.",
+    "description": "Shown briefly after a setting is saved."
+  },
+  "saveFailed": {
+    "message": "Could not save: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "Checking…",
+    "description": "Popup status while the connection is being checked."
+  },
+  "popupNotConnected": {
+    "message": "Not connected",
+    "description": "Popup status: the native host is missing."
+  },
+  "popupNoHost": {
+    "message": "The Whoosh native host is not installed.",
+    "description": "Popup detail under “Not connected”."
+  },
+  "popupAppNotRunning": {
+    "message": "App not running",
+    "description": "Popup status: the host works but the Whoosh app is not running."
+  },
+  "popupStartApp": {
+    "message": "Start Whoosh; downloads stay in the browser until then."
+  },
+  "popupConnected": {
+    "message": "Connected",
+    "description": "Popup status."
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "description": "Popup detail: the app's version.",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "Error",
+    "description": "Popup status when the popup itself failed."
+  },
+  "popupActive": {
+    "message": "Active",
+    "description": "Popup: number of downloads running."
+  },
+  "popupQueued": {
+    "message": "Queued",
+    "description": "Popup: number of downloads waiting."
+  },
+  "popupCapture": {
+    "message": "Catch browser downloads",
+    "description": "Popup switch."
+  },
+  "popupCaptureSite": {
+    "message": "Catch downloads on $SITE$",
+    "description": "Popup switch for the current site.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "Media on this page",
+    "description": "Popup section heading."
+  },
+  "popupMediaEmpty": {
+    "message": "None detected yet.",
+    "description": "Popup: no audio or video found on the page."
+  },
+  "popupDownload": {
+    "message": "Download",
+    "description": "Button next to a detected media file."
+  },
+  "popupSent": {
+    "message": "Sent",
+    "description": "The button after the file was handed to Whoosh."
+  },
+  "popupFailed": {
+    "message": "Failed",
+    "description": "The button after handing the file over failed."
+  },
+  "popupLast": {
+    "message": "Last: $NAME$ — $OUTCOME$",
+    "description": "Popup footer: the last download the extension handled.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "Settings",
+    "description": "Popup link to the options page."
+  },
+  "altHintBrowser": {
+    "message": "Hold $KEY$ while clicking a link to let the browser download it.",
+    "description": "$KEY$ is the Alt key, shown as a keyboard key.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "Hold $KEY$ while clicking a link to send it to Whoosh whatever the rules say.",
+    "description": "$KEY$ is the Alt key, shown as a keyboard key.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "Whoosh from the browser store does not work on this site."
+  },
+  "healTitle": {
+    "message": "Expired links",
+    "description": "Popup section: downloads whose address expired."
+  },
+  "healOpenPage": {
+    "message": "Whoosh needs the download page once more for $FILE$.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "Is this the same file as $FILE$?",
+    "description": "Followed by the address Whoosh found.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "Open page"
+  },
+  "healUseButton": {
+    "message": "Use this link"
+  },
+  "healDismissButton": {
+    "message": "Dismiss"
+  },
+  "menuLink": {
+    "message": "Download link with Whoosh",
+    "description": "Context menu on a link."
+  },
+  "menuSelection": {
+    "message": "Download selected links with Whoosh",
+    "description": "Context menu on selected text."
+  },
+  "menuPage": {
+    "message": "Download all links with Whoosh",
+    "description": "Context menu on a page."
+  },
+  "badgeOff": {
+    "message": "off",
+    "description": "Toolbar badge when catching is switched off. At most 4 characters; shorter is better."
+  },
+  "outcomeSent": {
+    "message": "sent to Whoosh",
+    "description": "Popup footer, after “Last: file.zip —”."
+  },
+  "outcomeHealed": {
+    "message": "continued an expired Whoosh download",
+    "description": "Popup footer, after “Last: file.zip —”."
+  },
+  "outcomeSkipped": {
+    "message": "left to the browser ($REASON$)",
+    "description": "Popup footer. $REASON$ is a technical code such as too-small.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "kept by the browser ($REASON$)",
+    "description": "Popup footer. $REASON$ is a technical code such as timeout.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "links sent to Whoosh: $COUNT$",
+    "description": "Popup footer after a context-menu download.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "failed: $ERROR$",
+    "description": "Popup footer.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "not available on this site",
+    "description": "Popup footer (browser-store edition on video sites)."
+  },
+  "outcomeNoLinks": {
+    "message": "could not read links: $ERROR$",
+    "description": "Popup footer.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "Whoosh from the browser store does not download from this site."
+  },
+  "errorRefused": {
+    "message": "Whoosh did not accept that address.",
+    "description": "Shown when the app refused the new address of an expired download."
+  }
+}

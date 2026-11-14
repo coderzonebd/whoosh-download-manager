@@ -15,7 +15,7 @@ import {
   type AltClick,
   type Settings,
 } from "../shared/settings";
-import { isStringKey, t } from "../shared/strings";
+import { localizePage, t } from "../shared/i18n";
 import {
   bytesToSize,
   formatFileTypes,
@@ -40,10 +40,7 @@ function el<T extends HTMLElement>(id: string): T {
 const CHECKBOXES = ["captureEnabled", "captureIncognito", "sniffMedia", "preconnect", "selfHealing"] as const;
 
 function fillText(): void {
-  for (const node of document.querySelectorAll<HTMLElement>("[data-text]")) {
-    const key = node.dataset["text"] ?? "";
-    if (isStringKey(key)) node.textContent = t(key);
-  }
+  localizePage(document);
   document.title = t("optionsTitle");
   el("store-note").hidden = !STORE_BUILD;
 }
@@ -86,7 +83,7 @@ async function save(patch: Partial<Settings>): Promise<void> {
     render(next);
     status(t("saved"));
   } catch (error) {
-    status(`${t("saveFailed")} ${error instanceof Error ? error.message : String(error)}`);
+    status(t("saveFailed", error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -107,7 +104,7 @@ function saveSites(): void {
   const field = el<HTMLTextAreaElement>("excludedSites");
   const { sites, invalid } = parseSites(field.value);
   if (invalid.length > 0) {
-    setError(field, "excludedSites-error", `${t("excludedSitesInvalid")} ${invalid.join(", ")}`);
+    setError(field, "excludedSites-error", t("excludedSitesInvalid", invalid.join(", ")));
     return;
   }
   setError(field, "excludedSites-error", undefined);
@@ -147,5 +144,5 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
-  status(`${t("saveFailed")} ${error instanceof Error ? error.message : String(error)}`);
+  status(t("saveFailed", error instanceof Error ? error.message : String(error)));
 });

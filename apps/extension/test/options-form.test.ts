@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { bytesToSize, formatFileTypes, formatSites, parseFileTypes, parseSites, sizeToBytes } from "../src/options/form";
-import { STRINGS } from "../src/shared/strings";
 
 describe("options form", () => {
   it("parses file types loosely and cleanly", () => {
@@ -35,13 +34,6 @@ describe("options form", () => {
     for (const bytes of [512 * 1024, 5 * 1024 ** 2, 3 * 1024 ** 3]) {
       const { value, unit } = bytesToSize(bytes);
       expect(sizeToBytes(value, unit)).toBe(bytes);
-    }
-  });
-
-  it("keeps every user-visible string non-empty and its key a valid message name", () => {
-    for (const [key, text] of Object.entries(STRINGS)) {
-      expect(key).toMatch(/^[A-Za-z0-9_]+$/);
-      expect(text.trim()).not.toBe("");
     }
   });
 });

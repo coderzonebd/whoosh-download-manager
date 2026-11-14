@@ -8,7 +8,7 @@ Upload `dist/whoosh-chromium-<version>-store.zip` from `pnpm --filter @whoosh/ex
 - **Summary** (≤ 132 characters):
   > Send browser downloads to the Whoosh download manager, with the same cookies and referrer. Faster, resumable, repairs expired links.
 - **Category:** Productivity → Tools
-- **Language:** English
+- **Language:** English (the extension's own name and description are also translated, from `_locales/`; the long description below is entered per language in the dashboard)
 - **Homepage / support URL:** https://github.com/coderzonebd/whoosh-download-manager
 - **Privacy policy URL:** the published copy of [`PRIVACY.md`](../PRIVACY.md) (e.g. https://github.com/coderzonebd/whoosh-download-manager/blob/pub/apps/extension/PRIVACY.md)
 

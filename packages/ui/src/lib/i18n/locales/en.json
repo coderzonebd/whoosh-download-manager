@@ -1,0 +1,410 @@
+{
+  "app": {
+    "name": "Whoosh"
+  },
+  "nav": {
+    "label": "Library",
+    "downloads": "Downloads",
+    "categories": "Categories",
+    "queues": "Queues",
+    "settings": "Settings",
+    "history": "History",
+    "open": "Show navigation",
+    "close": "Hide navigation"
+  },
+  "group": {
+    "all": "All downloads",
+    "active": "Downloading",
+    "queued": "Queued",
+    "paused": "Paused",
+    "completed": "Completed",
+    "attention": "Needs attention"
+  },
+  "category": {
+    "video": "Video",
+    "music": "Music",
+    "documents": "Documents",
+    "compressed": "Compressed",
+    "programs": "Programs",
+    "images": "Images",
+    "other": "Other"
+  },
+  "queue": {
+    "main": "Main queue",
+    "new": "New queue",
+    "create": "Create queue",
+    "createTitle": "New queue",
+    "editTitle": "“{{name}}” settings",
+    "description": "A queue downloads its files on its own, one at a time unless you allow more, and can start and stop on a schedule.",
+    "mainDescription": "The main queue is where downloads go unless you choose another queue.",
+    "name": "Name",
+    "nameTaken": "There is already a queue called “{{name}}”.",
+    "nameTooLong": "Use at most 64 characters.",
+    "nameInvalid": "The name can’t contain control characters.",
+    "maxActive": "Downloads at the same time",
+    "maxActiveHint": "The rest wait their turn, oldest first.",
+    "created": "Created the queue “{{name}}”",
+    "saved": "Saved “{{name}}”",
+    "saveFailed": "Couldn’t save the queue: {{message}}",
+    "removed": "Deleted the queue “{{name}}”",
+    "remove": "Delete queue",
+    "removeNamed": "Delete the queue “{{name}}”",
+    "removeTitle": "Delete the queue “{{name}}”?",
+    "removeBody_one": "Its {{count}} download moves to the main queue. Nothing is deleted from disk.",
+    "removeBody_other": "Its {{count}} downloads move to the main queue. Nothing is deleted from disk.",
+    "removeBodyEmpty": "The queue is empty. Nothing is deleted from disk.",
+    "running": "Running",
+    "stopped": "Stopped",
+    "scheduled": "Has a schedule",
+    "start": "Start",
+    "stop": "Stop",
+    "edit": "Settings…",
+    "editSchedule": "Schedule…",
+    "count_one": "{{count}} waiting",
+    "count_other": "{{count}} waiting",
+    "mainSummary_one": "Runs {{count}} download at a time",
+    "mainSummary_other": "Runs {{count}} downloads at a time"
+  },
+  "toolbar": {
+    "label": "Download actions",
+    "add": "Add download",
+    "resume": "Resume",
+    "pause": "Pause",
+    "remove": "Remove",
+    "search": "Search downloads",
+    "searchPlaceholder": "Search",
+    "layout": "List layout",
+    "details": "Details panel",
+    "shortcuts": "Keyboard shortcuts"
+  },
+  "layout": {
+    "classic": "Classic",
+    "modern": "Modern"
+  },
+  "list": {
+    "label": "Downloads",
+    "loading": "Loading downloads…",
+    "loadError": "Couldn’t load downloads: {{message}}",
+    "empty": {
+      "title": "No downloads here yet",
+      "body": "Paste a link with {{shortcut}}, or let the browser extension send one.",
+      "action": "Add a download"
+    },
+    "noMatch": {
+      "title": "Nothing matches “{{query}}”",
+      "body": "Try another name, or clear the search.",
+      "clear": "Clear search"
+    },
+    "selected_one": "{{count}} selected",
+    "selected_other": "{{count}} selected"
+  },
+  "col": {
+    "name": "Name",
+    "size": "Size",
+    "progress": "Progress",
+    "status": "Status",
+    "speed": "Speed",
+    "eta": "Time left",
+    "connections": "Connections",
+    "added": "Added",
+    "resize": "Resize the {{column}} column"
+  },
+  "state": {
+    "queued": "Queued",
+    "probing": "Starting",
+    "downloading": "Downloading",
+    "paused": "Paused",
+    "needs_refresh": "Link expired",
+    "verifying": "Verifying",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "unit": {
+    "byte": "B",
+    "speed": "{{size}}/s"
+  },
+  "size": {
+    "unknown": "Unknown size"
+  },
+  "eta": {
+    "unknown": "—",
+    "s": "{{s}}s",
+    "m": "{{m}}m",
+    "ms": "{{m}}m {{s}}s",
+    "hm": "{{h}}h {{m}}m",
+    "dh": "{{d}}d {{h}}h",
+    "left": "{{eta}} left"
+  },
+  "progress": {
+    "of": "{{done}} of {{total}}",
+    "value": "{{percent}} · {{done}} of {{total}}",
+    "indeterminate": "{{done}} so far"
+  },
+  "connections": {
+    "count_one": "{{count}} connection",
+    "count_other": "{{count}} connections"
+  },
+  "detail": {
+    "label": "Download details",
+    "close": "Close details",
+    "empty": "Select a download to see its details.",
+    "speed": "Speed",
+    "eta": "Time left",
+    "connections": "Connections",
+    "size": "Size",
+    "downloaded": "Downloaded",
+    "resumable": {
+      "label": "Pause and resume",
+      "yes": "Supported",
+      "no": "Not supported — pausing restarts it"
+    },
+    "savedTo": "Saved to",
+    "source": "Address",
+    "added": "Added",
+    "finished": "Finished",
+    "speedHistory": "Speed, last 30 seconds",
+    "peak": "Peak {{speed}}",
+    "segmentMap": "Segment map",
+    "segments": "Segments",
+    "segment": "Segment {{n}}",
+    "segmentRange": "{{from}} – {{to}}",
+    "segmentsNone": "Segment details appear once the download starts.",
+    "copied": "Address copied",
+    "errorCode": "Error code: {{code}}"
+  },
+  "action": {
+    "resume": "Resume",
+    "pause": "Pause",
+    "retry": "Retry",
+    "remove": "Remove…",
+    "refreshLink": "Refresh link…",
+    "copyLink": "Copy address",
+    "details": "Show details",
+    "cancel": "Cancel",
+    "close": "Close",
+    "save": "Save",
+    "revert": "Revert",
+    "dismiss": "Dismiss",
+    "show": "Show",
+    "browse": "Browse…",
+    "moveToQueue": "Move to queue…"
+  },
+  "menu": {
+    "label": "Actions for {{name}}"
+  },
+  "add": {
+    "title": "Add a download",
+    "description": "Paste a link. Whoosh checks it first so you can see the file before it starts.",
+    "url": "Address",
+    "urlPlaceholder": "https://example.com/file.zip",
+    "invalidUrl": "Enter a full address that starts with http://, https:// or ftp://",
+    "checking": "Checking the link…",
+    "probeFailed": "Couldn’t check this link: {{message}}",
+    "retry": "Check again",
+    "filename": "File name",
+    "folder": "Save to folder",
+    "category": "Category",
+    "startNow": "Start downloading now",
+    "submit": "Download",
+    "submitPaused": "Add paused",
+    "unknownSize": "Size unknown",
+    "resumable": "Can pause and resume",
+    "notResumable": "Pausing restarts this download",
+    "added": "Added “{{name}}”",
+    "failed": "Couldn’t add the download: {{message}}",
+    "chooseFolder": "Choose where to save the file",
+    "queue": "Queue"
+  },
+  "remove": {
+    "titleOne": "Remove “{{name}}”?",
+    "title_one": "Remove {{count}} download?",
+    "title_other": "Remove {{count}} downloads?",
+    "body": "They disappear from the list. Finished files stay on disk unless you choose otherwise.",
+    "deleteFiles": "Also delete the files from disk",
+    "confirm": "Remove",
+    "doneOne": "Removed “{{name}}”",
+    "done_one": "Removed {{count}} download",
+    "done_other": "Removed {{count}} downloads"
+  },
+  "refresh": {
+    "title": "Refresh the link",
+    "body": "The address for “{{name}}” expired. Paste a new link to the same file and the download continues where it stopped.",
+    "url": "New address",
+    "submit": "Continue download"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance and language",
+    "language": "Language",
+    "theme": "Theme",
+    "highContrast": "High contrast",
+    "highContrastHint": "Stronger colours and outlines. Applies to this device only.",
+    "layout": "Download list",
+    "downloads": "Downloads",
+    "defaultDirectory": "Default folder",
+    "maxActive": "Downloads at the same time",
+    "maxActiveHint": "The next queued download starts when one finishes.",
+    "maxConnections": "Connections per download",
+    "maxConnectionsHint": "More connections are usually faster. Some servers allow only a few.",
+    "speed": "Speed",
+    "speedLimit": "Limit total download speed",
+    "speedLimitValue": "Maximum speed",
+    "range": "Enter a whole number from {{min}} to {{max}}.",
+    "required": "This can’t be empty.",
+    "unsaved": "Unsaved changes",
+    "saved": "Settings saved",
+    "saveFailed": "Couldn’t save settings: {{message}}",
+    "loading": "Loading settings…",
+    "chooseFolder": "Choose the default download folder",
+    "desktop": "This computer",
+    "desktopHint": "These apply right away and only to this app.",
+    "launchAtLogin": "Start Whoosh when I log in",
+    "launchAtLoginHint": "It starts in the tray, without opening the window.",
+    "closeToTray": "Closing the window keeps Whoosh in the tray",
+    "closeToTrayHint": "Downloads go on. Quit from the tray menu.",
+    "stopDaemonOnQuit": "Quitting also stops downloads",
+    "stopDaemonOnQuitHint": "Off: downloads keep going in the background for the browser extension and the command line.",
+    "machineTranslated": "Machine translated.",
+    "helpTranslate": "Help improve the translation"
+  },
+  "theme": {
+    "system": "Match system",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "status": {
+    "label": "Status",
+    "speed": "Total download speed",
+    "active_one": "{{count}} active",
+    "active_other": "{{count}} active",
+    "queued_one": "{{count}} queued",
+    "queued_other": "{{count}} queued",
+    "limit": "Limited to {{speed}}",
+    "noLimit": "No speed limit"
+  },
+  "conn": {
+    "demo": "Demo data",
+    "open": "Connected",
+    "connecting": "Connecting…",
+    "reconnecting": "Reconnecting…",
+    "closed": "Disconnected"
+  },
+  "toast": {
+    "region": "Notifications",
+    "completed": "“{{name}}” finished downloading",
+    "failed": "“{{name}}” failed",
+    "expired": "The link for “{{name}}” expired"
+  },
+  "error": {
+    "generic": "Something went wrong: {{message}}"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "add": "Add a download",
+    "search": "Search",
+    "settings": "Settings",
+    "move": "Move through the list",
+    "extend": "Extend the selection",
+    "selectAll": "Select all",
+    "toggle": "Pause or resume the selection",
+    "details": "Open details",
+    "remove": "Remove the selection",
+    "menu": "Open the actions menu",
+    "escape": "Close the panel or clear the selection",
+    "help": "Show this list"
+  },
+  "schedule": {
+    "title": "Schedule",
+    "start": "Start at",
+    "stop": "Stop at",
+    "startTime": "Start time",
+    "stopTime": "Stop time",
+    "startDays": "Start on",
+    "stopDays": "Stop on",
+    "everyDay": "No day ticked means every day.",
+    "someDays": "Only on the ticked days.",
+    "everyDayShort": "every day",
+    "badTime": "Enter a time such as 23:30.",
+    "afterDone": "When the queue is done",
+    "afterDoneHint": "You get a minute’s warning, with a button to cancel.",
+    "localTime": "Times are in the clock of the computer that downloads.",
+    "none": "No schedule",
+    "atOn": "{{time}}, {{days}}",
+    "startsAt": "Starts {{when}}",
+    "stopsAt": "Stops {{when}}",
+    "thenSleep": "Then sleep",
+    "thenShutdown": "Then shut down"
+  },
+  "afterDone": {
+    "none": "Do nothing",
+    "sleep": "Put the computer to sleep",
+    "shutdown": "Shut the computer down",
+    "sleepSoon": "The queue “{{name}}” is done. The computer goes to sleep in {{secs}} seconds.",
+    "shutdownSoon": "The queue “{{name}}” is done. The computer shuts down in {{secs}} seconds.",
+    "now": "Now",
+    "cancel": "Cancel",
+    "cancelled": "Cancelled. The computer stays on."
+  },
+  "move": {
+    "titleOne": "Move “{{name}}” to a queue",
+    "title_one": "Move {{count}} download to a queue",
+    "title_other": "Move {{count}} downloads to a queue",
+    "description": "A download in a queue waits for that queue’s turn and schedule.",
+    "queue": "Queue",
+    "current": "Current",
+    "submit": "Move",
+    "doneOne": "Moved to “{{queue}}”",
+    "done_one": "Moved {{count}} download to “{{queue}}”",
+    "done_other": "Moved {{count}} downloads to “{{queue}}”"
+  },
+  "history": {
+    "title": "History",
+    "search": "Search history",
+    "filter": {
+      "label": "Show",
+      "all": "All",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "count_one": "{{count}} entry",
+    "count_other": "{{count}} entries",
+    "clear": "Clear history…",
+    "clearShown": "Clear these…",
+    "clearTitle_one": "Clear {{count}} entry from history?",
+    "clearTitle_other": "Clear {{count}} entries from history?",
+    "clearBody": "They leave the list. Downloaded files stay on disk.",
+    "clearConfirm": "Clear",
+    "cleared_one": "Cleared {{count}} entry",
+    "cleared_other": "Cleared {{count}} entries",
+    "removeOne": "Remove “{{name}}” from history",
+    "showInList": "Show",
+    "more_one": "Show {{count}} more",
+    "more_other": "Show {{count}} more",
+    "empty": {
+      "title": "Nothing finished yet",
+      "body": "Finished and failed downloads appear here."
+    },
+    "noMatch": "No entries match"
+  },
+  "speedSchedule": {
+    "title": "Speed by time of day",
+    "hint": "While a time window is open its limit replaces the one above. Where windows overlap, the lowest limit wins. A window that ends before it starts runs past midnight.",
+    "window": "Time window {{n}}",
+    "from": "From",
+    "to": "Until",
+    "limit": "Limit",
+    "unit": "Unit",
+    "days": "Days",
+    "add": "Add a time window",
+    "remove": "Remove time window {{n}}",
+    "same": "Start and end can’t be the same time."
+  },
+  "desktop": {
+    "trayNotice": "Whoosh is still running in the tray, so downloads go on. Quit it from the tray menu."
+  },
+  "tray": {
+    "show": "Show Whoosh",
+    "quit": "Quit",
+    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  }
+}

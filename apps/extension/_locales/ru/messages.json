@@ -1,0 +1,327 @@
+{
+  "extName": {
+    "message": "Whoosh"
+  },
+  "extDescription": {
+    "message": "Передаёт загрузки из браузера в менеджер загрузок Whoosh с теми же файлами cookie и источником перехода."
+  },
+  "optionsTitle": {
+    "message": "Настройки Whoosh"
+  },
+  "optionsIntro": {
+    "message": "Изменения сохраняются по мере внесения и сразу вступают в силу."
+  },
+  "storeNote": {
+    "message": "Это версия из магазина расширений. Она не перехватывает, не обнаруживает и не скачивает медиа на YouTube и похожих сайтах потокового видео."
+  },
+  "captureLegend": {
+    "message": "Перехват загрузок"
+  },
+  "captureEnabled": {
+    "message": "Отправлять загрузки из браузера в Whoosh"
+  },
+  "captureEnabledHelp": {
+    "message": "Если выключено, все загрузки остаются в браузере. На кнопке панели инструментов отображается «выкл»."
+  },
+  "captureIncognito": {
+    "message": "Также в приватных окнах"
+  },
+  "captureIncognitoHelp": {
+    "message": "По умолчанию выключено. Загрузки из приватных окон никогда не запоминаются для восстановления ссылок."
+  },
+  "minSizeLegend": {
+    "message": "Минимальный размер файла"
+  },
+  "minSize": {
+    "message": "Оставлять браузеру файлы меньше"
+  },
+  "minSizeUnit": {
+    "message": "Единица"
+  },
+  "minSizeHelp": {
+    "message": "0 — без минимума. Файлы, размер которых заранее неизвестен, отправляются всегда."
+  },
+  "minSizeInvalid": {
+    "message": "Введите число не меньше 0."
+  },
+  "fileTypesLegend": {
+    "message": "Типы файлов"
+  },
+  "fileTypes": {
+    "message": "Перехватываемые расширения"
+  },
+  "fileTypesHelp": {
+    "message": "Через пробел или запятую, без точки (zip iso mp4). Оставьте пустым, чтобы перехватывать все типы."
+  },
+  "fileTypesReset": {
+    "message": "Восстановить список по умолчанию"
+  },
+  "fileTypesEmpty": {
+    "message": "Будут перехватываться файлы всех типов."
+  },
+  "sitesLegend": {
+    "message": "Сайты"
+  },
+  "excludedSites": {
+    "message": "Никогда не перехватывать загрузки с этих сайтов"
+  },
+  "excludedSitesHelp": {
+    "message": "По одному на строку, например example.com. Сайт включает свои поддомены."
+  },
+  "excludedSitesInvalid": {
+    "message": "Не является именем сайта: $SITES$",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "Alt+щелчок по ссылке"
+  },
+  "altClickBrowser": {
+    "message": "Скачать средствами браузера"
+  },
+  "altClickWhoosh": {
+    "message": "Отправить в Whoosh независимо от правил выше"
+  },
+  "altClickOff": {
+    "message": "Ничего особенного не делать"
+  },
+  "extrasLegend": {
+    "message": "Медиа и ссылки"
+  },
+  "sniffMedia": {
+    "message": "Обнаруживать аудио и видео на страницах"
+  },
+  "sniffMediaHelp": {
+    "message": "Показывает медиафайлы и потоки во всплывающем окне на панели инструментов, готовые к загрузке."
+  },
+  "preconnect": {
+    "message": "Готовить соединение, когда указатель задерживается на ссылке для загрузки"
+  },
+  "preconnectHelp": {
+    "message": "В Whoosh передаётся только адрес сайта, но не сама ссылка."
+  },
+  "selfHealing": {
+    "message": "Восстанавливать устаревшие ссылки на загрузки"
+  },
+  "selfHealingHelp": {
+    "message": "Если адрес приостановленной загрузки устарел, Whoosh ищет новый на странице, откуда она была начата, а в случае сомнений спрашивает вас."
+  },
+  "saved": {
+    "message": "Сохранено."
+  },
+  "saveFailed": {
+    "message": "Не удалось сохранить: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "Проверка…"
+  },
+  "popupNotConnected": {
+    "message": "Нет подключения"
+  },
+  "popupNoHost": {
+    "message": "Нативный модуль Whoosh не установлен."
+  },
+  "popupAppNotRunning": {
+    "message": "Приложение не запущено"
+  },
+  "popupStartApp": {
+    "message": "Запустите Whoosh; до тех пор загрузки остаются в браузере."
+  },
+  "popupConnected": {
+    "message": "Подключено"
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "Ошибка"
+  },
+  "popupActive": {
+    "message": "Активные"
+  },
+  "popupQueued": {
+    "message": "В очереди"
+  },
+  "popupCapture": {
+    "message": "Перехватывать загрузки браузера"
+  },
+  "popupCaptureSite": {
+    "message": "Перехватывать загрузки на $SITE$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "Медиа на этой странице"
+  },
+  "popupMediaEmpty": {
+    "message": "Пока ничего не обнаружено."
+  },
+  "popupDownload": {
+    "message": "Скачать"
+  },
+  "popupSent": {
+    "message": "Отправлено"
+  },
+  "popupFailed": {
+    "message": "Ошибка"
+  },
+  "popupLast": {
+    "message": "Последняя: $NAME$ — $OUTCOME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "Настройки"
+  },
+  "altHintBrowser": {
+    "message": "Удерживайте $KEY$ при щелчке по ссылке, чтобы скачать её средствами браузера.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "Удерживайте $KEY$ при щелчке по ссылке, чтобы отправить её в Whoosh независимо от правил.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "Whoosh из магазина расширений не работает на этом сайте."
+  },
+  "healTitle": {
+    "message": "Устаревшие ссылки"
+  },
+  "healOpenPage": {
+    "message": "Whoosh ещё раз нужна страница загрузки для $FILE$.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "Это тот же файл, что и $FILE$?",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "Открыть страницу"
+  },
+  "healUseButton": {
+    "message": "Использовать эту ссылку"
+  },
+  "healDismissButton": {
+    "message": "Скрыть"
+  },
+  "menuLink": {
+    "message": "Скачать ссылку с помощью Whoosh"
+  },
+  "menuSelection": {
+    "message": "Скачать выделенные ссылки с помощью Whoosh"
+  },
+  "menuPage": {
+    "message": "Скачать все ссылки с помощью Whoosh"
+  },
+  "badgeOff": {
+    "message": "выкл"
+  },
+  "outcomeSent": {
+    "message": "отправлено в Whoosh"
+  },
+  "outcomeHealed": {
+    "message": "продолжена устаревшая загрузка Whoosh"
+  },
+  "outcomeSkipped": {
+    "message": "оставлено браузеру ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "оставлено в браузере ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "ссылок отправлено в Whoosh: $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "ошибка: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "недоступно на этом сайте"
+  },
+  "outcomeNoLinks": {
+    "message": "не удалось прочитать ссылки: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "Whoosh из магазина расширений не скачивает с этого сайта."
+  },
+  "errorRefused": {
+    "message": "Whoosh не принял этот адрес."
+  }
+}

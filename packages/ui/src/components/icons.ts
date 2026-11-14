@@ -27,6 +27,7 @@ export const ICONS = {
   inbox: "M3.5 13.5h4.5l1.5 2.5h5l1.5-2.5h4.5M3.5 13.5 6.2 6a1.5 1.5 0 0 1 1.4-1h8.8a1.5 1.5 0 0 1 1.4 1l2.7 7.5V18a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18z",
   arrowCircle: `${circle}M12 7.5v9M8.5 13 12 16.5 15.5 13`,
   clock: `${circle}M12 7v5l3.2 2`,
+  globe: `${circle}M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9s1.2-6.5 3.6-9z`,
   pauseCircle: `${circle}M10 9v6M14 9v6`,
   checkCircle: `${circle}M8.5 12.3l2.4 2.4 4.6-4.9`,
   alertCircle: `${circle}M12 7.5v5.5M12 16.2h.01`,

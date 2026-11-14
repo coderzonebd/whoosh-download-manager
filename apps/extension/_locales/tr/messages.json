@@ -1,0 +1,327 @@
+{
+  "extName": {
+    "message": "Whoosh"
+  },
+  "extDescription": {
+    "message": "Tarayıcı indirmelerinizi aynı çerezler ve yönlendiren adresle Whoosh indirme yöneticisine aktarır."
+  },
+  "optionsTitle": {
+    "message": "Whoosh ayarları"
+  },
+  "optionsIntro": {
+    "message": "Değişiklikler siz yaptıkça kaydedilir ve hemen uygulanır."
+  },
+  "storeNote": {
+    "message": "Bu, tarayıcı mağazası sürümüdür. YouTube ve benzeri yayın sitelerindeki medyayı yakalamaz, algılamaz ve indirmez."
+  },
+  "captureLegend": {
+    "message": "İndirmeleri yakalama"
+  },
+  "captureEnabled": {
+    "message": "Tarayıcı indirmelerini Whoosh’a gönder"
+  },
+  "captureEnabledHelp": {
+    "message": "Kapalıyken her indirme tarayıcıda kalır. Araç çubuğu düğmesinde “OFF” yazar."
+  },
+  "captureIncognito": {
+    "message": "Gizli pencerelerde de"
+  },
+  "captureIncognitoHelp": {
+    "message": "Varsayılan olarak kapalı. Gizli pencerelerden yapılan indirmeler kendi kendini onarma için asla hatırlanmaz."
+  },
+  "minSizeLegend": {
+    "message": "En küçük dosya boyutu"
+  },
+  "minSize": {
+    "message": "Daha küçük dosyaları tarayıcıya bırak"
+  },
+  "minSizeUnit": {
+    "message": "Birim"
+  },
+  "minSizeHelp": {
+    "message": "0, alt sınır yok demektir. Boyutu önceden bilinmeyen dosyalar her zaman gönderilir."
+  },
+  "minSizeInvalid": {
+    "message": "0 veya daha büyük bir sayı girin."
+  },
+  "fileTypesLegend": {
+    "message": "Dosya türleri"
+  },
+  "fileTypes": {
+    "message": "Yakalanacak uzantılar"
+  },
+  "fileTypesHelp": {
+    "message": "Boşluk veya virgülle ayrılmış, noktasız (zip iso mp4). Her türü yakalamak için boş bırakın."
+  },
+  "fileTypesReset": {
+    "message": "Varsayılan listeyi geri yükle"
+  },
+  "fileTypesEmpty": {
+    "message": "Her dosya türü yakalanacak."
+  },
+  "sitesLegend": {
+    "message": "Siteler"
+  },
+  "excludedSites": {
+    "message": "Bu sitelerden gelen indirmeleri asla yakalama"
+  },
+  "excludedSitesHelp": {
+    "message": "Her satıra bir site, ör. example.com. Bir site, alt alan adlarını da kapsar."
+  },
+  "excludedSitesInvalid": {
+    "message": "Site adı değil: $SITES$",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "Bağlantıya Alt+tıklama"
+  },
+  "altClickBrowser": {
+    "message": "Tarayıcı indirsin"
+  },
+  "altClickWhoosh": {
+    "message": "Yukarıdaki kurallar ne derse desin Whoosh’a gönder"
+  },
+  "altClickOff": {
+    "message": "Özel bir şey yapma"
+  },
+  "extrasLegend": {
+    "message": "Medya ve bağlantılar"
+  },
+  "sniffMedia": {
+    "message": "Sayfalardaki ses ve videoları algıla"
+  },
+  "sniffMediaHelp": {
+    "message": "Medya dosyalarını ve yayınları araç çubuğu penceresinde, indirmeye hazır olarak listeler."
+  },
+  "preconnect": {
+    "message": "İşaretçi bir indirme bağlantısının üzerinde durduğunda sunucuya önceden bağlan"
+  },
+  "preconnectHelp": {
+    "message": "Whoosh’a bağlantının kendisi değil, yalnızca sitenin adresi iletilir."
+  },
+  "selfHealing": {
+    "message": "Süresi dolmuş indirme bağlantılarını onar"
+  },
+  "selfHealingHelp": {
+    "message": "Duraklatılmış bir indirmenin adresinin süresi dolduğunda Whoosh, indirmenin geldiği sayfada yeni adresi arar ve emin olmadığında size sorar."
+  },
+  "saved": {
+    "message": "Kaydedildi."
+  },
+  "saveFailed": {
+    "message": "Kaydedilemedi: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "Denetleniyor…"
+  },
+  "popupNotConnected": {
+    "message": "Bağlı değil"
+  },
+  "popupNoHost": {
+    "message": "Whoosh yerel ana makine bileşeni yüklü değil."
+  },
+  "popupAppNotRunning": {
+    "message": "Uygulama çalışmıyor"
+  },
+  "popupStartApp": {
+    "message": "Whoosh’u başlatın; o zamana kadar indirmeler tarayıcıda kalır."
+  },
+  "popupConnected": {
+    "message": "Bağlı"
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "Hata"
+  },
+  "popupActive": {
+    "message": "Etkin"
+  },
+  "popupQueued": {
+    "message": "Sırada"
+  },
+  "popupCapture": {
+    "message": "Tarayıcı indirmelerini yakala"
+  },
+  "popupCaptureSite": {
+    "message": "Bu sitedeki indirmeleri yakala: $SITE$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "Bu sayfadaki medya"
+  },
+  "popupMediaEmpty": {
+    "message": "Henüz bir şey algılanmadı."
+  },
+  "popupDownload": {
+    "message": "İndir"
+  },
+  "popupSent": {
+    "message": "Gönderildi"
+  },
+  "popupFailed": {
+    "message": "Başarısız"
+  },
+  "popupLast": {
+    "message": "Son: $NAME$ — $OUTCOME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "Ayarlar"
+  },
+  "altHintBrowser": {
+    "message": "Bir bağlantıyı tarayıcının indirmesi için tıklarken $KEY$ tuşunu basılı tutun.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "Bir bağlantıyı kurallar ne derse desin Whoosh’a göndermek için tıklarken $KEY$ tuşunu basılı tutun.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "Tarayıcı mağazasındaki Whoosh bu sitede çalışmaz."
+  },
+  "healTitle": {
+    "message": "Süresi dolmuş bağlantılar"
+  },
+  "healOpenPage": {
+    "message": "Whoosh’un şu dosya için indirme sayfasına bir kez daha ihtiyacı var: $FILE$",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "Bu, şu dosyayla aynı mı: $FILE$?",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "Sayfayı aç"
+  },
+  "healUseButton": {
+    "message": "Bu bağlantıyı kullan"
+  },
+  "healDismissButton": {
+    "message": "Yok say"
+  },
+  "menuLink": {
+    "message": "Bağlantıyı Whoosh ile indir"
+  },
+  "menuSelection": {
+    "message": "Seçili bağlantıları Whoosh ile indir"
+  },
+  "menuPage": {
+    "message": "Tüm bağlantıları Whoosh ile indir"
+  },
+  "badgeOff": {
+    "message": "OFF"
+  },
+  "outcomeSent": {
+    "message": "Whoosh’a gönderildi"
+  },
+  "outcomeHealed": {
+    "message": "süresi dolmuş bir Whoosh indirmesi sürdürüldü"
+  },
+  "outcomeSkipped": {
+    "message": "tarayıcıya bırakıldı ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "tarayıcıda kaldı ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "Whoosh’a gönderilen bağlantılar: $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "başarısız: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "bu sitede kullanılamaz"
+  },
+  "outcomeNoLinks": {
+    "message": "bağlantılar okunamadı: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "Tarayıcı mağazasındaki Whoosh bu siteden indirme yapmaz."
+  },
+  "errorRefused": {
+    "message": "Whoosh bu adresi kabul etmedi."
+  }
+}

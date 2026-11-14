@@ -1,0 +1,395 @@
+{
+  "app": {
+    "name": "Whoosh"
+  },
+  "nav": {
+    "label": "Thư viện",
+    "downloads": "Tải xuống",
+    "categories": "Danh mục",
+    "queues": "Hàng đợi",
+    "settings": "Cài đặt",
+    "history": "Lịch sử",
+    "open": "Hiện thanh điều hướng",
+    "close": "Ẩn thanh điều hướng"
+  },
+  "group": {
+    "all": "Tất cả tải xuống",
+    "active": "Đang tải xuống",
+    "queued": "Đang chờ",
+    "paused": "Đã tạm dừng",
+    "completed": "Đã hoàn tất",
+    "attention": "Cần xử lý"
+  },
+  "category": {
+    "video": "Video",
+    "music": "Nhạc",
+    "documents": "Tài liệu",
+    "compressed": "Tệp nén",
+    "programs": "Chương trình",
+    "images": "Hình ảnh",
+    "other": "Khác"
+  },
+  "queue": {
+    "main": "Hàng đợi chính",
+    "new": "Hàng đợi mới",
+    "create": "Tạo hàng đợi",
+    "createTitle": "Hàng đợi mới",
+    "editTitle": "Cài đặt “{{name}}”",
+    "description": "Mỗi hàng đợi tự tải các tệp của nó, mỗi lần một tệp trừ khi bạn cho phép nhiều hơn, và có thể bắt đầu, dừng theo lịch.",
+    "mainDescription": "Các tải xuống sẽ vào hàng đợi chính, trừ khi bạn chọn hàng đợi khác.",
+    "name": "Tên",
+    "nameTaken": "Đã có một hàng đợi tên là “{{name}}”.",
+    "nameTooLong": "Dùng tối đa 64 ký tự.",
+    "nameInvalid": "Tên không được chứa ký tự điều khiển.",
+    "maxActive": "Số tải xuống cùng lúc",
+    "maxActiveHint": "Các tải xuống còn lại chờ đến lượt, cũ nhất trước.",
+    "created": "Đã tạo hàng đợi “{{name}}”",
+    "saved": "Đã lưu “{{name}}”",
+    "saveFailed": "Không thể lưu hàng đợi: {{message}}",
+    "removed": "Đã xóa hàng đợi “{{name}}”",
+    "remove": "Xóa hàng đợi",
+    "removeNamed": "Xóa hàng đợi “{{name}}”",
+    "removeTitle": "Xóa hàng đợi “{{name}}”?",
+    "removeBody_other": "{{count}} tải xuống trong đó sẽ chuyển sang hàng đợi chính. Không có gì bị xóa khỏi ổ đĩa.",
+    "removeBodyEmpty": "Hàng đợi này đang trống. Không có gì bị xóa khỏi ổ đĩa.",
+    "running": "Đang chạy",
+    "stopped": "Đã dừng",
+    "scheduled": "Có lịch",
+    "start": "Bắt đầu",
+    "stop": "Dừng",
+    "edit": "Cài đặt…",
+    "editSchedule": "Lịch…",
+    "count_other": "{{count}} đang chờ",
+    "mainSummary_other": "Chạy {{count}} tải xuống cùng lúc"
+  },
+  "toolbar": {
+    "label": "Thao tác tải xuống",
+    "add": "Thêm tải xuống",
+    "resume": "Tiếp tục",
+    "pause": "Tạm dừng",
+    "remove": "Gỡ bỏ",
+    "search": "Tìm tải xuống",
+    "searchPlaceholder": "Tìm kiếm",
+    "layout": "Bố cục danh sách",
+    "details": "Bảng chi tiết",
+    "shortcuts": "Phím tắt"
+  },
+  "layout": {
+    "classic": "Cổ điển",
+    "modern": "Hiện đại"
+  },
+  "list": {
+    "label": "Tải xuống",
+    "loading": "Đang tải danh sách tải xuống…",
+    "loadError": "Không thể tải danh sách tải xuống: {{message}}",
+    "empty": {
+      "title": "Chưa có tải xuống nào ở đây",
+      "body": "Dán liên kết bằng {{shortcut}}, hoặc để tiện ích trình duyệt gửi sang.",
+      "action": "Thêm tải xuống"
+    },
+    "noMatch": {
+      "title": "Không có kết quả cho “{{query}}”",
+      "body": "Thử tên khác, hoặc xóa nội dung tìm kiếm.",
+      "clear": "Xóa tìm kiếm"
+    },
+    "selected_other": "Đã chọn {{count}}"
+  },
+  "col": {
+    "name": "Tên",
+    "size": "Kích thước",
+    "progress": "Tiến độ",
+    "status": "Trạng thái",
+    "speed": "Tốc độ",
+    "eta": "Thời gian còn lại",
+    "connections": "Kết nối",
+    "added": "Ngày thêm",
+    "resize": "Đổi kích thước cột {{column}}"
+  },
+  "state": {
+    "queued": "Đang chờ",
+    "probing": "Đang bắt đầu",
+    "downloading": "Đang tải xuống",
+    "paused": "Đã tạm dừng",
+    "needs_refresh": "Liên kết hết hạn",
+    "verifying": "Đang kiểm tra",
+    "completed": "Đã hoàn tất",
+    "failed": "Thất bại"
+  },
+  "unit": {
+    "byte": "B",
+    "speed": "{{size}}/s"
+  },
+  "size": {
+    "unknown": "Không rõ kích thước"
+  },
+  "eta": {
+    "unknown": "—",
+    "s": "{{s}} giây",
+    "m": "{{m}} phút",
+    "ms": "{{m}} phút {{s}} giây",
+    "hm": "{{h}} giờ {{m}} phút",
+    "dh": "{{d}} ngày {{h}} giờ",
+    "left": "còn {{eta}}"
+  },
+  "progress": {
+    "of": "{{done}} / {{total}}",
+    "value": "{{percent}} · {{done}} / {{total}}",
+    "indeterminate": "Đã tải {{done}}"
+  },
+  "connections": {
+    "count_other": "{{count}} kết nối"
+  },
+  "detail": {
+    "label": "Chi tiết tải xuống",
+    "close": "Đóng chi tiết",
+    "empty": "Chọn một tải xuống để xem chi tiết.",
+    "speed": "Tốc độ",
+    "eta": "Thời gian còn lại",
+    "connections": "Kết nối",
+    "size": "Kích thước",
+    "downloaded": "Đã tải",
+    "resumable": {
+      "label": "Tạm dừng và tiếp tục",
+      "yes": "Được hỗ trợ",
+      "no": "Không hỗ trợ — tạm dừng sẽ tải lại từ đầu"
+    },
+    "savedTo": "Lưu tại",
+    "source": "Địa chỉ",
+    "added": "Ngày thêm",
+    "finished": "Hoàn tất lúc",
+    "speedHistory": "Tốc độ trong 30 giây qua",
+    "peak": "Cao nhất {{speed}}",
+    "segmentMap": "Bản đồ phân đoạn",
+    "segments": "Phân đoạn",
+    "segment": "Phân đoạn {{n}}",
+    "segmentRange": "{{from}} – {{to}}",
+    "segmentsNone": "Chi tiết phân đoạn sẽ hiện khi bắt đầu tải xuống.",
+    "copied": "Đã sao chép địa chỉ",
+    "errorCode": "Mã lỗi: {{code}}"
+  },
+  "action": {
+    "resume": "Tiếp tục",
+    "pause": "Tạm dừng",
+    "retry": "Thử lại",
+    "remove": "Gỡ bỏ…",
+    "refreshLink": "Làm mới liên kết…",
+    "copyLink": "Sao chép địa chỉ",
+    "details": "Xem chi tiết",
+    "cancel": "Hủy",
+    "close": "Đóng",
+    "save": "Lưu",
+    "revert": "Hoàn tác",
+    "dismiss": "Bỏ qua",
+    "show": "Hiện",
+    "browse": "Duyệt…",
+    "moveToQueue": "Chuyển sang hàng đợi…"
+  },
+  "menu": {
+    "label": "Thao tác cho {{name}}"
+  },
+  "add": {
+    "title": "Thêm tải xuống",
+    "description": "Dán một liên kết. Whoosh sẽ kiểm tra trước để bạn xem được tệp trước khi bắt đầu.",
+    "url": "Địa chỉ",
+    "urlPlaceholder": "https://example.com/file.zip",
+    "invalidUrl": "Nhập địa chỉ đầy đủ bắt đầu bằng http://, https:// hoặc ftp://",
+    "checking": "Đang kiểm tra liên kết…",
+    "probeFailed": "Không thể kiểm tra liên kết này: {{message}}",
+    "retry": "Kiểm tra lại",
+    "filename": "Tên tệp",
+    "folder": "Lưu vào thư mục",
+    "category": "Danh mục",
+    "startNow": "Bắt đầu tải xuống ngay",
+    "submit": "Tải xuống",
+    "submitPaused": "Thêm ở trạng thái tạm dừng",
+    "unknownSize": "Không rõ kích thước",
+    "resumable": "Có thể tạm dừng và tiếp tục",
+    "notResumable": "Tạm dừng sẽ khiến tải xuống này bắt đầu lại",
+    "added": "Đã thêm “{{name}}”",
+    "failed": "Không thể thêm tải xuống: {{message}}",
+    "chooseFolder": "Chọn nơi lưu tệp",
+    "queue": "Hàng đợi"
+  },
+  "remove": {
+    "titleOne": "Gỡ bỏ “{{name}}”?",
+    "title_other": "Gỡ bỏ {{count}} tải xuống?",
+    "body": "Chúng sẽ biến mất khỏi danh sách. Các tệp đã tải xong vẫn được giữ trên ổ đĩa, trừ khi bạn chọn khác.",
+    "deleteFiles": "Xóa luôn các tệp khỏi ổ đĩa",
+    "confirm": "Gỡ bỏ",
+    "doneOne": "Đã gỡ bỏ “{{name}}”",
+    "done_other": "Đã gỡ bỏ {{count}} tải xuống"
+  },
+  "refresh": {
+    "title": "Làm mới liên kết",
+    "body": "Địa chỉ của “{{name}}” đã hết hạn. Dán liên kết mới tới cùng tệp đó và tải xuống sẽ tiếp tục từ chỗ đã dừng.",
+    "url": "Địa chỉ mới",
+    "submit": "Tiếp tục tải xuống"
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "appearance": "Giao diện và ngôn ngữ",
+    "language": "Ngôn ngữ",
+    "theme": "Chủ đề",
+    "highContrast": "Độ tương phản cao",
+    "highContrastHint": "Màu sắc và đường viền rõ hơn. Chỉ áp dụng cho thiết bị này.",
+    "layout": "Danh sách tải xuống",
+    "downloads": "Tải xuống",
+    "defaultDirectory": "Thư mục mặc định",
+    "maxActive": "Số tải xuống cùng lúc",
+    "maxActiveHint": "Khi một tải xuống hoàn tất, tải xuống tiếp theo trong hàng đợi sẽ bắt đầu.",
+    "maxConnections": "Số kết nối mỗi tải xuống",
+    "maxConnectionsHint": "Nhiều kết nối hơn thường nhanh hơn. Một số máy chủ chỉ cho phép vài kết nối.",
+    "speed": "Tốc độ",
+    "speedLimit": "Giới hạn tổng tốc độ tải xuống",
+    "speedLimitValue": "Tốc độ tối đa",
+    "range": "Nhập một số nguyên từ {{min}} đến {{max}}.",
+    "required": "Không được để trống mục này.",
+    "unsaved": "Có thay đổi chưa lưu",
+    "saved": "Đã lưu cài đặt",
+    "saveFailed": "Không thể lưu cài đặt: {{message}}",
+    "loading": "Đang tải cài đặt…",
+    "chooseFolder": "Chọn thư mục tải xuống mặc định",
+    "desktop": "Máy tính này",
+    "desktopHint": "Các mục này có hiệu lực ngay và chỉ áp dụng cho ứng dụng này.",
+    "launchAtLogin": "Khởi động Whoosh khi tôi đăng nhập",
+    "launchAtLoginHint": "Ứng dụng chạy trong khay hệ thống, không mở cửa sổ.",
+    "closeToTray": "Đóng cửa sổ vẫn giữ Whoosh trong khay hệ thống",
+    "closeToTrayHint": "Các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống.",
+    "stopDaemonOnQuit": "Thoát cũng dừng các tải xuống",
+    "stopDaemonOnQuitHint": "Khi tắt: các tải xuống vẫn chạy nền cho tiện ích trình duyệt và dòng lệnh.",
+    "machineTranslated": "Bản dịch máy.",
+    "helpTranslate": "Giúp cải thiện bản dịch"
+  },
+  "theme": {
+    "system": "Theo hệ thống",
+    "light": "Sáng",
+    "dark": "Tối"
+  },
+  "status": {
+    "label": "Trạng thái",
+    "speed": "Tổng tốc độ tải xuống",
+    "active_other": "{{count}} đang chạy",
+    "queued_other": "{{count}} đang chờ",
+    "limit": "Giới hạn ở {{speed}}",
+    "noLimit": "Không giới hạn tốc độ"
+  },
+  "conn": {
+    "demo": "Dữ liệu mẫu",
+    "open": "Đã kết nối",
+    "connecting": "Đang kết nối…",
+    "reconnecting": "Đang kết nối lại…",
+    "closed": "Đã ngắt kết nối"
+  },
+  "toast": {
+    "region": "Thông báo",
+    "completed": "Đã tải xong “{{name}}”",
+    "failed": "“{{name}}” bị lỗi",
+    "expired": "Liên kết của “{{name}}” đã hết hạn"
+  },
+  "error": {
+    "generic": "Đã xảy ra lỗi: {{message}}"
+  },
+  "shortcuts": {
+    "title": "Phím tắt",
+    "add": "Thêm tải xuống",
+    "search": "Tìm kiếm",
+    "settings": "Cài đặt",
+    "move": "Di chuyển trong danh sách",
+    "extend": "Mở rộng vùng chọn",
+    "selectAll": "Chọn tất cả",
+    "toggle": "Tạm dừng hoặc tiếp tục mục đã chọn",
+    "details": "Mở chi tiết",
+    "remove": "Gỡ bỏ mục đã chọn",
+    "menu": "Mở menu thao tác",
+    "escape": "Đóng bảng hoặc bỏ chọn",
+    "help": "Hiện danh sách này"
+  },
+  "schedule": {
+    "title": "Lịch",
+    "start": "Bắt đầu lúc",
+    "stop": "Dừng lúc",
+    "startTime": "Giờ bắt đầu",
+    "stopTime": "Giờ dừng",
+    "startDays": "Bắt đầu vào",
+    "stopDays": "Dừng vào",
+    "everyDay": "Không đánh dấu ngày nào nghĩa là mọi ngày.",
+    "someDays": "Chỉ vào các ngày đã đánh dấu.",
+    "everyDayShort": "mọi ngày",
+    "badTime": "Nhập giờ, ví dụ 23:30.",
+    "afterDone": "Khi hàng đợi xong",
+    "afterDoneHint": "Bạn sẽ được báo trước một phút, kèm nút để hủy.",
+    "localTime": "Giờ được tính theo đồng hồ của máy tính đang tải xuống.",
+    "none": "Không có lịch",
+    "atOn": "{{time}}, {{days}}",
+    "startsAt": "Bắt đầu {{when}}",
+    "stopsAt": "Dừng {{when}}",
+    "thenSleep": "Sau đó ngủ",
+    "thenShutdown": "Sau đó tắt máy"
+  },
+  "afterDone": {
+    "none": "Không làm gì",
+    "sleep": "Cho máy tính ngủ",
+    "shutdown": "Tắt máy tính",
+    "sleepSoon": "Hàng đợi “{{name}}” đã xong. Máy tính sẽ ngủ sau {{secs}} giây.",
+    "shutdownSoon": "Hàng đợi “{{name}}” đã xong. Máy tính sẽ tắt sau {{secs}} giây.",
+    "now": "Ngay bây giờ",
+    "cancel": "Hủy",
+    "cancelled": "Đã hủy. Máy tính vẫn bật."
+  },
+  "move": {
+    "titleOne": "Chuyển “{{name}}” sang hàng đợi",
+    "title_other": "Chuyển {{count}} tải xuống sang hàng đợi",
+    "description": "Một tải xuống trong hàng đợi sẽ chờ theo lượt và lịch của hàng đợi đó.",
+    "queue": "Hàng đợi",
+    "current": "Hiện tại",
+    "submit": "Chuyển",
+    "doneOne": "Đã chuyển sang “{{queue}}”",
+    "done_other": "Đã chuyển {{count}} tải xuống sang “{{queue}}”"
+  },
+  "history": {
+    "title": "Lịch sử",
+    "search": "Tìm trong lịch sử",
+    "filter": {
+      "label": "Hiện",
+      "all": "Tất cả",
+      "completed": "Đã hoàn tất",
+      "failed": "Thất bại"
+    },
+    "count_other": "{{count}} mục",
+    "clear": "Xóa lịch sử…",
+    "clearShown": "Xóa các mục này…",
+    "clearTitle_other": "Xóa {{count}} mục khỏi lịch sử?",
+    "clearBody": "Chúng sẽ rời khỏi danh sách. Các tệp đã tải vẫn được giữ trên ổ đĩa.",
+    "clearConfirm": "Xóa",
+    "cleared_other": "Đã xóa {{count}} mục",
+    "removeOne": "Gỡ “{{name}}” khỏi lịch sử",
+    "showInList": "Hiện",
+    "more_other": "Hiện thêm {{count}}",
+    "empty": {
+      "title": "Chưa có gì kết thúc",
+      "body": "Các tải xuống đã hoàn tất và thất bại sẽ hiện ở đây."
+    },
+    "noMatch": "Không có mục nào khớp"
+  },
+  "speedSchedule": {
+    "title": "Tốc độ theo giờ trong ngày",
+    "hint": "Trong một khung giờ, giới hạn của khung đó thay cho giới hạn ở trên. Khi các khung giờ chồng nhau, giới hạn thấp nhất được áp dụng. Khung giờ có giờ kết thúc sớm hơn giờ bắt đầu sẽ kéo qua nửa đêm.",
+    "window": "Khung giờ {{n}}",
+    "from": "Từ",
+    "to": "Đến",
+    "limit": "Giới hạn",
+    "unit": "Đơn vị",
+    "days": "Ngày",
+    "add": "Thêm khung giờ",
+    "remove": "Gỡ khung giờ {{n}}",
+    "same": "Giờ bắt đầu và giờ kết thúc không được trùng nhau."
+  },
+  "desktop": {
+    "trayNotice": "Whoosh vẫn đang chạy trong khay hệ thống nên các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống."
+  },
+  "tray": {
+    "show": "Hiện Whoosh",
+    "quit": "Thoát",
+    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  }
+}

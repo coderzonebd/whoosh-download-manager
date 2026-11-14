@@ -8,6 +8,8 @@
 <script lang="ts">
   import type { Settings, SpeedWindow } from "@whoosh/api-client";
   import type { DesktopPrefs } from "../lib/host.ts";
+  import { dirOf } from "../lib/i18n/i18n.svelte.ts";
+  import { translateUrl } from "../lib/i18n/languages.ts";
   import { normalizeDays, windowProblem } from "../lib/schedule.ts";
   import { getApp } from "../lib/state/app.svelte.ts";
   import DaysPicker from "./DaysPicker.svelte";
@@ -114,6 +116,15 @@
     if (draft.limitOn && !(Number.isFinite(lv) && lv > 0 && lv <= 1_000_000)) e.limitValue = t("settings.range", { min: i18n.number(1), max: i18n.number(1_000_000) });
     return e;
   });
+  /** The picked language, when it was translated by machine: the picker says so in that language. */
+  const machineLang = $derived(i18n.available.find((l) => l.tag === draft?.language && l.machine)?.tag);
+
+  function openTranslate(e: MouseEvent, url: string): void {
+    if (!app.host.openUrl) return; // a browser tab follows the link itself
+    e.preventDefault();
+    void app.host.openUrl(url).catch((err: unknown) => app.report(err));
+  }
+
   const valid = $derived(Object.keys(errors).length === 0 && windowErrors.every((w) => !w.time && !w.limit));
 
   function build(d: Draft): Settings | undefined {
@@ -254,11 +265,21 @@
         <div class="grid">
           <div class="vy-field">
             <label class="vy-label" for="vy-set-lang">{t("settings.language")}</label>
-            <select id="vy-set-lang" class="vy-select" bind:value={draft.language}>
+            <select id="vy-set-lang" class="vy-select" bind:value={draft.language} aria-describedby={machineLang ? "vy-set-lang-mt" : undefined}>
               {#each i18n.available as l (l.tag)}
-                <option value={l.tag} lang={l.tag}>{l.nativeName}</option>
+                <option value={l.tag} lang={l.tag} dir={dirOf(l.tag)}>{l.nativeName}</option>
               {/each}
             </select>
+            {#if machineLang}
+              {@const url = translateUrl(machineLang)}
+              <span id="vy-set-lang-mt" class="vy-hint machine" lang={machineLang} dir={dirOf(machineLang)}>
+                <Icon name="globe" size={14} />
+                <span>
+                  {i18n.tIn(machineLang, "settings.machineTranslated")}
+                  <a href={url} target="_blank" rel="noopener noreferrer" onclick={(e) => openTranslate(e, url)}>{i18n.tIn(machineLang, "settings.helpTranslate")}</a>
+                </span>
+              </span>
+            {/if}
           </div>
           <fieldset class="vy-field">
             <legend class="vy-label">{t("settings.theme")}</legend>
@@ -520,6 +541,19 @@
   }
   .wide {
     grid-column: 1 / -1;
+  }
+  .machine {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vy-space-1-5);
+    margin-block-start: var(--vy-space-1-5);
+  }
+  .machine :global(svg) {
+    flex: none;
+    margin-block-start: 2px;
+  }
+  .machine a {
+    color: var(--vy-color-accent-text, var(--vy-color-accent));
   }
   fieldset {
     margin: 0;
