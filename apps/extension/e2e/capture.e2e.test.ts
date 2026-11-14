@@ -83,8 +83,15 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
   const watched = new WeakSet<Worker>();
 
   async function worker(): Promise<Worker> {
-    const find = () => context.serviceWorkers().find((w) => w.url().startsWith(`chrome-extension://${EXTENSION_ID}/`));
-    const w = find() ?? (await context.waitForEvent("serviceworker", { timeout: 15_000 }));
+    // Only our extension's worker: Chrome may start other service workers
+    // first, and taking the next one of any kind made this flaky.
+    const ours = (w: Worker) => w.url().startsWith(`chrome-extension://${EXTENSION_ID}/`);
+    const w =
+      context.serviceWorkers().find(ours) ??
+      (await context.waitForEvent("serviceworker", { predicate: ours, timeout: 15_000 }).catch((e: unknown) => {
+        const seen = context.serviceWorkers().map((x) => x.url());
+        throw new Error(`no service worker of ${EXTENSION_ID}; saw: ${seen.join(", ") || "none"} (${String(e)})`);
+      }));
     if (!watched.has(w)) {
       watched.add(w);
       w.on("console", (m) => swConsole.push(`${m.type()}: ${m.text()}`));

@@ -32,7 +32,7 @@ whoosh-net.workspace = true
 whoosh-store.workspace = true
 
 bytes = "1"
-getrandom = "0.3"
+getrandom = "0.4"
 http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }
