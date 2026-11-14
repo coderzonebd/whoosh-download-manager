@@ -194,6 +194,34 @@
 
   const host = app.host;
   const hasDesktop = host.desktopPrefs !== undefined || host.launchAtLogin !== undefined;
+  const updates = host.updates;
+
+  type UpdateState = { kind: "idle" | "checking" | "current" | "installing" } | { kind: "available"; version: string };
+  let update = $state<UpdateState>({ kind: "idle" });
+
+  async function checkUpdate(): Promise<void> {
+    if (!updates) return;
+    update = { kind: "checking" };
+    try {
+      const found = await updates.check();
+      update = found ? { kind: "available", version: found.version } : { kind: "current" };
+    } catch (e) {
+      update = { kind: "idle" };
+      app.toasts.push({ tone: "error", message: t("settings.updateFailed", { message: app.describe(e) }) });
+    }
+  }
+
+  async function installUpdate(): Promise<void> {
+    if (!updates) return;
+    const before = update;
+    update = { kind: "installing" };
+    try {
+      await updates.install(); // restarts the app
+    } catch (e) {
+      update = before;
+      app.toasts.push({ tone: "error", message: t("settings.installFailed", { message: app.describe(e) }) });
+    }
+  }
   let desktop = $state<DesktopPrefs | undefined>(undefined);
   let atLogin = $state<boolean | undefined>(undefined);
 
@@ -519,6 +547,45 @@
         </section>
       {/if}
 
+      {#if host.browsers}
+        <section aria-labelledby="vy-set-browsers">
+          <h2 id="vy-set-browsers">{t("settings.browsers")}</h2>
+          <p class="vy-hint">{t("settings.browsersHint")}</p>
+          <div>
+            <button type="button" class="vy-btn" onclick={() => (app.view = "browsers")}>{t("settings.browsersOpen")}</button>
+          </div>
+        </section>
+      {/if}
+
+      {#if updates}
+        <section aria-labelledby="vy-set-updates">
+          <h2 id="vy-set-updates">{t("settings.updates")}</h2>
+          {#if host.desktopPrefs}
+            <div class="vy-field">
+              <label class="vy-check">
+                <input type="checkbox" checked={desktop?.autoUpdateCheck === true} disabled={!desktop} onchange={(e) => setDesktop("autoUpdateCheck", e.currentTarget.checked)} aria-describedby="vy-set-autoupdate-hint" />
+                {t("settings.autoUpdateCheck")}
+              </label>
+              <span id="vy-set-autoupdate-hint" class="vy-hint">{t("settings.autoUpdateCheckHint")}</span>
+            </div>
+          {/if}
+          <div class="update-row">
+            {#if update.kind === "available" || update.kind === "installing"}
+              <button type="button" class="vy-btn vy-btn--primary" disabled={update.kind === "installing"} onclick={installUpdate}>
+                {#if update.kind === "installing"}<span class="vy-spinner" aria-hidden="true"></span>{t("settings.installing")}{:else}{t("settings.installUpdate")}{/if}
+              </button>
+            {:else}
+              <button type="button" class="vy-btn" disabled={update.kind === "checking"} onclick={checkUpdate}>
+                {#if update.kind === "checking"}<span class="vy-spinner" aria-hidden="true"></span>{t("settings.checking")}{:else}{t("settings.checkNow")}{/if}
+              </button>
+            {/if}
+            <span role="status">
+              {#if update.kind === "current"}{t("settings.upToDate")}{:else if update.kind === "available"}{t("settings.updateAvailable", { version: update.version })}{/if}
+            </span>
+          </div>
+        </section>
+      {/if}
+
       {#if crash !== undefined}
         <section aria-labelledby="vy-set-privacy">
           <h2 id="vy-set-privacy">{t("settings.privacy")}</h2>
@@ -542,6 +609,12 @@
 </div>
 
 <style>
+  .update-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vy-space-3);
+  }
   .settings {
     flex: 1;
     overflow-y: auto;

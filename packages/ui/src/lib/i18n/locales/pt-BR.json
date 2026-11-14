@@ -285,7 +285,21 @@
     "machineTranslated": "Tradução automática.",
     "helpTranslate": "Ajude a melhorar a tradução",
     "media": "Sites de vídeo e áudio",
-    "mediaHint": "O Whoosh usa o yt-dlp para encontrar o vídeo em uma página e o ffmpeg para juntar vídeo e áudio. Os dois são programas separados, baixados das versões oficiais na primeira vez em que forem necessários e conferidos com o checksum publicado."
+    "mediaHint": "O Whoosh usa o yt-dlp para encontrar o vídeo em uma página e o ffmpeg para juntar vídeo e áudio. Os dois são programas separados, baixados das versões oficiais na primeira vez em que forem necessários e conferidos com o checksum publicado.",
+    "browsers": "Navegadores",
+    "browsersHint": "Vincule o Chrome, o Edge, o Firefox e outros navegadores para que os downloads deles venham para o Whoosh.",
+    "browsersOpen": "Conectar seu navegador…",
+    "updates": "Atualizações",
+    "autoUpdateCheck": "Procurar uma nova versão do Whoosh uma vez por dia",
+    "autoUpdateCheckHint": "O Whoosh só avisa sobre uma nova versão. Ele nunca instala sem perguntar.",
+    "checkNow": "Procurar uma nova versão",
+    "checking": "Procurando…",
+    "upToDate": "Você tem a versão mais recente.",
+    "updateAvailable": "A versão {{version}} está disponível.",
+    "installUpdate": "Instalar e reiniciar",
+    "installing": "Instalando…",
+    "updateFailed": "Não foi possível procurar atualizações: {{message}}",
+    "installFailed": "Não foi possível instalar a atualização: {{message}}"
   },
   "crashNotice": {
     "text": "O Whoosh envia relatórios de falhas anônimos para ajudar a corrigir bugs. Sem nomes de arquivos nem links. Desative em Configurações.",
@@ -319,7 +333,8 @@
     "region": "Notificações",
     "completed": "Download de “{{name}}” concluído",
     "failed": "Falha no download de “{{name}}”",
-    "expired": "O link de “{{name}}” expirou"
+    "expired": "O link de “{{name}}” expirou",
+    "updateAvailable": "O Whoosh {{version}} está disponível."
   },
   "error": {
     "generic": "Algo deu errado: {{message}}"
@@ -490,5 +505,34 @@
     "autoUpdateHint": "Caso contrário, o Whoosh só procura quando você pede.",
     "error": "A última tentativa falhou: {{message}}",
     "checkFailed": "Não foi possível procurar atualizações: {{message}}"
+  },
+  "browsers": {
+    "title": "Conecte seu navegador",
+    "intro": "O Whoosh assume os downloads do seu navegador por meio da extensão do Whoosh. Cada navegador precisa da extensão e de um vínculo com este aplicativo; o Whoosh cria o vínculo para você.",
+    "loading": "Procurando seus navegadores…",
+    "none": "Nenhum navegador compatível foi encontrado para este usuário. O Whoosh funciona com Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi e Firefox.",
+    "notFound": "Não encontrados neste computador: {{names}}.",
+    "state": {
+      "ready": "Pronto: os downloads deste navegador vêm para o Whoosh",
+      "noHost": "Ainda não vinculado ao Whoosh",
+      "noExtension": "A extensão não está instalada"
+    },
+    "connect": "Vincular ao Whoosh",
+    "connected": "{{browser}} está vinculado ao Whoosh.",
+    "connectFailed": "Não foi possível vincular {{browser}}: {{message}}",
+    "store": {
+      "edgeAddOns": "Obter no Edge Add-ons",
+      "chromeWebStore": "Obter na Chrome Web Store",
+      "amo": "Obter no Firefox Add-ons",
+      "github": "Baixar a extensão"
+    },
+    "hint": {
+      "store": "Adicione a extensão lá. Se o navegador perguntar se deve ativá-la, escolha Ativar.",
+      "github": "Ela ainda não está na loja deste navegador. Na página da versão, baixe o zip do Chromium e descompacte-o; depois abra a página de extensões do navegador, ative o modo do desenvolvedor e escolha Carregar sem compactação.",
+      "githubFirefox": "Ela ainda não está no Firefox Add-ons. A página da versão dirá quando estiver."
+    },
+    "recheck": "Verificar de novo",
+    "done": "Concluir",
+    "later": "Você pode voltar a esta página em Configurações → Navegadores."
   }
 }

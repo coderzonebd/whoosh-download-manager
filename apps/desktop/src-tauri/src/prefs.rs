@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Settings that belong to this app, not to the daemon (whose settings every
-//! client shares): what closing the window and Quit do. Kept in
+//! client shares): what closing the window and Quit do, and the update
+//! check. Kept in
 //! `<app config dir>/desktop.json`; a missing or unreadable file means the
 //! defaults.
 
@@ -25,6 +26,12 @@ pub struct Prefs {
     /// The UI's language when it last ran, so the tray starts in it
     /// (`shell_i18n`). Empty: English.
     pub language: String,
+    /// Look for a new version once a day (`updates`). Never installs alone.
+    pub auto_update_check: bool,
+    /// When the app last looked for an update (Unix seconds; 0 = never).
+    pub last_update_check: u64,
+    /// The "Connect your browser" page has been shown once (first run).
+    pub browser_setup_shown: bool,
 }
 
 impl Default for Prefs {
@@ -34,6 +41,9 @@ impl Default for Prefs {
             stop_daemon_on_quit: false,
             tray_notice_shown: false,
             language: String::new(),
+            auto_update_check: true,
+            last_update_check: 0,
+            browser_setup_shown: false,
         }
     }
 }
@@ -99,6 +109,8 @@ mod tests {
         let p = Prefs::default();
         assert!(p.close_to_tray);
         assert!(!p.stop_daemon_on_quit);
+        assert!(p.auto_update_check);
+        assert!(!p.browser_setup_shown);
     }
 
     #[test]

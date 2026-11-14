@@ -39,6 +39,8 @@ modules:
       - ar -x whoosh.deb
       - tar -xf data.tar.gz
       - install -Dm755 usr/bin/whoosh-desktop /app/bin/whoosh-desktop
+      # The app starts the daemon that sits next to it.
+      - install -Dm755 usr/bin/whoosh-daemon /app/bin/whoosh-daemon
       - install -Dm644 com.coderzonebd.whoosh.desktop /app/share/applications/com.coderzonebd.whoosh.desktop
       - install -Dm644 com.coderzonebd.whoosh.metainfo.xml /app/share/metainfo/com.coderzonebd.whoosh.metainfo.xml
       - install -Dm644 usr/share/icons/hicolor/32x32/apps/whoosh-desktop.png /app/share/icons/hicolor/32x32/apps/com.coderzonebd.whoosh.png

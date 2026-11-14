@@ -285,7 +285,21 @@
     "machineTranslated": "Traducción automática.",
     "helpTranslate": "Ayuda a mejorar la traducción",
     "media": "Sitios de vídeo y audio",
-    "mediaHint": "Whoosh usa yt-dlp para encontrar el vídeo de una página y ffmpeg para unir vídeo y audio. Ambos son programas independientes que se descargan de sus versiones oficiales la primera vez que hacen falta y se comprueban con la suma de verificación publicada."
+    "mediaHint": "Whoosh usa yt-dlp para encontrar el vídeo de una página y ffmpeg para unir vídeo y audio. Ambos son programas independientes que se descargan de sus versiones oficiales la primera vez que hacen falta y se comprueban con la suma de verificación publicada.",
+    "browsers": "Navegadores",
+    "browsersHint": "Vincula Chrome, Edge, Firefox y otros navegadores para que sus descargas lleguen a Whoosh.",
+    "browsersOpen": "Conectar tu navegador…",
+    "updates": "Actualizaciones",
+    "autoUpdateCheck": "Buscar una versión nueva de Whoosh una vez al día",
+    "autoUpdateCheckHint": "Whoosh solo te avisa de una versión nueva. Nunca la instala sin preguntar.",
+    "checkNow": "Buscar una versión nueva",
+    "checking": "Buscando…",
+    "upToDate": "Tienes la versión más reciente.",
+    "updateAvailable": "La versión {{version}} está disponible.",
+    "installUpdate": "Instalar y reiniciar",
+    "installing": "Instalando…",
+    "updateFailed": "No se pudieron buscar actualizaciones: {{message}}",
+    "installFailed": "No se pudo instalar la actualización: {{message}}"
   },
   "crashNotice": {
     "text": "Whoosh envía informes de errores anónimos para ayudar a corregir fallos. Sin nombres de archivo ni enlaces. Puedes desactivarlo en Configuración.",
@@ -319,7 +333,8 @@
     "region": "Notificaciones",
     "completed": "“{{name}}” terminó de descargarse",
     "failed": "No se pudo descargar “{{name}}”",
-    "expired": "El enlace de “{{name}}” caducó"
+    "expired": "El enlace de “{{name}}” caducó",
+    "updateAvailable": "Whoosh {{version}} está disponible."
   },
   "error": {
     "generic": "Algo salió mal: {{message}}"
@@ -490,5 +505,34 @@
     "autoUpdateHint": "Si no, Whoosh solo busca cuando usted lo pide.",
     "error": "El último intento falló: {{message}}",
     "checkFailed": "No se pudo buscar actualizaciones: {{message}}"
+  },
+  "browsers": {
+    "title": "Conecta tu navegador",
+    "intro": "Whoosh se encarga de las descargas de tu navegador mediante la extensión de Whoosh. Cada navegador necesita la extensión y un vínculo con esta aplicación; Whoosh crea el vínculo por ti.",
+    "loading": "Buscando tus navegadores…",
+    "none": "No se encontró ningún navegador compatible para este usuario. Whoosh funciona con Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi y Firefox.",
+    "notFound": "No encontrados en este equipo: {{names}}.",
+    "state": {
+      "ready": "Listo: las descargas de este navegador llegan a Whoosh",
+      "noHost": "Aún no está vinculado a Whoosh",
+      "noExtension": "La extensión no está instalada"
+    },
+    "connect": "Vincular con Whoosh",
+    "connected": "{{browser}} está vinculado a Whoosh.",
+    "connectFailed": "No se pudo vincular {{browser}}: {{message}}",
+    "store": {
+      "edgeAddOns": "Obtenerla en Edge Add-ons",
+      "chromeWebStore": "Obtenerla en Chrome Web Store",
+      "amo": "Obtenerla en Firefox Add-ons",
+      "github": "Descargar la extensión"
+    },
+    "hint": {
+      "store": "Añade allí la extensión. Si el navegador pregunta si quieres activarla, elige Activar.",
+      "github": "Todavía no está en la tienda de este navegador. Descarga el zip de Chromium desde la página de la versión y descomprímelo; luego abre la página de extensiones del navegador, activa el modo de desarrollador y elige Cargar descomprimida.",
+      "githubFirefox": "Todavía no está en Firefox Add-ons. La página de la versión lo indicará cuando esté."
+    },
+    "recheck": "Comprobar de nuevo",
+    "done": "Listo",
+    "later": "Puedes volver a esta página desde Ajustes → Navegadores."
   }
 }

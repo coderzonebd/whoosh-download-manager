@@ -49,7 +49,7 @@ function client(): WhooshClient {
 const crash = { enabled: true, noticeShown: false };
 const mockHost: Host = {
   desktopPrefs: {
-    get: async () => ({ closeToTray: true, stopDaemonOnQuit: false }),
+    get: async () => ({ closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: false }),
     set: async (p) => p,
   },
   launchAtLogin: { get: async () => false, set: async () => {} },

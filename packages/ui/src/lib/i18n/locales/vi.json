@@ -271,7 +271,21 @@
     "machineTranslated": "Bản dịch máy.",
     "helpTranslate": "Giúp cải thiện bản dịch",
     "media": "Trang video và âm thanh",
-    "mediaHint": "Whoosh dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng, được tải từ bản phát hành chính thức khi cần lần đầu và được kiểm tra với mã băm đã công bố."
+    "mediaHint": "Whoosh dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng, được tải từ bản phát hành chính thức khi cần lần đầu và được kiểm tra với mã băm đã công bố.",
+    "browsers": "Trình duyệt",
+    "browsersHint": "Liên kết Chrome, Edge, Firefox và các trình duyệt khác để lượt tải xuống của chúng chuyển sang Whoosh.",
+    "browsersOpen": "Kết nối trình duyệt…",
+    "updates": "Cập nhật",
+    "autoUpdateCheck": "Tìm phiên bản Whoosh mới mỗi ngày một lần",
+    "autoUpdateCheckHint": "Whoosh chỉ báo cho bạn khi có phiên bản mới. Whoosh không bao giờ tự cài đặt mà không hỏi.",
+    "checkNow": "Kiểm tra phiên bản mới",
+    "checking": "Đang kiểm tra…",
+    "upToDate": "Bạn đang dùng phiên bản mới nhất.",
+    "updateAvailable": "Đã có phiên bản {{version}}.",
+    "installUpdate": "Cài đặt và khởi động lại",
+    "installing": "Đang cài đặt…",
+    "updateFailed": "Không thể kiểm tra cập nhật: {{message}}",
+    "installFailed": "Không thể cài đặt bản cập nhật: {{message}}"
   },
   "crashNotice": {
     "text": "Whoosh gửi báo cáo sự cố ẩn danh để giúp sửa lỗi. Không có tên tệp hay liên kết. Tắt trong Cài đặt.",
@@ -301,7 +315,8 @@
     "region": "Thông báo",
     "completed": "Đã tải xong “{{name}}”",
     "failed": "“{{name}}” bị lỗi",
-    "expired": "Liên kết của “{{name}}” đã hết hạn"
+    "expired": "Liên kết của “{{name}}” đã hết hạn",
+    "updateAvailable": "Đã có Whoosh {{version}}."
   },
   "error": {
     "generic": "Đã xảy ra lỗi: {{message}}"
@@ -460,5 +475,34 @@
     "autoUpdateHint": "Nếu không, Whoosh chỉ kiểm tra khi bạn yêu cầu.",
     "error": "Lần thử gần nhất thất bại: {{message}}",
     "checkFailed": "Không thể kiểm tra cập nhật: {{message}}"
+  },
+  "browsers": {
+    "title": "Kết nối trình duyệt của bạn",
+    "intro": "Whoosh nhận các lượt tải xuống từ trình duyệt thông qua tiện ích Whoosh. Mỗi trình duyệt cần có tiện ích và một liên kết với ứng dụng này; Whoosh sẽ tạo liên kết giúp bạn.",
+    "loading": "Đang tìm trình duyệt của bạn…",
+    "none": "Không tìm thấy trình duyệt được hỗ trợ nào cho người dùng này. Whoosh hoạt động với Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi và Firefox.",
+    "notFound": "Không có trên máy tính này: {{names}}.",
+    "state": {
+      "ready": "Sẵn sàng: lượt tải xuống từ trình duyệt này sẽ chuyển sang Whoosh",
+      "noHost": "Chưa liên kết với Whoosh",
+      "noExtension": "Chưa cài đặt tiện ích"
+    },
+    "connect": "Liên kết với Whoosh",
+    "connected": "{{browser}} đã được liên kết với Whoosh.",
+    "connectFailed": "Không thể liên kết {{browser}}: {{message}}",
+    "store": {
+      "edgeAddOns": "Tải từ Edge Add-ons",
+      "chromeWebStore": "Tải từ Chrome Web Store",
+      "amo": "Tải từ Firefox Add-ons",
+      "github": "Tải tiện ích xuống"
+    },
+    "hint": {
+      "store": "Hãy thêm tiện ích ở đó. Nếu trình duyệt hỏi có bật tiện ích không, hãy chọn Bật.",
+      "github": "Tiện ích chưa có trên cửa hàng của trình duyệt này. Từ trang phát hành, hãy tải tệp zip cho Chromium và giải nén; sau đó mở trang tiện ích của trình duyệt, bật Chế độ dành cho nhà phát triển và chọn Tải tiện ích đã giải nén.",
+      "githubFirefox": "Tiện ích chưa có trên Firefox Add-ons. Trang phát hành sẽ thông báo khi có."
+    },
+    "recheck": "Kiểm tra lại",
+    "done": "Xong",
+    "later": "Bạn có thể quay lại trang này từ Cài đặt → Trình duyệt."
   }
 }

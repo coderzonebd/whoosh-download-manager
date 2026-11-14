@@ -44,6 +44,9 @@ if (target === "universal-apple-darwin") {
   for (const name of NAMES) {
     const parts = arches.map((t) => join(root, "target", t, "release", name));
     run("lipo", ["-create", "-output", join(out, `${name}-${target}`), ...parts]);
+    // A universal `tauri build` compiles the app once per architecture and
+    // looks for each architecture's sidecar too.
+    for (const t of arches) copyFileSync(join(root, "target", t, "release", name), join(out, `${name}-${t}`));
   }
 } else {
   build(target);

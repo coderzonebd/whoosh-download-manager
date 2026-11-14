@@ -278,7 +278,21 @@
     "machineTranslated": "Makine çevirisi.",
     "helpTranslate": "Çeviriyi iyileştirmeye yardım edin",
     "media": "Video ve ses siteleri",
-    "mediaHint": "Whoosh, bir sayfadaki videoyu bulmak için yt-dlp'yi, video ile sesi birleştirmek için ffmpeg'i kullanır. İkisi de ayrı programlardır; ilk gerektiklerinde resmi sürümlerinden indirilir ve yayımlanan sağlama toplamıyla doğrulanır."
+    "mediaHint": "Whoosh, bir sayfadaki videoyu bulmak için yt-dlp'yi, video ile sesi birleştirmek için ffmpeg'i kullanır. İkisi de ayrı programlardır; ilk gerektiklerinde resmi sürümlerinden indirilir ve yayımlanan sağlama toplamıyla doğrulanır.",
+    "browsers": "Tarayıcılar",
+    "browsersHint": "Chrome, Edge, Firefox ve diğer tarayıcıları bağlayın; indirmeleri Whoosh'a gelsin.",
+    "browsersOpen": "Tarayıcınızı bağlayın…",
+    "updates": "Güncellemeler",
+    "autoUpdateCheck": "Günde bir kez yeni Whoosh sürümü ara",
+    "autoUpdateCheckHint": "Whoosh yalnızca yeni bir sürümü haber verir; sormadan asla yüklemez.",
+    "checkNow": "Yeni sürümü denetle",
+    "checking": "Denetleniyor…",
+    "upToDate": "En yeni sürümü kullanıyorsunuz.",
+    "updateAvailable": "{{version}} sürümü kullanılabilir.",
+    "installUpdate": "Yükle ve yeniden başlat",
+    "installing": "Yükleniyor…",
+    "updateFailed": "Güncellemeler denetlenemedi: {{message}}",
+    "installFailed": "Güncelleme yüklenemedi: {{message}}"
   },
   "crashNotice": {
     "text": "Whoosh, hataları düzeltmeye yardımcı olmak için anonim çökme raporları gönderir. Dosya adı veya bağlantı yok. Ayarlar'dan kapatabilirsiniz.",
@@ -310,7 +324,8 @@
     "region": "Bildirimler",
     "completed": "“{{name}}” indirmesi tamamlandı",
     "failed": "“{{name}}” başarısız oldu",
-    "expired": "“{{name}}” bağlantısının süresi doldu"
+    "expired": "“{{name}}” bağlantısının süresi doldu",
+    "updateAvailable": "Whoosh {{version}} kullanılabilir."
   },
   "error": {
     "generic": "Bir sorun oluştu: {{message}}"
@@ -475,5 +490,34 @@
     "autoUpdateHint": "Aksi halde Whoosh yalnızca siz istediğinizde denetler.",
     "error": "Son deneme başarısız oldu: {{message}}",
     "checkFailed": "Güncellemeler denetlenemedi: {{message}}"
+  },
+  "browsers": {
+    "title": "Tarayıcınızı bağlayın",
+    "intro": "Whoosh, tarayıcınızdaki indirmeleri Whoosh uzantısı aracılığıyla devralır. Her tarayıcının uzantıya ve bu uygulamayla bir bağa ihtiyacı vardır; bağı Whoosh sizin için kurar.",
+    "loading": "Tarayıcılarınız aranıyor…",
+    "none": "Bu kullanıcı için desteklenen bir tarayıcı bulunamadı. Whoosh; Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi ve Firefox ile çalışır.",
+    "notFound": "Bu bilgisayarda bulunamadı: {{names}}.",
+    "state": {
+      "ready": "Hazır: bu tarayıcıdaki indirmeler Whoosh'a gelir",
+      "noHost": "Henüz Whoosh'a bağlı değil",
+      "noExtension": "Uzantı yüklü değil"
+    },
+    "connect": "Whoosh'a bağla",
+    "connected": "{{browser}} Whoosh'a bağlandı.",
+    "connectFailed": "{{browser}} bağlanamadı: {{message}}",
+    "store": {
+      "edgeAddOns": "Edge Add-ons'tan edinin",
+      "chromeWebStore": "Chrome Web Store'dan edinin",
+      "amo": "Firefox Add-ons'tan edinin",
+      "github": "Uzantıyı indir"
+    },
+    "hint": {
+      "store": "Uzantıyı oradan ekleyin. Tarayıcı açıp açmayacağınızı sorarsa Etkinleştir'i seçin.",
+      "github": "Henüz bu tarayıcının mağazasında değil. Sürüm sayfasından Chromium zip dosyasını indirip açın; ardından tarayıcının uzantılar sayfasını açın, Geliştirici modunu etkinleştirin ve Paketlenmemiş öğe yükle'yi seçin.",
+      "githubFirefox": "Henüz Firefox Add-ons'ta değil. Geldiğinde sürüm sayfası bunu belirtecek."
+    },
+    "recheck": "Yeniden denetle",
+    "done": "Tamam",
+    "later": "Bu sayfaya Ayarlar → Tarayıcılar'dan yeniden gelebilirsiniz."
   }
 }

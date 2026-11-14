@@ -9,7 +9,9 @@
 //! user asked otherwise ([`prefs`]). Window size, position and maximised
 //! state are remembered. `whoosh://add?url=…` links open the add dialog
 //! ([`deep_links`]); launch at login is off until the user turns it on, and
-//! then starts hidden in the tray ([`AUTOSTART_ARG`]).
+//! then starts hidden in the tray ([`AUTOSTART_ARG`]). The browsers are
+//! connected at start where no installer did it ([`browsers`]), and the app
+//! updates itself from signed GitHub releases ([`updates`]).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,11 +20,13 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
+mod browsers;
 mod crash;
 mod daemon;
 mod deep_links;
 mod prefs;
 mod shell_i18n;
+mod updates;
 mod window_size;
 
 /// Sent to the UI when closing the window hid it to the tray, so it can say
@@ -216,6 +220,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![AUTOSTART_ARG]),
@@ -228,7 +233,11 @@ pub fn run() {
         )
         .setup(|app| {
             let loaded = prefs::load(app.handle());
+            let first_run = !loaded.browser_setup_shown;
             app.manage(prefs::PrefsState(std::sync::Mutex::new(loaded)));
+            app.manage(updates::Pending::default());
+            std::thread::spawn(move || browsers::ensure_registered(first_run));
+            updates::start_daily_check(app.handle().clone());
             if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 window_size::restore(&window);
                 let w = window.clone();
@@ -260,6 +269,11 @@ pub fn run() {
             prefs::set_desktop_prefs,
             shell_i18n::set_shell_language,
             open_translation_page,
+            browsers::browser_status,
+            browsers::connect_browser,
+            browsers::open_extension_page,
+            updates::check_for_update,
+            updates::install_update,
             crash::crash_reports,
             crash::set_crash_reports,
             crash::dismiss_crash_notice,

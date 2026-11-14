@@ -27,10 +27,14 @@ tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 # `deep-link`: a second launch with a whoosh:// URL hands it to the first.
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# Signed in-app updates from GitHub Releases (`updates.rs`).
+tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 serde.workspace = true
 serde_json.workspace = true
 whoosh-client.workspace = true
+# Host registration and browser detection for "Connect your browser".
+whoosh-nmhost = { path = "../../../crates/nmhost" }
 # Crash reports (on by default, can be turned off; inert without WHOOSH_CRASH_DSN).
 whoosh-crash.workspace = true
 whoosh-proto.workspace = true

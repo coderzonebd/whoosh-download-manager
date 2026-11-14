@@ -271,7 +271,21 @@
     "machineTranslated": "Diterjemahkan oleh mesin.",
     "helpTranslate": "Bantu sempurnakan terjemahan",
     "media": "Situs video dan audio",
-    "mediaHint": "Whoosh memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah, diunduh dari rilis resminya saat pertama kali dibutuhkan dan dicocokkan dengan checksum yang diterbitkan."
+    "mediaHint": "Whoosh memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah, diunduh dari rilis resminya saat pertama kali dibutuhkan dan dicocokkan dengan checksum yang diterbitkan.",
+    "browsers": "Peramban",
+    "browsersHint": "Hubungkan Chrome, Edge, Firefox, dan peramban lain agar unduhannya masuk ke Whoosh.",
+    "browsersOpen": "Hubungkan peramban Anda…",
+    "updates": "Pembaruan",
+    "autoUpdateCheck": "Cari versi baru Whoosh sekali sehari",
+    "autoUpdateCheckHint": "Whoosh hanya memberi tahu tentang versi baru. Whoosh tidak pernah memasangnya tanpa bertanya.",
+    "checkNow": "Periksa versi baru",
+    "checking": "Memeriksa…",
+    "upToDate": "Anda sudah memakai versi terbaru.",
+    "updateAvailable": "Versi {{version}} tersedia.",
+    "installUpdate": "Pasang dan mulai ulang",
+    "installing": "Memasang…",
+    "updateFailed": "Tidak dapat memeriksa pembaruan: {{message}}",
+    "installFailed": "Tidak dapat memasang pembaruan: {{message}}"
   },
   "crashNotice": {
     "text": "Whoosh mengirim laporan kerusakan anonim untuk membantu memperbaiki bug. Tanpa nama file atau tautan. Matikan di Pengaturan.",
@@ -301,7 +315,8 @@
     "region": "Notifikasi",
     "completed": "“{{name}}” selesai diunduh",
     "failed": "“{{name}}” gagal",
-    "expired": "Tautan untuk “{{name}}” sudah kedaluwarsa"
+    "expired": "Tautan untuk “{{name}}” sudah kedaluwarsa",
+    "updateAvailable": "Whoosh {{version}} tersedia."
   },
   "error": {
     "generic": "Terjadi kesalahan: {{message}}"
@@ -460,5 +475,34 @@
     "autoUpdateHint": "Jika tidak, Whoosh hanya memeriksa saat Anda minta.",
     "error": "Percobaan terakhir gagal: {{message}}",
     "checkFailed": "Tidak bisa memeriksa pembaruan: {{message}}"
+  },
+  "browsers": {
+    "title": "Hubungkan peramban Anda",
+    "intro": "Whoosh mengambil alih unduhan dari peramban Anda melalui ekstensi Whoosh. Setiap peramban memerlukan ekstensi itu dan tautan ke aplikasi ini; Whoosh menyiapkan tautannya untuk Anda.",
+    "loading": "Mencari peramban Anda…",
+    "none": "Tidak ada peramban yang didukung untuk pengguna ini. Whoosh bekerja dengan Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi, dan Firefox.",
+    "notFound": "Tidak ditemukan di komputer ini: {{names}}.",
+    "state": {
+      "ready": "Siap: unduhan dari peramban ini masuk ke Whoosh",
+      "noHost": "Belum terhubung ke Whoosh",
+      "noExtension": "Ekstensi belum terpasang"
+    },
+    "connect": "Hubungkan ke Whoosh",
+    "connected": "{{browser}} sudah terhubung ke Whoosh.",
+    "connectFailed": "Tidak dapat menghubungkan {{browser}}: {{message}}",
+    "store": {
+      "edgeAddOns": "Dapatkan dari Edge Add-ons",
+      "chromeWebStore": "Dapatkan dari Chrome Web Store",
+      "amo": "Dapatkan dari Firefox Add-ons",
+      "github": "Unduh ekstensi"
+    },
+    "hint": {
+      "store": "Tambahkan ekstensi di sana. Jika peramban bertanya apakah ingin mengaktifkannya, pilih Aktifkan.",
+      "github": "Ekstensi ini belum ada di toko peramban ini. Dari halaman rilis, unduh zip Chromium lalu ekstrak; kemudian buka halaman ekstensi peramban, aktifkan Mode pengembang, dan pilih Muat yang belum dikemas.",
+      "githubFirefox": "Ekstensi ini belum ada di Firefox Add-ons. Halaman rilis akan memberi tahu saat sudah tersedia."
+    },
+    "recheck": "Periksa lagi",
+    "done": "Selesai",
+    "later": "Anda dapat kembali ke halaman ini dari Pengaturan → Peramban."
   }
 }

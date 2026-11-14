@@ -5,6 +5,10 @@ the signed `whoosh-desktop.exe` alone) that `release.yml` attaches to each
 release, and adds a Start-menu shortcut. `checkver`/`autoupdate` read new
 versions from GitHub and the hash from the release's `SHA256SUMS`.
 
+Each release carries `whoosh-<version>-package-manifests.tar.gz`; its `scoop/`
+folder holds this manifest with the release's version, URLs and SHA-256s
+filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
+
 ## Where it goes
 
 1. **Own bucket first:** a repository `coderzonebd/scoop-bucket` with this

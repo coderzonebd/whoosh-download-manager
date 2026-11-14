@@ -16,7 +16,7 @@ import { MEDIA_CAPABILITY, MediaStore, isMediaUnsupported } from "./media.svelte
 import { ToastStore } from "./toasts.svelte.ts";
 
 export type Connection = "demo" | "connecting" | "open" | "reconnecting" | "closed";
-export type MainView = "downloads" | "history" | "settings";
+export type MainView = "downloads" | "history" | "settings" | "browsers";
 export type Theme = "system" | "light" | "dark" | "high-contrast";
 
 export interface AppOptions {
@@ -138,6 +138,13 @@ export class AppState {
     );
     this.segments.start();
     void this.reload();
+    // First run of the desktop app: "Connect your browser".
+    void this.host.browsers
+      ?.firstRun()
+      .then((first) => {
+        if (first && this.view === "downloads") this.view = "browsers";
+      })
+      .catch(() => {});
   }
 
   get theme(): Theme {
@@ -280,7 +287,7 @@ export class AppState {
 
   openAdd(url = ""): void {
     this.addUrl = url;
-    this.view = this.view === "settings" ? "downloads" : this.view;
+    this.view = this.view === "settings" || this.view === "browsers" ? "downloads" : this.view;
     this.addOpen = true;
   }
 

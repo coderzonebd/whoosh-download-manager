@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "installer/windows/com.coderzonebd.whoosh.chromium.json": "com.coderzonebd.whoosh.chromium.json",
+      "installer/windows/com.coderzonebd.whoosh.firefox.json": "com.coderzonebd.whoosh.firefox.json"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer/windows/hooks.nsh"
+      },
+      "wix": {
+        "fragmentPaths": [
+          "installer/windows/browsers.wxs"
+        ],
+        "componentGroupRefs": [
+          "WhooshBrowserIntegration"
+        ]
+      }
+    }
+  }
+}

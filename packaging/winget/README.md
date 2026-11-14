@@ -5,6 +5,12 @@ NSIS installer (per-user) and the MSI (per-machine) that `release.yml` builds.
 
 ## Per release
 
+Each release carries `whoosh-<version>-package-manifests.tar.gz`, whose
+`winget/` folder holds these three files filled in (version, URLs,
+`ReleaseDate`, `InstallerSha256`). Copy them into
+`manifests/c/CoderZoneBD/Whoosh/<version>/` of a winget-pkgs fork, validate
+and open the PR. Or:
+
 The simplest path is [wingetcreate](https://github.com/microsoft/winget-create),
 which downloads the installers, computes the hashes and opens the PR:
 
@@ -31,4 +37,5 @@ fine-grained token with `public_repo` on a fork of winget-pkgs
 - **Wait for signed installers.** winget-pkgs runs malware scans on every
   submission and users see SmartScreen warnings for unsigned installers;
   submit once SignPath signing is live (docs/release.md).
-- ARM64 entries come when `release.yml` builds Windows ARM64.
+- ARM64: the generated installer manifest lists the ARM64 NSIS installer
+  next to the x64 ones (there is no ARM64 MSI).

@@ -271,7 +271,21 @@
     "machineTranslated": "机器翻译。",
     "helpTranslate": "帮助改进翻译",
     "media": "视频和音频网站",
-    "mediaHint": "Whoosh 用 yt-dlp 查找页面上的视频，用 ffmpeg 合并视频和音频。两者都是独立程序，首次需要时从官方发布页下载，并用公布的校验和核对。"
+    "mediaHint": "Whoosh 用 yt-dlp 查找页面上的视频，用 ffmpeg 合并视频和音频。两者都是独立程序，首次需要时从官方发布页下载，并用公布的校验和核对。",
+    "browsers": "浏览器",
+    "browsersHint": "连接 Chrome、Edge、Firefox 等浏览器，让它们的下载交给 Whoosh。",
+    "browsersOpen": "连接你的浏览器…",
+    "updates": "更新",
+    "autoUpdateCheck": "每天检查一次 Whoosh 新版本",
+    "autoUpdateCheckHint": "Whoosh 只会告诉你有新版本，绝不会未经询问就安装。",
+    "checkNow": "检查新版本",
+    "checking": "正在检查…",
+    "upToDate": "你使用的已是最新版本。",
+    "updateAvailable": "版本 {{version}} 可用。",
+    "installUpdate": "安装并重启",
+    "installing": "正在安装…",
+    "updateFailed": "无法检查更新：{{message}}",
+    "installFailed": "无法安装更新：{{message}}"
   },
   "crashNotice": {
     "text": "Whoosh 会发送匿名崩溃报告以帮助修复错误。不含文件名或链接。可在设置中关闭。",
@@ -301,7 +315,8 @@
     "region": "通知",
     "completed": "“{{name}}”已下载完成",
     "failed": "“{{name}}”下载失败",
-    "expired": "“{{name}}”的链接已过期"
+    "expired": "“{{name}}”的链接已过期",
+    "updateAvailable": "Whoosh {{version}} 可用。"
   },
   "error": {
     "generic": "出现问题：{{message}}"
@@ -460,5 +475,34 @@
     "autoUpdateHint": "否则 Whoosh 只在你要求时检查。",
     "error": "上次尝试失败：{{message}}",
     "checkFailed": "无法检查更新：{{message}}"
+  },
+  "browsers": {
+    "title": "连接你的浏览器",
+    "intro": "Whoosh 通过 Whoosh 扩展接管浏览器中的下载。每个浏览器都需要安装扩展，并与本应用建立连接；连接由 Whoosh 为你设置。",
+    "loading": "正在查找你的浏览器…",
+    "none": "没有为此用户找到受支持的浏览器。Whoosh 支持 Google Chrome、Chromium、Brave、Microsoft Edge、Vivaldi 和 Firefox。",
+    "notFound": "此电脑上未找到：{{names}}。",
+    "state": {
+      "ready": "已就绪：此浏览器的下载会交给 Whoosh",
+      "noHost": "尚未连接到 Whoosh",
+      "noExtension": "未安装扩展"
+    },
+    "connect": "连接到 Whoosh",
+    "connected": "{{browser}} 已连接到 Whoosh。",
+    "connectFailed": "无法连接 {{browser}}：{{message}}",
+    "store": {
+      "edgeAddOns": "从 Edge Add-ons 获取",
+      "chromeWebStore": "从 Chrome 网上应用店获取",
+      "amo": "从 Firefox Add-ons 获取",
+      "github": "下载扩展"
+    },
+    "hint": {
+      "store": "请在那里添加扩展。如果浏览器询问是否启用，请选择“启用”。",
+      "github": "此扩展尚未上架该浏览器的商店。请从发布页面下载 Chromium 版 zip 并解压，然后打开浏览器的扩展程序页面，开启开发者模式，选择“加载已解压的扩展程序”。",
+      "githubFirefox": "此扩展尚未上架 Firefox Add-ons。上架后发布页面会注明。"
+    },
+    "recheck": "重新检查",
+    "done": "完成",
+    "later": "你可以从“设置 → 浏览器”回到此页面。"
   }
 }
