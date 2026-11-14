@@ -20,11 +20,14 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - Against a daemon without the `queues` capability, the queue and scheduler controls are hidden and no error is shown.
 - Saving Settings no longer drops fields the screen does not show (such as `durability`).
 
+### Engine
+- Queues and the scheduler: named queues, each running up to its own `maxActive`, kept across restarts; queues started and stopped at local clock times on chosen days (DST, time-zone changes and a sleeping machine handled); speed-limit windows by time of day, also over midnight; after-done actions (sleep or shut down) announced with `event.queue.finished` and run 60 s later unless cancelled. The daemon now advertises the `queues` capability.
+
 ### Internal
 - New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
 
 ### Protocol
-- Queues and the scheduler ([PROTOCOL.md](docs/api/PROTOCOL.md#queues-and-the-scheduler)): `queue.list/create/update/rename/remove/start/stop/cancelAction`, `download.setQueue`, `event.queues`, `event.queue.finished`, and `Settings.speedSchedule`. The daemon answers "unsupported" until the engine implements them; the mock client supports them so the UI can be built.
+- Queues and the scheduler ([PROTOCOL.md](docs/api/PROTOCOL.md#queues-and-the-scheduler)): `queue.list/create/update/rename/remove/start/stop/cancelAction`, `download.setQueue`, `event.queues`, `event.queue.finished`, and `Settings.speedSchedule`. The engine implements them (see Engine above); the mock client supports them too.
 - `download.add` with `queue: "main"` means the main queue.
 
 ## 0.1.0: Phase 1, the engine

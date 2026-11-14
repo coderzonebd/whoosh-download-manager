@@ -45,6 +45,8 @@ pub(crate) enum StopReason {
     Remove,
     /// `refresh_url` on a running download: stop, then start again.
     Restart,
+    /// Its queue was stopped: stop and wait, queued, for the queue to run.
+    Hold,
 }
 
 /// How a run ended.

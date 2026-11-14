@@ -100,7 +100,7 @@ Every download is in one queue: the **main queue**, named `"main"` (the default;
 
 `Queue { name, maxActive, schedule?, running }`. `Schedule { start?, stop?, afterDone = "none" }`: `start` and `stop` are `ClockTime { at: "HH:MM", days? }` in the daemon machine's local time, `days` being 0 (Sunday) to 6 and absent meaning every day. At `start` the queue runs; at `stop` it pauses what it is running. Once nothing is left in the queue, `afterDone` (`none`, `sleep`, `shutdown`) is announced with `event.queue.finished` and carried out 60 seconds later unless a client calls `queue.cancelAction`.
 
-A daemon that implements queues and the scheduler advertises the `queues` capability in `HelloResult.capabilities`; one that does not answers these methods with `-32006`.
+A daemon that implements queues and the scheduler advertises the `queues` capability in `HelloResult.capabilities` (the daemon with the Whoosh engine does); one that does not answers these methods with `-32006`.
 
 `request` (`RequestContext`) carries what the browser would have sent: `method`, `headers[]` (`{ name, value }`), `cookie`, `referer`, `userAgent`, `bodyBase64`.
 

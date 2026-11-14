@@ -13,6 +13,9 @@ bytes.workspace = true
 fastrand = "2"
 futures.workspace = true
 hex = "0.4"
+# Local time and the system time zone (IANA rules, DST; on Windows it maps
+# the Windows zone and bundles the database). Already in the lock file.
+jiff = "0.2"
 md-5 = "0.11"
 percent-encoding = "2"
 serde_json.workspace = true
