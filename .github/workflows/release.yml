@@ -179,6 +179,10 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: .github/scripts/apple-signing-env.sh
 
+      # The daemon and the native host ship next to the app (ADR 0007).
+      - name: Build the sidecars
+        run: node apps/desktop/scripts/sidecars.mjs --target "$TARGET"
+
       # ---- Linux and macOS: one tauri build ----
       - name: Build and bundle
         if: runner.os != 'Windows'
@@ -187,7 +191,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          args=(--ci --target "$TARGET" --bundles "$BUNDLES")
+          args=(--ci --target "$TARGET" --bundles "$BUNDLES" --config src-tauri/tauri.sidecars.conf.json)
           if [ "$UPDATER_ARTIFACTS" = true ]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           fi
@@ -204,7 +208,7 @@ jobs:
       - name: Build the executable
         if: runner.os == 'Windows'
         working-directory: apps/desktop
-        run: pnpm tauri build --ci --target "$TARGET" --no-bundle
+        run: pnpm tauri build --ci --target "$TARGET" --no-bundle --config src-tauri/tauri.sidecars.conf.json
       - name: Stage the executable for signing
         if: runner.os == 'Windows'
         run: |
@@ -237,7 +241,7 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: apps/desktop
         # --no-binary-patching: patching would rewrite (and unsign) the exe.
-        run: pnpm tauri bundle --ci --target "$TARGET" --bundles "$BUNDLES" --no-binary-patching
+        run: pnpm tauri bundle --ci --target "$TARGET" --bundles "$BUNDLES" --no-binary-patching --config src-tauri/tauri.sidecars.conf.json
       - name: Stage the installers for signing
         if: runner.os == 'Windows'
         run: |

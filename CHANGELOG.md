@@ -4,6 +4,16 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## Unreleased: Phase 2
 
+### Desktop app
+- The desktop app is a client of the daemon ([ADR 0007](docs/adr/0007-phase2-plan.md)). It starts the bundled `whoosh-daemon` when none is running, and finds it again after a restart.
+- One instance per user: a second launch shows the first window.
+- Closing the window hides it to the tray and downloads go on. Quit leaves the daemon running unless the user chose otherwise.
+- System notifications when a download finishes or fails while the window is in the background.
+- Installers ship `whoosh-daemon` and `whoosh-nmhost` next to the app.
+
+### Internal
+- New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
+
 ### Protocol
 - Queues and the scheduler ([PROTOCOL.md](docs/api/PROTOCOL.md#queues-and-the-scheduler)): `queue.list/create/update/rename/remove/start/stop/cancelAction`, `download.setQueue`, `event.queues`, `event.queue.finished`, and `Settings.speedSchedule`. The daemon answers "unsupported" until the engine implements them; the mock client supports them so the UI can be built.
 - `download.add` with `queue: "main"` means the main queue.
