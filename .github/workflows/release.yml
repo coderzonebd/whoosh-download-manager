@@ -138,6 +138,11 @@ jobs:
       BUNDLES: ${{ matrix.bundles || needs.meta.outputs.windows-bundles }}
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
       APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+      # Opt-in crash reports (crates/crash): the DSN is compiled in by every
+      # cargo/tauri build of this job, only for a v* tag (dry runs build
+      # without it, so reporting is inert). Empty means "no DSN". Secrets are
+      # masked in logs; never echo it.
+      WHOOSH_CRASH_DSN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WHOOSH_CRASH_DSN || '' }}
       UPDATER_KEY_PRESENT: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
       - name: Keep line endings as committed
@@ -402,6 +407,11 @@ jobs:
       BINARIES: whoosh whoosh-daemon whoosh-autostart whoosh-nmhost
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
       APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+      # Opt-in crash reports (crates/crash): the DSN is compiled in by every
+      # cargo/tauri build of this job, only for a v* tag (dry runs build
+      # without it, so reporting is inert). Empty means "no DSN". Secrets are
+      # masked in logs; never echo it.
+      WHOOSH_CRASH_DSN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WHOOSH_CRASH_DSN || '' }}
     steps:
       - name: Keep line endings as committed
         run: git config --global core.autocrlf false

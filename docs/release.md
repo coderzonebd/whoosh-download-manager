@@ -14,7 +14,7 @@ laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 |---|---|---|
 | `Whoosh_<v>_x64-setup.exe`, `Whoosh_<v>_arm64-setup.exe` (NSIS, per-user) | windows-2025, windows-11-arm | SignPath (exe inside and installer) |
 | `Whoosh_<v>_x64_en-US.msi` (WiX, per-machine; x64 only, not for pre-releases) | windows-2025 | SignPath |
-| `Whoosh_<v>_{x64,arm64}_portable.zip` (the exe with `whoosh-daemon.exe` and `whoosh-nmhost.exe`) | windows-2025, windows-11-arm | SignPath (the app exe; see *Not automated yet* for the sidecars) |
+| `Whoosh_<v>_{x64,arm64}_portable.zip` (the exe with `whoosh-daemon.exe` and `whoosh-nmhost.exe`) | windows-2025, windows-11-arm | SignPath (all three) |
 | `Whoosh_<v>_universal.dmg` (Apple silicon + Intel) | macos-15 | Developer ID + notarization, stapled |
 | `Whoosh_<v>_universal.app.tar.gz` (updater archive) | macos-15 | updater key (below) |
 | `Whoosh_<v>_amd64.AppImage`, `Whoosh_<v>_amd64.deb`, `Whoosh-<v>-1.x86_64.rpm` | ubuntu-22.04 (glibc 2.35) | — (see *Not automated yet*) |
@@ -77,24 +77,26 @@ without the development `key` (the job fails if a key is left in).
 
 ### Dry run
 
-*Actions → Release → Run workflow* on any branch builds and signs everything
-exactly like a tag would, keeps the files as run artifacts for 7 days and
-creates no release. The version comes from `tauri.conf.json`. If the
-`release` environment restricts deployments to tags (recommended, below),
-a dry run from a branch is rejected at the signing jobs; allow the branch
-temporarily or test unsigned in a fork.
+*Actions → Release → Run workflow* on any branch builds everything a tag
+would build (every platform, ARM64, installers, sidecars, package manifests)
+and keeps the files as run artifacts for 7 days. It creates no release and
+uses **no environment**: the `release` environment, and with it every
+signing secret, is used only by a run for a `v*` tag, so the environment can
+stay restricted to tags and a dry run is always unsigned. The version comes
+from `tauri.conf.json`.
 
 ## Signing
 
 Each signing path switches itself on only when its secrets exist, so the
-pipeline produces unsigned artifacts until then. The switches are evaluated
+pipeline produces unsigned artifacts until then (and always on a dry run,
+which never sees the secrets). The switches are evaluated
 in the job's `env` (`SIGNPATH_ENABLED`, `APPLE_SIGNING_ENABLED`) and by the
 *Decide on updater artifacts* step (`UPDATER_ARTIFACTS`), and shown in the
 run log.
 
 | What | How | Where in `release.yml` |
 |---|---|---|
-| Windows exe, NSIS, MSI, `whoosh.exe`, `whoosh-daemon.exe`, `whoosh-autostart.exe`, `whoosh-nmhost.exe` | [SignPath](https://signpath.io) (free for OSS through the [SignPath Foundation](https://signpath.org)); the unsigned files are uploaded as a short-lived artifact, SignPath signs them and the signed files replace them | `desktop` (Windows): build `--no-bundle` → sign exe → `tauri bundle --no-binary-patching` → sign installers; `binaries` (Windows) |
+| Windows exe, NSIS, MSI, `whoosh.exe`, `whoosh-daemon.exe`, `whoosh-autostart.exe`, `whoosh-nmhost.exe` | [SignPath](https://signpath.io) (free for OSS through the [SignPath Foundation](https://signpath.org)); the unsigned files are uploaded as a short-lived artifact, SignPath signs them and the signed files replace them | `desktop` (Windows): build `--no-bundle` → sign the app exe and the sidecars (`whoosh-daemon.exe`, `whoosh-nmhost.exe`) in one request → `tauri bundle --no-binary-patching` → sign installers; `binaries` (Windows) |
 | macOS `.app` | Tauri CLI with `APPLE_*` variables: Developer ID, hardened runtime, notarization, stapling | `desktop` (macOS) |
 | macOS `.dmg` | `codesign` + `notarytool` + `stapler` | `.github/scripts/macos-sign.sh`, `macos-notarize.sh` |
 | macOS `whoosh`, `whoosh-daemon`, `whoosh-nmhost` | `codesign` (hardened runtime), zipped and notarized (bare binaries cannot be stapled; Gatekeeper checks online) | `binaries` (macOS) |
@@ -134,6 +136,7 @@ optionally add required reviewers.
 | `APPLE_ID` | secret | notarization (alternative): Apple ID e-mail | — |
 | `APPLE_APP_SPECIFIC_PASSWORD` | secret | app-specific password for that Apple ID | appleid.apple.com → *Sign-In and Security* |
 | `APPLE_TEAM_ID` | secret | 10-character team id (needed with `APPLE_ID`) | developer.apple.com → *Membership* |
+| `WHOOSH_CRASH_DSN` | secret | GlitchTip DSN for opt-in crash reports, compiled into the daemon and the desktop app (`crates/crash`); without it a build cannot send reports. Passed to the `desktop` and `binaries` jobs on `v*` tag runs only, so dry runs build without it | GlitchTip → project → *Client Keys (DSN)* |
 | `TAURI_SIGNING_PRIVATE_KEY` | secret | updater signing key (minisign); its public half is pinned in `tauri.conf.json` | the key file generated for this repository (see *Updater key*); store the file's contents; keep an offline backup |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | secret | its password | the current key has none: leave the secret unset or empty |
 
@@ -152,7 +155,7 @@ is needed. Not used yet, but will be for automated store/package submissions:
 The app ships `tauri-plugin-updater` (`apps/desktop/src-tauri/src/updates.rs`)
 with the **public** key pinned in `tauri.conf.json` (`plugins.updater.pubkey`)
 and the endpoint
-`https://github.com/coderzonebd/whoosh-download-manager/releases/latest/download/latest.json`.
+`https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/updater/latest.json`.
 Settings → Updates has *Check for a new version* (download, install, restart)
 and a daily check, on by default, that only shows a notice. An update whose
 signature does not match the pinned key is refused, whether or not the
@@ -168,11 +171,25 @@ without it, releases build exactly as before and the app finds no update.
 - **Losing the private key** means existing installs can never auto-update
   again (a new key needs a new public key in the app, which only a manual
   install delivers). Back it up offline.
-- **Pre-releases:** `releases/latest` only serves the latest *published,
-  non-pre-release* release, so beta builds do not see newer betas through
-  the updater; beta testers install each beta by hand. A beta channel would
-  need a second endpoint (for example a `latest.json` on a fixed
-  `updater-beta` release) and is not built.
+- **The feed.** GitHub's `releases/latest` skips pre-releases, so the app
+  does not read it. When a release is **published** (not while it is a
+  draft: the assets would not download yet),
+  [`updater-feed.yml`](../.github/workflows/updater-feed.yml) copies that
+  release's `latest.json` to the `updater` branch: `latest.json` for every
+  release, pre-releases included, and `stable.json` for full releases only.
+  A file only ever moves to a newer version, so publishing a backport does
+  not roll users back. It needs no secret (`GITHUB_TOKEN` may push to
+  `updater`; only `dev` and `pub` are protected) and commits in the name of
+  whoever published the release. To re-run it: *Actions → Updater feed →
+  Run workflow* with the tag. Signatures are still checked against the
+  pinned key, so whoever can write the branch still cannot ship an update.
+- **Keeping stable users off betas** (after v1.0.0): point the app at
+  `stable.json` instead (`plugins.updater.endpoints` in `tauri.conf.json`),
+  or add a "Get beta versions" setting and choose the endpoint at run time
+  (`app.updater_builder().endpoints(...)` in `updates.rs`). Users who are on
+  a beta keep getting `latest.json` until they switch. Until then every
+  install follows `latest.json`, so publishing a pre-release after v1.0.0
+  offers it to everyone.
 - **Package managers:** installs from winget (NSIS) update in place like any
   NSIS install. Scoop, Homebrew, Flathub and AUR installs should update
   through their package manager; the in-app check still offers the update,
@@ -296,9 +313,6 @@ Phase 4).
   (`whoosh-<v>-package-manifests.tar.gz`); submitting them is by hand.
 - Linux package signing and apt/dnf repositories; Snap and Nix packaging;
   MSIX; an MSI for Windows ARM64.
-- Signing the sidecars inside the installers: `whoosh-daemon.exe` and
-  `whoosh-nmhost.exe` are bundled as built (the signed copies go into the CLI
-  and host archives only). SignPath can sign them before bundling the same
-  way as the app exe; not wired yet.
 - Publishing the Docker image (it is only built in CI).
-- A beta update channel (see *Updater key*).
+- A "Get beta versions" setting (see *Updater key*); today everyone follows
+  `latest.json`.

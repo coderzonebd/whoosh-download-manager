@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! In-app updates through `tauri-plugin-updater`: `latest.json` on GitHub
-//! Releases, every bundle signed with our minisign key, whose public half is
+//! In-app updates through `tauri-plugin-updater`: `latest.json` on the
+//! repository's `updater` branch (kept by `.github/workflows/updater-feed.yml`
+//! from each published release, pre-releases included), every bundle signed
+//! with our minisign key, whose public half is
 //! pinned in `tauri.conf.json` (`plugins.updater.pubkey`). An update that
 //! does not verify is refused by the plugin.
 //!
