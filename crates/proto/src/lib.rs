@@ -16,6 +16,8 @@ pub mod auth;
 pub mod queue;
 pub mod runtime;
 pub mod service;
+#[cfg(windows)]
+pub mod winacl;
 
 pub use queue::{
     AfterDone, ClockTime, MAIN_QUEUE, Queue, QueueConfig, QueueFinishedEvent, QueueNameParams,

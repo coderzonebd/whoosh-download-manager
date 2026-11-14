@@ -386,6 +386,14 @@ another size) always starts from an empty in-progress file: whatever an
 existing `<name>.whoosh-part` holds (say, a removed download that kept its
 files) is never moved along into the finished file.
 
+**Mark of the web.** Just before the first rename attempt, `finish` calls
+`Storage::mark_origin` with the URL the bytes came from (after redirects)
+and the referrer, if any, while those are still known (secrets are cleared
+once the download completes). The store marks the part file (Windows
+`Zone.Identifier`, macOS quarantine), and the mark moves with the rename.
+A failure is logged, never fatal. `tests/regressions.rs` checks that the
+finished file is marked with both.
+
 **Finishing is crash-consistent, in every mode.** Before every rename
 attempt, the journal holds an *intent* naming the file it is about to create
 (`Checkpoint::finishing { name, len }`: `name`, then `name (1)`, … on

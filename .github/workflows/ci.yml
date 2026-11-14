@@ -94,33 +94,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
         # Every test binary runs, so one failure does not hide the next.
-        # Windows: the engine, daemon and CLI are not ported yet (Phase 2;
-        # their tests assume Unix paths and sockets), so there the tests
-        # are built here and run, without blocking, in `rust-windows-tests`.
-        run: |
-          if [ "$RUNNER_OS" = Windows ]; then
-            cargo test --workspace --locked --no-run
-          else
-            cargo test --workspace --locked --no-fail-fast
-          fi
-
-  rust-windows-tests:
-    name: Rust tests on Windows (Phase 2 port, non-blocking)
-    runs-on: windows-2025
-    timeout-minutes: 45
-    continue-on-error: true
-    steps:
-      - name: Keep line endings as committed
-        run: git config --global core.autocrlf false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install the toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          save-if: false
-      - name: cargo test
+        # Windows runs the whole suite too, and blocks like the others.
         run: cargo test --workspace --locked --no-fail-fast
 
   js:

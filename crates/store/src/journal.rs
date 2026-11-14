@@ -333,7 +333,8 @@ fn commit_blocking(
     // A commit is durable only once the file's directory entry is (and the
     // entries of directories `open` created). Sync the directory, after the
     // data, on this process's first commit of the id, whatever the file
-    // holds.
+    // holds. (On Windows the directory sync is a no-op and the data sync
+    // makes the entry durable; see `sys::sync_dir`.)
     let parents = std::mem::take(&mut *lock(pending));
     let mut dirs = Vec::new();
     if !state.dir_synced {
@@ -744,6 +745,26 @@ mod tests {
         assert_eq!(mode(&j.path_for("x").unwrap()), 0o600);
     }
 
+    /// Windows: the journal directory gets an owner-only DACL, and journal
+    /// files inherit it, even under a directory everyone may write to.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn files_are_owner_only() {
+        use whoosh_proto::runtime::{check_private_dir, check_private_file};
+        let d = tempfile::tempdir().unwrap();
+        let out = std::process::Command::new("icacls")
+            .arg(d.path())
+            .args(["/grant", "*S-1-1-0:(OI)(CI)M"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let dir = d.path().join("j");
+        let j = FileJournal::open(&dir).unwrap();
+        j.commit(&"x".to_string(), &cp(1, 1)).await.unwrap();
+        check_private_dir(&dir).unwrap();
+        check_private_file(&j.path_for("x").unwrap()).unwrap();
+    }
+
     #[tokio::test]
     async fn commits_of_many_ids_run_concurrently() {
         let d = tempfile::tempdir().unwrap();
@@ -810,9 +831,11 @@ mod tests {
         let j = FileJournal::open(d.path()).unwrap();
         let id = "big".to_string();
         let path = j.path_for(&id).unwrap();
-        // Sparse, so the test needs no disk: a corrupt file claiming 64 GiB.
+        // A corrupt file one byte longer than any journal can be. Not a
+        // huge sparse file: NTFS files are not sparse unless asked, so
+        // extending one allocates (and zeroes) every byte.
         let f = std::fs::File::create(&path).unwrap();
-        f.set_len(64 << 30).unwrap();
+        f.set_len(format::MAX_FILE + 1).unwrap();
         drop(f);
         assert_eq!(j.load(&id).await.unwrap(), None);
         j.commit(&id, &cp(1, 1)).await.unwrap();

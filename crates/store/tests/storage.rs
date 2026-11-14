@@ -144,6 +144,56 @@ async fn preallocate_reserves_and_sizes_exactly() {
     assert_eq!(std::fs::metadata(&path).unwrap().len(), 10);
 }
 
+/// Mark of the web: marked before the final move, the finished file
+/// carries the mark, with the URLs' secrets left out.
+#[tokio::test]
+async fn the_finished_file_carries_the_mark_of_the_web() {
+    let d = tempfile::tempdir().unwrap();
+    let p = provider();
+    let s = p.open(&d.path().join("f.exe.whoosh-part")).await.unwrap();
+    s.write_at(0, Bytes::from_static(b"MZ")).await.unwrap();
+    let marked = s
+        .mark_origin(
+            "https://cdn.example.com/f.exe?sig=s3cret",
+            Some("https://example.com/"),
+        )
+        .await;
+    let done = d.path().join("f.exe");
+    s.finish(&done).await.unwrap();
+    assert_eq!(std::fs::read(&done).unwrap(), b"MZ");
+    #[cfg(windows)]
+    {
+        marked.unwrap();
+        let mut stream = std::ffi::OsString::from(done.as_os_str());
+        stream.push(":Zone.Identifier");
+        assert_eq!(
+            std::fs::read_to_string(stream).unwrap(),
+            "[ZoneTransfer]\r\nZoneId=3\r\nReferrerUrl=https://example.com/\r\n\
+             HostUrl=https://cdn.example.com/f.exe\r\n"
+        );
+    }
+    #[cfg(target_vendor = "apple")]
+    {
+        marked.unwrap();
+        let mut buf = vec![0u8; 256];
+        let n = rustix::fs::lgetxattr(&done, "com.apple.quarantine", &mut buf).unwrap();
+        let value = String::from_utf8(buf[..n].to_vec()).unwrap();
+        assert!(
+            value.starts_with("0081;") && value.ends_with(";Whoosh;"),
+            "{value}"
+        );
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Only where the filesystem takes user attributes.
+        if marked.is_ok() {
+            let mut buf = vec![0u8; 256];
+            let n = rustix::fs::lgetxattr(&done, "user.xdg.origin.url", &mut buf).unwrap();
+            assert_eq!(&buf[..n], b"https://cdn.example.com/f.exe");
+        }
+    }
+}
+
 #[tokio::test]
 async fn remove_deletes_and_ignores_missing() {
     let d = tempfile::tempdir().unwrap();

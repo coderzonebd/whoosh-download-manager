@@ -802,6 +802,23 @@ impl Storage for FileStorage {
             .await
         })
     }
+
+    /// Marks the in-progress file as downloaded from the internet (see
+    /// [`crate::motw`]); the mark moves with it when `finish` renames it.
+    /// Not synced: it is metadata of a file that `finish` syncs, and losing
+    /// it to a power cut only loses the warning.
+    fn mark_origin<'a>(
+        &'a self,
+        url: &'a str,
+        referrer: Option<&'a str>,
+    ) -> BoxFuture<'a, io::Result<()>> {
+        let origin = crate::motw::Origin::new(url, referrer);
+        let path = self.path.clone();
+        Box::pin(async move {
+            self.shared.check()?;
+            blocking::run(move || crate::motw::mark_of_the_web(&path, &origin)).await
+        })
+    }
 }
 
 /// The writer thread's state.
@@ -996,7 +1013,7 @@ impl Writer {
             self.shared
                 .data_syncs
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if let Err(e) = self.file()?.sync_data() {
+            if let Err(e) = sys::sync_data(self.file()?) {
                 self.shared.add_pending_dirs(pending);
                 return Err(self.shared.fail(sys::map_err(e)));
             }
@@ -1130,7 +1147,7 @@ fn sync_file(file: &File, shared: &Shared) -> io::Result<()> {
     // new entries, so the directory syncs after it cost at most a device
     // cache flush (see `sys::sync_data_and_dirs`).
     if data {
-        file.sync_data().map_err(|e| shared.fail(sys::map_err(e)))?;
+        sys::sync_data(file).map_err(|e| shared.fail(sys::map_err(e)))?;
     }
     // The first time, then the directories whose entries creating the
     // file changed (waiting for a directory-only flush syncing them now).
@@ -1577,6 +1594,86 @@ mod tests {
         let fresh = p.open_storage(Path::new("/dev/null")).await.unwrap();
         assert!(!Arc::ptr_eq(&s, &fresh));
         fresh.write_at(0, Bytes::from_static(b"ok")).await.unwrap();
+    }
+
+    /// Raw OS errors for a full disk and a failing device.
+    #[cfg(unix)]
+    const DISK_FULL: i32 = 28; // ENOSPC
+    #[cfg(unix)]
+    const IO_ERROR: i32 = 5; // EIO
+    #[cfg(windows)]
+    const DISK_FULL: i32 = 112; // ERROR_DISK_FULL
+    #[cfg(windows)]
+    const IO_ERROR: i32 = 1117; // ERROR_IO_DEVICE
+
+    /// The test above on every OS, with the fsync failing through the
+    /// test hook instead of `/dev/null`.
+    #[tokio::test]
+    async fn a_failed_fsync_is_sticky_on_every_os() {
+        use sys::faults::{self, Op};
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("f");
+        let p = provider(1 << 20);
+        let s = p.open_storage(&path).await.unwrap();
+        s.write_at(0, Bytes::from_static(b"data")).await.unwrap();
+        faults::inject(&path, Op::Sync, IO_ERROR);
+        let first = s.flush().await.unwrap_err();
+        // The injected error, as recorded (kind and message; the storage
+        // keeps no raw code).
+        let injected = io::Error::from_raw_os_error(IO_ERROR);
+        assert_eq!(first.kind(), injected.kind(), "{first}");
+        assert_eq!(first.to_string(), injected.to_string());
+        let again = s.flush().await.unwrap_err();
+        assert_eq!(first.kind(), again.kind());
+        assert!(s.write_at(4, Bytes::from_static(b"x")).await.is_err());
+        assert!(s.read_at(0, 4).await.is_err());
+        assert!(s.preallocate(10).await.is_err());
+        let to = d.path().join("never");
+        assert!(s.finish(&to).await.is_err());
+        assert!(!to.exists());
+        // Opening the path again gives a fresh storage; the failed one never
+        // writes again.
+        faults::clear(&path);
+        let fresh = p.open_storage(&path).await.unwrap();
+        assert!(!Arc::ptr_eq(&s, &fresh));
+        fresh.write_at(0, Bytes::from_static(b"ok")).await.unwrap();
+        fresh.flush().await.unwrap();
+    }
+
+    /// The `/dev/full` tests on every OS: a write failing for space is
+    /// `StorageFull` (reported by `write_at` itself when written inline, by
+    /// the next call otherwise), and sticks.
+    #[tokio::test]
+    async fn a_full_disk_is_storage_full_and_sticks_on_every_os() {
+        use sys::faults::{self, Op};
+        for inline in [false, true] {
+            let d = tempfile::tempdir().unwrap();
+            let path = d.path().join("f");
+            let p = if inline {
+                inline_provider()
+            } else {
+                provider(1 << 20)
+            };
+            let s = p.open_storage(&path).await.unwrap();
+            faults::inject(&path, Op::Write, DISK_FULL);
+            let first = s.write_at(0, Bytes::from_static(b"data")).await;
+            if inline {
+                assert_eq!(first.unwrap_err().kind(), io::ErrorKind::StorageFull);
+            } else {
+                first.unwrap();
+            }
+            for _ in 0..2 {
+                let e = s.flush().await.unwrap_err();
+                assert_eq!(e.kind(), io::ErrorKind::StorageFull, "inline {inline}: {e}");
+            }
+            let e = s.write_at(4, Bytes::from_static(b"x")).await.unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+            let to = d.path().join("never");
+            let e = s.finish(&to).await.unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::StorageFull);
+            assert!(!to.exists());
+            faults::clear(&path);
+        }
     }
 
     #[tokio::test]

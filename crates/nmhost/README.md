@@ -90,7 +90,7 @@ target/release/whoosh-nmhost --unregister
 - Linux: unit tests; Chrome for Testing and Firefox 159 end-to-end runs in `apps/extension`; Firefox 159 starting a host from the manifest that `--register --browser firefox` wrote (`~/.mozilla/native-messaging-hosts`).
 - macOS (Intel, macOS 26): unit tests for every location and a register/unregister run in a temporary home; Brave 1.99 with the real `--register --browser brave` in the user's home, connecting to `whoosh-daemon --mock` through this host, handing a download over and refreshing its expired link (then `--unregister`); Chrome for Testing 1248 the same way with the manifest in its profile directory; the extension's e2e suite.
 
-**Not tested:** Windows, Edge, Vivaldi, Chromium and Firefox on macOS. On Windows the registry layout was checked against the Chrome, Edge and Firefox documentation (`HKCU\Software\<vendor>\NativeMessagingHosts\<name>`, default value = absolute manifest path; HKCU is not subject to 32/64-bit redirection) and the crate passes `cargo clippy -D warnings` for `x86_64-pc-windows-gnu`, but it has never run there. Vivaldi on Windows may read Chrome's key instead of its own.
+**Not tested:** Windows, Edge, Vivaldi, Chromium and Firefox on macOS. On Windows the registry layout was checked against the Chrome, Edge and Firefox documentation (`HKCU\Software\<vendor>\NativeMessagingHosts\<name>`, default value = absolute manifest path; HKCU is not subject to 32/64-bit redirection) and the crate's unit tests run on Windows in CI (registering into a temporary home with Linux paths), but the registry writes have never run there. Vivaldi on Windows may read Chrome's key instead of its own.
 
 ## Data directory and runtime file
 

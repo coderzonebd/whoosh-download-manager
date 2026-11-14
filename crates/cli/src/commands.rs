@@ -13,7 +13,7 @@ use whoosh_proto::{
 use crate::daemon::{self, Connected, Found};
 use crate::error::{CliError, Result, exit};
 use crate::runtime;
-use crate::{DaemonCmd, DownloadOpts, Global, SettingsCmd, format};
+use crate::{AutostartCmd, DaemonCmd, DownloadOpts, Global, SettingsCmd, format};
 
 /// What every command needs: where the daemon is and how to print.
 #[derive(Debug)]
@@ -647,6 +647,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                 Ok(exit::OK)
             }
         },
+        DaemonCmd::Autostart { action } => autostart(ctx, action),
         DaemonCmd::Start { foreground, args } => {
             if let Found::Running(connected) = daemon::connect_running(&ctx.data_dir).await? {
                 let Connected { client, info } = *connected;
@@ -678,6 +679,77 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
             Ok(exit::OK)
         }
     }
+}
+
+/// `whoosh daemon autostart on|off|status`: the logon entry that runs
+/// `whoosh-autostart` (see [`whoosh_client::autostart`]). A data directory
+/// other than the default is passed on with `--data-dir`.
+fn autostart(ctx: &Ctx, action: AutostartCmd) -> Result<u8> {
+    use whoosh_client::autostart::{self, DAEMON_ENTRY, Status};
+    let failed = |e: std::io::Error| match e.kind() {
+        std::io::ErrorKind::Unsupported => CliError::Other(e.to_string()),
+        _ => CliError::Other(format!("cannot read or change the logon entry: {e}")),
+    };
+    match action {
+        AutostartCmd::On => {
+            let launcher = autostart::launcher_exe().ok_or_else(|| {
+                CliError::Other(format!(
+                    "{} was not found next to this program",
+                    autostart::LAUNCHER
+                ))
+            })?;
+            let mut args = Vec::new();
+            if runtime::default_data_dir().ok().as_ref() != Some(&ctx.data_dir) {
+                args.push("--data-dir".into());
+                args.push(ctx.data_dir.clone().into_os_string());
+            }
+            autostart::enable(DAEMON_ENTRY, &launcher, &args).map_err(failed)?;
+            let command = autostart::command_line(&launcher, &args);
+            if ctx.json {
+                ctx.print_json(&json!({ "autostart": true, "command": command }));
+            } else {
+                println!("whoosh-daemon will start when you log on ({command})");
+            }
+        }
+        AutostartCmd::Off => {
+            let removed = autostart::disable(DAEMON_ENTRY).map_err(failed)?;
+            if ctx.json {
+                ctx.print_json(&json!({ "autostart": false, "removed": removed }));
+            } else if removed {
+                println!("whoosh-daemon will no longer start when you log on");
+            } else {
+                println!("whoosh-daemon was not set to start when you log on");
+            }
+        }
+        AutostartCmd::Status => {
+            let status = autostart::status(DAEMON_ENTRY).map_err(failed)?;
+            let (on, disabled, command) = match &status {
+                Status::Off => (false, false, None),
+                Status::On { command } => (true, false, Some(command.as_str())),
+                Status::DisabledByUser { command } => (false, true, Some(command.as_str())),
+            };
+            if ctx.json {
+                ctx.print_json(&json!({
+                    "autostart": on,
+                    "disabledByUser": disabled,
+                    "command": command,
+                }));
+            } else {
+                match status {
+                    Status::Off => println!("whoosh-daemon does not start when you log on"),
+                    Status::On { command } => {
+                        println!("whoosh-daemon starts when you log on ({command})")
+                    }
+                    Status::DisabledByUser { command } => println!(
+                        "whoosh-daemon is set to start when you log on, but that is switched \
+                         off in Task Manager > Startup apps ({command}); \
+                         `whoosh daemon autostart on` switches it back on"
+                    ),
+                }
+            }
+        }
+    }
+    Ok(exit::OK)
 }
 
 /// Runs the daemon in this terminal: replaces this process on Unix, waits

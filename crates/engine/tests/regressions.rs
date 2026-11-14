@@ -309,6 +309,35 @@ async fn post_bodies_and_referers_are_cleared() {
     assert_eq!(req.headers.len(), 1);
 }
 
+/// Mark of the web: the part file is marked with where it came from (the
+/// URL and the referrer, before secrets are cleared) just before its final
+/// move, so the finished file carries the mark.
+#[tokio::test(start_paused = true)]
+async fn the_finished_file_is_marked_with_its_origin() {
+    let lab = Lab::new(config()).await;
+    lab.serve(URL, Arc::new(FaultSource::new(content(KIB, 12))));
+    let mut p = add_params(URL);
+    p.request = Some(RequestContext {
+        referer: Some("https://lab.test/page".into()),
+        ..RequestContext::default()
+    });
+    let id = lab.engine.add(p).await.unwrap().id;
+    finish(&lab.engine, &id, LONG).await;
+    assert_eq!(
+        lab.storage.origin(&Path::new(DIR).join("data.bin")),
+        Some((URL.to_owned(), Some("https://lab.test/page".to_owned())))
+    );
+    // Without a referrer, only the URL.
+    let other = "https://lab.test/files/other.bin";
+    lab.serve(other, Arc::new(FaultSource::new(content(KIB, 13))));
+    let id = lab.add(other).await;
+    finish(&lab.engine, &id, LONG).await;
+    assert_eq!(
+        lab.storage.origin(&Path::new(DIR).join("other.bin")),
+        Some((other.to_owned(), None))
+    );
+}
+
 /// #7: a download being removed is never started by the queue.
 #[tokio::test(start_paused = true)]
 async fn remove_cannot_race_the_queue() {

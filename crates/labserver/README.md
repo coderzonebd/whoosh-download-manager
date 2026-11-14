@@ -10,7 +10,10 @@ It must never be the bottleneck, and every byte it sends can be verified.
   self-signed certificate and ALPN `h2` / `http/1.1` on the TLS port.
 - **HTTP/3** (opt-in, `--h3-port`): QUIC on UDP, by default on the same port
   number as TLS, same certificate, advertised by `Alt-Svc: h3=":<port>"` on
-  every TCP response. Same routes, scenarios, faults and stats.
+  every TCP response. Same routes, scenarios, faults and stats. When the OS
+  picks the TLS port and the UDP port of that number cannot be had (in use,
+  or on Windows refused with `WSAEACCES` because it falls in a reserved port
+  range, as on the CI runners), both are bound again elsewhere.
 - **Scenarios** in TOML, all served at once under `/s/<scenario>/<file>`:
   latency, per-connection and global bandwidth caps, per-IP concurrency caps
   (503, 429 or TCP reset), random TCP resets, stalls, redirect chains, signed

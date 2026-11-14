@@ -20,6 +20,8 @@ feat/your-change ──PR──▶ dev ──release PR──▶ pub ──tag�
 | pnpm | pinned in `package.json` | `corepack enable` or `corepack pnpm` |
 | sccache | optional, recommended | shares build artefacts between worktrees |
 
+On Windows, install the Visual Studio Build Tools with the "Desktop development with C++" workload (the MSVC linker and Windows SDK); rustup offers it. Git for Windows provides the `bash` the scripts and CI steps use; run `git config --global core.autocrlf false` before cloning, as CI does. `scripts/cargo-slot.sh` is for Linux and macOS: on Windows call `cargo` directly. Windows specifics (ACLs, durability, autostart, how the tests stand in for Unix tools) are in [docs/windows.md](docs/windows.md).
+
 Linux desktop (Tauri) builds also need, on Debian/Ubuntu:
 
 ```bash

@@ -495,10 +495,17 @@ mod tests {
         }
     }
 
+    /// An absolute host path on every OS (on Windows one needs a drive).
+    const HOST: &str = if cfg!(windows) {
+        r"C:\Program Files\Whoosh\whoosh-nmhost.exe"
+    } else {
+        "/opt/whoosh/whoosh-nmhost"
+    };
+
     fn opts(browsers: Option<Vec<Browser>>) -> Options {
         Options {
             browsers,
-            host_path: PathBuf::from("/opt/whoosh/whoosh-nmhost"),
+            host_path: PathBuf::from(HOST),
             chromium_ids: vec![DEV_CHROMIUM_EXTENSION_ID.to_owned()],
             firefox_ids: vec![FIREFOX_EXTENSION_ID.to_owned()],
         }
@@ -653,7 +660,7 @@ mod tests {
                 m["allowed_origins"][0],
                 "chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/"
             );
-            assert_eq!(m["path"], "/opt/whoosh/whoosh-nmhost");
+            assert_eq!(m["path"], HOST);
         }
 
         // Chrome named as well: its location is written once, not twice.
@@ -738,11 +745,11 @@ mod tests {
 
     #[test]
     fn manifests_have_the_right_shape() {
-        let host = Path::new("/opt/whoosh/whoosh-nmhost");
+        let host = Path::new(HOST);
         let chromium = chromium_manifest(host, &[DEV_CHROMIUM_EXTENSION_ID.to_owned()]);
         assert_eq!(chromium["name"], "com.coderzonebd.whoosh");
         assert_eq!(chromium["type"], "stdio");
-        assert_eq!(chromium["path"], "/opt/whoosh/whoosh-nmhost");
+        assert_eq!(chromium["path"], HOST);
         assert_eq!(
             chromium["allowed_origins"],
             json!(["chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/"])
