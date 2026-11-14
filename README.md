@@ -9,7 +9,7 @@ Open-source, crash-proof, and measured against every competitor in public.
 
 [![License: Apache-2.0 / GPL-3.0](https://img.shields.io/badge/license-Apache--2.0%20%2F%20GPL--3.0-2f74ec)](LICENSE.md)
 [![Rust](https://img.shields.io/badge/engine-Rust-6a4bd8?logo=rust)](crates)
-[![Release](https://img.shields.io/badge/release-v0.1.0%20·%20engine-2f74ec)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-pre--release%20·%20engine%20done-2f74ec)](#roadmap)
 [![Platforms](https://img.shields.io/badge/targets-Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-6a4bd8)](MASTER-PLAN.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome%20(into%20dev)-2f74ec)](CONTRIBUTING.md)
 
@@ -19,7 +19,7 @@ Open-source, crash-proof, and measured against every competitor in public.
 
 ---
 
-> **Status: Phase 1 (the engine) is released as v0.1.0.** The engine, daemon and CLI work today on Linux and macOS; the Windows port comes with Phase 2. The desktop app and the browser extension arrive in Phase 2 (v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
+> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux and macOS and can be built from source; the Windows port comes with Phase 2. The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
 
 ## Measured, not claimed
 
@@ -107,7 +107,7 @@ flowchart LR
 | Phase | Ships | Status |
 |---|---|---|
 | **0 · Foundations** | monorepo, CI, design system, labserver, bench, baseline report | ✅ done |
-| **1 · Engine** | H1/H2/H3 engine, daemon, CLI, crash-proof journal; [public gate](MASTER-PLAN.md#phase-1--engine-months-13) | ✅ v0.1.0 |
+| **1 · Engine** | H1/H2/H3 engine, daemon, CLI, crash-proof journal; [public gate](MASTER-PLAN.md#phase-1--engine-months-13) | ✅ done |
 | **2 · v1.0** | desktop app (Windows, macOS, Linux), extension Pro mode, self-healing links, yt-dlp, signed installers, Bangla + English | next |
 | **3 · v1.5** | BitTorrent, FTP/SFTP, HLS/DASH, multi-source + LAN peers, BDIX mode, Docker, web remote | planned |
 | **4 · v2.0** | extension Lite mode (WASM), Android, iOS companion, send-to-device, plugins | planned |
