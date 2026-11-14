@@ -84,6 +84,19 @@ describe("segment estimation", () => {
     expect(blocks).toEqual([1, 1, 1, 0]);
     expect(blockCoverage([{ start: 0, end: 100, done: 10 }], 100, 4)[0]).toBeCloseTo(0.4);
   });
+
+  it("fills every block of a large finished file", () => {
+    // 689 MB in 200 blocks: block edges are not exact in floating point; the
+    // map used to stop after three blocks.
+    const total = 722_464_532;
+    const blocks = blockCoverage([{ start: 0, end: total, done: total }], total, 200);
+    expect(blocks).toHaveLength(200);
+    expect(blocks.every((v) => v >= 0.999)).toBe(true);
+    // Half of an odd-sized file: the first 100 blocks full, the rest empty.
+    const half = blockCoverage([{ start: 0, end: total, done: total / 2 }], total, 200);
+    expect(half.slice(0, 100).every((v) => v >= 0.999)).toBe(true);
+    expect(half.slice(101).every((v) => v === 0)).toBe(true);
+  });
 });
 
 describe("prefs", () => {

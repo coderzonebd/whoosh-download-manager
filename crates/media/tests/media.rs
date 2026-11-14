@@ -49,6 +49,10 @@ fn main() {
         ("audio_only_is_one_part_without_ffmpeg", || {
             Box::pin(audio_only_is_one_part_without_ffmpeg())
         }),
+        (
+            "browser_confirmation_goes_through_the_media_wrapper",
+            || Box::pin(browser_confirmation_goes_through_the_media_wrapper()),
+        ),
         ("streaming_formats_fall_back_to_yt_dlp", || {
             Box::pin(streaming_formats_fall_back_to_yt_dlp())
         }),
@@ -460,6 +464,12 @@ async fn engine_path_merges_video_and_audio() {
     let done = wait_for(&r.media, &id, DownloadState::Completed).await;
     let media = done.media.clone().unwrap();
     assert_eq!(media.via, MediaVia::Engine);
+    // "Time taken" in the details: the run's time is kept.
+    assert!(
+        done.active_ms.is_some_and(|ms| ms > 0),
+        "{:?}",
+        done.active_ms
+    );
     assert_eq!(media.format, "1080p mp4");
     let stem = wdm_media::names::stem("Lab clip: AC/DC 100%").unwrap();
     assert!(stem.contains("AC-DC 100%"), "{stem}");
@@ -530,6 +540,33 @@ async fn engine_path_merges_video_and_audio() {
     r.media.shutdown().await;
 }
 
+/// The daemon serves the engine through MediaService: `download.confirm`
+/// must reach the engine (it answered "not supported" before).
+async fn browser_confirmation_goes_through_the_media_wrapper() {
+    let r = rig(false, &[]).await;
+    let url = format!("http://{}/s/clean/1m.bin", r.lab.http_addr());
+    let params: wdm_proto::AddParams = serde_json::from_value(serde_json::json!({
+        "url": url,
+        "directory": r.root.join("downloads").display().to_string(),
+        "fromBrowser": true,
+    }))
+    .unwrap();
+    let id = r.media.add(params).await.unwrap().id;
+    let waiting = r
+        .media
+        .get(wdm_proto::IdParams { id: id.clone() })
+        .await
+        .unwrap();
+    assert!(waiting.summary.awaiting_confirmation, "{waiting:?}");
+    let confirm = serde_json::from_value(serde_json::json!({ "id": id, "start": true })).unwrap();
+    r.media
+        .confirm(confirm)
+        .await
+        .expect("download.confirm through the media wrapper");
+    let done = wait_for(&r.media, &id, DownloadState::Completed).await;
+    assert_eq!(done.total_bytes, Some(1024 * 1024));
+}
+
 /// Audio only, kept as it is: one part, renamed when it finishes; ffmpeg
 /// is never needed (this rig has none).
 async fn audio_only_is_one_part_without_ffmpeg() {
@@ -576,6 +613,11 @@ async fn streaming_formats_fall_back_to_yt_dlp() {
     let done = wait_for(&r.media, &id, DownloadState::Completed).await;
     assert_eq!(done.media.as_ref().unwrap().via, MediaVia::YtDlp);
     assert_eq!(done.total_bytes, Some(1000));
+    assert!(
+        done.active_ms.is_some_and(|ms| ms > 0),
+        "{:?}",
+        done.active_ms
+    );
     assert!(
         PathBuf::from(&done.directory)
             .join(&done.filename)
