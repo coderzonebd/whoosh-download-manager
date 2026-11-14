@@ -318,6 +318,65 @@ describe("settings", () => {
     expect(host.pickFolder).toHaveBeenCalledWith({ title: "Choose the default download folder", defaultPath: "~/Downloads" });
   });
 
+  it("sends crash reports by default, with a switch to turn them off", async () => {
+    const state = { enabled: true, noticeShown: true };
+    const host: Host = {
+      crashReports: {
+        get: async () => ({ ...state }),
+        set: vi.fn(async (v: boolean) => void (state.enabled = v)),
+        dismissNotice: vi.fn(async () => {}),
+      },
+    };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Privacy" })).toBeInTheDocument();
+    const box = await screen.findByRole("checkbox", { name: "Send crash reports" });
+    await waitFor(() => expect(box).toBeChecked()); // on by default
+    expect(box).toHaveAccessibleDescription(/anonymous crash reports.*No file names, links or user name/);
+    await user.click(box);
+    expect(host.crashReports?.set).toHaveBeenCalledWith(false);
+    expect(state.enabled).toBe(false);
+  });
+
+  it("tells the user once about crash reports, with a link to the switch", async () => {
+    const state = { enabled: true, noticeShown: false };
+    const host: Host = {
+      crashReports: {
+        get: async () => ({ ...state }),
+        set: vi.fn(async (v: boolean) => void (state.enabled = v)),
+        dismissNotice: vi.fn(async () => void (state.noticeShown = true)),
+      },
+    };
+    const { user } = await setup({ host });
+    const text = await screen.findByText("Whoosh sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.");
+    // Non-blocking: the list is still usable behind it.
+    expect(screen.getByRole("grid", { name: "Downloads" })).not.toHaveAttribute("inert");
+    await user.click(screen.getByRole("button", { name: "Open Settings" }));
+    expect(host.crashReports?.dismissNotice).toHaveBeenCalled();
+    expect(text).not.toBeInTheDocument();
+    const box = await screen.findByRole("checkbox", { name: "Send crash reports" });
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+
+  it("does not show the crash notice again once dismissed", async () => {
+    const dismissNotice = vi.fn(async () => {});
+    const host: Host = { crashReports: { get: async () => ({ enabled: true, noticeShown: false }), set: vi.fn(async () => {}), dismissNotice } };
+    const { user } = await setup({ host });
+    const text = await screen.findByText(/anonymous crash reports/);
+    await user.click(within(text.closest("[role=status]") as HTMLElement).getByRole("button", { name: "Dismiss" }));
+    expect(dismissNotice).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/anonymous crash reports/)).not.toBeInTheDocument();
+  });
+
+  it("hides crash reports in a build without a crash-report address", async () => {
+    const host: Host = { crashReports: { get: async () => undefined, set: vi.fn(async () => {}), dismissNotice: vi.fn(async () => {}) } };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    await screen.findByRole("heading", { name: "Settings" });
+    expect(screen.queryByRole("checkbox", { name: "Send crash reports" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/anonymous crash reports/)).not.toBeInTheDocument();
+  });
+
   it("offers the folder picker in the add dialog", async () => {
     const host: Host = { pickFolder: async () => "/data/iso" };
     const { user, client } = await setup({ host });

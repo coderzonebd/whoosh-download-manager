@@ -26,6 +26,7 @@ export {
   isDownloadUrl,
   type BrowserId,
   type BrowserState,
+  type CrashReportsState,
   type DeepLink,
   type DesktopPrefs,
   type ExtensionStore,

@@ -272,6 +272,9 @@
     "closeToTrayHint": "Downloads go on. Quit from the tray menu.",
     "stopDaemonOnQuit": "Quitting also stops downloads",
     "stopDaemonOnQuitHint": "Off: downloads keep going in the background for the browser extension and the command line.",
+    "privacy": "Privacy",
+    "crashReports": "Send crash reports",
+    "crashReportsHint": "Whoosh sends anonymous crash reports to help fix bugs: the error, where in Whoosh it happened, the app version and the operating system. No file names, links or user name. On unless you turn it off; the background service follows a change the next time it starts.",
     "machineTranslated": "Machine translated.",
     "helpTranslate": "Help improve the translation",
     "media": "Video and audio sites",
@@ -290,6 +293,10 @@
     "installing": "Installing…",
     "updateFailed": "Could not check for updates: {{message}}",
     "installFailed": "Could not install the update: {{message}}"
+  },
+  "crashNotice": {
+    "text": "Whoosh sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.",
+    "open": "Open Settings"
   },
   "theme": {
     "system": "Match system",

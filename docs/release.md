@@ -242,6 +242,18 @@ Everything below is free. Until each item exists, the matching path in
 How the IDs reach the installers and the app:
 [`packaging/browsers/README.md`](../packaging/browsers/README.md).
 
+### Crash reports
+
+`WHOOSH_CRASH_DSN` (secret, in the `release` environment) is the hosted
+GlitchTip project's DSN. It is read when the app and the daemon are
+**compiled** (`option_env!` in `crates/crash`), so it must be in the
+environment of the build steps that compile `whoosh-daemon` and the desktop
+app. Builds with it send crash reports **by default**; users can turn them off
+in *Settings → Privacy*, and the app tells them once on first run. Builds
+without it (pull requests, local builds, dry runs without the secret) contain
+no active reporter, hide the switch and send nothing. What a report holds:
+[docs/privacy.md](privacy.md).
+
 ## Accounts to create
 
 For v1.0 the owner chose distribution at no cost: no Apple Developer Program and no Chrome Web Store fee for now ([ADR 0007, Amendment 1](adr/0007-phase2-plan.md#amendment-1-the-road-to-v10-at-no-cost-2026-11-14)). The paid rows below stay for later.

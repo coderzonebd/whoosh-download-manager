@@ -265,6 +265,9 @@
     "closeToTrayHint": "Các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống.",
     "stopDaemonOnQuit": "Thoát cũng dừng các tải xuống",
     "stopDaemonOnQuitHint": "Khi tắt: các tải xuống vẫn chạy nền cho tiện ích trình duyệt và dòng lệnh.",
+    "privacy": "Quyền riêng tư",
+    "crashReports": "Gửi báo cáo sự cố",
+    "crashReportsHint": "Whoosh gửi báo cáo sự cố ẩn danh để giúp sửa lỗi: lỗi, vị trí xảy ra trong Whoosh, phiên bản ứng dụng và hệ điều hành. Không có tên tệp, liên kết hay tên người dùng. Bật trừ khi bạn tắt; dịch vụ chạy nền sẽ áp dụng thay đổi vào lần khởi động tiếp theo.",
     "machineTranslated": "Bản dịch máy.",
     "helpTranslate": "Giúp cải thiện bản dịch",
     "media": "Trang video và âm thanh",
@@ -283,6 +286,10 @@
     "installing": "Đang cài đặt…",
     "updateFailed": "Không thể kiểm tra cập nhật: {{message}}",
     "installFailed": "Không thể cài đặt bản cập nhật: {{message}}"
+  },
+  "crashNotice": {
+    "text": "Whoosh gửi báo cáo sự cố ẩn danh để giúp sửa lỗi. Không có tên tệp hay liên kết. Tắt trong Cài đặt.",
+    "open": "Mở Cài đặt"
   },
   "theme": {
     "system": "Theo hệ thống",

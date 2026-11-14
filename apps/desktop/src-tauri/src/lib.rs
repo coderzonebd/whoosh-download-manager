@@ -21,6 +21,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 mod browsers;
+mod crash;
 mod daemon;
 mod deep_links;
 mod prefs;
@@ -207,6 +208,8 @@ fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
 
 /// Entry point shared by the binary (and, later, the mobile targets).
 pub fn run() {
+    // Crash reports (on unless turned off), before anything that could panic.
+    crash::init();
     let app = tauri::Builder::default()
         // First, so a second launch hands over before anything else starts.
         // With its `deep-link` feature, a second launch's whoosh:// link
@@ -271,6 +274,10 @@ pub fn run() {
             browsers::open_extension_page,
             updates::check_for_update,
             updates::install_update,
+            crash::crash_reports,
+            crash::set_crash_reports,
+            crash::dismiss_crash_notice,
+            crash::report_ui_error,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|err| {
