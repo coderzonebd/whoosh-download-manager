@@ -327,6 +327,8 @@ mod tests {
             completed_at: None,
             error: None,
             media: None,
+            awaiting_confirmation: false,
+            active_ms: None,
         }
     }
 

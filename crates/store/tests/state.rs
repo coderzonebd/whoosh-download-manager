@@ -52,6 +52,8 @@ fn record(i: u64) -> DownloadRecord {
             code: "disk_full".into(),
             message: "No space left on device".into(),
         }),
+        awaiting_confirmation: false,
+        active_ms: i.is_multiple_of(3).then_some(12_345 + i),
     }
 }
 

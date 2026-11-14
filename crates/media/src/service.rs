@@ -443,6 +443,9 @@ fn summary(job: &Job, st: &State) -> DownloadSummary {
                 None
             },
         }),
+        awaiting_confirmation: false,
+        // Not kept for media downloads (yt-dlp runs outside the engine).
+        active_ms: None,
     }
 }
 
@@ -869,7 +872,7 @@ impl Shared {
         self.save().await;
         self.emit(Notification::DownloadAdded(summary_now));
         self.spawn_prepare(&id).await;
-        Ok(AddResult { id })
+        Ok(AddResult::new(id))
     }
 
     async fn spawn_prepare(self: &Arc<Self>, id: &str) {
@@ -955,6 +958,7 @@ impl Shared {
                             checksum: None,
                             connections: None,
                             queue: job.queue.clone(),
+                            from_browser: false,
                         })
                         .await;
                     match r {

@@ -10,9 +10,14 @@
 //!   token. When the daemon goes away the host fails in-flight requests,
 //!   tells the extension (`event.nm.status`) and keeps reconnecting, re-reading
 //!   the runtime file each time because the port and token may change.
+//! * When the daemon answers a `download.add` with `needsApp` (the download
+//!   waits for the user and no desktop window is there to ask), the host
+//!   starts the desktop app ([`crate::launch`]).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
@@ -73,6 +78,26 @@ pub struct Config {
     /// Browser → host frames above this size are discarded and answered with
     /// an error.
     pub max_from_browser: usize,
+    /// Starts the desktop app (`needsApp`); at most once per `launch_gap`.
+    pub launcher: Launcher,
+    pub launch_gap: Duration,
+}
+
+/// What starts the desktop app: [`crate::launch::launch_app`], or a test
+/// double.
+#[derive(Clone)]
+pub struct Launcher(pub Arc<dyn Fn() + Send + Sync>);
+
+impl Launcher {
+    pub fn app() -> Self {
+        Self(Arc::new(crate::launch::launch_app))
+    }
+}
+
+impl fmt::Debug for Launcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Launcher")
+    }
 }
 
 impl Config {
@@ -86,6 +111,8 @@ impl Config {
             retry_max: Duration::from_secs(5),
             on_demand_gap: Duration::from_millis(250),
             max_from_browser: MAX_FROM_BROWSER,
+            launcher: Launcher::app(),
+            launch_gap: crate::launch::MIN_GAP,
         }
     }
 }
@@ -110,6 +137,19 @@ pub enum ConnectError {
     Impostor,
     #[error("connection task failed: {0}")]
     Task(String),
+}
+
+/// The part of a `download.add` answer the host acts on.
+#[derive(Debug, Deserialize)]
+struct AddReply {
+    #[serde(default)]
+    result: Option<AddReplyResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AddReplyResult {
+    #[serde(default, rename = "needsApp")]
+    needs_app: bool,
 }
 
 /// Only what the relay needs to route a message; the rest is skipped.
@@ -164,8 +204,14 @@ impl Conn {
 /// A browser message that arrived while a connection attempt was running.
 #[derive(Debug)]
 enum Waiter {
-    Status { id: Value },
-    Forward { text: String, id: Option<Value> },
+    Status {
+        id: Value,
+    },
+    Forward {
+        text: String,
+        id: Option<Value>,
+        is_add: bool,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -261,6 +307,9 @@ struct Relay {
     /// Last daemon state the extension knows about. `None` until the first
     /// attempt finishes; that first result is not an "event".
     reported: Option<bool>,
+    /// Pending `download.add` requests (keys of `pending`).
+    adds: HashSet<String>,
+    last_launch: Option<Instant>,
 }
 
 impl Relay {
@@ -278,6 +327,8 @@ impl Relay {
             retry_delay,
             last_attempt: None,
             reported: None,
+            adds: HashSet::new(),
+            last_launch: None,
         }
     }
 
@@ -330,7 +381,8 @@ impl Relay {
                 self.reply_error(id, code::METHOD_NOT_FOUND, &msg).await;
             }
         } else {
-            self.forward(text, id).await;
+            let is_add = method == method::DOWNLOAD_ADD;
+            self.forward(text, id, is_add).await;
         }
     }
 
@@ -349,14 +401,14 @@ impl Relay {
         }
     }
 
-    async fn forward(&mut self, text: String, id: Option<Value>) {
+    async fn forward(&mut self, text: String, id: Option<Value>, is_add: bool) {
         match self.conn {
-            Conn::Up(_) => self.send_to_daemon(text, id).await,
-            Conn::Connecting(_) => self.waiting.push(Waiter::Forward { text, id }),
+            Conn::Up(_) => self.send_to_daemon(text, id, is_add).await,
+            Conn::Connecting(_) => self.waiting.push(Waiter::Forward { text, id, is_add }),
             Conn::Down { .. } => {
                 if self.may_attempt_now() {
                     self.start_connecting();
-                    self.waiting.push(Waiter::Forward { text, id });
+                    self.waiting.push(Waiter::Forward { text, id, is_add });
                 } else if let Some(id) = id {
                     self.reply_unavailable(id, "the whoosh daemon is not running")
                         .await;
@@ -365,7 +417,7 @@ impl Relay {
         }
     }
 
-    async fn send_to_daemon(&mut self, text: String, id: Option<Value>) {
+    async fn send_to_daemon(&mut self, text: String, id: Option<Value>, is_add: bool) {
         let Conn::Up(daemon) = &mut self.conn else {
             if let Some(id) = id {
                 self.reply_unavailable(id, "the connection to the daemon was lost")
@@ -375,6 +427,9 @@ impl Relay {
         };
         if let Some(id) = &id {
             self.pending.insert(id_key(id), id.clone());
+            if is_add {
+                self.adds.insert(id_key(id));
+            }
         }
         if let Err(e) = daemon.ws.send(Message::text(text)).await {
             log::warn(&format!("sending to the daemon failed: {e}"));
@@ -398,7 +453,9 @@ impl Relay {
                             let up = matches!(self.conn, Conn::Up(_));
                             self.reply_status(id, up).await;
                         }
-                        Waiter::Forward { text, id } => self.send_to_daemon(text, id).await,
+                        Waiter::Forward { text, id, is_add } => {
+                            self.send_to_daemon(text, id, is_add).await;
+                        }
                     }
                 }
             }
@@ -447,7 +504,11 @@ impl Relay {
         };
         let is_response = envelope.method.is_none();
         if is_response && let Some(id) = &envelope.id {
-            self.pending.remove(&id_key(id));
+            let key = id_key(id);
+            self.pending.remove(&key);
+            if self.adds.remove(&key) {
+                self.after_add(text.as_str());
+            }
         }
 
         if text.len() > MAX_TO_BROWSER {
@@ -471,6 +532,24 @@ impl Relay {
         self.send_raw(text.as_bytes()).await;
     }
 
+    /// A `download.add` was answered: start the app if the download waits
+    /// for a desktop window that is not there.
+    fn after_add(&mut self, text: &str) {
+        let needs_app = serde_json::from_str::<AddReply>(text)
+            .ok()
+            .and_then(|r| r.result)
+            .is_some_and(|r| r.needs_app);
+        if !needs_app
+            || self
+                .last_launch
+                .is_some_and(|at| at.elapsed() < self.cfg.launch_gap)
+        {
+            return;
+        }
+        self.last_launch = Some(Instant::now());
+        (self.cfg.launcher.0)();
+    }
+
     async fn on_lost(&mut self) {
         if let Conn::Up(daemon) = &mut self.conn {
             // Best effort; the socket is probably gone already.
@@ -480,6 +559,7 @@ impl Relay {
             retry_at: Instant::now() + self.cfg.retry_min,
         };
         self.retry_delay = (self.cfg.retry_min * 2).min(self.cfg.retry_max);
+        self.adds.clear();
         let pending: Vec<Value> = self.pending.drain().map(|(_, id)| id).collect();
         for id in pending {
             self.reply_unavailable(

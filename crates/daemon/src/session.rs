@@ -2,6 +2,7 @@
 //! responses and notifications out.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use futures::stream::{BoxStream, SplitSink};
@@ -39,6 +40,75 @@ pub mod close {
     pub const PROTOCOL: u16 = whoosh_proto::close_code::PROTOCOL_MISMATCH;
     /// The client fell too far behind on lossless notifications.
     pub const TOO_SLOW: u16 = whoosh_proto::close_code::TOO_SLOW;
+}
+
+/// Who is on the other end, as far as the daemon treats them differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClientKind {
+    /// The desktop window: it asks the user about downloads that wait.
+    Desktop,
+    /// The browser extension, through `whoosh-nmhost`: its downloads may
+    /// wait for confirmation (`AddParams::from_browser`).
+    Browser,
+    Other,
+}
+
+impl ClientKind {
+    fn of(name: &str) -> Self {
+        if name == "desktop" {
+            Self::Desktop
+        } else if name.starts_with("extension") {
+            Self::Browser
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// Holds one count in `counter` while alive.
+struct Counted<'a>(&'a AtomicUsize);
+
+impl<'a> Counted<'a> {
+    fn new(counter: &'a AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter)
+    }
+}
+
+impl Drop for Counted<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// `download.add`: only the daemon says whether a download came from the
+/// browser, so `fromBrowser` is set for the extension's session and
+/// cleared for everyone else.
+fn mark_origin(req: &mut rpc::Request, kind: ClientKind) {
+    if req.method != method::DOWNLOAD_ADD {
+        return;
+    }
+    if let Some(Value::Object(params)) = &mut req.params {
+        if kind == ClientKind::Browser {
+            params.insert("fromBrowser".into(), Value::Bool(true));
+        } else {
+            params.remove("fromBrowser");
+        }
+    }
+}
+
+/// A browser download that waits for confirmation: say whether a desktop
+/// window is there to ask, or the native host must start the app.
+fn mark_needs_app(method_name: &str, result: &mut Value, shared: &Shared) {
+    if method_name != method::DOWNLOAD_ADD {
+        return;
+    }
+    if result.get("awaitingConfirmation") == Some(&Value::Bool(true))
+        && shared.desktop_sessions.load(Ordering::SeqCst) == 0
+        && let Value::Object(r) = result
+    {
+        r.insert("needsApp".into(), Value::Bool(true));
+    }
 }
 
 enum HandshakeEnd {
@@ -88,6 +158,8 @@ pub(crate) async fn run<S>(
         return;
     }
     tracing::info!(client = ?hello.client.name, version = ?hello.client.version, "session started");
+    let kind = ClientKind::of(&hello.client.name);
+    let _desktop = (kind == ClientKind::Desktop).then(|| Counted::new(&shared.desktop_sessions));
 
     let cfg = &shared.config;
     let (sink, mut stream) = ws.split();
@@ -147,7 +219,7 @@ pub(crate) async fn run<S>(
                 match msg {
                     Message::Text(text) => {
                         let p = permit.take();
-                        on_text(text.as_str(), p, &shared, &outbox, &mut tasks);
+                        on_text(text.as_str(), p, &shared, &outbox, &mut tasks, kind);
                     }
                     Message::Binary(_) => {
                         let reply = rpc::error_response(
@@ -303,8 +375,9 @@ fn on_text(
     shared: &Arc<Shared>,
     outbox: &Arc<Outbox>,
     tasks: &mut JoinSet<()>,
+    kind: ClientKind,
 ) {
-    let req = match rpc::parse(text) {
+    let mut req = match rpc::parse(text) {
         Incoming::Request(req) => req,
         Incoming::Invalid(reply) => {
             outbox.push_response(reply.to_string(), permit);
@@ -349,12 +422,16 @@ fn on_text(
     }
     // Method names only: params can carry cookies and must never be logged.
     tracing::debug!(method = ?req.method, notification = req.id.is_none(), "request");
-    let service = shared.service.clone();
+    mark_origin(&mut req, kind);
+    let shared = shared.clone();
     let outbox = outbox.clone();
     tasks.spawn(async move {
         let id = req.id.clone();
         let method = req.method.clone();
-        let result = rpc::dispatch(&service, req).await;
+        let result = rpc::dispatch(&shared.service, req).await.map(|mut v| {
+            mark_needs_app(&method, &mut v, &shared);
+            v
+        });
         let Some(id) = id else {
             if let Err(e) = result {
                 tracing::debug!(method = ?method, code = e.code, "notification failed");

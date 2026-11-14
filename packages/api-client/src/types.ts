@@ -17,6 +17,7 @@ export const Method = {
   DownloadRemove: "download.remove",
   DownloadRefreshUrl: "download.refreshUrl",
   DownloadSetQueue: "download.setQueue",
+  DownloadConfirm: "download.confirm",
   QueueList: "queue.list",
   QueueCreate: "queue.create",
   QueueUpdate: "queue.update",
@@ -169,6 +170,12 @@ export interface AddParams {
   connections?: number;
   /** A named queue (one download at a time); the main queue when absent. */
   queue?: string;
+  /**
+   * Caught in a web browser. The daemon sets it itself for requests that come through the
+   * native messaging host (and clears it for everyone else); with
+   * `Settings.confirmBrowserDownloads` such a download waits for the user.
+   */
+  fromBrowser?: boolean;
 }
 
 /** Upper bound of `AddParams.connections`. */
@@ -176,6 +183,29 @@ export const MAX_CONNECTIONS_PER_DOWNLOAD = 64;
 
 export interface AddResult {
   id: DownloadId;
+  /** Added, but waiting for the user to confirm it (`download.confirm`) instead of starting. */
+  awaitingConfirmation?: boolean;
+  /** With `awaitingConfirmation`: no desktop window is connected to ask, so the native host starts the app. */
+  needsApp?: boolean;
+}
+
+/**
+ * `download.confirm`: the user's answer for a download that waits for confirmation. The optional
+ * fields replace what the download had (the dialog lets the user edit them).
+ */
+export interface ConfirmParams {
+  id: DownloadId;
+  /**
+   * true: start now ("Start download"). false: keep it for later ("Download later"): it stays
+   * paused, or, in a named queue that is not running, waits with the rest of that queue.
+   */
+  start: boolean;
+  filename?: string;
+  /** Absolute. */
+  directory?: string;
+  category?: string;
+  /** A queue name; "" or "main" is the main queue. */
+  queue?: string;
 }
 
 export interface ListParams {
@@ -242,6 +272,13 @@ export interface DownloadSummary {
   error?: ErrorInfo;
   /** Present on media downloads (`media.add`); `url` is then the page. */
   media?: MediaDownloadInfo;
+  /** Added from a browser and waiting for the user to confirm it (`download.confirm`); `state` is then "paused". */
+  awaitingConfirmation?: boolean;
+  /**
+   * How long the download has actually been transferring, in ms: the time its runs took, without
+   * the time it was paused, queued or waiting. Absent when unknown (records from older versions).
+   */
+  activeMs?: number;
 }
 
 export interface SegmentInfo {
@@ -283,6 +320,11 @@ export interface Settings {
   durability?: Durability;
   /** Speed limits by time of day; while one applies it replaces `speedLimitBps`. */
   speedSchedule?: SpeedWindow[];
+  /**
+   * Downloads caught in a web browser wait for the user to confirm them before they start. The
+   * daemon always sends it (default true); older daemons don't, and never ask.
+   */
+  confirmBrowserDownloads?: boolean;
 }
 
 export type Durability = "powerSafe" | "processSafe";
@@ -524,6 +566,7 @@ export interface MethodMap {
   "settings.get": { params: undefined; result: Settings };
   "settings.set": { params: Settings; result: Settings };
   "download.setQueue": { params: SetQueueParams; result: null };
+  "download.confirm": { params: ConfirmParams; result: null };
   "queue.list": { params: undefined; result: Queue[] };
   "queue.create": { params: QueueConfig; result: Queue };
   "queue.update": { params: QueueConfig; result: Queue };

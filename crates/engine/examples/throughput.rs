@@ -267,6 +267,7 @@ async fn one(size: u64, chunk: usize, conns: u16, threaded: bool, pace: f64) -> 
             checksum: None,
             connections: Some(u32::from(conns)),
             queue: None,
+            from_browser: false,
         })
         .await
         .unwrap()

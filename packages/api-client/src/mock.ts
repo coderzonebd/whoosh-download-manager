@@ -15,6 +15,7 @@ import {
   ErrorCode,
   PROTOCOL_VERSION,
   type AddParams,
+  type ConfirmParams,
   type DownloadDetail,
   type DownloadState,
   type DownloadSummary,
@@ -86,6 +87,7 @@ const DEFAULT_SETTINGS: Settings = {
   maxConnectionsPerDownload: 8,
   language: "en",
   theme: "system",
+  confirmBrowserDownloads: true,
 };
 
 const ACTIVE: ReadonlySet<DownloadState> = new Set(["probing", "downloading", "verifying"]);
@@ -226,6 +228,8 @@ interface Seed {
   connections?: number;
   resumable?: boolean;
   ageMin: number;
+  /** Active time in ms; computed from size and speed for completed seeds unless null (an old record). */
+  activeMs?: number | null;
   failAt?: number;
   expireAt?: number;
   error?: { code: string; message: string };
@@ -245,7 +249,7 @@ const DEMO: Seed[] = [
   { url: "https://photos.example.com/share/%E0%A6%95%E0%A6%95%E0%A7%8D%E0%A6%B8%E0%A6%AC%E0%A6%BE%E0%A6%9C%E0%A6%BE%E0%A6%B0-%E0%A6%AD%E0%A7%8D%E0%A6%B0%E0%A6%AE%E0%A6%A3.zip", size: 1.1 * GB, state: "queued", ageMin: 1 },
   { url: "https://podcasts.example.fm/episodes/episode-214-open-source-in-bangladesh.mp3", size: 64 * MB, state: "queued", ageMin: 1 },
   { url: "https://nodejs.org/dist/v24.11.0/node-v24.11.0-x64.msi", size: 32 * MB, state: "completed", ageMin: 60 * 26 },
-  { url: "https://www.example.com/investors/annual-report-2025.pdf", size: 8.4 * MB, state: "completed", ageMin: 60 * 50 },
+  { url: "https://www.example.com/investors/annual-report-2025.pdf", size: 8.4 * MB, state: "completed", ageMin: 60 * 50, activeMs: null },
   { url: "https://update.code.visualstudio.com/1.106.0/win32-x64-user/VSCodeUserSetup-x64-1.106.0.exe", size: 110 * MB, state: "completed", ageMin: 60 * 72 },
   { url: "https://wallpapers.example.com/sundarbans-mangrove-8k.jpg", size: 24 * MB, state: "completed", ageMin: 60 * 5 },
   {
@@ -371,8 +375,8 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     }
     sim.dirty = true;
     emit("event.download.state", error ? { id: d.id, state, error } : { id: d.id, state });
-    // The step is a descriptive field: clients get it with the summary.
-    if (d.media) emit("event.download.updated", summary(d));
+    // The step is a descriptive field: clients get it with the summary; so is the final active time.
+    if (d.media || state === "completed") emit("event.download.updated", summary(d));
   }
 
   function addSim(seed: Seed, at: number): Sim {
@@ -406,6 +410,11 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       d.downloadedBytes = d.segments.reduce((a, s) => a + s.downloadedBytes, 0);
     }
     if (seed.state === "completed") d.completedAt = at + 60_000;
+    if (seed.activeMs !== null) {
+      if (seed.activeMs !== undefined) d.activeMs = seed.activeMs;
+      else if (seed.state === "completed" && size !== undefined) d.activeMs = Math.round((size / (seed.bps ?? 6.5 * MB)) * 1000);
+      else d.activeMs = 0;
+    }
     if (seed.error) d.error = seed.error;
     const sim: Sim = {
       d,
@@ -472,6 +481,11 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       if (simTime < at) continue;
       toolReadyAt.delete(name);
       finishInstall(name);
+    }
+
+    // Active time (PROTOCOL.md `activeMs`): only while probing, downloading or verifying.
+    for (const sim of sims.values()) {
+      if (ACTIVE.has(sim.d.state) && sim.d.activeMs !== undefined) sim.d.activeMs += dtMs;
     }
 
     // Probing / verifying timers.
@@ -626,12 +640,14 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     return result;
   }
 
-  function add(params: AddParams): string {
+  function add(params: AddParams): { id: string; awaitingConfirmation?: boolean } {
     const p = probe(params.url);
     const directory = params.directory?.trim() || settings.defaultDirectory;
     const filename = uniqueFilename(directory, params.filename?.trim() || p.filename);
     const start = params.start ?? true;
-    const seed: Seed = { url: p.finalUrl, filename, state: start ? "queued" : "paused", ageMin: 0, resumable: p.resumable };
+    // A browser download waits for the user (the real daemon decides "from the browser" itself).
+    const ask = params.fromBrowser === true && start && settings.confirmBrowserDownloads !== false;
+    const seed: Seed = { url: p.finalUrl, filename, state: start && !ask ? "queued" : "paused", ageMin: 0, resumable: p.resumable, activeMs: 0 };
     if (p.totalBytes !== undefined) seed.size = p.totalBytes;
     const sim = addSim(seed, wallNow());
     sim.d.directory = directory;
@@ -640,8 +656,36 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       if (!queues.has(params.queue)) throw invalidParams(`no queue named "${params.queue}"`);
       sim.d.queue = params.queue;
     }
+    if (ask) sim.d.awaitingConfirmation = true;
     emit("event.download.added", summary(sim.d));
-    return sim.d.id;
+    return ask ? { id: sim.d.id, awaitingConfirmation: true } : { id: sim.d.id };
+  }
+
+  function confirm(params: ConfirmParams): null {
+    const sim = get(params?.id);
+    const d = sim.d;
+    if (!d.awaitingConfirmation) throw new WhooshRpcError(ErrorCode.InvalidState, "this download is not waiting for confirmation");
+    if (params.directory !== undefined) {
+      const dir = params.directory.trim();
+      if (!dir) throw invalidParams("directory must be an absolute path");
+      d.directory = dir;
+    }
+    if (params.filename?.trim()) {
+      d.filename = "";
+      d.filename = uniqueFilename(d.directory, params.filename.trim());
+    }
+    if (params.category?.trim()) d.category = params.category.trim();
+    if (params.queue !== undefined) {
+      const q = params.queue.trim();
+      if (q === "" || q === MAIN_QUEUE) delete d.queue;
+      else if (!queues.has(q)) throw invalidParams(`no queue named "${q}"`);
+      else d.queue = q;
+    }
+    delete d.awaitingConfirmation;
+    emit("event.download.updated", summary(d));
+    const stopped = d.queue !== undefined && queues.get(d.queue)?.running === false;
+    setState(sim, params.start || stopped ? "queued" : "paused");
+    return null;
   }
 
   // ---------------------------------------------------------------- media
@@ -765,6 +809,9 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     };
     if (v.speedLimitBps !== undefined) out.speedLimitBps = v.speedLimitBps;
     if (v.durability !== undefined) out.durability = v.durability;
+    if (v.confirmBrowserDownloads !== undefined && typeof v.confirmBrowserDownloads !== "boolean") throw invalidParams("confirmBrowserDownloads must be true or false");
+    // Absent means true, as in the daemon.
+    out.confirmBrowserDownloads = v.confirmBrowserDownloads ?? true;
     if (v.speedSchedule !== undefined) {
       for (const w of v.speedSchedule) {
         if (!isClockTime(w.from) || !isClockTime(w.to)) throw invalidParams("speed window times must be HH:MM");
@@ -840,7 +887,8 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     },
     "daemon.shutdown": () => null,
     "download.probe": (p) => probe(p?.url),
-    "download.add": (p) => ({ id: add(p) }),
+    "download.add": (p) => add(p),
+    "download.confirm": (p) => confirm(p),
     "download.list": (p) => {
       const states = p?.states && p.states.length > 0 ? new Set(p.states) : undefined;
       const out: DownloadSummary[] = [];
@@ -874,6 +922,11 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       }
       for (const sim of targets) {
         if (sim.d.state !== "paused" && sim.d.state !== "failed") continue;
+        if (sim.d.awaitingConfirmation) {
+          // Resuming a download that waits answers it.
+          delete sim.d.awaitingConfirmation;
+          emit("event.download.updated", summary(sim.d));
+        }
         if (sim.d.state === "failed" && !sim.d.resumable) {
           sim.d.downloadedBytes = 0;
           sim.d.segments = [];

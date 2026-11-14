@@ -9,10 +9,10 @@ use futures::stream::BoxStream;
 use serde::Serialize;
 
 use crate::{
-    AddParams, AddResult, DownloadDetail, DownloadSummary, IdParams, IdsParams, ListParams,
-    MediaAddParams, MediaConfigureParams, MediaProbeParams, MediaProbeResult, MediaToolsStatus,
-    MediaUpdateParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent, Queue,
-    QueueConfig, QueueFinishedEvent, QueueNameParams, QueueRenameParams, RefreshUrlParams,
+    AddParams, AddResult, ConfirmParams, DownloadDetail, DownloadSummary, IdParams, IdsParams,
+    ListParams, MediaAddParams, MediaConfigureParams, MediaProbeParams, MediaProbeResult,
+    MediaToolsStatus, MediaUpdateParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent,
+    Queue, QueueConfig, QueueFinishedEvent, QueueNameParams, QueueRenameParams, RefreshUrlParams,
     RemoveParams, RemovedEvent, SetQueueParams, Settings, StateEvent, Stats, error_code, event,
 };
 
@@ -137,6 +137,13 @@ pub trait Service: Send + Sync {
     fn stats(&self) -> BoxFuture<'_, ServiceResult<Stats>>;
     fn settings(&self) -> BoxFuture<'_, ServiceResult<Settings>>;
     fn set_settings(&self, settings: Settings) -> BoxFuture<'_, ServiceResult<Settings>>;
+
+    /// `download.confirm`: the user's answer for a download that waits for
+    /// confirmation (PROTOCOL.md). Services that never ask answer
+    /// "unsupported".
+    fn confirm(&self, _params: ConfirmParams) -> BoxFuture<'_, ServiceResult<()>> {
+        unsupported("download.confirm")
+    }
 
     // Queues and the scheduler. A service that has them advertises the
     // `queues` capability; until then these answer "unsupported".

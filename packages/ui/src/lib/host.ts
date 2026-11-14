@@ -85,6 +85,11 @@ export interface Host {
     firstRun(): Promise<boolean>;
   };
   /**
+   * Bring the app window to the front, also when it is hidden in the tray (desktop app). Called
+   * when a download from the browser waits for the user's confirmation.
+   */
+  showWindow?: () => Promise<void>;
+  /**
    * The clipboard's text, for the add dialog: opened empty, it fills in a
    * download link found there. Undefined when there is none.
    */

@@ -4,6 +4,14 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## Unreleased: Phase 2
 
+### Downloads from the browser
+- "Ask before downloading from the browser" (on by default; Settings → Browsers, `whoosh settings set confirmBrowserDownloads=false`): a download the extension hands over waits for you, like IDM's "Download File Info". Whoosh Download Manager comes to the front (also from the tray) with a dialog showing the size, whether it can pause and resume, and where it comes from; you can change the file name, folder, category and queue, then **Start download**, **Download later** (kept paused, or with its queue when that queue is stopped; also Escape) or **Cancel**. Several waiting downloads are asked about one at a time, oldest first, also ones that were waiting when the app opened. Downloads from the app, the command line and `whoosh://` links never ask.
+- When no app window is open, the native host starts the desktop app for it: the app bundle on macOS, `whoosh-desktop` next to the host on Windows and Linux. Command-line-only installs and AppImages start nothing; the download waits until the app is opened.
+- Protocol: `download.confirm`, `AddResult.awaitingConfirmation`/`needsApp`, `DownloadSummary.awaitingConfirmation`, `Settings.confirmBrowserDownloads`; the daemon itself marks the extension's downloads (`AddParams.fromBrowser`), whatever the request says. See PROTOCOL.md, "Downloads from the browser".
+
+### Download details
+- "Time taken" for a finished download: how long it actually downloaded, without the time it was paused, queued or waiting, with its average speed. The daemon keeps the active time per download across restarts (`DownloadSummary.activeMs`); downloads from older versions, and media downloads, do not show it.
+
 ### Release engineering
 - The Windows MSI has a fixed upgrade code (`bundle.windows.wix.upgradeCode`), so a later rename can still upgrade existing MSI installs in place.
 - Desktop release assets are named after the full product name, with hyphens instead of spaces: `Whoosh-Download-Manager_<version>_x64-setup.exe`, `…_x64_en-US.msi`, `…_x64_portable.zip`, `…_universal.dmg`, `…_universal.app.tar.gz`, `…_amd64.AppImage`, `…_amd64.deb`, `Whoosh-Download-Manager-<version>-1.x86_64.rpm` (and the arm64/aarch64 ones), with their updater `.sig` files; `latest.json`, SHA256SUMS, the attestations and the generated package manifests use the same names. The deb and rpm package name is now `whoosh-download-manager`, and the media tools are installed under `/usr/lib/Whoosh Download Manager/media-tools`.

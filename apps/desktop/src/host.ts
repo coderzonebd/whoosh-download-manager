@@ -3,8 +3,9 @@
 // native folder picker, the app's own settings (`desktop.json`, through the
 // `desktop_prefs` / `set_desktop_prefs` commands), launch at login, the
 // "Send crash reports" switch (`crash.rs`), opening the translation site
-// from the language picker, "Connect your browser" (`browsers.rs`) and signed
-// updates (`updates.rs`).
+// from the language picker, "Connect your browser" (`browsers.rs`), signed
+// updates (`updates.rs`) and bringing the window to the front for a browser
+// download that waits for confirmation.
 import type { BrowserState, CrashReportsState, DesktopPrefs, Host, UpdateInfo } from "@whoosh/ui";
 
 /** The full `desktop.json` as the shell sends it (`prefs.rs`). */
@@ -98,6 +99,11 @@ export function desktopHost(): Host {
         await patchPrefs({ browserSetupShown: true });
         return true;
       },
+    },
+    // A browser download waits for confirmation: show the window, also from the tray.
+    // The shell's own show: on macOS it also brings the app back into the Dock.
+    async showWindow() {
+      await invoke("show_window");
     },
     updates: {
       async check() {

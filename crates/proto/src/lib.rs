@@ -55,6 +55,8 @@ pub mod method {
     pub const DOWNLOAD_REMOVE: &str = "download.remove";
     pub const DOWNLOAD_REFRESH_URL: &str = "download.refreshUrl";
     pub const DOWNLOAD_SET_QUEUE: &str = "download.setQueue";
+    /// Answers a download that waits for the user (`awaitingConfirmation`).
+    pub const DOWNLOAD_CONFIRM: &str = "download.confirm";
 
     pub const QUEUE_LIST: &str = "queue.list";
     pub const QUEUE_CREATE: &str = "queue.create";
@@ -284,6 +286,12 @@ pub struct AddParams {
     /// A named queue (runs one download at a time); the main queue when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue: Option<String>,
+    /// The download was caught in a web browser. Set by the daemon itself
+    /// for requests that arrive through the native messaging host (whatever
+    /// the client sent); with [`Settings::confirm_browser_downloads`] such a
+    /// download waits for the user instead of starting.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub from_browser: bool,
 }
 
 /// Bounds of [`AddParams::connections`].
@@ -293,9 +301,55 @@ pub(crate) fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AddResult {
     pub id: DownloadId,
+    /// The download was added but waits for the user to confirm it
+    /// (`download.confirm`) instead of starting.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub awaiting_confirmation: bool,
+    /// With `awaiting_confirmation`: no desktop window is connected to ask
+    /// the user, so the native messaging host starts the desktop app. Set by
+    /// the daemon, not the engine.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub needs_app: bool,
+}
+
+impl AddResult {
+    pub fn new(id: DownloadId) -> Self {
+        Self {
+            id,
+            ..Self::default()
+        }
+    }
+}
+
+/// `download.confirm`: the user's answer for a download that waits for
+/// confirmation. Every field but `id` and `start` is optional and replaces
+/// what the download had (the dialog lets the user edit them).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmParams {
+    pub id: DownloadId,
+    /// `true`: start now ("Start download"). `false`: keep it for later
+    /// ("Download later"): it stays paused, or, in a named queue that is not
+    /// running, waits with the rest of that queue.
+    pub start: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    /// Absolute directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// A queue name; `""` or `"main"` is the main queue. Absent keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -395,6 +449,16 @@ pub struct DownloadSummary {
     /// Present on media downloads (`media.add`): `url` is then the page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<MediaDownloadInfo>,
+    /// Added from a browser and waiting for the user to confirm it
+    /// (`download.confirm`); `state` is then `paused`. Absent means false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub awaiting_confirmation: bool,
+    /// How long the download has actually been transferring, in
+    /// milliseconds: the time its runs took, without the time it was
+    /// paused, queued or waiting. Absent when unknown (records from older
+    /// versions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -454,6 +518,10 @@ pub struct Settings {
     /// `speed_limit_bps` (see [`SpeedWindow`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub speed_schedule: Vec<SpeedWindow>,
+    /// Downloads caught in a web browser wait for the user to confirm them
+    /// (name, folder, queue) before they start. Absent means true.
+    #[serde(default = "default_true")]
+    pub confirm_browser_downloads: bool,
 }
 
 /// What a finished (and a checkpointed) download survives.
@@ -567,6 +635,8 @@ mod tests {
                 completed_at: None,
                 error: None,
                 media: None,
+                awaiting_confirmation: false,
+                active_ms: None,
             },
             segments: vec![],
         };
@@ -590,6 +660,64 @@ mod tests {
             serde_json::to_value(&p).unwrap()["segments"],
             json!([[0, 10, 7]])
         );
+    }
+
+    #[test]
+    fn confirmation_fields_are_omitted_unless_set() {
+        let p: AddParams =
+            serde_json::from_value(json!({ "url": "u", "fromBrowser": true })).unwrap();
+        assert!(p.from_browser);
+        let r = AddResult::new("dl_1".into());
+        assert_eq!(serde_json::to_value(&r).unwrap(), json!({ "id": "dl_1" }));
+        let r = AddResult {
+            awaiting_confirmation: true,
+            needs_app: true,
+            ..r
+        };
+        assert_eq!(
+            serde_json::to_value(&r).unwrap(),
+            json!({ "id": "dl_1", "awaitingConfirmation": true, "needsApp": true })
+        );
+        let c: ConfirmParams =
+            serde_json::from_value(json!({ "id": "dl_1", "start": false, "queue": "night" }))
+                .unwrap();
+        assert!(!c.start);
+        assert_eq!(c.queue.as_deref(), Some("night"));
+        assert_eq!(c.filename, None);
+    }
+
+    #[test]
+    fn settings_ask_for_browser_downloads_by_default() {
+        let s: Settings = serde_json::from_value(json!({
+            "defaultDirectory": "/d", "maxActiveDownloads": 3,
+            "maxConnectionsPerDownload": 8, "language": "en", "theme": "system"
+        }))
+        .unwrap();
+        assert!(s.confirm_browser_downloads);
+        assert_eq!(
+            serde_json::to_value(&s).unwrap()["confirmBrowserDownloads"],
+            json!(true)
+        );
+    }
+
+    #[test]
+    fn active_time_and_waiting_flag_on_the_wire() {
+        let v = json!({
+            "id": "dl_1", "url": "u", "filename": "f", "directory": "/d", "state": "paused",
+            "downloadedBytes": 0, "speedBps": 0, "connections": 0, "resumable": false,
+            "addedAt": 0
+        });
+        let s: DownloadSummary = serde_json::from_value(v).unwrap();
+        assert!(!s.awaiting_confirmation);
+        assert_eq!(s.active_ms, None);
+        let s = DownloadSummary {
+            awaiting_confirmation: true,
+            active_ms: Some(1500),
+            ..s
+        };
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["awaitingConfirmation"], json!(true));
+        assert_eq!(v["activeMs"], json!(1500));
     }
 
     #[test]

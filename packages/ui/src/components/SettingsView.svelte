@@ -38,6 +38,8 @@
     limitValue: string;
     limitUnit: Unit;
     windows: WindowDraft[];
+    /** undefined: the daemon has no such setting (older daemons never ask). */
+    confirmBrowser: boolean | undefined;
   }
 
   const UNIT: Record<Unit, number> = { KB: 1024, MB: 1024 * 1024 };
@@ -67,6 +69,7 @@
       limitValue: bps === undefined ? "1" : valueIn(bps, unit),
       limitUnit: unit,
       windows: (s.speedSchedule ?? []).map(toWindow),
+      confirmBrowser: s.confirmBrowserDownloads,
     };
   }
 
@@ -144,6 +147,7 @@
       return out;
     });
     if (windows.length > 0) s.speedSchedule = windows;
+    if (d.confirmBrowser !== undefined) s.confirmBrowserDownloads = d.confirmBrowser;
     return s;
   }
 
@@ -547,13 +551,24 @@
         </section>
       {/if}
 
-      {#if host.browsers}
+      {#if host.browsers || draft.confirmBrowser !== undefined}
         <section aria-labelledby="vy-set-browsers">
           <h2 id="vy-set-browsers">{t("settings.browsers")}</h2>
-          <p class="vy-hint">{t("settings.browsersHint")}</p>
-          <div>
-            <button type="button" class="vy-btn vy-btn--secondary" onclick={() => (app.view = "browsers")}>{t("settings.browsersOpen")}</button>
-          </div>
+          {#if draft.confirmBrowser !== undefined}
+            <div class="vy-field">
+              <label class="vy-check">
+                <input id="vy-set-confirm" type="checkbox" bind:checked={draft.confirmBrowser} aria-describedby="vy-set-confirm-hint" />
+                {t("settings.confirmBrowser")}
+              </label>
+              <span id="vy-set-confirm-hint" class="vy-hint">{t("settings.confirmBrowserHint")}</span>
+            </div>
+          {/if}
+          {#if host.browsers}
+            <p class="vy-hint">{t("settings.browsersHint")}</p>
+            <div>
+              <button type="button" class="vy-btn vy-btn--secondary" onclick={() => (app.view = "browsers")}>{t("settings.browsersOpen")}</button>
+            </div>
+          {/if}
         </section>
       {/if}
 

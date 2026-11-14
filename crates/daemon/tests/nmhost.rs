@@ -49,6 +49,9 @@ impl Host {
         for (k, v) in env {
             cmd.env(k, v);
         }
+        // A browser download waits for confirmation here, with no desktop
+        // window: the host must not start the real app.
+        cmd.env("WHOOSH_NMHOST_NO_LAUNCH", "1");
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -147,6 +150,17 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
                        "request": {"referer": "https://example.com/pkg/"}}}));
         let added = host.response(2, &mut events);
         let id = added["result"]["id"].as_str().expect("an id").to_owned();
+        // From the browser, so it waits for the user ("Ask before
+        // downloading from the browser" is on by default), and no desktop
+        // window is connected to ask.
+        assert_eq!(added["result"]["awaitingConfirmation"], true, "{added}");
+        assert_eq!(added["result"]["needsApp"], true, "{added}");
+        host.send(
+            json!({"jsonrpc": "2.0", "id": 20, "method": "download.confirm",
+            "params": {"id": id, "start": true}}),
+        );
+        let confirmed = host.response(20, &mut events);
+        assert_eq!(confirmed["result"], Value::Null, "{confirmed}");
 
         // Events reach the extension.
         let ev = host.wait_event(&mut events, |m| m["method"] == "event.download.added");

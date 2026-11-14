@@ -171,6 +171,8 @@
     "source": "Dirección",
     "added": "Añadida",
     "finished": "Finalizada",
+    "timeTaken": "Tiempo empleado",
+    "averageSpeed": "Velocidad media",
     "speedHistory": "Velocidad, últimos 30 segundos",
     "peak": "Máximo: {{speed}}",
     "segmentMap": "Mapa de segmentos",
@@ -227,6 +229,15 @@
     "mediaFailed": "No se encontró ningún vídeo en esta página: {{message}}",
     "asFile": "Descargar la página en su lugar",
     "asMedia": "Elegir un formato de vídeo en su lugar"
+  },
+  "confirm": {
+    "title": "Nueva descarga desde tu navegador",
+    "description": "Revisa el nombre del archivo y dónde se guardará. Whoosh Download Manager solo la inicia cuando tú lo digas.",
+    "from": "Desde {{host}}",
+    "position": "{{index}} de {{total}}",
+    "start": "Iniciar descarga",
+    "later": "Descargar más tarde",
+    "failed": "No se pudo hacer: {{message}}"
   },
   "remove": {
     "titleOne": "¿Quitar “{{name}}”?",
@@ -288,6 +299,8 @@
     "mediaHint": "Whoosh Download Manager usa yt-dlp para encontrar el vídeo de una página y ffmpeg para unir vídeo y audio. Ambos son programas independientes de sus versiones oficiales, comprobados con la suma de verificación publicada. El instalador los incluye; sin él, se descargan la primera vez que hacen falta.",
     "browsers": "Navegadores",
     "browsersHint": "Vincula Chrome, Edge, Firefox y otros navegadores para que sus descargas lleguen a Whoosh Download Manager.",
+    "confirmBrowser": "Preguntar antes de descargar desde el navegador",
+    "confirmBrowserHint": "Una descarga que te pasa el navegador espera a que revises su nombre y carpeta; luego la inicias ahora o más tarde.",
     "browsersOpen": "Conectar tu navegador…",
     "updates": "Actualizaciones",
     "autoUpdateCheck": "Buscar una versión nueva de Whoosh Download Manager una vez al día",

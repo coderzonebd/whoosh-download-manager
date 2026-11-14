@@ -13,6 +13,7 @@
   import AfterDoneBanner from "./AfterDoneBanner.svelte";
   import BrowsersView from "./BrowsersView.svelte";
   import ClearHistoryDialog from "./ClearHistoryDialog.svelte";
+  import ConfirmDownloadDialog from "./ConfirmDownloadDialog.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import CrashNotice from "./CrashNotice.svelte";
   import DetailPanel from "./DetailPanel.svelte";
@@ -61,7 +62,7 @@
   const { store, prefs, i18n } = app;
 
   const detail = $derived(app.view === "downloads" && prefs.detailOpen ? store.get(store.activeId) : undefined);
-  const modal = $derived(
+  const otherModal = $derived(
     app.addOpen ||
       app.shortcutsOpen ||
       app.removeIds !== undefined ||
@@ -71,6 +72,9 @@
       app.moveIds !== undefined ||
       app.clearIds !== undefined,
   );
+  /** A browser download waiting for the user; asked about once no other dialog is open. */
+  const confirming = $derived(otherModal ? undefined : app.waiting[0]);
+  const modal = $derived(otherModal || confirming !== undefined);
   /** The downloads view's name, as its (visually hidden) page heading. */
   const viewTitle = $derived.by(() => {
     const v = store.view;
@@ -192,6 +196,11 @@
   {/if}
   {#if app.shortcutsOpen}
     <ShortcutsDialog onclose={() => (app.shortcutsOpen = false)} />
+  {/if}
+  {#if confirming}
+    {#key confirming.id}
+      <ConfirmDownloadDialog download={confirming} index={1} total={app.waiting.length} />
+    {/key}
   {/if}
 </div>
 

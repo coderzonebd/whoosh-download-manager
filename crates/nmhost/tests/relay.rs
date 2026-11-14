@@ -359,6 +359,55 @@ async fn performs_hello_and_relays_verbatim_in_both_directions() {
 }
 
 #[tokio::test]
+async fn starts_the_app_when_a_download_waits_for_a_missing_window() {
+    let dir = TempDir::new("launch");
+    let mut daemon = FakeDaemon::start("t").await;
+    write_runtime(&dir.runtime_file(), daemon.port, "t");
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(dir.runtime_file());
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    let count = || launches.load(std::sync::atomic::Ordering::SeqCst);
+
+    let add = |id: u64| {
+        json!({"jsonrpc":"2.0","id":id,"method":"download.add","params":{"url":"https://e/a"}})
+            .to_string()
+    };
+    // A window is connected: nothing to start.
+    browser.send(&add(1)).await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":1,"result":{"id":"dl_1","awaitingConfirmation":true}}"#);
+    browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(count(), 0);
+
+    // No window: start the app, once (not again for the next one soon after).
+    for id in [2, 3] {
+        browser.send(&add(id)).await;
+        daemon.recv().await;
+        daemon.send(format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"result":{{"id":"dl_{id}","awaitingConfirmation":true,"needsApp":true}}}}"#
+        ));
+        browser.recv_until(|m| m["id"] == id).await;
+        assert_eq!(count(), 1);
+    }
+
+    // Another method's result with the same field is not an add.
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":4,"method":"stats.get"}"#)
+        .await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":4,"result":{"needsApp":true}}"#);
+    browser.recv_until(|m| m["id"] == 4).await;
+    assert_eq!(count(), 1);
+
+    browser.close().await.unwrap();
+    daemon.stop().await;
+}
+
+#[tokio::test]
 async fn forwards_daemon_events() {
     let dir = TempDir::new("events");
     let mut daemon = FakeDaemon::start("t").await;

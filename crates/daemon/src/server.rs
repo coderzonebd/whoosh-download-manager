@@ -44,6 +44,9 @@ pub(crate) struct Shared {
     /// Slots for connections that have not completed `session.hello`.
     pub pending_hellos: Arc<Semaphore>,
     pub tracker: Tracker,
+    /// Connected desktop windows (`ClientInfo::name` "desktop"): a download
+    /// that waits for confirmation needs one to ask the user.
+    pub desktop_sessions: AtomicUsize,
 }
 
 impl Shared {
@@ -291,6 +294,7 @@ async fn serve_claimed(
         stop: watch::Sender::new(false),
         pending_hellos,
         tracker: Tracker::default(),
+        desktop_sessions: AtomicUsize::new(0),
     });
     let accept = tokio::spawn(accept_loop(listener, shared.clone(), accepting_rx));
     tracing::info!(%addr, data_dir = %data_dir.display(), "listening");

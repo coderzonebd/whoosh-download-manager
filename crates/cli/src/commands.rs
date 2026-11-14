@@ -217,6 +217,7 @@ pub fn add_params(
         checksum,
         connections: opts.connections,
         queue: opts.queue.clone(),
+        from_browser: false,
     })
 }
 
@@ -480,6 +481,10 @@ pub async fn settings(ctx: &Ctx, action: Option<SettingsCmd>) -> Result<u8> {
                     Durability::ProcessSafe => "processSafe".to_owned(),
                 },
             ),
+            (
+                "confirmBrowserDownloads",
+                settings.confirm_browser_downloads.to_string(),
+            ),
         ] {
             println!("{k:<26} {v}");
         }
@@ -496,6 +501,7 @@ enum Key {
     Language,
     Theme,
     Durability,
+    ConfirmBrowserDownloads,
 }
 
 fn parse_pair(pair: &str) -> Result<(Key, String)> {
@@ -518,10 +524,12 @@ fn parse_pair(pair: &str) -> Result<(Key, String)> {
         "language" | "lang" => Key::Language,
         "theme" => Key::Theme,
         "durability" => Key::Durability,
+        "confirmbrowserdownloads" | "confirmbrowser" | "askbrowser" => Key::ConfirmBrowserDownloads,
         _ => {
             return Err(CliError::Usage(format!(
                 "unknown setting {key:?} (defaultDirectory, maxActiveDownloads, \
-                 maxConnectionsPerDownload, speedLimitBps, language, theme, durability)"
+                 maxConnectionsPerDownload, speedLimitBps, language, theme, durability, \
+                 confirmBrowserDownloads)"
             )));
         }
     };
@@ -558,6 +566,17 @@ fn apply(s: &mut Settings, key: Key, value: &str) -> Result<()> {
                 _ => {
                     return Err(CliError::Usage(format!(
                         "durability: {value:?} is not powerSafe or processSafe"
+                    )));
+                }
+            }
+        }
+        Key::ConfirmBrowserDownloads => {
+            s.confirm_browser_downloads = match value.to_ascii_lowercase().as_str() {
+                "true" | "on" | "yes" | "1" => true,
+                "false" | "off" | "no" | "0" => false,
+                _ => {
+                    return Err(CliError::Usage(format!(
+                        "confirmBrowserDownloads: {value:?} is not true or false"
                     )));
                 }
             }
@@ -931,6 +950,7 @@ mod tests {
             theme: "system".into(),
             durability: Default::default(),
             speed_schedule: Vec::new(),
+            confirm_browser_downloads: true,
         };
         for pair in [
             "max_active_downloads=5",
@@ -945,6 +965,11 @@ mod tests {
         assert_eq!(s.max_connections_per_download, 16);
         assert_eq!(s.speed_limit_bps, Some(10 << 20));
         assert_eq!(s.theme, "dark");
+        let (k, v) = parse_pair("confirm-browser-downloads=off").unwrap();
+        apply(&mut s, k, &v).unwrap();
+        assert!(!s.confirm_browser_downloads);
+        let (k, v) = parse_pair("confirmBrowserDownloads=maybe").unwrap();
+        assert!(apply(&mut s, k, &v).is_err());
         let (k, v) = parse_pair("speedLimitBps=none").unwrap();
         apply(&mut s, k, &v).unwrap();
         assert_eq!(s.speed_limit_bps, None);

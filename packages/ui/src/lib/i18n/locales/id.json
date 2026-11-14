@@ -161,6 +161,8 @@
     "source": "Alamat",
     "added": "Ditambahkan",
     "finished": "Selesai",
+    "timeTaken": "Waktu yang dibutuhkan",
+    "averageSpeed": "Kecepatan rata-rata",
     "speedHistory": "Kecepatan, 30 detik terakhir",
     "peak": "Puncak {{speed}}",
     "segmentMap": "Peta segmen",
@@ -218,6 +220,15 @@
     "asFile": "Unduh halamannya saja",
     "asMedia": "Pilih format video"
   },
+  "confirm": {
+    "title": "Unduhan baru dari browser Anda",
+    "description": "Periksa nama file dan tempat penyimpanannya. Whoosh Download Manager baru memulainya saat Anda memintanya.",
+    "from": "Dari {{host}}",
+    "position": "{{index}} dari {{total}}",
+    "start": "Mulai unduh",
+    "later": "Unduh nanti",
+    "failed": "Tidak dapat melakukannya: {{message}}"
+  },
   "remove": {
     "titleOne": "Hapus “{{name}}”?",
     "title_other": "Hapus {{count}} unduhan?",
@@ -274,6 +285,8 @@
     "mediaHint": "Whoosh Download Manager memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah dari rilis resminya, dicocokkan dengan checksum yang diterbitkan. Penginstal sudah menyertakannya; tanpa penginstal, keduanya diunduh saat pertama kali dibutuhkan.",
     "browsers": "Peramban",
     "browsersHint": "Hubungkan Chrome, Edge, Firefox, dan peramban lain agar unduhannya masuk ke Whoosh Download Manager.",
+    "confirmBrowser": "Tanya sebelum mengunduh dari browser",
+    "confirmBrowserHint": "Unduhan yang diserahkan browser menunggu sampai Anda memeriksa nama dan foldernya, lalu memulainya sekarang atau nanti.",
     "browsersOpen": "Hubungkan peramban Anda…",
     "updates": "Pembaruan",
     "autoUpdateCheck": "Cari versi baru Whoosh Download Manager sekali sehari",

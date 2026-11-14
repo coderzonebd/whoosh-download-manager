@@ -104,6 +104,12 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The UI asks for the window, e.g. when a browser download waits for confirmation.
+#[tauri::command]
+fn show_window<R: Runtime>(app: AppHandle<R>) {
+    show_main_window(&app);
+}
+
 pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     // Back in the Dock while the window is open (see `hide_to_tray`).
     #[cfg(target_os = "macos")]
@@ -314,6 +320,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             set_tray_tooltip,
+            show_window,
             daemon::daemon_connection,
             deep_links::take_deep_links,
             prefs::desktop_prefs,

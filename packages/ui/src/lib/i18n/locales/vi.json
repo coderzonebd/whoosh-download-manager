@@ -161,6 +161,8 @@
     "source": "Địa chỉ",
     "added": "Ngày thêm",
     "finished": "Hoàn tất lúc",
+    "timeTaken": "Thời gian tải",
+    "averageSpeed": "Tốc độ trung bình",
     "speedHistory": "Tốc độ trong 30 giây qua",
     "peak": "Cao nhất {{speed}}",
     "segmentMap": "Bản đồ phân đoạn",
@@ -218,6 +220,15 @@
     "asFile": "Tải chính trang này xuống",
     "asMedia": "Chọn định dạng video"
   },
+  "confirm": {
+    "title": "Lượt tải mới từ trình duyệt",
+    "description": "Kiểm tra tên tệp và nơi lưu. Whoosh Download Manager chỉ bắt đầu khi bạn đồng ý.",
+    "from": "Từ {{host}}",
+    "position": "{{index}} / {{total}}",
+    "start": "Bắt đầu tải",
+    "later": "Tải sau",
+    "failed": "Không thực hiện được: {{message}}"
+  },
   "remove": {
     "titleOne": "Gỡ bỏ “{{name}}”?",
     "title_other": "Gỡ bỏ {{count}} tải xuống?",
@@ -274,6 +285,8 @@
     "mediaHint": "Whoosh Download Manager dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng từ bản phát hành chính thức, được kiểm tra với mã băm đã công bố. Bộ cài đặt đã kèm sẵn cả hai; nếu không có, chúng được tải về khi cần lần đầu.",
     "browsers": "Trình duyệt",
     "browsersHint": "Liên kết Chrome, Edge, Firefox và các trình duyệt khác để lượt tải xuống của chúng chuyển sang Whoosh Download Manager.",
+    "confirmBrowser": "Hỏi trước khi tải xuống từ trình duyệt",
+    "confirmBrowserHint": "Lượt tải trình duyệt chuyển sang sẽ chờ bạn kiểm tra tên và thư mục, rồi bắt đầu ngay hoặc để sau.",
     "browsersOpen": "Kết nối trình duyệt…",
     "updates": "Cập nhật",
     "autoUpdateCheck": "Tìm phiên bản Whoosh Download Manager mới mỗi ngày một lần",

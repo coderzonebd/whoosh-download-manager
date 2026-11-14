@@ -42,6 +42,8 @@ fn record(i: u64) -> DownloadRecord {
         added_at: 1_762_780_000_000 + i as i64,
         completed_at: None,
         error: None,
+        awaiting_confirmation: false,
+        active_ms: None,
     }
 }
 

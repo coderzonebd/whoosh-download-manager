@@ -3,7 +3,7 @@
 // from context (`getApp()`), so the same tree runs on the mock, the real
 // WebSocket client or (in the extension) a native-messaging client.
 
-import { MAIN_QUEUE, type AddParams, type DownloadSummary, type MediaAddParams, type Queue, type QueueConfig, type Settings, type Stats, type WhooshClient } from "@whoosh/api-client";
+import { MAIN_QUEUE, type AddParams, type ConfirmParams, type DownloadSummary, type MediaAddParams, type Queue, type QueueConfig, type Settings, type Stats, type WhooshClient } from "@whoosh/api-client";
 import { isWhooshConnectionError, isWhooshRpcError } from "@whoosh/api-client/errors";
 import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
@@ -85,6 +85,16 @@ export class AppState {
   clearIds = $state.raw<string[] | undefined>(undefined);
   /** Show the one-time crash-report notice (first run, builds that send them). */
   crashNotice = $state(false);
+  /**
+   * Downloads caught in a browser that wait for the user ("Ask before downloading from the
+   * browser"), oldest first. The confirmation dialog asks about the first one.
+   */
+  readonly waiting: Download[] = $derived.by(() =>
+    this.store
+      .all()
+      .filter((d) => d.data.awaitingConfirmation === true && d.data.state === "paused")
+      .sort((a, b) => a.data.addedAt - b.data.addedAt || a.id.localeCompare(b.id)),
+  );
   /** Capabilities from the last hello, when the client reports them. */
   #capabilities: string[] | undefined;
 
@@ -125,6 +135,14 @@ export class AppState {
         $effect(() => {
           const locale = this.i18n.intlLocale;
           untrack(() => this.store.setCollationLocale(locale));
+        });
+        // A browser download waits for the user: bring the window to the front (also from the tray).
+        let shown: string | undefined;
+        $effect(() => {
+          const id = this.waiting[0]?.id;
+          if (id === undefined || id === shown) return;
+          shown = id;
+          untrack(() => this.host.showWindow?.().catch(() => undefined));
         });
         // A queue view whose queue went away (removed elsewhere) falls back to the main queue.
         $effect(() => {
@@ -364,6 +382,27 @@ export class AppState {
     } catch (e) {
       this.report(e);
     }
+  }
+
+  /**
+   * Answer a download that waits for confirmation: start it now, or keep it for later
+   * (`download.confirm`). Throws, so the dialog can show what went wrong.
+   */
+  async confirmDownload(params: ConfirmParams): Promise<void> {
+    await this.client.call("download.confirm", params);
+    // The daemon's `updated` event follows; leave the dialog right away.
+    const d = this.store.get(params.id);
+    if (d?.data.awaitingConfirmation) {
+      const next: DownloadSummary = { ...d.data };
+      delete next.awaitingConfirmation;
+      this.store.upsert(next);
+    }
+  }
+
+  /** "Cancel" in the confirmation dialog: the download goes away (nothing was fetched yet). */
+  async cancelWaiting(id: string): Promise<void> {
+    await this.client.call("download.remove", { ids: [id], deleteFiles: true });
+    this.store.remove([id]);
   }
 
   async refreshUrl(id: string, url: string): Promise<void> {

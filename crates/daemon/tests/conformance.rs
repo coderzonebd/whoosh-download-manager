@@ -691,6 +691,8 @@ async fn clients_too_far_behind_on_lossless_events_are_closed_with_4429() {
         completed_at: None,
         error: None,
         media: None,
+        awaiting_confirmation: false,
+        active_ms: None,
     };
     // Emit until the slow client's subscription is dropped by the daemon.
     let mut sent = 0u64;
@@ -1391,5 +1393,79 @@ async fn queue_methods_work_through_the_daemon_with_the_engine() {
     assert_eq!(ev.as_array().unwrap().len(), 1);
     let reply = call(&mut ws, 4, "download.get", json!({"id": id})).await;
     assert!(reply["result"].get("queue").is_none(), "{reply}");
+    d.shutdown().await;
+}
+
+// ------------------------------------------------------------ confirmation
+
+/// Opens a session that says it is `name` (`ClientInfo::name`).
+async fn session_as(daemon: &whoosh_daemon::RunningDaemon, name: &str) -> common::Ws {
+    let mut ws = ws(daemon).await;
+    let hello = json!({
+        "jsonrpc": "2.0", "id": "h", "method": "session.hello",
+        "params": { "token": daemon.runtime_info().token, "nonce": NONCE,
+                    "protocol": PROTOCOL_VERSION, "client": { "name": name, "version": "0" } }
+    });
+    send(&mut ws, &hello).await;
+    assert_eq!(next_response(&mut ws).await["id"], "h");
+    ws
+}
+
+#[tokio::test]
+async fn only_the_browser_session_marks_downloads_and_needs_app_follows_desktop_windows() {
+    let dir = TempDir::new("confirm");
+    let d = start(mock(), dir.path()).await;
+    let url = "https://example.com/a.zip?size=1MiB";
+
+    // Another client cannot make its download wait by claiming the browser.
+    let mut cli = session_as(&d, "cli").await;
+    let r = call(
+        &mut cli,
+        1,
+        "download.add",
+        json!({ "url": url, "fromBrowser": true }),
+    )
+    .await;
+    assert!(r["result"].get("awaitingConfirmation").is_none(), "{r}");
+
+    // From the extension, with no desktop window: the host must start the app.
+    let mut ext = session_as(&d, "extension-chromium").await;
+    let r = call(&mut ext, 2, "download.add", json!({ "url": url })).await;
+    assert_eq!(r["result"]["awaitingConfirmation"], true, "{r}");
+    assert_eq!(r["result"]["needsApp"], true, "{r}");
+    let waiting = r["result"]["id"].as_str().unwrap().to_owned();
+
+    // A desktop window is there to ask.
+    let mut desktop = session_as(&d, "desktop").await;
+    let r = call(&mut ext, 3, "download.add", json!({ "url": url })).await;
+    assert_eq!(r["result"]["awaitingConfirmation"], true, "{r}");
+    assert!(r["result"].get("needsApp").is_none(), "{r}");
+    let list = call(&mut desktop, 4, "download.get", json!({ "id": waiting })).await;
+    assert_eq!(list["result"]["awaitingConfirmation"], true);
+    assert_eq!(list["result"]["state"], "paused");
+
+    // The window answers; asking again is an invalid state.
+    let r = call(
+        &mut desktop,
+        5,
+        "download.confirm",
+        json!({ "id": waiting, "start": false }),
+    )
+    .await;
+    assert_eq!(r["result"], Value::Null, "{r}");
+    let r = call(
+        &mut desktop,
+        6,
+        "download.confirm",
+        json!({ "id": waiting, "start": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], error_code::INVALID_STATE, "{r}");
+
+    // The window went away: needed again.
+    drop(desktop);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let r = call(&mut ext, 7, "download.add", json!({ "url": url })).await;
+    assert_eq!(r["result"]["needsApp"], true, "{r}");
     d.shutdown().await;
 }

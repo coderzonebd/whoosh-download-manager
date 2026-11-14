@@ -102,7 +102,7 @@ impl Service for ScriptedService {
         }))
     }
     fn add(&self, _: AddParams) -> BoxFuture<'_, ServiceResult<AddResult>> {
-        ready(Ok(AddResult { id: "dl_1".into() }))
+        ready(Ok(AddResult::new("dl_1".into())))
     }
     fn list(&self, _: ListParams) -> BoxFuture<'_, ServiceResult<Vec<DownloadSummary>>> {
         ready(Ok(Vec::new()))
@@ -163,6 +163,7 @@ pub fn settings() -> Settings {
         theme: "system".into(),
         durability: Default::default(),
         speed_schedule: Vec::new(),
+        confirm_browser_downloads: true,
     }
 }
 

@@ -166,6 +166,8 @@
     "source": "Adres",
     "added": "Eklenme",
     "finished": "Bitiş",
+    "timeTaken": "Geçen süre",
+    "averageSpeed": "Ortalama hız",
     "speedHistory": "Hız, son 30 saniye",
     "peak": "En yüksek: {{speed}}",
     "segmentMap": "Parça haritası",
@@ -222,6 +224,15 @@
     "mediaFailed": "Bu sayfada video bulunamadı: {{message}}",
     "asFile": "Bunun yerine sayfanın kendisini indir",
     "asMedia": "Bunun yerine bir video biçimi seç"
+  },
+  "confirm": {
+    "title": "Tarayıcınızdan yeni indirme",
+    "description": "Dosya adını ve nereye kaydedileceğini kontrol edin. Whoosh Download Manager yalnızca siz istediğinizde başlatır.",
+    "from": "Kaynak: {{host}}",
+    "position": "{{index}} / {{total}}",
+    "start": "İndirmeyi başlat",
+    "later": "Daha sonra indir",
+    "failed": "Bu yapılamadı: {{message}}"
   },
   "remove": {
     "titleOne": "“{{name}}” kaldırılsın mı?",
@@ -281,6 +292,8 @@
     "mediaHint": "Whoosh Download Manager, bir sayfadaki videoyu bulmak için yt-dlp'yi, video ile sesi birleştirmek için ffmpeg'i kullanır. İkisi de resmi sürümlerinden gelen ayrı programlardır ve yayımlanan sağlama toplamıyla doğrulanır. Yükleyici ikisini de içerir; yükleyici olmadan ilk gerektiklerinde indirilirler.",
     "browsers": "Tarayıcılar",
     "browsersHint": "Chrome, Edge, Firefox ve diğer tarayıcıları bağlayın; indirmeleri Whoosh Download Manager'a gelsin.",
+    "confirmBrowser": "Tarayıcıdan indirmeden önce sor",
+    "confirmBrowserHint": "Tarayıcının aktardığı bir indirme, adını ve klasörünü kontrol edene kadar bekler; sonra şimdi ya da daha sonra başlatırsınız.",
     "browsersOpen": "Tarayıcınızı bağlayın…",
     "updates": "Güncellemeler",
     "autoUpdateCheck": "Günde bir kez yeni Whoosh Download Manager sürümü ara",
