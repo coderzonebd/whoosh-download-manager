@@ -221,6 +221,13 @@ pub enum Refuse {
     /// The TCP connection is reset (RST).
     #[serde(rename = "reset")]
     Reset,
+    /// Accepted, then starved: the response head as usual, then the body at
+    /// `trickle_rate` (a few bytes every 100 ms, never silent long enough to
+    /// look stalled), for as long as the client waits. Like a server that
+    /// streams only so many connections per client and parks the rest
+    /// instead of refusing them.
+    #[serde(rename = "trickle")]
+    Trickle,
 }
 
 /// Per-client-IP concurrency cap, counted like nginx `limit_conn`: requests
@@ -234,10 +241,17 @@ pub struct LimitConfig {
     /// `Retry-After` on 503/429.
     #[serde(default = "one")]
     pub retry_after_secs: u64,
+    /// Body rate of a response over the cap with `refuse = "trickle"`.
+    #[serde(default = "trickle_rate")]
+    pub trickle_rate: Rate,
 }
 
 fn one() -> u64 {
     1
+}
+
+fn trickle_rate() -> Rate {
+    Rate(200)
 }
 
 /// Connection resets (TCP RST) injected mid-body.
@@ -410,6 +424,9 @@ impl Scenario {
         if self.limits.is_some_and(|l| l.max_conns_per_ip == 0) {
             return bad("limits.max_conns_per_ip must be > 0".into());
         }
+        if self.limits.is_some_and(|l| l.trickle_rate.0 == 0) {
+            return bad("limits.trickle_rate must be > 0".into());
+        }
         let prob = |p: f64| (0.0..=1.0).contains(&p);
         if self.resets.is_some_and(|r| !prob(r.prob_per_mb)) {
             return bad("resets.prob_per_mb must be in [0, 1]".into());
@@ -490,6 +507,10 @@ pub const BUILTIN: &[(&str, &str)] = &[
         include_str!("../scenarios/global-throttle.toml"),
     ),
     ("conn-cap-2", include_str!("../scenarios/conn-cap-2.toml")),
+    (
+        "conn-cap-trickle",
+        include_str!("../scenarios/conn-cap-trickle.toml"),
+    ),
     (
         "rate-limited",
         include_str!("../scenarios/rate-limited.toml"),
@@ -598,6 +619,7 @@ mod tests {
             "clean",
             "per-conn-throttle",
             "conn-cap-2",
+            "conn-cap-trickle",
             "flaky",
             "stall",
             "high-latency",
@@ -678,6 +700,17 @@ mod tests {
         assert_eq!(s.bandwidth.per_conn, Some(Rate(2_000_000)));
         assert_eq!(s.limits.unwrap().refuse, Refuse::TooManyRequests);
         assert_eq!(s.limits.unwrap().retry_after_secs, 1);
+        assert_eq!(s.limits.unwrap().trickle_rate, Rate(200));
+        let t = Scenario::from_toml(
+            "t",
+            "[limits]\nmax_conns_per_ip = 2\nrefuse = \"trickle\"\ntrickle_rate = \"1kB/s\"",
+        )
+        .unwrap();
+        assert_eq!(t.limits.unwrap().refuse, Refuse::Trickle);
+        assert_eq!(t.limits.unwrap().trickle_rate, Rate(1000));
+        assert!(
+            Scenario::from_toml("t", "[limits]\nmax_conns_per_ip = 2\ntrickle_rate = 0").is_err()
+        );
         assert_eq!(s.ranges.mode, RangeMode::AdvertiseIgnore);
         assert!(!s.validators.etag && s.validators.last_modified);
         assert_eq!(
