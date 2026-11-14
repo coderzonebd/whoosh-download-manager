@@ -227,7 +227,17 @@ it costs only connections, not speed, and the count comes down (4 or
 fewer in 93 % of runs after 3 min). `Throttled` (429/503,
 refused under load), or two pre-first-byte failures within 2 s while others
 work, set a ceiling at the number of accepted connections (halving at most
-once per backoff round when none work) and settle. Learning pauses while a
+once per backoff round when none work) and settle. So do connections the
+server accepts and then starves (headers, perhaps a few bytes, then a
+trickle; a real server parked every connection beyond two per client at
+~190 B/s): an owner whose rate since its headers and recent rate are both
+under `starved_share` (5 %) of the median streaming connection's, for
+`max(starved_time, starved_rtts × median TTFB)` (1 s, 8 TTFBs, at most
+`tune_window_max`) while others stream, is cancelled (its range goes to
+the others) and the ceiling goes to the connections streaming. Under a
+shared bottleneck connections get even shares, and a slow but real one on
+a congested path stays far above 5 %, so neither is taken for starved
+(labserver's conn-cap-trickle). Learning pauses while a
 global speed limit is set and when too little is left to measure. When the
 target drops, the slowest connections are cancelled; their ranges are picked
 up by the rest. The result (best count, max ok count, range support,
@@ -247,7 +257,10 @@ rounds since the last byte arrived. Failures within one backoff window count
 as one round. `Retry-After` is honoured up to `retry_cap` (a server asking
 for a day must not park a download outside the error budget). After
 `error_budget` (10) rounds without a single byte, the
-download fails with `ErrorInfo { code: SourceError::code(), message }`.
+download fails with `ErrorInfo { code: SourceError::code(), message }`;
+once it has bytes on disk, only when nothing has arrived for
+`error_patience` (5 min) as well, retrying at `retry_cap` meanwhile, so a
+connection that drops for a minute does not fail a nearly finished download.
 Connections that finish normally are replaced at once, backoff or not, and
 so is one reset (`Transient`) after delivering at least `min_split_floor`
 (256 KiB): real progress, not the server pushing back. The failure round
@@ -605,6 +618,7 @@ System Events; Windows' interactive user holds the shutdown privilege, and
 | `write_coalesce`, `write_coalesce_delay` | 256 KiB, 200 ms | bytes gathered per `write_at`, and the longest a gathered byte waits |
 | `stall_min`, `stall_factor` | 250 ms, 12 | stall = silent ≥ max(floor, factor × chunk gap) |
 | `first_byte_factor`, `first_byte_timeout` | 4, 5 s | stall before the first byte |
+| `starved_share`, `starved_time`, `starved_rtts` | 0.05, 1 s, 8 | accepted but starved: under 5 % of the median streaming connection (since its headers and recently) for max(1 s, 8 TTFBs), at most `tune_window_max` → cancelled, ceiling at the connections streaming |
 | `hedge_gain`, `endgame_silence` | 2.0, 60 ms | endgame hedging |
 | `max_hedges_per_range`, `max_extra_hedges` | 3, 4 | hedge bounds |
 | `stream_idle_timeout` | 20 s | silence before a no-range stream starts over |
@@ -615,6 +629,7 @@ System Events; Windows' interactive user holds the shutdown privilege, and
 | `record_interval` | 3 s | record saves while running |
 | `retry_base`, `retry_cap` | 50 ms, 30 s | backoff |
 | `error_budget` | 10 | failure rounds without progress before `failed` |
+| `error_patience` | 5 min | with bytes on disk, also this long without a byte before `failed` |
 | `tail_verify_len`, `tail_walkback` | 64 KiB, 16 | resume verification |
 | `max_remote_restarts` | 1 | restarts on a changed file before failing |
 | `progress_interval`, `segments_interval`, `stats_interval` | 250 ms, 1 s, 1 s | events |

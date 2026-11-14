@@ -80,6 +80,10 @@ pub enum Cap {
     Throttle(Option<Duration>),
     /// Excess connections are reset.
     Reset,
+    /// Excess connections get their headers, then this many bytes per
+    /// second (a tenth of it every 100 ms) and hold no slot (labserver's
+    /// `refuse = "trickle"`).
+    Trickle(u64),
 }
 
 #[derive(Clone)]
@@ -146,6 +150,8 @@ pub struct SrcState {
     pub active: usize,
     pub peak: usize,
     pub opens: u64,
+    /// Responses over the cap that were trickled (`Cap::Trickle`).
+    pub trickled: u64,
     pub expired: bool,
     pub ranges: Vec<Option<(u64, u64)>>,
     pub probe_failures: VecDeque<SourceError>,
@@ -243,6 +249,10 @@ impl FaultSource {
         lock(&self.st).starts
     }
 
+    pub fn trickled(&self) -> u64 {
+        lock(&self.st).trickled
+    }
+
     pub fn peak(&self) -> usize {
         lock(&self.st).peak
     }
@@ -301,7 +311,7 @@ struct Body {
     expire_after: Option<u64>,
     versions: usize,
     done: bool,
-    _guard: ActiveGuard,
+    _guard: Option<ActiveGuard>,
 }
 
 async fn next_chunk(mut b: Body) -> Option<(Result<Bytes, SourceError>, Body)> {
@@ -455,16 +465,25 @@ impl FaultSource {
                         self.cfg.accepts_ranges && self.cfg.honours_ranges,
                     );
                 }
+                let mut trickle = None;
                 if let Some((max, cap)) = self.cfg.cap
                     && s.active >= max
                 {
-                    return Err(match cap {
-                        Cap::Throttle(ra) => SourceError::Throttled {
-                            message: "503".into(),
-                            retry_after: ra,
-                        },
-                        Cap::Reset => SourceError::Transient("connection reset".into()),
-                    });
+                    match cap {
+                        Cap::Throttle(ra) => {
+                            return Err(SourceError::Throttled {
+                                message: "503".into(),
+                                retry_after: ra,
+                            });
+                        }
+                        Cap::Reset => {
+                            return Err(SourceError::Transient("connection reset".into()));
+                        }
+                        Cap::Trickle(rate) => {
+                            s.trickled += 1;
+                            trickle = Some(rate);
+                        }
+                    }
                 }
                 let v = s.version;
                 if req.expect.conflicts_with(&self.validators_of(v)) {
@@ -483,10 +502,13 @@ impl FaultSource {
                     }
                     None => data.clone(),
                 };
-                s.active += 1;
-                s.peak = s.peak.max(s.active);
-                body
+                if trickle.is_none() {
+                    s.active += 1;
+                    s.peak = s.peak.max(s.active);
+                }
+                (body, trickle)
             };
+            let (body, trickle) = body;
             let b = Body {
                 data: body,
                 pos: 0,
@@ -494,9 +516,13 @@ impl FaultSource {
                 ramp: self.cfg.ramp,
                 noise: self.cfg.noise,
                 rng: fastrand::Rng::with_seed(n),
-                chunk: self.cfg.chunk,
-                rate: plan.rate.or(self.cfg.per_conn_bps),
-                global: self.global.clone(),
+                chunk: trickle.map_or(self.cfg.chunk, |r| (r as usize / 10).max(1)),
+                rate: trickle.or(plan.rate).or(self.cfg.per_conn_bps),
+                global: if trickle.is_some() {
+                    None
+                } else {
+                    self.global.clone()
+                },
                 plan,
                 stalled: false,
                 shared: self.st.clone(),
@@ -504,7 +530,7 @@ impl FaultSource {
                 expire_after: self.cfg.expire_after,
                 versions: self.versions.len(),
                 done: false,
-                _guard: ActiveGuard(self.st.clone()),
+                _guard: trickle.is_none().then(|| ActiveGuard(self.st.clone())),
             };
             Ok((meta, futures::stream::unfold(b, next_chunk).boxed()))
         }
