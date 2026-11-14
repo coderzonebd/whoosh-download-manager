@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Whoosh",
+  "productName": "Whoosh Download Manager",
   "version": "0.1.2",
   "identifier": "com.coderzonebd.whoosh",
   "build": {
@@ -58,6 +58,11 @@
     "macOS": {
       "minimumSystemVersion": "12.0",
       "signingIdentity": "-"
+    },
+    "windows": {
+      "wix": {
+        "upgradeCode": "5AEE6600-C408-4874-A797-A19D382BA944"
+      }
     }
   }
 }

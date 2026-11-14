@@ -29,10 +29,14 @@ Nothing is submitted; each channel's README says how to submit by hand.
 
 ## Placeholders everywhere
 
-Until the product name, the GitHub organisation and signing are settled,
-these are placeholders in every file here:
+The product name is **Whoosh Download Manager** (**WDM** where space is
+short; never "Whoosh" alone): `productName` in `tauri.conf.json`, the
+desktop entry, the metainfo, the cask, Scoop and winget names. Release asset
+names use hyphens (`Whoosh-Download-Manager_<version>_…`). Until the GitHub
+organisation and signing are settled, these are placeholders in every file
+here:
 
-- the name **Whoosh** / `whoosh`, the app id **`com.coderzonebd.whoosh`** (also in
+- the command and package name `whoosh`, the app id **`com.coderzonebd.whoosh`** (also in
   `tauri.conf.json` and the native messaging host name), winget id
   `CoderZoneBD.Whoosh`;
 - the repository URL **`github.com/coderzonebd/whoosh-download-manager`**;

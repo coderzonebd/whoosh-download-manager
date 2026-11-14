@@ -248,7 +248,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     await expect
       .poll(async () => `${await page.textContent("#status")}: ${await page.textContent("#detail")}`, { timeout: 10_000 })
       .toMatch(/^Connected/);
-    expect(await page.textContent("#detail")).toBe("Whoosh e2e");
+    expect(await page.textContent("#detail")).toBe("WDM e2e");
     expect(await page.textContent("#active")).toBe("3");
     expect(hostCalls("nm.status").length).toBeGreaterThan(0);
     // Chrome passes the caller's origin to the host.
@@ -398,7 +398,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${EXTENSION_ID}/options.html`);
     await expect.poll(() => page.isChecked("#captureEnabled"), { timeout: 10_000 }).toBe(true);
-    expect(await page.textContent("h1")).toBe("Whoosh settings");
+    expect(await page.textContent("h1")).toBe("Whoosh Download Manager settings");
     expect(await page.isHidden("#store-note")).toBe(true);
     expect(await page.inputValue("#fileTypes")).toContain("zip");
 

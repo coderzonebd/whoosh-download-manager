@@ -24,7 +24,7 @@ use crate::error::{CliError, EXIT_CODES_HELP};
 #[command(
     name = "whoosh",
     version,
-    about = "Command-line client of the whoosh download daemon",
+    about = "Command-line client of Whoosh Download Manager",
     after_help = EXIT_CODES_HELP
 )]
 struct Cli {

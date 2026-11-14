@@ -22,11 +22,11 @@ Start every task from a fresh launch with a few downloads in the list (paste thr
 
 | Step | Do | You should hear |
 |---|---|---|
-| 1.1 | Launch the app | The window title "Whoosh", then focus somewhere sensible (the list or the first toolbar button), not silence |
+| 1.1 | Launch the app | The window title "Whoosh Download Manager", then focus somewhere sensible (the list or the first toolbar button), not silence |
 | 1.2 | Move by landmarks (NVDA `D`, VoiceOver rotor → Landmarks, Orca `M`) | "Library, navigation", "main", "Notifications" (when a toast is up), "Status, content information" |
 | 1.3 | Move by headings (NVDA/Orca `H`, VoiceOver `VO+Cmd+H`) | The page heading for the current view ("All downloads", a queue's name, "Settings", "History"), then "Downloads", "Categories", "Queues" in the sidebar |
 | 1.4 | In the sidebar, Tab to "Paused" and press Enter | "Paused, button, current page" afterwards; the page heading becomes "Paused" |
-| 1.4b | First run of a build with crash reports | The notice under the toolbar is read once, politely: "Whoosh sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings."; Tab reaches "Open Settings" (focus lands on the switch) and "Dismiss". It must not steal focus |
+| 1.4b | First run of a build with crash reports | The notice under the toolbar is read once, politely: "Whoosh Download Manager sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings."; Tab reaches "Open Settings" (focus lands on the switch) and "Dismiss". It must not steal focus |
 | 1.5 | Press `?` | "Keyboard shortcuts, dialog", and the list of shortcuts; Escape closes it and focus returns where it was |
 
 ## 2. Add a download

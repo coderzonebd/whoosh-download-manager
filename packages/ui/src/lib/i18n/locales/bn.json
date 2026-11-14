@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Whoosh"
+    "name": "Whoosh Download Manager"
   },
   "nav": {
     "label": "লাইব্রেরি",
@@ -198,7 +198,7 @@
   },
   "add": {
     "title": "নতুন ডাউনলোড",
-    "description": "লিংক পেস্ট করুন। শুরুর আগে Whoosh লিংকটি যাচাই করে ফাইলের তথ্য দেখাবে।",
+    "description": "লিংক পেস্ট করুন। শুরুর আগে Whoosh Download Manager লিংকটি যাচাই করে ফাইলের তথ্য দেখাবে।",
     "url": "ঠিকানা",
     "urlPlaceholder": "https://example.com/file.zip",
     "invalidUrl": "http://, https:// বা ftp:// দিয়ে শুরু হওয়া পুরো ঠিকানা দিন",
@@ -266,25 +266,25 @@
     "chooseFolder": "ডাউনলোডের মূল ফোল্ডার বেছে নিন",
     "desktop": "এই কম্পিউটার",
     "desktopHint": "এগুলো সঙ্গে সঙ্গে কার্যকর হয়, আর শুধু এই অ্যাপে।",
-    "launchAtLogin": "লগ ইন করলেই Whoosh চালু হবে",
+    "launchAtLogin": "লগ ইন করলেই Whoosh Download Manager চালু হবে",
     "launchAtLoginHint": "উইন্ডো না খুলে ট্রে-তে চালু হবে।",
-    "closeToTray": "উইন্ডো বন্ধ করলেও Whoosh ট্রে-তে থাকবে",
+    "closeToTray": "উইন্ডো বন্ধ করলেও Whoosh Download Manager ট্রে-তে থাকবে",
     "closeToTrayHint": "ডাউনলোড চলতে থাকবে। পুরোপুরি বন্ধ করতে ট্রে মেনু থেকে “প্রস্থান” বেছে নিন।",
     "stopDaemonOnQuit": "প্রস্থান করলে ডাউনলোডও থামবে",
     "stopDaemonOnQuitHint": "এটি বন্ধ থাকলে ব্রাউজার এক্সটেনশন ও কমান্ড লাইনের জন্য ডাউনলোড পেছনে চলতে থাকে।",
     "privacy": "গোপনীয়তা",
     "crashReports": "ক্র্যাশ রিপোর্ট পাঠান",
-    "crashReportsHint": "বাগ ঠিক করতে Whoosh নাম-পরিচয়হীন ক্র্যাশ রিপোর্ট পাঠায়: ত্রুটি, Whoosh-এর কোথায় ঘটেছে, অ্যাপের সংস্করণ আর অপারেটিং সিস্টেম। কোনো ফাইলের নাম, লিংক বা ব্যবহারকারীর নাম নয়। আপনি বন্ধ না করলে চালু থাকে; পেছনের সার্ভিস পরের বার চালু হলে পরিবর্তনটি মেনে চলবে।",
+    "crashReportsHint": "বাগ ঠিক করতে Whoosh Download Manager নাম-পরিচয়হীন ক্র্যাশ রিপোর্ট পাঠায়: ত্রুটি, WDM-এর কোথায় ঘটেছে, অ্যাপের সংস্করণ আর অপারেটিং সিস্টেম। কোনো ফাইলের নাম, লিংক বা ব্যবহারকারীর নাম নয়। আপনি বন্ধ না করলে চালু থাকে; পেছনের সার্ভিস পরের বার চালু হলে পরিবর্তনটি মেনে চলবে।",
     "machineTranslated": "এই ভাষার অনুবাদ যন্ত্রে করা।",
     "helpTranslate": "অনুবাদ আরও ভালো করতে সাহায্য করুন",
     "media": "ভিডিও ও অডিও সাইট",
-    "mediaHint": "পেজের ভিডিও খুঁজতে Whoosh yt-dlp আর ভিডিও-অডিও জোড়া লাগাতে ffmpeg ব্যবহার করে। দুটোই আলাদা প্রোগ্রাম, এদের অফিশিয়াল রিলিজ থেকে নেওয়া আর প্রকাশিত চেকসামের সঙ্গে মিলিয়ে দেখা। ইনস্টলারেই দুটো থাকে; ইনস্টলার ছাড়া প্রথমবার দরকার হলে ডাউনলোড হয়।",
+    "mediaHint": "পেজের ভিডিও খুঁজতে Whoosh Download Manager yt-dlp আর ভিডিও-অডিও জোড়া লাগাতে ffmpeg ব্যবহার করে। দুটোই আলাদা প্রোগ্রাম, এদের অফিশিয়াল রিলিজ থেকে নেওয়া আর প্রকাশিত চেকসামের সঙ্গে মিলিয়ে দেখা। ইনস্টলারেই দুটো থাকে; ইনস্টলার ছাড়া প্রথমবার দরকার হলে ডাউনলোড হয়।",
     "browsers": "ব্রাউজার",
-    "browsersHint": "Chrome, Edge, Firefox ও অন্যান্য ব্রাউজার যুক্ত করুন, যাতে সেগুলোর ডাউনলোড Whoosh-এ আসে।",
+    "browsersHint": "Chrome, Edge, Firefox ও অন্যান্য ব্রাউজার যুক্ত করুন, যাতে সেগুলোর ডাউনলোড Whoosh Download Manager-এ আসে।",
     "browsersOpen": "আপনার ব্রাউজার যুক্ত করুন…",
     "updates": "আপডেট",
-    "autoUpdateCheck": "দিনে একবার Whoosh-এর নতুন সংস্করণ খুঁজুন",
-    "autoUpdateCheckHint": "নতুন সংস্করণ এলে Whoosh শুধু আপনাকে জানায়; না জিজ্ঞেস করে কখনো ইনস্টল করে না।",
+    "autoUpdateCheck": "দিনে একবার Whoosh Download Manager-এর নতুন সংস্করণ খুঁজুন",
+    "autoUpdateCheckHint": "নতুন সংস্করণ এলে Whoosh Download Manager শুধু আপনাকে জানায়; না জিজ্ঞেস করে কখনো ইনস্টল করে না।",
     "checkNow": "নতুন সংস্করণ আছে কি না দেখুন",
     "checking": "দেখা হচ্ছে…",
     "upToDate": "আপনার কাছে সবচেয়ে নতুন সংস্করণটিই আছে।",
@@ -295,7 +295,7 @@
     "installFailed": "আপডেট ইনস্টল করা গেল না: {{message}}"
   },
   "crashNotice": {
-    "text": "বাগ ঠিক করতে Whoosh নাম-পরিচয়হীন ক্র্যাশ রিপোর্ট পাঠায়। কোনো ফাইলের নাম বা লিংক নয়। সেটিংসে গিয়ে বন্ধ করতে পারেন।",
+    "text": "বাগ ঠিক করতে Whoosh Download Manager নাম-পরিচয়হীন ক্র্যাশ রিপোর্ট পাঠায়। কোনো ফাইলের নাম বা লিংক নয়। সেটিংসে গিয়ে বন্ধ করতে পারেন।",
     "open": "সেটিংস খুলুন"
   },
   "theme": {
@@ -325,7 +325,7 @@
     "completed": "“{{name}}” ডাউনলোড শেষ হয়েছে",
     "failed": "“{{name}}” ডাউনলোড ব্যর্থ হয়েছে",
     "expired": "“{{name}}”-এর লিংকের মেয়াদ শেষ",
-    "updateAvailable": "Whoosh {{version}} পাওয়া যাচ্ছে।"
+    "updateAvailable": "Whoosh Download Manager {{version}} পাওয়া যাচ্ছে।"
   },
   "error": {
     "generic": "একটা সমস্যা হয়েছে: {{message}}"
@@ -432,12 +432,12 @@
     "same": "শুরু আর শেষ একই সময় হতে পারে না।"
   },
   "desktop": {
-    "trayNotice": "Whoosh ট্রে-তে চালু আছে, তাই ডাউনলোড চলতে থাকবে। পুরোপুরি বন্ধ করতে ট্রে মেনু থেকে “প্রস্থান” বেছে নিন।"
+    "trayNotice": "Whoosh Download Manager ট্রে-তে চালু আছে, তাই ডাউনলোড চলতে থাকবে। পুরোপুরি বন্ধ করতে ট্রে মেনু থেকে “প্রস্থান” বেছে নিন।"
   },
   "tray": {
-    "show": "Whoosh দেখান",
+    "show": "Whoosh Download Manager দেখান",
     "quit": "প্রস্থান",
-    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+    "tooltip": "WDM — ↓ {{speed}} · {{active}}"
   },
   "media": {
     "found": "এই পেজের ভিডিও",
@@ -458,9 +458,9 @@
     "subtitleAuto": "{{name}} (স্বয়ংক্রিয়)",
     "size": "প্রায় {{size}}",
     "sizeUnknown": "সাইজ এখনো জানা নেই",
-    "viaEngine": "Whoosh কয়েকটি সংযোগে ডাউনলোড করবে; থামিয়ে আবার চালানো যাবে।",
+    "viaEngine": "Whoosh Download Manager কয়েকটি সংযোগে ডাউনলোড করবে; থামিয়ে আবার চালানো যাবে।",
     "viaYtDlp": "এটা স্ট্রিমিং ফরম্যাট: yt-dlp একটি সংযোগে ডাউনলোড করবে।",
-    "filenameHint": "এক্সটেনশন ছাড়া লিখুন; Whoosh নিজেই যোগ করবে।",
+    "filenameHint": "এক্সটেনশন ছাড়া লিখুন; Whoosh Download Manager নিজেই যোগ করবে।",
     "live": "এটা লাইভ স্ট্রিম।"
   },
   "mediaStep": {
@@ -477,7 +477,7 @@
     "installing": "ডাউনলোড হচ্ছে…",
     "installingProgress": "ডাউনলোড হচ্ছে… {{percent}}",
     "version": "ভার্সন {{version}}",
-    "managed": "Whoosh নিজেই আপডেট রাখে",
+    "managed": "Whoosh Download Manager নিজেই আপডেট রাখে",
     "system": "এই কম্পিউটারে ইনস্টল করা",
     "updateAvailable": "ভার্সন {{version}} পাওয়া যাচ্ছে",
     "upToDate": "সর্বশেষ ভার্সন",
@@ -487,23 +487,23 @@
     "install": "{{name}} ডাউনলোড করুন",
     "update": "{{name}} আপডেট করুন",
     "autoUpdate": "দিনে একবার আপডেট দেখুন",
-    "autoUpdateHint": "না হলে আপনি চাইলেই কেবল Whoosh আপডেট দেখবে।",
+    "autoUpdateHint": "না হলে আপনি চাইলেই কেবল Whoosh Download Manager আপডেট দেখবে।",
     "error": "শেষ চেষ্টা ব্যর্থ হয়েছে: {{message}}",
     "checkFailed": "আপডেট দেখা গেল না: {{message}}"
   },
   "browsers": {
     "title": "আপনার ব্রাউজার যুক্ত করুন",
-    "intro": "Whoosh এক্সটেনশনের মাধ্যমে Whoosh আপনার ব্রাউজারের ডাউনলোডগুলো নিজে নিয়ে নেয়। এর জন্য প্রতিটি ব্রাউজারে এক্সটেনশনটি থাকতে হয় এবং ব্রাউজারটি এই অ্যাপের সঙ্গে যুক্ত থাকতে হয়; যুক্ত করার কাজটি Whoosh নিজেই করে দেয়।",
+    "intro": "Whoosh Download Manager এক্সটেনশনের মাধ্যমে WDM আপনার ব্রাউজারের ডাউনলোডগুলো নিজে নিয়ে নেয়। এর জন্য প্রতিটি ব্রাউজারে এক্সটেনশনটি থাকতে হয় এবং ব্রাউজারটি এই অ্যাপের সঙ্গে যুক্ত থাকতে হয়; যুক্ত করার কাজটি WDM নিজেই করে দেয়।",
     "loading": "আপনার ব্রাউজারগুলো খোঁজা হচ্ছে…",
-    "none": "এই ব্যবহারকারীর জন্য সমর্থিত কোনো ব্রাউজার পাওয়া যায়নি। Whoosh চলে Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi ও Firefox-এ।",
+    "none": "এই ব্যবহারকারীর জন্য সমর্থিত কোনো ব্রাউজার পাওয়া যায়নি। Whoosh Download Manager চলে Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi ও Firefox-এ।",
     "notFound": "এই কম্পিউটারে পাওয়া যায়নি: {{names}}।",
     "state": {
-      "ready": "প্রস্তুত: এই ব্রাউজারের ডাউনলোড Whoosh-এ আসবে",
-      "noHost": "এখনো Whoosh-এর সঙ্গে যুক্ত নয়",
+      "ready": "প্রস্তুত: এই ব্রাউজারের ডাউনলোড Whoosh Download Manager-এ আসবে",
+      "noHost": "এখনো Whoosh Download Manager-এর সঙ্গে যুক্ত নয়",
       "noExtension": "এক্সটেনশনটি ইনস্টল করা নেই"
     },
-    "connect": "Whoosh-এর সঙ্গে যুক্ত করুন",
-    "connected": "{{browser}} Whoosh-এর সঙ্গে যুক্ত হয়েছে।",
+    "connect": "WDM-এর সঙ্গে যুক্ত করুন",
+    "connected": "{{browser}} Whoosh Download Manager-এর সঙ্গে যুক্ত হয়েছে।",
     "connectFailed": "{{browser}} যুক্ত করা গেল না: {{message}}",
     "store": {
       "edgeAddOns": "Edge Add-ons থেকে নিন",

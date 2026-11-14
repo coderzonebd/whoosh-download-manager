@@ -55,7 +55,7 @@ fn window_state_flags() -> StateFlags {
     StateFlags::all() - StateFlags::SIZE
 }
 
-/// Called by the UI about once a second with e.g. "Whoosh — ↓ 12.5 MB/s · 3 active".
+/// Called by the UI about once a second with e.g. "WDM — ↓ 12.5 MB/s · 3 active".
 #[tauri::command]
 fn set_tray_tooltip<R: Runtime>(app: AppHandle<R>, text: String) -> Result<(), String> {
     let text: String = text.chars().take(MAX_TOOLTIP_CHARS).collect();
@@ -180,7 +180,7 @@ fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
     });
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Whoosh")
+        .tooltip("Whoosh Download Manager")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {

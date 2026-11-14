@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Whoosh"
+    "name": "Whoosh Download Manager"
   },
   "nav": {
     "label": "Library",
@@ -198,7 +198,7 @@
   },
   "add": {
     "title": "Add a download",
-    "description": "Paste a link. Whoosh checks it first so you can see the file before it starts.",
+    "description": "Paste a link. Whoosh Download Manager checks it first so you can see the file before it starts.",
     "url": "Address",
     "urlPlaceholder": "https://example.com/file.zip",
     "invalidUrl": "Enter a full address that starts with http://, https:// or ftp://",
@@ -266,25 +266,25 @@
     "chooseFolder": "Choose the default download folder",
     "desktop": "This computer",
     "desktopHint": "These apply right away and only to this app.",
-    "launchAtLogin": "Start Whoosh when I log in",
+    "launchAtLogin": "Start Whoosh Download Manager when I log in",
     "launchAtLoginHint": "It starts in the tray, without opening the window.",
-    "closeToTray": "Closing the window keeps Whoosh in the tray",
+    "closeToTray": "Closing the window keeps Whoosh Download Manager in the tray",
     "closeToTrayHint": "Downloads go on. Quit from the tray menu.",
     "stopDaemonOnQuit": "Quitting also stops downloads",
     "stopDaemonOnQuitHint": "Off: downloads keep going in the background for the browser extension and the command line.",
     "privacy": "Privacy",
     "crashReports": "Send crash reports",
-    "crashReportsHint": "Whoosh sends anonymous crash reports to help fix bugs: the error, where in Whoosh it happened, the app version and the operating system. No file names, links or user name. On unless you turn it off; the background service follows a change the next time it starts.",
+    "crashReportsHint": "Whoosh Download Manager sends anonymous crash reports to help fix bugs: the error, where in the app it happened, the app version and the operating system. No file names, links or user name. On unless you turn it off; the background service follows a change the next time it starts.",
     "machineTranslated": "Machine translated.",
     "helpTranslate": "Help improve the translation",
     "media": "Video and audio sites",
-    "mediaHint": "Whoosh uses yt-dlp to find the video on a page and ffmpeg to join video and audio. Both are separate programs from their official releases, checked against the published checksum. The installer includes them; without it they are downloaded the first time they are needed.",
+    "mediaHint": "Whoosh Download Manager uses yt-dlp to find the video on a page and ffmpeg to join video and audio. Both are separate programs from their official releases, checked against the published checksum. The installer includes them; without it they are downloaded the first time they are needed.",
     "browsers": "Browsers",
-    "browsersHint": "Link Chrome, Edge, Firefox and other browsers so that their downloads come to Whoosh.",
+    "browsersHint": "Link Chrome, Edge, Firefox and other browsers so that their downloads come to Whoosh Download Manager.",
     "browsersOpen": "Connect your browser…",
     "updates": "Updates",
-    "autoUpdateCheck": "Look for a new version of Whoosh once a day",
-    "autoUpdateCheckHint": "Whoosh only tells you about a new version. It never installs one without asking.",
+    "autoUpdateCheck": "Look for a new version of Whoosh Download Manager once a day",
+    "autoUpdateCheckHint": "Whoosh Download Manager only tells you about a new version. It never installs one without asking.",
     "checkNow": "Check for a new version",
     "checking": "Checking…",
     "upToDate": "You have the newest version.",
@@ -295,7 +295,7 @@
     "installFailed": "Could not install the update: {{message}}"
   },
   "crashNotice": {
-    "text": "Whoosh sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.",
+    "text": "Whoosh Download Manager sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.",
     "open": "Open Settings"
   },
   "theme": {
@@ -325,7 +325,7 @@
     "completed": "“{{name}}” finished downloading",
     "failed": "“{{name}}” failed",
     "expired": "The link for “{{name}}” expired",
-    "updateAvailable": "Whoosh {{version}} is available."
+    "updateAvailable": "Whoosh Download Manager {{version}} is available."
   },
   "error": {
     "generic": "Something went wrong: {{message}}"
@@ -432,12 +432,12 @@
     "same": "Start and end can’t be the same time."
   },
   "desktop": {
-    "trayNotice": "Whoosh is still running in the tray, so downloads go on. Quit it from the tray menu."
+    "trayNotice": "Whoosh Download Manager is still running in the tray, so downloads go on. Quit it from the tray menu."
   },
   "tray": {
-    "show": "Show Whoosh",
+    "show": "Show Whoosh Download Manager",
     "quit": "Quit",
-    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+    "tooltip": "WDM — ↓ {{speed}} · {{active}}"
   },
   "media": {
     "found": "Video on this page",
@@ -458,9 +458,9 @@
     "subtitleAuto": "{{name}} (auto-generated)",
     "size": "About {{size}}",
     "sizeUnknown": "Size not known yet",
-    "viaEngine": "Whoosh downloads it with several connections; it can pause and resume.",
+    "viaEngine": "Whoosh Download Manager downloads it with several connections; it can pause and resume.",
     "viaYtDlp": "A streaming format: yt-dlp downloads it on one connection.",
-    "filenameHint": "Without the extension; Whoosh adds it.",
+    "filenameHint": "Without the extension; Whoosh Download Manager adds it.",
     "live": "This is a live stream."
   },
   "mediaStep": {
@@ -477,7 +477,7 @@
     "installing": "Downloading…",
     "installingProgress": "Downloading… {{percent}}",
     "version": "Version {{version}}",
-    "managed": "Kept up to date by Whoosh",
+    "managed": "Kept up to date by Whoosh Download Manager",
     "system": "Installed on this computer",
     "updateAvailable": "Version {{version}} is available",
     "upToDate": "Up to date",
@@ -487,23 +487,23 @@
     "install": "Download {{name}}",
     "update": "Update {{name}}",
     "autoUpdate": "Check for updates once a day",
-    "autoUpdateHint": "Otherwise Whoosh checks only when you ask.",
+    "autoUpdateHint": "Otherwise Whoosh Download Manager checks only when you ask.",
     "error": "Last attempt failed: {{message}}",
     "checkFailed": "Couldn’t check for updates: {{message}}"
   },
   "browsers": {
     "title": "Connect your browser",
-    "intro": "Whoosh takes over downloads from your browser through the Whoosh extension. Each browser needs the extension and a link to this app; Whoosh sets up the link for you.",
+    "intro": "Whoosh Download Manager takes over downloads from your browser through its browser extension. Each browser needs the extension and a link to this app; WDM sets up the link for you.",
     "loading": "Looking for your browsers…",
-    "none": "No supported browser was found for this user. Whoosh works with Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi and Firefox.",
+    "none": "No supported browser was found for this user. Whoosh Download Manager works with Google Chrome, Chromium, Brave, Microsoft Edge, Vivaldi and Firefox.",
     "notFound": "Not found on this computer: {{names}}.",
     "state": {
-      "ready": "Ready: downloads from this browser come to Whoosh",
-      "noHost": "Not linked to Whoosh yet",
+      "ready": "Ready: downloads from this browser come to Whoosh Download Manager",
+      "noHost": "Not linked to Whoosh Download Manager yet",
       "noExtension": "The extension is not installed"
     },
-    "connect": "Link to Whoosh",
-    "connected": "{{browser}} is linked to Whoosh.",
+    "connect": "Link to WDM",
+    "connected": "{{browser}} is linked to Whoosh Download Manager.",
     "connectFailed": "Could not link {{browser}}: {{message}}",
     "store": {
       "edgeAddOns": "Get it from Edge Add-ons",

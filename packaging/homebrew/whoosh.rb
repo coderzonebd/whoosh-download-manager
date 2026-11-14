@@ -3,9 +3,9 @@ cask "whoosh" do
   version "0.0.1"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
-  url "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v#{version}/Whoosh_#{version}_universal.dmg",
+  url "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v#{version}/Whoosh-Download-Manager_#{version}_universal.dmg",
       verified: "github.com/coderzonebd/whoosh-download-manager/"
-  name "Whoosh"
+  name "Whoosh Download Manager"
   desc "Fast, open-source download manager"
   homepage "https://github.com/coderzonebd/whoosh-download-manager"
 
@@ -16,7 +16,7 @@ cask "whoosh" do
 
   depends_on macos: ">= :monterey"
 
-  app "Whoosh.app"
+  app "Whoosh Download Manager.app"
 
   zap trash: [
     "~/Library/Application Support/com.coderzonebd.whoosh",

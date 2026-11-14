@@ -88,7 +88,7 @@ fn string(tag: &str, pointer: &str, fallback: &str) -> String {
 pub fn strings(tag: &str) -> ShellStrings {
     let tag = resolve(tag);
     ShellStrings {
-        show: string(tag, "/tray/show", "Show Whoosh"),
+        show: string(tag, "/tray/show", "Show Whoosh Download Manager"),
         quit: string(tag, "/tray/quit", "Quit"),
     }
 }
@@ -143,13 +143,13 @@ mod tests {
         assert_eq!(
             strings("en"),
             ShellStrings {
-                show: "Show Whoosh".into(),
+                show: "Show Whoosh Download Manager".into(),
                 quit: "Quit".into()
             }
         );
         let bn = strings("bn");
         assert_eq!(bn.quit, "প্রস্থান");
-        assert!(bn.show.contains("Whoosh"));
+        assert!(bn.show.contains("Whoosh Download Manager"));
         for (tag, _) in LOCALES {
             let s = strings(tag);
             assert!(!s.show.is_empty() && !s.quit.is_empty(), "{tag}");

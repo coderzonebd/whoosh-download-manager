@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Whoosh
+Name=Whoosh Download Manager
 GenericName=Download Manager
 Comment=Fast, open-source download manager
 Exec=whoosh-desktop

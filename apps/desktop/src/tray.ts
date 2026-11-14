@@ -7,14 +7,14 @@ function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** `tooltip(bps, active)`: "Whoosh — ↓ 12.5 MB/s · 3 active", in the UI's language. */
+/** `tooltip(bps, active)`: "WDM — ↓ 12.5 MB/s · 3 active", in the UI's language. */
 export function startTrayUpdates(client: WhooshClient, tooltip: (bps: number, active: number) => string): () => void {
   if (!inTauri()) return () => {};
   let last = "";
   let invoke: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;
   void import("@tauri-apps/api/core").then((m) => (invoke = m.invoke));
   return client.on("event.stats", (s) => {
-    const text = s.active > 0 ? tooltip(s.downloadBps, s.active) : "Whoosh";
+    const text = s.active > 0 ? tooltip(s.downloadBps, s.active) : "Whoosh Download Manager";
     if (text === last || !invoke) return;
     last = text;
     invoke("set_tray_tooltip", { text }).catch(() => {

@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "आपके ब्राउज़र डाउनलोड को उन्हीं कुकीज़ और रेफ़रर के साथ Whoosh डाउनलोड मैनेजर को सौंपता है।"
+    "message": "आपके ब्राउज़र डाउनलोड को उन्हीं कुकीज़ और रेफ़रर के साथ Whoosh Download Manager को सौंपता है।"
   },
   "optionsTitle": {
-    "message": "Whoosh सेटिंग"
+    "message": "Whoosh Download Manager सेटिंग"
   },
   "optionsIntro": {
     "message": "बदलाव करते ही सहेजे जाते हैं और तुरंत लागू होते हैं।"
@@ -21,7 +21,7 @@
     "message": "डाउनलोड पकड़ना"
   },
   "captureEnabled": {
-    "message": "ब्राउज़र डाउनलोड Whoosh को भेजें"
+    "message": "ब्राउज़र डाउनलोड Whoosh Download Manager को भेजें"
   },
   "captureEnabledHelp": {
     "message": "बंद होने पर हर डाउनलोड ब्राउज़र में ही रहता है। टूलबार बटन पर “बंद” दिखता है।"
@@ -87,7 +87,7 @@
     "message": "ब्राउज़र को इसे डाउनलोड करने दें"
   },
   "altClickWhoosh": {
-    "message": "इसे Whoosh को भेजें, ऊपर के नियम कुछ भी कहें"
+    "message": "इसे Whoosh Download Manager को भेजें, ऊपर के नियम कुछ भी कहें"
   },
   "altClickOff": {
     "message": "कुछ खास न करें"
@@ -105,13 +105,13 @@
     "message": "जब पॉइंटर किसी डाउनलोड लिंक पर रुके, तो कनेक्शन तैयार करें"
   },
   "preconnectHelp": {
-    "message": "Whoosh को सिर्फ़ साइट का पता भेजा जाता है, लिंक खुद कभी नहीं।"
+    "message": "Whoosh Download Manager को सिर्फ़ साइट का पता भेजा जाता है, लिंक खुद कभी नहीं।"
   },
   "selfHealing": {
     "message": "एक्सपायर हुए डाउनलोड लिंक ठीक करें"
   },
   "selfHealingHelp": {
-    "message": "जब किसी रुके हुए डाउनलोड का पता एक्सपायर हो जाता है, तो Whoosh उसी पेज पर नया पता ढूँढता है जहाँ से वह आया था, और पक्का न होने पर आपसे पूछता है।"
+    "message": "जब किसी रुके हुए डाउनलोड का पता एक्सपायर हो जाता है, तो Whoosh Download Manager उसी पेज पर नया पता ढूँढता है जहाँ से वह आया था, और पक्का न होने पर आपसे पूछता है।"
   },
   "saved": {
     "message": "सहेजा गया।"
@@ -132,19 +132,19 @@
     "message": "कनेक्ट नहीं है"
   },
   "popupNoHost": {
-    "message": "Whoosh नेटिव होस्ट इंस्टॉल नहीं है।"
+    "message": "Whoosh Download Manager नेटिव होस्ट इंस्टॉल नहीं है।"
   },
   "popupAppNotRunning": {
     "message": "ऐप नहीं चल रहा"
   },
   "popupStartApp": {
-    "message": "Whoosh शुरू करें; तब तक डाउनलोड ब्राउज़र में ही रहेंगे।"
+    "message": "Whoosh Download Manager शुरू करें; तब तक डाउनलोड ब्राउज़र में ही रहेंगे।"
   },
   "popupConnected": {
     "message": "कनेक्ट है"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "नियम कुछ भी कहें, लिंक को Whoosh पर भेजने के लिए क्लिक करते समय $KEY$ दबाए रखें।",
+    "message": "नियम कुछ भी कहें, लिंक को Whoosh Download Manager पर भेजने के लिए क्लिक करते समय $KEY$ दबाए रखें।",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "ब्राउज़र स्टोर वाला Whoosh इस साइट पर काम नहीं करता।"
+    "message": "ब्राउज़र स्टोर वाला Whoosh Download Manager इस साइट पर काम नहीं करता।"
   },
   "healTitle": {
     "message": "एक्सपायर हुए लिंक"
   },
   "healOpenPage": {
-    "message": "$FILE$ के लिए Whoosh को डाउनलोड पेज एक बार और चाहिए।",
+    "message": "$FILE$ के लिए Whoosh Download Manager को डाउनलोड पेज एक बार और चाहिए।",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "खारिज करें"
   },
   "menuLink": {
-    "message": "Whoosh से लिंक डाउनलोड करें"
+    "message": "WDM से लिंक डाउनलोड करें"
   },
   "menuSelection": {
-    "message": "चुने गए लिंक Whoosh से डाउनलोड करें"
+    "message": "चुने गए लिंक WDM से डाउनलोड करें"
   },
   "menuPage": {
-    "message": "सभी लिंक Whoosh से डाउनलोड करें"
+    "message": "सभी लिंक WDM से डाउनलोड करें"
   },
   "badgeOff": {
     "message": "बंद"
   },
   "outcomeSent": {
-    "message": "Whoosh को भेजा गया"
+    "message": "Whoosh Download Manager को भेजा गया"
   },
   "outcomeHealed": {
-    "message": "एक्सपायर हुआ Whoosh डाउनलोड जारी किया"
+    "message": "एक्सपायर हुआ Whoosh Download Manager डाउनलोड जारी किया"
   },
   "outcomeSkipped": {
     "message": "ब्राउज़र पर छोड़ा गया ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "Whoosh को भेजे गए लिंक: $COUNT$",
+    "message": "Whoosh Download Manager को भेजे गए लिंक: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "ब्राउज़र स्टोर वाला Whoosh इस साइट से डाउनलोड नहीं करता।"
+    "message": "ब्राउज़र स्टोर वाला Whoosh Download Manager इस साइट से डाउनलोड नहीं करता।"
   },
   "errorRefused": {
-    "message": "Whoosh ने वह पता स्वीकार नहीं किया।"
+    "message": "Whoosh Download Manager ने वह पता स्वीकार नहीं किया।"
   }
 }

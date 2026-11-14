@@ -97,9 +97,9 @@ describe("_locales", () => {
 
 describe("t()", () => {
   it("falls back to the bundled English, with substitutions", () => {
-    expect(t("menuLink")).toBe("Download link with Whoosh");
+    expect(t("menuLink")).toBe("Download link with WDM");
     expect(t("popupCaptureSite", "example.com")).toBe("Catch downloads on example.com");
-    expect(t("popupLast", ["file.zip", "sent to Whoosh"])).toBe("Last: file.zip — sent to Whoosh");
+    expect(t("popupLast", ["file.zip", "sent to Whoosh Download Manager"])).toBe("Last: file.zip — sent to Whoosh Download Manager");
   });
 
   it("substitutes like the browser does", () => {
@@ -113,7 +113,7 @@ describe("t()", () => {
     g.chrome = { i18n: { getMessage: (name: string, subs: string[]) => (name === "menuPage" ? `«${subs.length}»` : "") } };
     try {
       expect(t("menuPage")).toBe("«0»");
-      expect(t("menuLink")).toBe("Download link with Whoosh"); // empty from the browser: English
+      expect(t("menuLink")).toBe("Download link with WDM"); // empty from the browser: English
     } finally {
       g.chrome = saved;
     }

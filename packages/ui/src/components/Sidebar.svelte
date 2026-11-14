@@ -49,6 +49,13 @@
   const queues = app.queues;
   const queueNames = $derived(["main", ...(queues.enabled ? queues.named.map((q) => q.name) : [])]);
 
+  /** The app's name split for the two-line wordmark: first word, then the rest. */
+  const wordmark = $derived.by(() => {
+    const name = t("app.name").trim();
+    const space = name.indexOf(" ");
+    return space < 0 ? { main: name, rest: "" } : { main: name.slice(0, space), rest: name.slice(space + 1) };
+  });
+
   function foot(view: "history" | "settings"): void {
     app.view = view;
     app.navOpen = false;
@@ -58,7 +65,11 @@
 <nav class="sidebar" aria-label={t("nav.label")}>
   <div class="brand">
     <span class="logo" aria-hidden="true"><Icon name="wind" size={18} /></span>
-    <span class="wordmark">{t("app.name")}</span>
+    <!-- "Whoosh" large, "Download Manager" small under it: the full name in
+         the sidebar's width. Read as one name ("Whoosh Download Manager"). -->
+    <span class="wordmark">
+      <span class="wordmark-main">{wordmark.main}</span>{#if wordmark.rest}{" "}<span class="wordmark-rest">{wordmark.rest}</span>{/if}
+    </span>
   </div>
 
   <div class="scroll">
@@ -169,10 +180,25 @@
     box-shadow: var(--vy-shadow-sm);
   }
   .wordmark {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-inline-size: 0;
+  }
+  .wordmark-main {
     font-family: var(--vy-font-display);
-    font-size: var(--vy-font-size-2xl);
+    font-size: var(--vy-font-size-xl);
     font-weight: 800;
     line-height: 1;
+  }
+  .wordmark-rest {
+    color: var(--vy-color-text-subtle);
+    font-size: var(--vy-font-size-xs);
+    font-weight: var(--vy-font-weight-semibold);
+    letter-spacing: var(--vy-letter-spacing-wide);
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
   .scroll {
     flex: 1;

@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "Chuyển các tải xuống của trình duyệt sang trình quản lý tải xuống Whoosh, kèm cùng cookie và trang giới thiệu."
+    "message": "Chuyển các tải xuống của trình duyệt sang Whoosh Download Manager, kèm cùng cookie và trang giới thiệu."
   },
   "optionsTitle": {
-    "message": "Cài đặt Whoosh"
+    "message": "Cài đặt Whoosh Download Manager"
   },
   "optionsIntro": {
     "message": "Thay đổi được lưu ngay khi bạn thực hiện và có hiệu lực tức thì."
@@ -21,7 +21,7 @@
     "message": "Bắt tải xuống"
   },
   "captureEnabled": {
-    "message": "Gửi các tải xuống của trình duyệt sang Whoosh"
+    "message": "Gửi các tải xuống của trình duyệt sang Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "Khi tắt, mọi tải xuống đều ở lại trong trình duyệt. Nút trên thanh công cụ sẽ hiện “tắt”."
@@ -87,7 +87,7 @@
     "message": "Để trình duyệt tải xuống"
   },
   "altClickWhoosh": {
-    "message": "Gửi sang Whoosh, bất kể các quy tắc ở trên"
+    "message": "Gửi sang Whoosh Download Manager, bất kể các quy tắc ở trên"
   },
   "altClickOff": {
     "message": "Không làm gì đặc biệt"
@@ -105,13 +105,13 @@
     "message": "Chuẩn bị kết nối khi con trỏ dừng trên liên kết tải xuống"
   },
   "preconnectHelp": {
-    "message": "Chỉ địa chỉ của trang web được chuyển cho Whoosh, không bao giờ là chính liên kết."
+    "message": "Chỉ địa chỉ của trang web được chuyển cho Whoosh Download Manager, không bao giờ là chính liên kết."
   },
   "selfHealing": {
     "message": "Sửa liên kết tải xuống đã hết hạn"
   },
   "selfHealingHelp": {
-    "message": "Khi địa chỉ của một tải xuống đang tạm dừng đã hết hạn, Whoosh sẽ tìm địa chỉ mới trên trang gốc và hỏi bạn khi không chắc chắn."
+    "message": "Khi địa chỉ của một tải xuống đang tạm dừng đã hết hạn, Whoosh Download Manager sẽ tìm địa chỉ mới trên trang gốc và hỏi bạn khi không chắc chắn."
   },
   "saved": {
     "message": "Đã lưu."
@@ -132,19 +132,19 @@
     "message": "Chưa kết nối"
   },
   "popupNoHost": {
-    "message": "Chưa cài thành phần gốc (native host) của Whoosh."
+    "message": "Chưa cài thành phần gốc (native host) của Whoosh Download Manager."
   },
   "popupAppNotRunning": {
     "message": "Ứng dụng chưa chạy"
   },
   "popupStartApp": {
-    "message": "Hãy mở Whoosh; cho đến lúc đó, các tải xuống vẫn ở trong trình duyệt."
+    "message": "Hãy mở Whoosh Download Manager; cho đến lúc đó, các tải xuống vẫn ở trong trình duyệt."
   },
   "popupConnected": {
     "message": "Đã kết nối"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "Giữ $KEY$ khi nhấp vào liên kết để gửi sang Whoosh bất kể quy tắc.",
+    "message": "Giữ $KEY$ khi nhấp vào liên kết để gửi sang Whoosh Download Manager bất kể quy tắc.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "Whoosh từ cửa hàng trình duyệt không hoạt động trên trang này."
+    "message": "Whoosh Download Manager từ cửa hàng trình duyệt không hoạt động trên trang này."
   },
   "healTitle": {
     "message": "Liên kết hết hạn"
   },
   "healOpenPage": {
-    "message": "Whoosh cần mở lại trang tải xuống một lần nữa cho $FILE$.",
+    "message": "Whoosh Download Manager cần mở lại trang tải xuống một lần nữa cho $FILE$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "Bỏ qua"
   },
   "menuLink": {
-    "message": "Tải liên kết bằng Whoosh"
+    "message": "Tải liên kết bằng WDM"
   },
   "menuSelection": {
-    "message": "Tải các liên kết đã chọn bằng Whoosh"
+    "message": "Tải các liên kết đã chọn bằng WDM"
   },
   "menuPage": {
-    "message": "Tải tất cả liên kết bằng Whoosh"
+    "message": "Tải tất cả liên kết bằng WDM"
   },
   "badgeOff": {
     "message": "tắt"
   },
   "outcomeSent": {
-    "message": "đã gửi sang Whoosh"
+    "message": "đã gửi sang Whoosh Download Manager"
   },
   "outcomeHealed": {
-    "message": "đã tiếp tục một tải xuống Whoosh bị hết hạn"
+    "message": "đã tiếp tục một tải xuống Whoosh Download Manager bị hết hạn"
   },
   "outcomeSkipped": {
     "message": "để trình duyệt tải ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "liên kết đã gửi sang Whoosh: $COUNT$",
+    "message": "liên kết đã gửi sang Whoosh Download Manager: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "Whoosh từ cửa hàng trình duyệt không tải xuống từ trang này."
+    "message": "Whoosh Download Manager từ cửa hàng trình duyệt không tải xuống từ trang này."
   },
   "errorRefused": {
-    "message": "Whoosh không chấp nhận địa chỉ đó."
+    "message": "Whoosh Download Manager không chấp nhận địa chỉ đó."
   }
 }

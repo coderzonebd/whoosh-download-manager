@@ -26,14 +26,14 @@ export function sha256(path) {
 /** The release's installers by role, with URL and hash; missing ones are undefined. */
 export function findAssets(dir, version, base) {
   const names = {
-    nsisX64: `Whoosh_${version}_x64-setup.exe`,
-    nsisArm64: `Whoosh_${version}_arm64-setup.exe`,
-    msiX64: `Whoosh_${version}_x64_en-US.msi`,
-    portableX64: `Whoosh_${version}_x64_portable.zip`,
-    portableArm64: `Whoosh_${version}_arm64_portable.zip`,
-    dmg: `Whoosh_${version}_universal.dmg`,
-    debAmd64: `Whoosh_${version}_amd64.deb`,
-    debArm64: `Whoosh_${version}_arm64.deb`,
+    nsisX64: `Whoosh-Download-Manager_${version}_x64-setup.exe`,
+    nsisArm64: `Whoosh-Download-Manager_${version}_arm64-setup.exe`,
+    msiX64: `Whoosh-Download-Manager_${version}_x64_en-US.msi`,
+    portableX64: `Whoosh-Download-Manager_${version}_x64_portable.zip`,
+    portableArm64: `Whoosh-Download-Manager_${version}_arm64_portable.zip`,
+    dmg: `Whoosh-Download-Manager_${version}_universal.dmg`,
+    debAmd64: `Whoosh-Download-Manager_${version}_amd64.deb`,
+    debArm64: `Whoosh-Download-Manager_${version}_arm64.deb`,
     source: `whoosh-${version}-source.tar.gz`,
   };
   const assets = {};
@@ -108,7 +108,7 @@ export function scoop({ version, repo, assets }) {
   if (assets.portableArm64) m.architecture.arm64 = { url: assets.portableArm64.url, hash: assets.portableArm64.sha256 };
   m.checkver = { github: `https://github.com/${repo}` };
   const auto = (arch) => ({
-    url: `https://github.com/${repo}/releases/download/v$version/Whoosh_$version_${arch}_portable.zip`,
+    url: `https://github.com/${repo}/releases/download/v$version/Whoosh-Download-Manager_$version_${arch}_portable.zip`,
     hash: { url: "$baseurl/SHA256SUMS", regex: "$sha256\\s+\\*?$basename" },
   });
   m.autoupdate = { architecture: { "64bit": auto("x64"), ...(assets.portableArm64 ? { arm64: auto("arm64") } : {}) } };

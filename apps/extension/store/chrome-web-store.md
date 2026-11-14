@@ -4,9 +4,9 @@ Upload `dist/whoosh-chromium-<version>-store.zip` from `pnpm --filter @whoosh/ex
 
 ## Item details
 
-- **Name:** Whoosh Download Manager (WDM) (from `_locales`, `extName`; the toolbar keeps the short name "Whoosh")
+- **Name:** Whoosh Download Manager (WDM) (from `_locales`, `extName`; the toolbar keeps the short name "WDM")
 - **Summary** (≤ 132 characters):
-  > Send browser downloads to the Whoosh download manager, with the same cookies and referrer. Faster, resumable, repairs expired links.
+  > Send browser downloads to Whoosh Download Manager, with the same cookies and referrer. Faster, resumable, repairs expired links.
 - **Category:** Productivity → Tools
 - **Language:** English (the extension's own name and description are also translated, from `_locales/`; the long description below is entered per language in the dashboard)
 - **Homepage / support URL:** https://github.com/coderzonebd/whoosh-download-manager
@@ -14,19 +14,19 @@ Upload `dist/whoosh-chromium-<version>-store.zip` from `pnpm --filter @whoosh/ex
 
 ## Description
 
-> Whoosh connects your browser to the Whoosh download manager, a free and open-source app for Windows, macOS and Linux.
+> This extension connects your browser to Whoosh Download Manager, a free and open-source app for Windows, macOS and Linux.
 >
-> When the browser starts a download, Whoosh takes it over — with the same cookies, referrer and user agent the browser would use — so files behind a login download just as well. The app downloads over several connections at once, resumes after a crash, a restart or a power cut, and checks that the finished file is complete.
+> When the browser starts a download, Whoosh Download Manager takes it over — with the same cookies, referrer and user agent the browser would use — so files behind a login download just as well. The app downloads over several connections at once, resumes after a crash, a restart or a power cut, and checks that the finished file is complete.
 >
 > What the extension does:
 > • Catches downloads of the file types you choose (archives, installers, disk images, video, audio, PDFs… editable), from all sites or all but the ones you exclude, above a minimum size if you like.
-> • Hold Alt while clicking to let the browser download a file itself — or, if you prefer, to send any link to Whoosh.
-> • Right-click a link, a selection or a page: "Download with Whoosh".
+> • Hold Alt while clicking to let the browser download a file itself — or, if you prefer, to send any link to Whoosh Download Manager.
+> • Right-click a link, a selection or a page: "Download link with WDM" (or selected links, or all links).
 > • Lists audio, video and streaming playlists found on the page in the toolbar popup.
 > • Repairs expired links: when a paused download's signed address has expired, it finds the fresh one on the page the download came from, and asks you when it is not sure.
 > • Never loses a download: the browser's copy is cancelled only after the app has accepted it. If the app is not running, the browser simply keeps downloading.
 >
-> The extension needs the Whoosh app installed on the same computer; it talks only to that app, through the browser's native messaging. It collects no data and sends nothing to us or anyone else.
+> The extension needs the Whoosh Download Manager app installed on the same computer; it talks only to that app, through the browser's native messaging. It collects no data and sends nothing to us or anyone else.
 >
 > This edition does not work on YouTube or similar streaming sites.
 >

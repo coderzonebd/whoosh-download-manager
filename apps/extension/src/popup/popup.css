@@ -32,8 +32,8 @@ body {
   font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 main { padding: 12px 14px; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-h1 { font-size: 15px; margin: 0; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+h1 { font-size: 15px; margin: 0; white-space: nowrap; }
 h2 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }

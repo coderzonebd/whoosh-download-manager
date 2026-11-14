@@ -26,6 +26,9 @@ env:
   CARGO_INCREMENTAL: "0"
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
   NODE_VERSION: "24"
+  # Desktop release assets start with this (productName with hyphens; see
+  # "Collect release assets" and .github/scripts/package-manifests.mjs).
+  ASSET_PREFIX: Whoosh-Download-Manager
 
 defaults:
   run:
@@ -440,8 +443,20 @@ jobs:
               done
               cp -R apps/desktop/src-tauri/media-tools portable/media-tools
               "$MEDIA_BUNDLER" verify portable/media-tools > /dev/null
-              (cd portable && 7z a -tzip -mx=9 "../out/Whoosh_${VERSION}_${WINDOWS_ARCH}_portable.zip" . >/dev/null) ;;
+              (cd portable && 7z a -tzip -mx=9 "../out/${ASSET_PREFIX}_${VERSION}_${WINDOWS_ARCH}_portable.zip" . >/dev/null) ;;
           esac
+          # Tauri names the bundles after productName, "Whoosh Download
+          # Manager"; GitHub would turn the spaces in an asset name into dots.
+          # Hyphens instead: Whoosh-Download-Manager_<v>_amd64.deb,
+          # Whoosh-Download-Manager-<v>-1.x86_64.rpm, and the .sig files with
+          # them (the updater signs the bytes, not the name).
+          for f in out/*\ *; do
+            [ -e "$f" ] || continue
+            name=$(basename "$f"); mv "$f" "out/${name// /-}"
+          done
+          for f in out/*; do
+            case "$(basename "$f")" in "$ASSET_PREFIX"[_-]*) ;; *) echo "::error::unexpected asset name: $f"; exit 1 ;; esac
+          done
           ls -l out
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

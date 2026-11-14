@@ -424,7 +424,7 @@ the rename, so the finished file is never seen without it.
 | Platform | Mark |
 |---|---|
 | Windows | `Zone.Identifier` stream: `ZoneId=3`, `ReferrerUrl`, `HostUrl` |
-| macOS | `com.apple.quarantine` = `0081;<hex time>;Whoosh;` |
+| macOS | `com.apple.quarantine` = `0081;<hex time>;Whoosh Download Manager;` (the name Gatekeeper shows as the program that downloaded the file) |
 | Linux | `user.xdg.origin.url`, `user.xdg.referrer.url` (where user xattrs work) |
 
 URLs keep scheme, host, port and path; user info, query and fragment are

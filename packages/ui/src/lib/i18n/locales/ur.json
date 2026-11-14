@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Whoosh"
+    "name": "Whoosh Download Manager"
   },
   "nav": {
     "label": "لائبریری",
@@ -198,7 +198,7 @@
   },
   "add": {
     "title": "ڈاؤن لوڈ شامل کریں",
-    "description": "لنک پیسٹ کریں۔ Whoosh پہلے اسے جانچتا ہے تاکہ شروع ہونے سے پہلے آپ فائل دیکھ سکیں۔",
+    "description": "لنک پیسٹ کریں۔ Whoosh Download Manager پہلے اسے جانچتا ہے تاکہ شروع ہونے سے پہلے آپ فائل دیکھ سکیں۔",
     "url": "پتہ",
     "urlPlaceholder": "https://example.com/file.zip",
     "invalidUrl": "http://، https:// یا ftp:// سے شروع ہونے والا مکمل پتہ درج کریں",
@@ -266,25 +266,25 @@
     "chooseFolder": "طے شدہ ڈاؤن لوڈ فولڈر منتخب کریں",
     "desktop": "یہ کمپیوٹر",
     "desktopHint": "یہ فوراً لاگو ہوتی ہیں، اور صرف اسی ایپ پر۔",
-    "launchAtLogin": "لاگ ان ہونے پر Whoosh شروع کریں",
+    "launchAtLogin": "لاگ ان ہونے پر Whoosh Download Manager شروع کریں",
     "launchAtLoginHint": "یہ ونڈو کھولے بغیر ٹرے میں شروع ہوتا ہے۔",
-    "closeToTray": "ونڈو بند کرنے پر Whoosh ٹرے میں چلتا رہے",
+    "closeToTray": "ونڈو بند کرنے پر Whoosh Download Manager ٹرے میں چلتا رہے",
     "closeToTrayHint": "ڈاؤن لوڈز جاری رہتے ہیں۔ ٹرے مینو سے باہر نکلیں۔",
     "stopDaemonOnQuit": "باہر نکلنے پر ڈاؤن لوڈز بھی رک جائیں",
     "stopDaemonOnQuitHint": "بند ہو تو: براؤزر ایکسٹینشن اور کمانڈ لائن کے لیے ڈاؤن لوڈز پس منظر میں جاری رہتے ہیں۔",
     "privacy": "رازداری",
     "crashReports": "کریش رپورٹس بھیجیں",
-    "crashReportsHint": "خرابیاں ٹھیک کرنے میں مدد کے لیے Whoosh گمنام کریش رپورٹس بھیجتا ہے: خرابی، Whoosh میں یہ کہاں ہوئی، ایپ کا ورژن اور آپریٹنگ سسٹم۔ کوئی فائل نام، لنک یا صارف نام نہیں۔ جب تک آپ بند نہ کریں، آن رہتا ہے؛ پس منظر کی سروس اگلی بار شروع ہونے پر تبدیلی پر عمل کرے گی۔",
+    "crashReportsHint": "خرابیاں ٹھیک کرنے میں مدد کے لیے Whoosh Download Manager گمنام کریش رپورٹس بھیجتا ہے: خرابی، WDM میں یہ کہاں ہوئی، ایپ کا ورژن اور آپریٹنگ سسٹم۔ کوئی فائل نام، لنک یا صارف نام نہیں۔ جب تک آپ بند نہ کریں، آن رہتا ہے؛ پس منظر کی سروس اگلی بار شروع ہونے پر تبدیلی پر عمل کرے گی۔",
     "machineTranslated": "مشینی ترجمہ۔",
     "helpTranslate": "ترجمہ بہتر بنانے میں مدد کریں",
     "media": "ویڈیو اور آڈیو سائٹس",
-    "mediaHint": "Whoosh صفحے پر ویڈیو ڈھونڈنے کے لیے yt-dlp اور ویڈیو اور آڈیو جوڑنے کے لیے ffmpeg استعمال کرتا ہے۔ دونوں الگ پروگرام ہیں جو اپنی سرکاری ریلیز سے آتے ہیں اور شائع شدہ چیک سم سے جانچے جاتے ہیں۔ انسٹالر میں دونوں شامل ہیں؛ اس کے بغیر یہ پہلی بار ضرورت پڑنے پر ڈاؤن لوڈ ہوتے ہیں۔",
+    "mediaHint": "Whoosh Download Manager صفحے پر ویڈیو ڈھونڈنے کے لیے yt-dlp اور ویڈیو اور آڈیو جوڑنے کے لیے ffmpeg استعمال کرتا ہے۔ دونوں الگ پروگرام ہیں جو اپنی سرکاری ریلیز سے آتے ہیں اور شائع شدہ چیک سم سے جانچے جاتے ہیں۔ انسٹالر میں دونوں شامل ہیں؛ اس کے بغیر یہ پہلی بار ضرورت پڑنے پر ڈاؤن لوڈ ہوتے ہیں۔",
     "browsers": "براؤزر",
-    "browsersHint": "Chrome، Edge، Firefox اور دوسرے براؤزر جوڑیں تاکہ ان کے ڈاؤن لوڈ Whoosh میں آئیں۔",
+    "browsersHint": "Chrome، Edge، Firefox اور دوسرے براؤزر جوڑیں تاکہ ان کے ڈاؤن لوڈ Whoosh Download Manager میں آئیں۔",
     "browsersOpen": "اپنا براؤزر جوڑیں…",
     "updates": "اپ ڈیٹس",
-    "autoUpdateCheck": "دن میں ایک بار Whoosh کا نیا ورژن تلاش کریں",
-    "autoUpdateCheckHint": "Whoosh صرف نئے ورژن کی اطلاع دیتا ہے؛ پوچھے بغیر کبھی انسٹال نہیں کرتا۔",
+    "autoUpdateCheck": "دن میں ایک بار Whoosh Download Manager کا نیا ورژن تلاش کریں",
+    "autoUpdateCheckHint": "Whoosh Download Manager صرف نئے ورژن کی اطلاع دیتا ہے؛ پوچھے بغیر کبھی انسٹال نہیں کرتا۔",
     "checkNow": "نیا ورژن چیک کریں",
     "checking": "چیک ہو رہا ہے…",
     "upToDate": "آپ کے پاس سب سے نیا ورژن ہے۔",
@@ -295,7 +295,7 @@
     "installFailed": "اپ ڈیٹ انسٹال نہیں ہو سکا: {{message}}"
   },
   "crashNotice": {
-    "text": "خرابیاں ٹھیک کرنے میں مدد کے لیے Whoosh گمنام کریش رپورٹس بھیجتا ہے۔ کوئی فائل نام یا لنک نہیں۔ ترتیبات میں بند کریں۔",
+    "text": "خرابیاں ٹھیک کرنے میں مدد کے لیے Whoosh Download Manager گمنام کریش رپورٹس بھیجتا ہے۔ کوئی فائل نام یا لنک نہیں۔ ترتیبات میں بند کریں۔",
     "open": "ترتیبات کھولیں"
   },
   "theme": {
@@ -325,7 +325,7 @@
     "completed": "“{{name}}” کا ڈاؤن لوڈ مکمل ہو گیا",
     "failed": "“{{name}}” ناکام ہو گیا",
     "expired": "“{{name}}” کے لنک کی میعاد ختم ہو گئی",
-    "updateAvailable": "Whoosh {{version}} دستیاب ہے۔"
+    "updateAvailable": "Whoosh Download Manager {{version}} دستیاب ہے۔"
   },
   "error": {
     "generic": "کچھ غلط ہو گیا: {{message}}"
@@ -432,12 +432,12 @@
     "same": "شروع اور اختتام کا وقت ایک نہیں ہو سکتا۔"
   },
   "desktop": {
-    "trayNotice": "Whoosh ابھی بھی ٹرے میں چل رہا ہے، اس لیے ڈاؤن لوڈز جاری رہیں گے۔ اسے ٹرے مینو سے بند کریں۔"
+    "trayNotice": "Whoosh Download Manager ابھی بھی ٹرے میں چل رہا ہے، اس لیے ڈاؤن لوڈز جاری رہیں گے۔ اسے ٹرے مینو سے بند کریں۔"
   },
   "tray": {
-    "show": "Whoosh دکھائیں",
+    "show": "Whoosh Download Manager دکھائیں",
     "quit": "باہر نکلیں",
-    "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+    "tooltip": "WDM — ↓ {{speed}} · {{active}}"
   },
   "media": {
     "found": "اس صفحے کی ویڈیو",
@@ -458,9 +458,9 @@
     "subtitleAuto": "{{name}} (خودکار)",
     "size": "تقریباً {{size}}",
     "sizeUnknown": "سائز ابھی معلوم نہیں",
-    "viaEngine": "Whoosh اسے کئی کنکشنز سے ڈاؤن لوڈ کرتا ہے؛ روک کر دوبارہ چلایا جا سکتا ہے۔",
+    "viaEngine": "Whoosh Download Manager اسے کئی کنکشنز سے ڈاؤن لوڈ کرتا ہے؛ روک کر دوبارہ چلایا جا سکتا ہے۔",
     "viaYtDlp": "اسٹریمنگ فارمیٹ: yt-dlp اسے ایک کنکشن سے ڈاؤن لوڈ کرتا ہے۔",
-    "filenameHint": "ایکسٹینشن کے بغیر؛ Whoosh خود شامل کرے گا۔",
+    "filenameHint": "ایکسٹینشن کے بغیر؛ Whoosh Download Manager خود شامل کرے گا۔",
     "live": "یہ لائیو اسٹریم ہے۔"
   },
   "mediaStep": {
@@ -477,7 +477,7 @@
     "installing": "ڈاؤن لوڈ ہو رہا ہے…",
     "installingProgress": "ڈاؤن لوڈ ہو رہا ہے… {{percent}}",
     "version": "ورژن {{version}}",
-    "managed": "Whoosh اسے اپ ڈیٹ رکھتا ہے",
+    "managed": "Whoosh Download Manager اسے اپ ڈیٹ رکھتا ہے",
     "system": "اس کمپیوٹر پر انسٹال",
     "updateAvailable": "ورژن {{version}} دستیاب ہے",
     "upToDate": "تازہ ترین",
@@ -487,23 +487,23 @@
     "install": "{{name}} ڈاؤن لوڈ کریں",
     "update": "{{name}} اپ ڈیٹ کریں",
     "autoUpdate": "دن میں ایک بار اپ ڈیٹس چیک کریں",
-    "autoUpdateHint": "ورنہ Whoosh صرف آپ کے کہنے پر چیک کرتا ہے۔",
+    "autoUpdateHint": "ورنہ Whoosh Download Manager صرف آپ کے کہنے پر چیک کرتا ہے۔",
     "error": "پچھلی کوشش ناکام رہی: {{message}}",
     "checkFailed": "اپ ڈیٹس چیک نہیں ہو سکیں: {{message}}"
   },
   "browsers": {
     "title": "اپنا براؤزر جوڑیں",
-    "intro": "Whoosh ایکسٹینشن کے ذریعے Whoosh آپ کے براؤزر کے ڈاؤن لوڈ سنبھال لیتا ہے۔ ہر براؤزر میں ایکسٹینشن ہونا اور براؤزر کا اس ایپ سے جڑا ہونا ضروری ہے؛ جوڑنے کا کام Whoosh خود کر دیتا ہے۔",
+    "intro": "Whoosh Download Manager ایکسٹینشن کے ذریعے WDM آپ کے براؤزر کے ڈاؤن لوڈ سنبھال لیتا ہے۔ ہر براؤزر میں ایکسٹینشن ہونا اور براؤزر کا اس ایپ سے جڑا ہونا ضروری ہے؛ جوڑنے کا کام WDM خود کر دیتا ہے۔",
     "loading": "آپ کے براؤزر تلاش کیے جا رہے ہیں…",
-    "none": "اس صارف کے لیے کوئی معاون براؤزر نہیں ملا۔ Whoosh، Google Chrome، Chromium، Brave، Microsoft Edge، Vivaldi اور Firefox کے ساتھ کام کرتا ہے۔",
+    "none": "اس صارف کے لیے کوئی معاون براؤزر نہیں ملا۔ Whoosh Download Manager، Google Chrome، Chromium، Brave، Microsoft Edge، Vivaldi اور Firefox کے ساتھ کام کرتا ہے۔",
     "notFound": "اس کمپیوٹر پر نہیں ملے: {{names}}۔",
     "state": {
-      "ready": "تیار: اس براؤزر کے ڈاؤن لوڈ Whoosh میں آتے ہیں",
-      "noHost": "ابھی Whoosh سے نہیں جڑا",
+      "ready": "تیار: اس براؤزر کے ڈاؤن لوڈ Whoosh Download Manager میں آتے ہیں",
+      "noHost": "ابھی Whoosh Download Manager سے نہیں جڑا",
       "noExtension": "ایکسٹینشن انسٹال نہیں ہے"
     },
-    "connect": "Whoosh سے جوڑیں",
-    "connected": "{{browser}} Whoosh سے جڑ گیا ہے۔",
+    "connect": "WDM سے جوڑیں",
+    "connected": "{{browser}} Whoosh Download Manager سے جڑ گیا ہے۔",
     "connectFailed": "{{browser}} کو نہیں جوڑا جا سکا: {{message}}",
     "store": {
       "edgeAddOns": "Edge Add-ons سے حاصل کریں",

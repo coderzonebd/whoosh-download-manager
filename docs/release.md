@@ -12,13 +12,13 @@ laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 
 | Asset | Built on | Signed when configured |
 |---|---|---|
-| `Whoosh_<v>_x64-setup.exe`, `Whoosh_<v>_arm64-setup.exe` (NSIS, per-user) | windows-2025, windows-11-arm | SignPath (exe inside and installer) |
-| `Whoosh_<v>_x64_en-US.msi` (WiX, per-machine; x64 only, not for pre-releases) | windows-2025 | SignPath |
-| `Whoosh_<v>_{x64,arm64}_portable.zip` (the exe with `whoosh-daemon.exe`, `whoosh-nmhost.exe` and `media-tools\` with yt-dlp and ffmpeg) | windows-2025, windows-11-arm | SignPath (all three) |
-| `Whoosh_<v>_universal.dmg` (Apple silicon + Intel) | macos-15 | Developer ID + notarization, stapled |
-| `Whoosh_<v>_universal.app.tar.gz` (updater archive) | macos-15 | updater key (below) |
-| `Whoosh_<v>_amd64.AppImage`, `Whoosh_<v>_amd64.deb`, `Whoosh-<v>-1.x86_64.rpm` | ubuntu-22.04 (glibc 2.35) | — (see *Not automated yet*) |
-| `Whoosh_<v>_aarch64.AppImage`, `Whoosh_<v>_arm64.deb`, `Whoosh-<v>-1.aarch64.rpm` | ubuntu-22.04-arm (glibc 2.35) | — |
+| `Whoosh-Download-Manager_<v>_x64-setup.exe`, `Whoosh-Download-Manager_<v>_arm64-setup.exe` (NSIS, per-user) | windows-2025, windows-11-arm | SignPath (exe inside and installer) |
+| `Whoosh-Download-Manager_<v>_x64_en-US.msi` (WiX, per-machine; x64 only, not for pre-releases) | windows-2025 | SignPath |
+| `Whoosh-Download-Manager_<v>_{x64,arm64}_portable.zip` (the exe with `whoosh-daemon.exe`, `whoosh-nmhost.exe` and `media-tools\` with yt-dlp and ffmpeg) | windows-2025, windows-11-arm | SignPath (all three) |
+| `Whoosh-Download-Manager_<v>_universal.dmg` (Apple silicon + Intel) | macos-15 | Developer ID + notarization, stapled |
+| `Whoosh-Download-Manager_<v>_universal.app.tar.gz` (updater archive) | macos-15 | updater key (below) |
+| `Whoosh-Download-Manager_<v>_amd64.AppImage`, `Whoosh-Download-Manager_<v>_amd64.deb`, `Whoosh-Download-Manager-<v>-1.x86_64.rpm` | ubuntu-22.04 (glibc 2.35) | — (see *Not automated yet*) |
+| `Whoosh-Download-Manager_<v>_aarch64.AppImage`, `Whoosh-Download-Manager_<v>_arm64.deb`, `Whoosh-Download-Manager-<v>-1.aarch64.rpm` | ubuntu-22.04-arm (glibc 2.35) | — |
 | `whoosh-<v>-<platform>.{tar.gz,zip}`: the command line `whoosh` and `whoosh-daemon` (Windows: also `whoosh-autostart.exe`) | linux-x64, linux-arm64, macos-universal, windows-x64, windows-arm64 | SignPath / Developer ID + notarization |
 | `whoosh-nmhost-<v>-<platform>.{tar.gz,zip}` (native messaging host, for packagers) | same | same |
 | `whoosh-chromium-<v>-store.zip`, `whoosh-firefox-<v>-store.zip` | ubuntu-24.04 | stores sign on upload |
@@ -313,13 +313,13 @@ For v1.0 the owner chose distribution at no cost: no Apple Developer Program and
 sha256sum --check --ignore-missing SHA256SUMS
 
 # 2. Build provenance: built by this repository's release workflow from this tag
-gh attestation verify Whoosh_0.1.0_amd64.AppImage --repo <owner>/<repo>
+gh attestation verify Whoosh-Download-Manager_0.1.0_amd64.AppImage --repo <owner>/<repo>
 ```
 
 - Windows: file *Properties → Digital Signatures*, or
-  `Get-AuthenticodeSignature .\Whoosh_0.1.0_x64-setup.exe` (PowerShell).
-- macOS: `spctl --assess --type open --context context:primary-signature -v Whoosh_0.1.0_universal.dmg`
-  and, after installing, `spctl --assess -v /Applications/Whoosh.app`
+  `Get-AuthenticodeSignature .\Whoosh-Download-Manager_0.1.0_x64-setup.exe` (PowerShell).
+- macOS: `spctl --assess --type open --context context:primary-signature -v Whoosh-Download-Manager_0.1.0_universal.dmg`
+  and, after installing, `spctl --assess -v "/Applications/Whoosh Download Manager.app"`
   (both should say *Notarized Developer ID*).
 - Updater signatures (`*.sig`) and the updater public key are base64-encoded
   minisign files: `base64 -d file.sig > file.minisig`, `base64 -d key.pub > key.minisign.pub`,

@@ -1,8 +1,8 @@
-Third-party programs shipped with Whoosh
+Third-party programs shipped with Whoosh Download Manager
 ========================================
 
-The Whoosh desktop installers include two separate programs that Whoosh
-runs for video and audio sites. They are not part of Whoosh, are not
+The Whoosh Download Manager desktop installers include two separate programs that WDM
+runs for video and audio sites. They are not part of Whoosh Download Manager, are not
 linked with it, and keep their own licences. Their versions, download
 addresses and checksums are listed in manifest.json next to them.
 
@@ -37,10 +37,10 @@ Source:   https://git.ffmpeg.org/ffmpeg.git at the version in manifest.json,
 
 Written offer
 -------------
-For at least three years after each Whoosh release, CoderZone BD will give
+For at least three years after each Whoosh Download Manager release, CoderZone BD will give
 anyone who asks the complete corresponding source code of the ffmpeg build
 shipped in that release, for no more than the cost of providing it. Ask
 through https://github.com/coderzonebd/whoosh-download-manager/issues.
 
-Whoosh copies these programs into its data directory and updates them from
+Whoosh Download Manager copies these programs into its data directory and updates them from
 the same upstream releases when you ask (Settings, Video and audio sites).

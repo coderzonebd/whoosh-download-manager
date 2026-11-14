@@ -179,7 +179,7 @@ async fn the_finished_file_carries_the_mark_of_the_web() {
         let n = rustix::fs::lgetxattr(&done, "com.apple.quarantine", &mut buf).unwrap();
         let value = String::from_utf8(buf[..n].to_vec()).unwrap();
         assert!(
-            value.starts_with("0081;") && value.ends_with(";Whoosh;"),
+            value.starts_with("0081;") && value.ends_with(";Whoosh Download Manager;"),
             "{value}"
         );
     }

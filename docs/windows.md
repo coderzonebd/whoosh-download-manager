@@ -1,4 +1,4 @@
-# Whoosh on Windows
+# Whoosh Download Manager on Windows
 
 What the engine, daemon and CLI do differently on Windows, and why. The
 whole Rust test suite runs on Windows in CI (`windows-2025`) and blocks a
@@ -87,7 +87,7 @@ Filesystems without streams (FAT, exFAT) get no mark; the download still
 completes, with a warning in the log. There is no setting: the mark is
 always written.
 
-macOS gets the `com.apple.quarantine` attribute (`0081;<time>;Whoosh;`);
+macOS gets the `com.apple.quarantine` attribute (`0081;<time>;Whoosh Download Manager;`);
 Linux gets `user.xdg.origin.url` and `user.xdg.referrer.url` where the
 filesystem allows user attributes.
 

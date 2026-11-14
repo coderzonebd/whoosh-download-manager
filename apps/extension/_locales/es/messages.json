@@ -3,13 +3,13 @@
     "message": "Whoosh Download Manager (WDM)"
   },
   "extShortName": {
-    "message": "Whoosh"
+    "message": "WDM"
   },
   "extDescription": {
-    "message": "Envía las descargas del navegador al gestor de descargas Whoosh, con las mismas cookies y la misma página de origen."
+    "message": "Envía las descargas del navegador a Whoosh Download Manager, con las mismas cookies y la misma página de origen."
   },
   "optionsTitle": {
-    "message": "Configuración de Whoosh"
+    "message": "Configuración de Whoosh Download Manager"
   },
   "optionsIntro": {
     "message": "Los cambios se guardan al hacerlos y se aplican al instante."
@@ -21,7 +21,7 @@
     "message": "Captura de descargas"
   },
   "captureEnabled": {
-    "message": "Enviar las descargas del navegador a Whoosh"
+    "message": "Enviar las descargas del navegador a Whoosh Download Manager"
   },
   "captureEnabledHelp": {
     "message": "Si está desactivado, todas las descargas se quedan en el navegador. El botón de la barra de herramientas muestra “OFF”."
@@ -87,7 +87,7 @@
     "message": "Dejar que lo descargue el navegador"
   },
   "altClickWhoosh": {
-    "message": "Enviarlo a Whoosh, digan lo que digan las reglas de arriba"
+    "message": "Enviarlo a Whoosh Download Manager, digan lo que digan las reglas de arriba"
   },
   "altClickOff": {
     "message": "No hacer nada especial"
@@ -105,13 +105,13 @@
     "message": "Preparar la conexión cuando el puntero se detiene sobre un enlace de descarga"
   },
   "preconnectHelp": {
-    "message": "Solo se envía a Whoosh la dirección del sitio, nunca el enlace en sí."
+    "message": "Solo se envía a Whoosh Download Manager la dirección del sitio, nunca el enlace en sí."
   },
   "selfHealing": {
     "message": "Reparar enlaces de descarga caducados"
   },
   "selfHealingHelp": {
-    "message": "Cuando la dirección de una descarga en pausa ha caducado, Whoosh busca la nueva en la página de la que vino y te pregunta si no está seguro."
+    "message": "Cuando la dirección de una descarga en pausa ha caducado, Whoosh Download Manager busca la nueva en la página de la que vino y te pregunta si no está seguro."
   },
   "saved": {
     "message": "Guardado."
@@ -132,19 +132,19 @@
     "message": "No conectado"
   },
   "popupNoHost": {
-    "message": "El host nativo de Whoosh no está instalado."
+    "message": "El host nativo de Whoosh Download Manager no está instalado."
   },
   "popupAppNotRunning": {
     "message": "La aplicación no está abierta"
   },
   "popupStartApp": {
-    "message": "Abre Whoosh; hasta entonces, las descargas se quedan en el navegador."
+    "message": "Abre Whoosh Download Manager; hasta entonces, las descargas se quedan en el navegador."
   },
   "popupConnected": {
     "message": "Conectado"
   },
   "popupVersion": {
-    "message": "Whoosh $VERSION$",
+    "message": "WDM $VERSION$",
     "placeholders": {
       "version": {
         "content": "$1",
@@ -197,7 +197,7 @@
       },
       "outcome": {
         "content": "$2",
-        "example": "sent to Whoosh"
+        "example": "sent to Whoosh Download Manager"
       }
     }
   },
@@ -214,7 +214,7 @@
     }
   },
   "altHintWhoosh": {
-    "message": "Mantén pulsada la tecla $KEY$ al hacer clic en un enlace para enviarlo a Whoosh, digan lo que digan las reglas.",
+    "message": "Mantén pulsada la tecla $KEY$ al hacer clic en un enlace para enviarlo a Whoosh Download Manager, digan lo que digan las reglas.",
     "placeholders": {
       "key": {
         "content": "$1",
@@ -223,13 +223,13 @@
     }
   },
   "pageBlocked": {
-    "message": "Whoosh de la tienda del navegador no funciona en este sitio."
+    "message": "Whoosh Download Manager de la tienda del navegador no funciona en este sitio."
   },
   "healTitle": {
     "message": "Enlaces caducados"
   },
   "healOpenPage": {
-    "message": "Whoosh necesita abrir de nuevo la página de descarga de $FILE$.",
+    "message": "Whoosh Download Manager necesita abrir de nuevo la página de descarga de $FILE$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -256,22 +256,22 @@
     "message": "Descartar"
   },
   "menuLink": {
-    "message": "Descargar enlace con Whoosh"
+    "message": "Descargar enlace con WDM"
   },
   "menuSelection": {
-    "message": "Descargar los enlaces seleccionados con Whoosh"
+    "message": "Descargar los enlaces seleccionados con WDM"
   },
   "menuPage": {
-    "message": "Descargar todos los enlaces con Whoosh"
+    "message": "Descargar todos los enlaces con WDM"
   },
   "badgeOff": {
     "message": "OFF"
   },
   "outcomeSent": {
-    "message": "enviado a Whoosh"
+    "message": "enviado a Whoosh Download Manager"
   },
   "outcomeHealed": {
-    "message": "continuó una descarga caducada de Whoosh"
+    "message": "continuó una descarga caducada de Whoosh Download Manager"
   },
   "outcomeSkipped": {
     "message": "dejado al navegador ($REASON$)",
@@ -292,7 +292,7 @@
     }
   },
   "outcomeLinksSent": {
-    "message": "enlaces enviados a Whoosh: $COUNT$",
+    "message": "enlaces enviados a Whoosh Download Manager: $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -322,9 +322,9 @@
     }
   },
   "errorStoreBlocked": {
-    "message": "Whoosh de la tienda del navegador no descarga de este sitio."
+    "message": "Whoosh Download Manager de la tienda del navegador no descarga de este sitio."
   },
   "errorRefused": {
-    "message": "Whoosh no aceptó esa dirección."
+    "message": "Whoosh Download Manager no aceptó esa dirección."
   }
 }
