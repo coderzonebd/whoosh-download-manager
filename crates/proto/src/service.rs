@@ -10,8 +10,9 @@ use serde::Serialize;
 
 use crate::{
     AddParams, AddResult, DownloadDetail, DownloadSummary, IdParams, IdsParams, ListParams,
-    PreconnectParams, ProbeParams, ProbeResult, ProgressEvent, RefreshUrlParams, RemoveParams,
-    RemovedEvent, Settings, StateEvent, Stats, error_code, event,
+    PreconnectParams, ProbeParams, ProbeResult, ProgressEvent, Queue, QueueConfig,
+    QueueFinishedEvent, QueueNameParams, QueueRenameParams, RefreshUrlParams, RemoveParams,
+    RemovedEvent, SetQueueParams, Settings, StateEvent, Stats, error_code, event,
 };
 
 /// A method failed. `code` is a JSON-RPC error code: [`error_code`], or
@@ -70,6 +71,8 @@ pub enum Notification {
     DownloadRemoved(RemovedEvent),
     Stats(Stats),
     Settings(Settings),
+    Queues(Vec<Queue>),
+    QueueFinished(QueueFinishedEvent),
 }
 
 impl Notification {
@@ -83,6 +86,8 @@ impl Notification {
             Self::DownloadRemoved(_) => event::DOWNLOAD_REMOVED,
             Self::Stats(_) => event::STATS,
             Self::Settings(_) => event::SETTINGS,
+            Self::Queues(_) => event::QUEUES,
+            Self::QueueFinished(_) => event::QUEUE_FINISHED,
         }
     }
 
@@ -99,6 +104,8 @@ impl Notification {
             Self::DownloadRemoved(v) => json(v),
             Self::Stats(v) => json(v),
             Self::Settings(v) => json(v),
+            Self::Queues(v) => json(v),
+            Self::QueueFinished(v) => json(v),
         }
     }
 
@@ -127,6 +134,37 @@ pub trait Service: Send + Sync {
     fn settings(&self) -> BoxFuture<'_, ServiceResult<Settings>>;
     fn set_settings(&self, settings: Settings) -> BoxFuture<'_, ServiceResult<Settings>>;
 
+    // Queues and the scheduler. A service that has them advertises the
+    // `queues` capability; until then these answer "unsupported".
+
+    fn set_queue(&self, _params: SetQueueParams) -> BoxFuture<'_, ServiceResult<()>> {
+        unsupported("download.setQueue")
+    }
+    fn queues(&self) -> BoxFuture<'_, ServiceResult<Vec<Queue>>> {
+        unsupported("queue.list")
+    }
+    fn create_queue(&self, _config: QueueConfig) -> BoxFuture<'_, ServiceResult<Queue>> {
+        unsupported("queue.create")
+    }
+    fn update_queue(&self, _config: QueueConfig) -> BoxFuture<'_, ServiceResult<Queue>> {
+        unsupported("queue.update")
+    }
+    fn rename_queue(&self, _params: QueueRenameParams) -> BoxFuture<'_, ServiceResult<Queue>> {
+        unsupported("queue.rename")
+    }
+    fn remove_queue(&self, _params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        unsupported("queue.remove")
+    }
+    fn start_queue(&self, _params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        unsupported("queue.start")
+    }
+    fn stop_queue(&self, _params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        unsupported("queue.stop")
+    }
+    fn cancel_queue_action(&self, _params: QueueNameParams) -> BoxFuture<'_, ServiceResult<()>> {
+        unsupported("queue.cancelAction")
+    }
+
     /// A new, independent subscription to every notification (one per client
     /// connection). Ends when the service shuts down. Notifications for
     /// which [`Notification::is_lossy`] is false are never dropped; lossy
@@ -137,4 +175,9 @@ pub trait Service: Send + Sync {
     /// state store. The daemon calls this once on shutdown (SIGTERM, Ctrl-C,
     /// service stop) and exits when it resolves.
     fn shutdown(&self) -> BoxFuture<'_, ()>;
+}
+
+fn unsupported<T: Send + 'static>(method: &str) -> BoxFuture<'static, ServiceResult<T>> {
+    let err = ServiceError::unsupported(format!("{method} is not supported by this daemon yet"));
+    Box::pin(async move { Err(err) })
 }

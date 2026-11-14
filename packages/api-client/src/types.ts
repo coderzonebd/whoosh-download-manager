@@ -16,6 +16,15 @@ export const Method = {
   DownloadResume: "download.resume",
   DownloadRemove: "download.remove",
   DownloadRefreshUrl: "download.refreshUrl",
+  DownloadSetQueue: "download.setQueue",
+  QueueList: "queue.list",
+  QueueCreate: "queue.create",
+  QueueUpdate: "queue.update",
+  QueueRename: "queue.rename",
+  QueueRemove: "queue.remove",
+  QueueStart: "queue.start",
+  QueueStop: "queue.stop",
+  QueueCancelAction: "queue.cancelAction",
   NetPreconnect: "net.preconnect",
   StatsGet: "stats.get",
   SettingsGet: "settings.get",
@@ -32,6 +41,10 @@ export const Event = {
   Stats: "event.stats",
   /** The full `Settings`, sent to every client after any change. */
   Settings: "event.settings",
+  /** Every queue (`Queue[]`), sent to every client after any change. */
+  Queues: "event.queues",
+  /** A queue finished and its after-done action is about to run. */
+  QueueFinished: "event.queue.finished",
 } as const;
 export type EventName = (typeof Event)[keyof typeof Event];
 
@@ -246,9 +259,82 @@ export interface Settings {
    * damages a finished file. "processSafe": faster, survives a killed whoosh but not a power cut.
    */
   durability?: Durability;
+  /** Speed limits by time of day; while one applies it replaces `speedLimitBps`. */
+  speedSchedule?: SpeedWindow[];
 }
 
 export type Durability = "powerSafe" | "processSafe";
+
+// ------------------------------------------------------- queues and scheduler
+
+/** The main queue's name: where downloads go without `queue`. Its `maxActive` is `Settings.maxActiveDownloads`. */
+export const MAIN_QUEUE = "main";
+/** Seconds between `event.queue.finished` and the after-done action. */
+export const AFTER_DONE_GRACE_SECS = 60;
+
+export interface Queue {
+  name: string;
+  /** How many of its downloads run at once (1–64). Named queues default to 1. */
+  maxActive: number;
+  schedule?: Schedule;
+  /** False after `queue.stop`, until `queue.start` or the next scheduled start. */
+  running: boolean;
+}
+
+/** `queue.create` / `queue.update`: `maxActive` and `schedule` replace the queue's; absent `schedule` removes it. */
+export interface QueueConfig {
+  name: string;
+  maxActive?: number;
+  schedule?: Schedule;
+}
+
+export interface Schedule {
+  start?: ClockTime;
+  stop?: ClockTime;
+  /** Default "none". */
+  afterDone?: AfterDone;
+}
+
+/** A local time of day on the daemon's machine. */
+export interface ClockTime {
+  /** "HH:MM", 24-hour. */
+  at: string;
+  /** 0 = Sunday … 6 = Saturday; absent or empty means every day. */
+  days?: number[];
+}
+
+export type AfterDone = "none" | "sleep" | "shutdown";
+
+/** While open, `limitBps` replaces `Settings.speedLimitBps`; overlapping windows: the lowest wins. `from` after `to` spans midnight. */
+export interface SpeedWindow {
+  /** Days the window opens; absent or empty means every day. */
+  days?: number[];
+  from: string;
+  to: string;
+  limitBps: number;
+}
+
+export interface QueueNameParams {
+  name: string;
+}
+
+export interface QueueRenameParams {
+  name: string;
+  newName: string;
+}
+
+/** Move downloads to `queue` (absent = the main queue). */
+export interface SetQueueParams {
+  ids: DownloadId[];
+  queue?: string;
+}
+
+/** The queue's after-done action runs at `atMs` unless a client calls `queue.cancelAction`. */
+export interface QueueFinishedEvent {
+  name: string;
+  action: AfterDone;
+  atMs: number;
+}
 
 // ------------------------------------------------------------ events
 
@@ -301,6 +387,15 @@ export interface MethodMap {
   "stats.get": { params: undefined; result: Stats };
   "settings.get": { params: undefined; result: Settings };
   "settings.set": { params: Settings; result: Settings };
+  "download.setQueue": { params: SetQueueParams; result: null };
+  "queue.list": { params: undefined; result: Queue[] };
+  "queue.create": { params: QueueConfig; result: Queue };
+  "queue.update": { params: QueueConfig; result: Queue };
+  "queue.rename": { params: QueueRenameParams; result: Queue };
+  "queue.remove": { params: QueueNameParams; result: null };
+  "queue.start": { params: QueueNameParams; result: null };
+  "queue.stop": { params: QueueNameParams; result: null };
+  "queue.cancelAction": { params: QueueNameParams; result: null };
 }
 
 export interface EventMap {
@@ -312,6 +407,8 @@ export interface EventMap {
   "event.download.removed": RemovedEvent;
   "event.stats": Stats;
   "event.settings": Settings;
+  "event.queues": Queue[];
+  "event.queue.finished": QueueFinishedEvent;
 }
 
 /** Extra methods and events available only through the native messaging host. */

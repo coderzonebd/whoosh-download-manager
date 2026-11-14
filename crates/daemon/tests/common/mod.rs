@@ -162,6 +162,7 @@ pub fn settings() -> Settings {
         language: "en".into(),
         theme: "system".into(),
         durability: Default::default(),
+        speed_schedule: Vec::new(),
     }
 }
 
