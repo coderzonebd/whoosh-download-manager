@@ -149,6 +149,8 @@ offline.
 
 ## Accounts to create
 
+For v1.0 the owner chose distribution at no cost: no Apple Developer Program and no Chrome Web Store fee for now ([ADR 0007, Amendment 1](adr/0007-phase2-plan.md#amendment-1-the-road-to-v10-at-no-cost-2026-11-14)). The paid rows below stay for later.
+
 | Account | For | Cost / lead time |
 |---|---|---|
 | GitHub organisation + public repository | everything; artifact attestations on private repositories need GitHub Enterprise Cloud, and the free `ubuntu-22.04-arm` runner is meant for public repositories | free |
