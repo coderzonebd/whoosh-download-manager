@@ -417,7 +417,9 @@
     "same": "开始时间和结束时间不能相同。"
   },
   "desktop": {
-    "trayNotice": "Whoosh Download Manager 仍在托盘中运行，下载会继续进行。请从托盘菜单退出。"
+    "trayNotice": "Whoosh Download Manager 仍在托盘中运行，下载会继续进行。请从托盘菜单退出。",
+    "loginNotice": "Whoosh Download Manager 现在会在你登录时启动并留在托盘中，浏览器的下载始终有处可去。可以在设置中关闭。",
+    "loginNoticeAction": "设置"
   },
   "tray": {
     "show": "显示 Whoosh Download Manager",

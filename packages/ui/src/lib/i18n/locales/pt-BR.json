@@ -447,7 +447,9 @@
     "same": "O início e o fim não podem ser no mesmo horário."
   },
   "desktop": {
-    "trayNotice": "O Whoosh Download Manager continua em execução na bandeja, então os downloads continuam. Para sair, use o menu da bandeja."
+    "trayNotice": "O Whoosh Download Manager continua em execução na bandeja, então os downloads continuam. Para sair, use o menu da bandeja.",
+    "loginNotice": "O Whoosh Download Manager agora inicia quando você entra na sessão e fica na bandeja, para que os downloads do navegador sempre tenham para onde ir. Você pode desativar isso nas Configurações.",
+    "loginNoticeAction": "Configurações"
   },
   "tray": {
     "show": "Mostrar o Whoosh Download Manager",

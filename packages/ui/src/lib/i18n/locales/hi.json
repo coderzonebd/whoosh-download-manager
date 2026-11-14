@@ -432,7 +432,9 @@
     "same": "शुरू और खत्म होने का समय एक नहीं हो सकता।"
   },
   "desktop": {
-    "trayNotice": "Whoosh Download Manager अभी भी ट्रे में चल रहा है, इसलिए डाउनलोड जारी रहेंगे। इसे ट्रे मेनू से बंद करें।"
+    "trayNotice": "Whoosh Download Manager अभी भी ट्रे में चल रहा है, इसलिए डाउनलोड जारी रहेंगे। इसे ट्रे मेनू से बंद करें।",
+    "loginNotice": "अब लॉग इन करते ही Whoosh Download Manager शुरू होकर ट्रे में रहेगा, ताकि ब्राउज़र के डाउनलोड हमेशा यहाँ आ सकें। इसे सेटिंग्स में बंद कर सकते हैं।",
+    "loginNoticeAction": "सेटिंग्स"
   },
   "tray": {
     "show": "Whoosh Download Manager दिखाएँ",

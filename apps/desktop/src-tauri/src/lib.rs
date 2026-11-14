@@ -8,8 +8,10 @@
 //! tray while downloads go on; Quit leaves the daemon running unless the
 //! user asked otherwise ([`prefs`]). Window size, position and maximised
 //! state are remembered. `whoosh://add?url=…` links open the add dialog
-//! ([`deep_links`]); launch at login is off until the user turns it on, and
-//! then starts hidden in the tray ([`AUTOSTART_ARG`]). The browsers are
+//! ([`deep_links`]); launch at login is turned on once, at the first start
+//! of an installed build, and starts hidden in the tray ([`AUTOSTART_ARG`]);
+//! Settings turns it off for good. On macOS ⌘Q keeps the app in the menu bar
+//! like closing the window does ([`macos_menu`]); the tray's Quit quits. The browsers are
 //! connected at start where no installer did it ([`browsers`]), and the app
 //! updates itself from signed GitHub releases ([`updates`]).
 
@@ -24,6 +26,9 @@ mod browsers;
 mod crash;
 mod daemon;
 mod deep_links;
+mod login_item;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 mod prefs;
 mod shell_i18n;
 mod updates;
@@ -100,6 +105,9 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
 }
 
 pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    // Back in the Dock while the window is open (see `hide_to_tray`).
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         // Best effort: a failure here leaves the window as it was.
         let _ = window.unminimize();
@@ -147,25 +155,53 @@ fn quit_app<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-/// Closing the window: hide it to the tray (downloads go on) when there is
-/// a tray and the user wants that; otherwise let it close, which quits.
-fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, api: &tauri::CloseRequestApi) {
-    let app = window.app_handle();
-    let hide = TRAY_SHOWN.load(Ordering::SeqCst)
+/// Whether closing the window (or ⌘Q on macOS) should keep the app in the
+/// tray: there is a tray, the user wants that, and the app is not quitting.
+fn keeps_running_in_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
+    TRAY_SHOWN.load(Ordering::SeqCst)
         && !QUITTING.load(Ordering::SeqCst)
-        && app.state::<prefs::PrefsState>().get().close_to_tray;
-    if !hide {
-        save_window_state(app);
-        return;
+        && app.state::<prefs::PrefsState>().get().close_to_tray
+}
+
+/// Hides the window to the tray; downloads go on. The first time, the UI
+/// says so. On macOS the app also leaves the Dock and lives in the menu bar
+/// until the window is shown again.
+fn hide_to_tray<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        window_size::save(&window);
+        let _ = window.hide();
     }
-    api.prevent_close();
-    window_size::save(window);
-    let _ = window.hide();
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     let first = !app.state::<prefs::PrefsState>().get().tray_notice_shown;
     if first && let Err(err) = prefs::update(app, |p| p.tray_notice_shown = true) {
         eprintln!("whoosh-desktop: could not save desktop.json: {err}");
     }
     let _ = app.emit(EVENT_HIDDEN_TO_TRAY, serde_json::json!({ "first": first }));
+}
+
+/// Closing the window: hide it to the tray (downloads go on) when there is
+/// a tray and the user wants that; otherwise let it close, which quits.
+fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, api: &tauri::CloseRequestApi) {
+    let app = window.app_handle();
+    if !keeps_running_in_tray(app) {
+        save_window_state(app);
+        return;
+    }
+    api.prevent_close();
+    hide_to_tray(app);
+}
+
+/// ⌘Q, the app menu's Quit (macOS): the same as closing the window when the
+/// app keeps running in the tray, else a real quit. The tray's Quit always
+/// quits.
+#[cfg(target_os = "macos")]
+fn quit_from_app_menu<R: Runtime>(app: &AppHandle<R>) {
+    if keeps_running_in_tray(app) {
+        hide_to_tray(app);
+    } else {
+        quit_app(app);
+    }
 }
 
 fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
@@ -221,6 +257,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![AUTOSTART_ARG]),
@@ -238,6 +275,18 @@ pub fn run() {
             app.manage(updates::Pending::default());
             std::thread::spawn(move || browsers::ensure_registered(first_run));
             updates::start_daily_check(app.handle().clone());
+            // Installed builds start at login unless the user turned that off.
+            login_item::first_run(app.handle());
+            #[cfg(target_os = "macos")]
+            {
+                let menu = macos_menu::build(app.handle())?;
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, event| {
+                    if event.id().as_ref() == macos_menu::QUIT_ID {
+                        quit_from_app_menu(app);
+                    }
+                });
+            }
             // A daemon that crashes comes back even while the window is in the tray.
             daemon::supervise(app.handle(), &QUITTING);
             if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
@@ -280,6 +329,7 @@ pub fn run() {
             crash::set_crash_reports,
             crash::dismiss_crash_notice,
             crash::report_ui_error,
+            login_item::take_login_notice,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|err| {

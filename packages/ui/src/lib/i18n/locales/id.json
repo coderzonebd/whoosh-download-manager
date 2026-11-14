@@ -417,7 +417,9 @@
     "same": "Waktu mulai dan selesai tidak boleh sama."
   },
   "desktop": {
-    "trayNotice": "Whoosh Download Manager masih berjalan di baki sistem, jadi unduhan tetap berjalan. Keluar melalui menu baki sistem."
+    "trayNotice": "Whoosh Download Manager masih berjalan di baki sistem, jadi unduhan tetap berjalan. Keluar melalui menu baki sistem.",
+    "loginNotice": "Whoosh Download Manager kini berjalan saat Anda masuk dan menunggu di baki, agar unduhan dari peramban selalu punya tujuan. Anda dapat mematikannya di Pengaturan.",
+    "loginNoticeAction": "Pengaturan"
   },
   "tray": {
     "show": "Tampilkan Whoosh Download Manager",
