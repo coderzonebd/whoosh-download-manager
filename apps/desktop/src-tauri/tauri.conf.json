@@ -58,6 +58,11 @@
     "macOS": {
       "minimumSystemVersion": "12.0",
       "signingIdentity": "-"
+    },
+    "windows": {
+      "wix": {
+        "upgradeCode": "5AEE6600-C408-4874-A797-A19D382BA944"
+      }
     }
   }
 }
