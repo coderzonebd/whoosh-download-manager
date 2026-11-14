@@ -283,7 +283,9 @@ jobs:
           bundle="target/$TARGET/release/bundle"
           check() {
             local found=("$@")
-            [ "${#found[@]}" = 1 ] && [ -d "${found[0]}" ] || { echo "::error::media-tools not found: ${found[*]}"; exit 1; }
+            if [ "${#found[@]}" != 1 ] || [ ! -d "${found[0]}" ]; then
+              echo "::error::media-tools not found: ${found[*]}"; exit 1
+            fi
             "$MEDIA_BUNDLER" verify "${found[0]}" > /dev/null
             echo "ok: ${found[0]}"
           }

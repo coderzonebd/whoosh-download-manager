@@ -96,6 +96,13 @@ pub fn default_matrix() -> Vec<MatrixEntry> {
             "5 MB/s per connection, 2 allowed, RST beyond",
         ),
         entry(
+            "conn-cap-trickle",
+            &["10m.bin"],
+            None,
+            60,
+            "5 MB/s per connection, 2 allowed, ~200 B/s beyond (accepted, then starved)",
+        ),
+        entry(
             "flaky",
             &["100m.bin"],
             None,
