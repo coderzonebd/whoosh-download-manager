@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "Muestra los archivos multimedia y las transmisiones en la ventana emergente de la barra de herramientas, listos para descargar."
   },
+  "videoButtonOption": {
+    "message": "Mostrar un botón de descarga en los vídeos"
+  },
+  "videoButtonOptionHelp": {
+    "message": "Pasa el puntero sobre un vídeo para verlo. Envía la página a Whoosh Download Manager, donde eliges vídeo o audio y la calidad."
+  },
   "preconnect": {
     "message": "Preparar la conexión cuando el puntero se detiene sobre un enlace de descarga"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "Aún no se ha detectado nada."
   },
+  "popupOfferPage": {
+    "message": "Descargar este vídeo con WDM"
+  },
   "popupDownload": {
     "message": "Descargar"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "Error"
+  },
+  "videoButton": {
+    "message": "Descargar con WDM"
+  },
+  "videoButtonSent": {
+    "message": "Enviado a WDM"
+  },
+  "videoButtonFailed": {
+    "message": "No se pudo conectar con WDM"
   },
   "popupLast": {
     "message": "Último: $NAME$ — $OUTCOME$",

@@ -390,3 +390,23 @@ describe("mock media (yt-dlp)", () => {
     expect(events.length).toBeGreaterThan(3);
   });
 });
+
+describe("mock media offers", () => {
+  it("keeps offered pages until a window takes them", async () => {
+    const c = mock();
+    const events = record(c, "event.media.offered");
+    const a = await c.call("media.offer", { url: "https://www.youtube.com/watch?v=x", title: "  A \n video " });
+    expect(a.needsApp).toBeUndefined();
+    const again = await c.call("media.offer", { url: "https://www.youtube.com/watch?v=x" });
+    expect(again.id).toBe(a.id);
+    await c.call("media.offer", { url: "https://vimeo.com/1" });
+    await expect(c.call("media.offer", { url: "file:///etc/passwd" })).rejects.toBeInstanceOf(WdmRpcError);
+    expect(events.map((e) => e.url)).toEqual(["https://www.youtube.com/watch?v=x", "https://www.youtube.com/watch?v=x", "https://vimeo.com/1"]);
+    const list = await c.call("media.offers", undefined);
+    expect(list.map((o) => o.url)).toEqual(["https://www.youtube.com/watch?v=x", "https://vimeo.com/1"]);
+    expect(list[0]?.title).toBe("A video");
+    expect((await c.call("media.takeOffer", { id: a.id })).url).toBe("https://www.youtube.com/watch?v=x");
+    await expect(c.call("media.takeOffer", { id: a.id })).rejects.toMatchObject({ code: ErrorCode.NotFound });
+    expect(await c.call("media.offers", undefined)).toHaveLength(1);
+  });
+});

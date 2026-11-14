@@ -10,7 +10,10 @@
 //! state are remembered. `whoosh://add?url=…` links open the add dialog
 //! ([`deep_links`]); launch at login is turned on once, at the first start
 //! of an installed build, and starts hidden in the tray ([`AUTOSTART_ARG`]);
-//! Settings turns it off for good. On macOS ⌘Q keeps the app in the menu bar
+//! Settings turns it off for good. What the browser hands over (a download
+//! that waits for confirmation, a video page for the media picker) is asked
+//! about in a small prompt window of its own, never in the main one
+//! ([`prompt`]). On macOS ⌘Q keeps the app in the menu bar
 //! like closing the window does ([`macos_menu`]); the tray's Quit quits. The browsers are
 //! connected at start where no installer did it ([`browsers`]), and the app
 //! updates itself from signed GitHub releases ([`updates`]).
@@ -30,6 +33,7 @@ mod login_item;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod prefs;
+mod prompt;
 mod shell_i18n;
 mod updates;
 mod window_size;
@@ -104,7 +108,7 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The UI asks for the window, e.g. when a browser download waits for confirmation.
+/// The UI asks for the main window.
 #[tauri::command]
 fn show_window<R: Runtime>(app: AppHandle<R>) {
     show_main_window(&app);
@@ -256,8 +260,15 @@ pub fn run() {
         // First, so a second launch hands over before anything else starts.
         // With its `deep-link` feature, a second launch's whoosh:// link
         // reaches `deep_links` through the deep-link plugin.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            show_main_window(app);
+        // `--prompt` (from wdm-nmhost) opens the prompt window instead.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if prompt::wants_prompt(&argv) {
+                if let Err(err) = prompt::open(app) {
+                    eprintln!("wdm-desktop: could not open the prompt window: {err}");
+                }
+            } else {
+                show_main_window(app);
+            }
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
@@ -309,18 +320,30 @@ pub fn run() {
                 eprintln!("wdm-desktop: no tray icon: {err}");
             }
             deep_links::setup(app);
-            // Started at login: stay in the tray (when there is one).
+            // Started at login, or by the browser for the prompt window:
+            // stay in the tray (when there is one).
+            let for_prompt = prompt::wants_prompt(std::env::args());
             if TRAY_SHOWN.load(Ordering::SeqCst)
-                && std::env::args().any(|a| a == AUTOSTART_ARG)
+                && (for_prompt || std::env::args().any(|a| a == AUTOSTART_ARG))
                 && let Some(window) = app.get_webview_window(MAIN_WINDOW)
             {
                 let _ = window.hide();
+                // In the menu bar, not the Dock, as when hidden to the tray.
+                #[cfg(target_os = "macos")]
+                if for_prompt {
+                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                }
+            }
+            if for_prompt && let Err(err) = prompt::open(app.handle()) {
+                eprintln!("wdm-desktop: could not open the prompt window: {err}");
             }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             set_tray_tooltip,
             show_window,
+            prompt::open_prompt,
+            prompt::close_prompt,
             daemon::daemon_connection,
             deep_links::take_deep_links,
             prefs::desktop_prefs,

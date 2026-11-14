@@ -72,9 +72,13 @@
       app.moveIds !== undefined ||
       app.clearIds !== undefined,
   );
-  /** A browser download waiting for the user; asked about once no other dialog is open. */
-  const confirming = $derived(otherModal ? undefined : app.waiting[0]);
-  const modal = $derived(otherModal || confirming !== undefined);
+  // What the browser hands over is asked about in the shell's prompt window when there is one
+  // (`Host.openPrompt`), else here, once no other dialog is open.
+  /** A browser download waiting for the user. */
+  const confirming = $derived(otherModal || app.delegates ? undefined : app.waiting[0]);
+  /** A page the extension offered ("Download with WDM" on a video): the add dialog for it. */
+  const offering = $derived(otherModal || app.delegates || confirming ? undefined : app.offers[0]);
+  const modal = $derived(otherModal || confirming !== undefined || offering !== undefined);
   /** The downloads view's name, as its (visually hidden) page heading. */
   const viewTitle = $derived.by(() => {
     const v = store.view;
@@ -200,6 +204,10 @@
   {#if confirming}
     {#key confirming.id}
       <ConfirmDownloadDialog download={confirming} index={1} total={app.waiting.length} />
+    {/key}
+  {:else if offering}
+    {#key offering.id}
+      <AddDownloadDialog initialUrl={offering.url} onclose={() => app.doneWithOffer(offering.id)} />
     {/key}
   {/if}
 </div>

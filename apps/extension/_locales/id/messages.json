@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "Menampilkan file media dan stream di popup toolbar, siap diunduh."
   },
+  "videoButtonOption": {
+    "message": "Tampilkan tombol unduh pada video"
+  },
+  "videoButtonOptionHelp": {
+    "message": "Arahkan penunjuk ke video untuk melihatnya. Tombol ini mengirim halaman ke Whoosh Download Manager, tempat Anda memilih video atau audio dan kualitasnya."
+  },
   "preconnect": {
     "message": "Siapkan koneksi saat penunjuk berhenti di atas tautan unduhan"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "Belum ada yang terdeteksi."
   },
+  "popupOfferPage": {
+    "message": "Unduh video ini dengan WDM"
+  },
   "popupDownload": {
     "message": "Unduh"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "Gagal"
+  },
+  "videoButton": {
+    "message": "Unduh dengan WDM"
+  },
+  "videoButtonSent": {
+    "message": "Terkirim ke WDM"
+  },
+  "videoButtonFailed": {
+    "message": "Tidak dapat menghubungi WDM"
   },
   "popupLast": {
     "message": "Terakhir: $NAME$ — $OUTCOME$",

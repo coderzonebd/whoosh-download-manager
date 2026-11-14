@@ -47,6 +47,8 @@ pub(crate) struct Shared {
     /// Connected desktop windows (`ClientInfo::name` "desktop"): a download
     /// that waits for confirmation needs one to ask the user.
     pub desktop_sessions: AtomicUsize,
+    /// Pages the extension offered to the media picker (`media.offer`).
+    pub offers: crate::offers::Offers,
 }
 
 impl Shared {
@@ -295,6 +297,7 @@ async fn serve_claimed(
         pending_hellos,
         tracker: Tracker::default(),
         desktop_sessions: AtomicUsize::new(0),
+        offers: crate::offers::Offers::default(),
     });
     let accept = tokio::spawn(accept_loop(listener, shared.clone(), accepting_rx));
     tracing::info!(%addr, data_dir = %data_dir.display(), "listening");

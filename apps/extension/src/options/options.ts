@@ -37,7 +37,7 @@ function el<T extends HTMLElement>(id: string): T {
   return node as T;
 }
 
-const CHECKBOXES = ["captureEnabled", "captureIncognito", "sniffMedia", "preconnect", "selfHealing"] as const;
+const CHECKBOXES = ["captureEnabled", "captureIncognito", "sniffMedia", "videoButton", "preconnect", "selfHealing"] as const;
 
 function fillText(): void {
   localizePage(document);

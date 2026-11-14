@@ -19,6 +19,8 @@ type Theme = "light" | "dark" | "high-contrast";
 
 interface Screen {
   name: string;
+  /** The desktop app's prompt window (PromptApp, 520×440) instead of the main one. */
+  prompt?: boolean;
   /** Opens the screen; resolves once it is on the page. */
   open(page: Page): Promise<void>;
 }
@@ -114,6 +116,22 @@ const SCREENS: Screen[] = [
     },
   },
   {
+    name: "prompt window: browser download confirmation",
+    prompt: true,
+    async open(page) {
+      await withApp(page, `await app.client.call("download.add", { url: "https://cdn.example.com/releases/wdm-handbook-2026.pdf", fromBrowser: true });`);
+      await page.locator("#vy-confirm-start").waitFor();
+    },
+  },
+  {
+    name: "prompt window: video offered by the extension",
+    prompt: true,
+    async open(page) {
+      await withApp(page, `await app.client.call("media.offer", { url: "https://video.example.com/watch?v=aqz-KE-bpKQ", title: "A talk" });`);
+      await page.locator("#vy-media-title").waitFor({ timeout: 20_000 });
+    },
+  },
+  {
     name: "media format picker",
     async open(page) {
       await withApp(page, `app.openAdd("https://video.example.com/watch?v=aqz-KE-bpKQ");`);
@@ -199,7 +217,8 @@ describe.skipIf(!chrome)("accessibility (axe-core)", () => {
         for (const screen of SCREENS) {
           it(screen.name, async () => {
             const colorScheme = theme === "dark" ? "dark" : "light";
-            const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme, locale: lang === "bn" ? "bn-BD" : "en-US" });
+            const viewport = screen.prompt ? { width: 520, height: 440 } : { width: 1280, height: 800 };
+            const context = await browser.newContext({ viewport, colorScheme, locale: lang === "bn" ? "bn-BD" : "en-US" });
             const page = await context.newPage();
             const errors: string[] = [];
             page.on("pageerror", (e) => errors.push(e.message));
@@ -207,6 +226,7 @@ describe.skipIf(!chrome)("accessibility (axe-core)", () => {
               const url = new URL(base);
               url.searchParams.set("lang", lang);
               url.searchParams.set("theme", theme === "dark" ? "dark" : "light");
+              if (screen.prompt) url.searchParams.set("view", "prompt");
               await page.goto(url.toString());
               await page.waitForFunction(() => window.__wdmApp !== undefined);
               await page.waitForFunction((l) => document.documentElement.lang === l, lang);

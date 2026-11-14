@@ -22,9 +22,9 @@ pub mod winacl;
 
 pub use media::{
     AudioConvert, MEDIA_CAPABILITY, MediaAddParams, MediaChoice, MediaConfigureParams,
-    MediaDownloadInfo, MediaFormat, MediaFormatKind, MediaProbeParams, MediaProbeResult, MediaStep,
-    MediaSubtitle, MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus, MediaUpdateParams,
-    MediaVia,
+    MediaDownloadInfo, MediaFormat, MediaFormatKind, MediaOffer, MediaOfferParams,
+    MediaOfferResult, MediaProbeParams, MediaProbeResult, MediaStep, MediaSubtitle, MediaTool,
+    MediaToolSource, MediaToolState, MediaToolsStatus, MediaUpdateParams, MediaVia,
 };
 pub use queue::{
     AfterDone, ClockTime, MAIN_QUEUE, Queue, QueueConfig, QueueFinishedEvent, QueueNameParams,
@@ -76,6 +76,13 @@ pub mod method {
     pub const MEDIA_CHECK_UPDATES: &str = "media.checkUpdates";
     pub const MEDIA_UPDATE_TOOLS: &str = "media.updateTools";
     pub const MEDIA_CONFIGURE: &str = "media.configure";
+    /// The browser extension hands a page to the app's media picker (only
+    /// its session may call it; the daemon itself downloads nothing).
+    pub const MEDIA_OFFER: &str = "media.offer";
+    /// Pages offered by the extension that no window has taken yet.
+    pub const MEDIA_OFFERS: &str = "media.offers";
+    /// A window takes one offered page to show it (it is then gone).
+    pub const MEDIA_TAKE_OFFER: &str = "media.takeOffer";
 
     pub const STATS_GET: &str = "stats.get";
     pub const SETTINGS_GET: &str = "settings.get";
@@ -102,6 +109,9 @@ pub mod event {
     /// `MediaToolsStatus`, after any change to the media tools (install
     /// progress at most once per second).
     pub const MEDIA_TOOLS: &str = "event.media.tools";
+    /// `MediaOffer`: the extension offered a page (`media.offer`). Sent to
+    /// every session except the extension's.
+    pub const MEDIA_OFFERED: &str = "event.media.offered";
 }
 
 /// Answered by `wdm-nmhost` itself, never by the daemon (PROTOCOL.md §1).

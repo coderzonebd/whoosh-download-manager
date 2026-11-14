@@ -110,7 +110,26 @@ function mediaItem(entry: MediaEntry): HTMLLIElement {
 function renderMedia(state: PopupState): void {
   const list = $("media");
   list.replaceChildren(...state.media.map(mediaItem));
-  $("media-empty").hidden = state.media.length > 0;
+  // With the page offered to the app, "none detected" says nothing useful.
+  $("media-empty").hidden = state.media.length > 0 || state.canOffer;
+  $("offer-row").hidden = !state.canOffer;
+}
+
+/** "Download this video with WDM": the app asks which quality, in its own small window. */
+function offerPage(): void {
+  const button = $("offer") as HTMLButtonElement;
+  const status = $("offer-status");
+  if (!tab?.url) return;
+  button.disabled = true;
+  status.textContent = "";
+  const message: PopupMessage = { type: "wdm/offer-page", url: tab.url };
+  if (tab.id !== undefined) message.tabId = tab.id;
+  if (tab.title) message.title = tab.title;
+  void ask<ActionReply>(message).then((reply) => {
+    status.textContent = reply.ok ? t("videoButtonSent") : t("videoButtonFailed");
+    if (!reply.ok) status.title = reply.error;
+    button.disabled = false;
+  });
 }
 
 function healButton(question: HealQuestion, label: string, answer: HealAnswer): HTMLButtonElement {
@@ -185,6 +204,7 @@ async function main(): Promise<void> {
     const enabled = (event.target as HTMLInputElement).checked;
     void ask<ActionReply>({ type: "wdm/set-capture", enabled }).then(refresh);
   });
+  $("offer").addEventListener("click", offerPage);
   $("open-options").addEventListener("click", () => {
     void api.runtime.openOptionsPage().then(() => window.close());
   });

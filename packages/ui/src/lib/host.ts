@@ -84,11 +84,17 @@ export interface Host {
     /** True once, on the first run: the page opens by itself. */
     firstRun(): Promise<boolean>;
   };
-  /**
-   * Bring the app window to the front, also when it is hidden in the tray (desktop app). Called
-   * when a download from the browser waits for the user's confirmation.
-   */
+  /** Bring the app window to the front, also when it is hidden in the tray (desktop app). */
   showWindow?: () => Promise<void>;
+  /**
+   * Open the small prompt window (desktop app), or bring it to the front when it is open: a
+   * download from the browser waits for confirmation, or the extension offered a video page.
+   * The shell owns the one prompt window, whichever UI asks. With it, the main UI never asks
+   * about these itself.
+   */
+  openPrompt?: () => Promise<void>;
+  /** The prompt window has nothing left to ask: close it (prompt mode only). */
+  closePrompt?: () => Promise<void>;
   /**
    * The clipboard's text, for the add dialog: opened empty, it fills in a
    * download link found there. Undefined when there is none.

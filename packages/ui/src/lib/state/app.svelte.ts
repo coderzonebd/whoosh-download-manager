@@ -3,7 +3,7 @@
 // from context (`getApp()`), so the same tree runs on the mock, the real
 // WebSocket client or (in the extension) a native-messaging client.
 
-import { MAIN_QUEUE, type AddParams, type ConfirmParams, type DownloadSummary, type MediaAddParams, type Queue, type QueueConfig, type Settings, type Stats, type WdmClient } from "@wdm/api-client";
+import { MAIN_QUEUE, type AddParams, type ConfirmParams, type DownloadSummary, type MediaAddParams, type MediaOffer, type Queue, type QueueConfig, type Settings, type Stats, type WdmClient } from "@wdm/api-client";
 import { isWdmConnectionError, isWdmRpcError } from "@wdm/api-client/errors";
 import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
@@ -28,6 +28,11 @@ export interface AppOptions {
   locale?: string;
   /** What the host shell adds (folder picker, desktop settings…). */
   host?: Host;
+  /**
+   * The prompt window (`PromptApp`): it takes the pages the extension offers and asks about
+   * them and the browser downloads that wait, and nothing else (no first-run pages, notices).
+   */
+  prompt?: boolean;
 }
 
 /** The queue dialog: create a queue, or edit one (name, limit, schedule). */
@@ -95,6 +100,20 @@ export class AppState {
       .filter((d) => d.data.awaitingConfirmation === true && d.data.state === "paused")
       .sort((a, b) => a.data.addedAt - b.data.addedAt || a.id.localeCompare(b.id)),
   );
+  /**
+   * Pages the browser extension offered ("Download with WDM" on a video) that this UI took
+   * (`media.takeOffer`) and shows in the add dialog, one at a time, oldest first. Only the prompt
+   * window and a UI without one (no `Host.openPrompt`) take them.
+   */
+  offers = $state.raw<MediaOffer[]>([]);
+  /** The download list (and the offered pages) loaded at least once; the prompt window closes only then. */
+  loaded = $state(false);
+  readonly prompt: boolean;
+  /**
+   * The main window of a host with a prompt window: what the browser hands over is asked about
+   * there (`Host.openPrompt`), never here.
+   */
+  readonly delegates: boolean;
   /** Capabilities from the last hello, when the client reports them. */
   #capabilities: string[] | undefined;
 
@@ -103,10 +122,14 @@ export class AppState {
   constructor(client: WdmClient, opts: AppOptions = {}) {
     this.client = client;
     this.host = opts.host ?? {};
-    this.host.crashReports
-      ?.get()
-      .then((s) => (this.crashNotice = s !== undefined && !s.noticeShown))
-      .catch(() => undefined);
+    this.prompt = opts.prompt === true;
+    this.delegates = !this.prompt && typeof this.host.openPrompt === "function";
+    if (!this.prompt) {
+      this.host.crashReports
+        ?.get()
+        .then((s) => (this.crashNotice = s !== undefined && !s.noticeShown))
+        .catch(() => undefined);
+    }
     this.prefs = new Prefs(opts.storage === undefined ? defaultStorage() : opts.storage);
     this.i18n = new I18n(opts.locale ?? (typeof navigator === "undefined" ? "en" : navigator.language));
     this.store.sort = this.prefs.initialSort;
@@ -119,7 +142,8 @@ export class AppState {
         client.onStatus((s) => {
           const st = s.state as Connection;
           if (s.hello) this.#capabilities = s.hello.capabilities ?? [];
-          const resync = st === "open" && this.connection === "reconnecting";
+          // The prompt window also loads again when its first load failed (the daemon was starting).
+          const resync = st === "open" && (this.connection === "reconnecting" || (this.prompt && !this.loaded));
           this.connection = st;
           if (resync) void this.reload(); // events were missed while away
         }),
@@ -136,13 +160,15 @@ export class AppState {
           const locale = this.i18n.intlLocale;
           untrack(() => this.store.setCollationLocale(locale));
         });
-        // A browser download waits for the user: bring the window to the front (also from the tray).
+        // A browser download waits for the user: open the prompt window (the shell's, which asks
+        // about it), or, without one, bring this window to the front (also from the tray).
         let shown: string | undefined;
         $effect(() => {
           const id = this.waiting[0]?.id;
           if (id === undefined || id === shown) return;
           shown = id;
-          untrack(() => this.host.showWindow?.().catch(() => undefined));
+          if (this.prompt) return;
+          untrack(() => this.#bringUp());
         });
         // A queue view whose queue went away (removed elsewhere) falls back to the main queue.
         $effect(() => {
@@ -156,6 +182,7 @@ export class AppState {
     );
     this.segments.start();
     void this.reload();
+    if (this.prompt) return;
     // First run of the desktop app: "Connect your browser".
     void this.host.browsers
       ?.firstRun()
@@ -189,7 +216,49 @@ export class AppState {
       this.i18n.setLocale(settings.value.language);
     }
     if (stats.status === "fulfilled") this.stats = stats.value;
-    await Promise.all([this.loadQueues(), this.loadMedia()]);
+    await Promise.all([this.loadQueues(), this.loadMedia(), this.loadOffers()]);
+    // Only a list that loaded counts: the prompt window must not close on a daemon still starting.
+    if (list.status === "fulfilled") this.loaded = true;
+  }
+
+  /** The prompt window, or this window when there is none. */
+  #bringUp(): void {
+    const h = this.host;
+    if (this.delegates) h.openPrompt?.().catch(() => undefined);
+    else h.showWindow?.().catch(() => undefined);
+  }
+
+  /**
+   * Pages the extension offered while this UI was away. The main window of a host with a
+   * prompt window only opens it; otherwise they are taken and shown here.
+   */
+  async loadOffers(): Promise<void> {
+    let list: MediaOffer[];
+    try {
+      list = await this.client.call("media.offers", undefined);
+    } catch {
+      return; // an older daemon, or not allowed: nothing to show
+    }
+    if (list.length === 0) return;
+    if (this.delegates) this.#bringUp();
+    else for (const o of list) await this.#takeOffer(o.id);
+  }
+
+  async #takeOffer(id: string): Promise<void> {
+    if (this.offers.some((o) => o.id === id)) return;
+    try {
+      const offer = await this.client.call("media.takeOffer", { id });
+      if (this.offers.some((o) => o.id === offer.id)) return;
+      this.offers = [...this.offers, offer];
+      if (!this.prompt) this.#bringUp();
+    } catch {
+      // Taken by another window, or expired.
+    }
+  }
+
+  /** The add dialog for the first offered page closed (added, or not wanted). */
+  doneWithOffer(id: string): void {
+    this.offers = this.offers.filter((o) => o.id !== id);
   }
 
   /** Learn whether the daemon offers video and audio sites (yt-dlp). Never reports -32006. */
@@ -242,6 +311,10 @@ export class AppState {
       }),
       c.on("event.queue.finished", (e) => this.queues.finished(e)),
       c.on("event.media.tools", (s) => this.media.replace(s)),
+      c.on("event.media.offered", (o) => {
+        if (this.delegates) this.#bringUp();
+        else void this.#takeOffer(o.id);
+      }),
       c.on("event.download.state", (e) => {
         const prev = this.store.applyState(e);
         const d = this.store.get(e.id);

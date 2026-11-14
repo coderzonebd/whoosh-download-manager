@@ -58,6 +58,20 @@ export function sizeFromHeaders(statusCode: number, headers: readonly HeaderLike
   return undefined;
 }
 
+/**
+ * Audio and video files smaller than this are page sounds and previews (a
+ * site's UI clicks, thumbnails that play on hover), not something to
+ * download: the popup leaves them out. Streams (HLS, DASH) are always listed,
+ * and so are files whose size is not known.
+ */
+export const MIN_LISTED_MEDIA_BYTES = 100 * 1024;
+
+/** Whether the popup lists an entry. */
+export function worthListing(entry: MediaEntry): boolean {
+  if (entry.kind === "hls" || entry.kind === "dash") return true;
+  return entry.size === undefined || entry.size >= MIN_LISTED_MEDIA_BYTES;
+}
+
 /** Per-tab media lists, newest last, de-duplicated by URL, capped. */
 export class TabMediaStore {
   private readonly tabs = new Map<number, MediaEntry[]>();

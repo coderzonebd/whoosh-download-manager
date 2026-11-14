@@ -234,6 +234,9 @@
     "later": "Daha sonra indir",
     "failed": "Bu yapılamadı: {{message}}"
   },
+  "prompt": {
+    "empty": "Bekleyen bir şey yok."
+  },
   "remove": {
     "titleOne": "“{{name}}” kaldırılsın mı?",
     "title_one": "{{count}} indirme kaldırılsın mı?",

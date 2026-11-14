@@ -392,6 +392,16 @@ async fn starts_the_app_when_a_download_waits_for_a_missing_window() {
         assert_eq!(count(), 1);
     }
 
+    // A page offered to the media picker with no window: the same, but
+    // still within the gap since the last start.
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":5,"method":"media.offer","params":{"url":"https://v.example/w"}}"#)
+        .await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":5,"result":{"id":"of_1","needsApp":true}}"#);
+    browser.recv_until(|m| m["id"] == 5).await;
+    assert_eq!(count(), 1);
+
     // Another method's result with the same field is not an add.
     browser
         .send(r#"{"jsonrpc":"2.0","id":4,"method":"stats.get"}"#)
@@ -399,6 +409,42 @@ async fn starts_the_app_when_a_download_waits_for_a_missing_window() {
     daemon.recv().await;
     daemon.send(r#"{"jsonrpc":"2.0","id":4,"result":{"needsApp":true}}"#);
     browser.recv_until(|m| m["id"] == 4).await;
+    assert_eq!(count(), 1);
+
+    browser.close().await.unwrap();
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn starts_the_app_when_an_offered_page_has_no_window() {
+    let dir = TempDir::new("launch-offer");
+    let mut daemon = FakeDaemon::start("t").await;
+    write_runtime(&dir.runtime_file(), daemon.port, "t");
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(dir.runtime_file());
+    cfg.launch_gap = std::time::Duration::ZERO;
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    let count = || launches.load(std::sync::atomic::Ordering::SeqCst);
+    let offer = |id: u64| {
+        json!({"jsonrpc":"2.0","id":id,"method":"media.offer","params":{"url":"https://v.example/w"}})
+            .to_string()
+    };
+
+    // A window is connected: nothing to start.
+    browser.send(&offer(1)).await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":1,"result":{"id":"of_1"}}"#);
+    browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(count(), 0);
+
+    browser.send(&offer(2)).await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":2,"result":{"id":"of_1","needsApp":true}}"#);
+    browser.recv_until(|m| m["id"] == 2).await;
     assert_eq!(count(), 1);
 
     browser.close().await.unwrap();

@@ -40,7 +40,16 @@ export type ContentMessage =
   /** The user Alt+clicked with "send to WDM": capture the next download whatever the rules say. */
   | { type: "wdm/force-next" }
   /** The user clicked a download-looking link; its text helps self-healing find it again. */
-  | { type: "wdm/link-click"; url: string; text: string };
+  | { type: "wdm/link-click"; url: string; text: string }
+  /**
+   * "Download with WDM" on a video: hand this page (the frame's, for an embedded player) to the
+   * app's media picker. Answered with an {@link ActionReply}. The background trusts the sender's
+   * frame URL over `url`.
+   */
+  | { type: "wdm/offer-video"; url: string; title: string };
+
+/** Longest page title passed on. */
+export const MAX_TITLE = 300;
 
 /** Background → content script. */
 export type CollectLinksMessage = { type: "wdm/collect-links"; scope: "all" | "selection" };
@@ -54,6 +63,8 @@ export type PopupMessage =
   | { type: "wdm/set-capture"; enabled: boolean }
   | { type: "wdm/set-site-excluded"; host: string; excluded: boolean }
   | { type: "wdm/download-media"; url: string; pageUrl?: string }
+  /** "Download this video with WDM": the current tab's page to the app's media picker. */
+  | { type: "wdm/offer-page"; tabId?: number; url: string; title?: string }
   | { type: "wdm/heal-answer"; id: string; answer: HealAnswer };
 
 export interface PopupState {
@@ -69,6 +80,8 @@ export interface PopupState {
   heals: HealQuestion[];
   /** Store build: this page is on a site the store extension does not work on. */
   pageBlocked: boolean;
+  /** "Download this video with WDM" is offered: an http(s) page the policy allows. */
+  canOffer: boolean;
   /** What Alt+click does (for the hint). */
   altClick: "browser" | "wdm" | "off";
 }
@@ -89,6 +102,10 @@ export function asContentMessage(value: unknown): ContentMessage | undefined {
   if (value["type"] === "wdm/force-next") return { type: "wdm/force-next" };
   if (value["type"] === "wdm/link-click" && typeof value["url"] === "string" && typeof value["text"] === "string") {
     return { type: "wdm/link-click", url: value["url"], text: value["text"].slice(0, 200) };
+  }
+  if (value["type"] === "wdm/offer-video" && typeof value["url"] === "string") {
+    const title = typeof value["title"] === "string" ? value["title"].slice(0, MAX_TITLE) : "";
+    return { type: "wdm/offer-video", url: value["url"], title };
   }
   return undefined;
 }
@@ -118,6 +135,15 @@ export function asPopupMessage(value: unknown): PopupMessage | undefined {
       const msg: PopupMessage = { type: "wdm/download-media", url: value["url"] };
       const pageUrl = optionalString(value["pageUrl"]);
       if (pageUrl !== undefined) msg.pageUrl = pageUrl;
+      return msg;
+    }
+    case "wdm/offer-page": {
+      if (typeof value["url"] !== "string") return undefined;
+      const msg: PopupMessage = { type: "wdm/offer-page", url: value["url"] };
+      const tabId = optionalNumber(value["tabId"]);
+      const title = optionalString(value["title"]);
+      if (tabId !== undefined) msg.tabId = tabId;
+      if (title !== undefined) msg.title = title.slice(0, MAX_TITLE);
       return msg;
     }
     case "wdm/heal-answer":

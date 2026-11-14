@@ -31,6 +31,17 @@ GPL-3.0-or-later.
   on Windows, an XDG autostart entry on Linux). The login item passes
   `--autostart`, and the app then starts hidden in the tray (when there is a
   tray).
+- **Prompt window** (`src-tauri/src/prompt.rs`). A browser download that waits
+  for confirmation, or a video page offered by the extension's button
+  (`media.offer`), is asked about in a small window of its own (`prompt`,
+  520×440, always on top, not in the taskbar), which loads
+  `index.html?view=prompt` (`PromptApp` of `@wdm/ui`), shows them one at a
+  time and closes itself when nothing is left; the main window does not come
+  up for them. A UI asks for it with `open_prompt` (opening it again only
+  focuses it). The native host starts the app with `--prompt` when no app
+  window is connected: the main window then stays hidden in the tray (when
+  there is one) and only the prompt window opens; a running app gets the
+  argument through the single-instance plugin.
 - **Folder picker.** The default folder (Settings) and the add dialog's folder
   have a *Browse…* button (`tauri-plugin-dialog`, `dialog:allow-open` only).
 - **`whoosh://` links.** `whoosh://add?url=<percent-encoded address>` brings

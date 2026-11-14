@@ -229,6 +229,9 @@
     "later": "Unduh nanti",
     "failed": "Tidak dapat melakukannya: {{message}}"
   },
+  "prompt": {
+    "empty": "Tidak ada yang menunggu."
+  },
   "remove": {
     "titleOne": "Hapus “{{name}}”?",
     "title_other": "Hapus {{count}} unduhan?",

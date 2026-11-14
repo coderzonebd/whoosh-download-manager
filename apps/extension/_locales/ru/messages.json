@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "Показывает медиафайлы и потоки во всплывающем окне на панели инструментов, готовые к загрузке."
   },
+  "videoButtonOption": {
+    "message": "Показывать кнопку загрузки на видео"
+  },
+  "videoButtonOptionHelp": {
+    "message": "Наведите указатель на видео, чтобы её увидеть. Она передаёт страницу в Whoosh Download Manager, где вы выберете видео или звук и качество."
+  },
   "preconnect": {
     "message": "Готовить соединение, когда указатель задерживается на ссылке для загрузки"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "Пока ничего не обнаружено."
   },
+  "popupOfferPage": {
+    "message": "Скачать это видео с WDM"
+  },
   "popupDownload": {
     "message": "Скачать"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "Ошибка"
+  },
+  "videoButton": {
+    "message": "Скачать с WDM"
+  },
+  "videoButtonSent": {
+    "message": "Отправлено в WDM"
+  },
+  "videoButtonFailed": {
+    "message": "Не удалось связаться с WDM"
   },
   "popupLast": {
     "message": "Последняя: $NAME$ — $OUTCOME$",

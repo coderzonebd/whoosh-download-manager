@@ -143,6 +143,15 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
         );
         return;
       }
+      if (url.pathname === "/video") {
+        // A player of a reasonable size; its source never loads (no codec needed), but it has one.
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(
+          `<!doctype html><title>A talk about downloads</title><style>body{margin:0}video{display:block;margin:40px;background:#000}</style>` +
+            `<video id="v" width="640" height="360" src="/files/talk.mp4"></video>`,
+        );
+        return;
+      }
       if (url.pathname.startsWith("/files/")) {
         const name = url.pathname.slice("/files/".length);
         const body = Buffer.alloc(64 * 1024, 7);
@@ -290,6 +299,24 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     );
     // Only the origin is shared, never the full link.
     expect(call.msg?.params).toEqual({ url: `${hoverOrigin}/` });
+    await page.close();
+  });
+
+  it("the button over a video hands the page to the app's media picker", async () => {
+    const page = await context.newPage();
+    await page.goto(`${origin}/video`);
+    // Point at the video: the button comes up at its top-right corner (in a closed shadow root,
+    // so it is clicked where it shows).
+    await page.mouse.move(360, 220);
+    await page.mouse.move(380, 230);
+    await expect.poll(() => page.evaluate(() => document.querySelector("wdm-video-button") !== null), { timeout: 5_000 }).toBe(true);
+    const box = await page.locator("#v").boundingBox();
+    if (!box) throw new Error("no video box");
+    await page.mouse.click(box.x + box.width - 8 - 16, box.y + 8 + 16);
+    const call = await waitFor("media.offer", () => hostCalls("media.offer").find((e) => e.msg?.params?.["url"] === `${origin}/video`));
+    expect(call.msg?.params).toEqual({ url: `${origin}/video`, title: "A talk about downloads" });
+    // Nothing was downloaded by itself.
+    expect(hostCalls("download.add").some((e) => String(e.msg?.params?.["url"]).includes("talk.mp4"))).toBe(false);
     await page.close();
   });
 

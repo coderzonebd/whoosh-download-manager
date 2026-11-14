@@ -17,7 +17,7 @@ import {
 } from "../shared/messages";
 import { blockedByStorePolicy } from "../shared/policy";
 import { loadSettings, normalizeSettings, SETTINGS_KEY, updateSettings, type Settings } from "../shared/settings";
-import { hostMatches, hostOf, isSiteExcluded, normalizeSitePattern } from "../shared/url";
+import { hostMatches, hostOf, isHttpUrl, isSiteExcluded, normalizeSitePattern } from "../shared/url";
 import { NativeMessagingTransport, type NativePort } from "../transport/native";
 import { isUnavailable } from "../transport/rpc";
 import { canHoldDownloads, downloadControl, getApi, isFirefox, toCandidate } from "./browser";
@@ -29,7 +29,8 @@ import { Coalescer, listUnfinished, RisingEdge } from "./catch-up";
 import { createPageReader, openPage } from "./healing/pages";
 import { collectLinks, createMenus, MENU } from "./menus";
 import { LinkHealer, type HealAsk, type Provenance } from "./self-healing";
-import { classifyMedia, header, sizeFromHeaders, TabMediaStore } from "./sniffer";
+import { offerPage } from "./offer";
+import { classifyMedia, header, sizeFromHeaders, TabMediaStore, worthListing } from "./sniffer";
 
 const api = getApi();
 const firefox = isFirefox(api);
@@ -341,6 +342,7 @@ api.tabs.onRemoved.addListener((tabId) => media.clear(tabId));
 // ------------------------------------------------------------------ messages
 
 const preconnect = new PreconnectThrottle();
+const offerDeps = { daemon: transport, settings, blocked: blockedByStorePolicy };
 
 async function onContentMessage(message: ContentMessage): Promise<void> {
   const now = Date.now();
@@ -356,6 +358,7 @@ async function onContentMessage(message: ContentMessage): Promise<void> {
     clicks.record(message.url, message.text, now);
     return;
   }
+  if (message.type === "wdm/offer-video") return; // answered in the listener
   const s = await settings();
   if (!s.preconnect || !transport.healthy || blockedByStorePolicy(message.url)) return;
   const origin = preconnect.allow(message.url, now);
@@ -381,6 +384,11 @@ async function onPopupMessage(message: PopupMessage): Promise<PopupState | Actio
     }
     case "wdm/download-media":
       return sendLinks([message.url], { referrer: message.pageUrl, fallbackToBrowser: false });
+    case "wdm/offer-page": {
+      // The tab's own address and title when we can read them, else what the popup saw.
+      const tab = message.tabId === undefined ? undefined : await api.tabs.get(message.tabId).catch(() => undefined);
+      return offerPage(offerDeps, { url: tab?.url ?? message.url, title: tab?.title ?? message.title, fromButton: false });
+    }
     case "wdm/heal-answer": {
       const outcome = await healer.act(message.id, message.answer);
       if (outcome?.status === "failed" && outcome.reason === "daemon-refused") {
@@ -398,9 +406,11 @@ async function popupState(tabId: number | undefined, pageUrl: string | undefined
     status,
     captureEnabled: s.captureEnabled,
     siteExcluded: false,
-    media: tabId === undefined || pageBlocked ? [] : media.list(tabId),
+    // Page sounds and previews (small audio/video files) are left out.
+    media: tabId === undefined || pageBlocked ? [] : media.list(tabId).filter(worthListing),
     heals,
     pageBlocked,
+    canOffer: isHttpUrl(pageUrl) && !pageBlocked,
     altClick: s.altClick,
   };
   if (status.daemonRunning) {
@@ -427,6 +437,12 @@ api.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (sender.id !== api.runtime.id) return false;
 
   const content = asContentMessage(message);
+  if (content?.type === "wdm/offer-video") {
+    // The frame the button was clicked in, as the browser reports it, wins over what the page says.
+    const tabUrl = sender.tab?.url;
+    void offerPage(offerDeps, { url: sender.url ?? content.url, title: content.title, tabUrl, fromButton: true }).then(sendResponse);
+    return true;
+  }
   if (content) {
     void onContentMessage(content);
     return false;

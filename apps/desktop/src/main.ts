@@ -7,6 +7,10 @@
 // It also gets the shell's extras (`host.ts`: folder picker, desktop
 // settings, launch at login) and `whoosh://add?url=…` links (`deeplinks.ts`).
 //
+// `?view=prompt` (the shell's prompt window, `prompt.rs`) mounts only the
+// prompt: the browser downloads that wait for confirmation and the video pages
+// the extension offered, one at a time; it closes itself when done.
+//
 // In a plain browser (the vite dev server) there is no shell, so the UI runs
 // on the mock daemon. Dev-only query parameters for that case:
 //   ?bulk=10000   add N synthetic downloads    ?lang=bn   start in Bangla
@@ -17,7 +21,7 @@ import "@wdm/ui/styles.css";
 import type { WdmClient } from "@wdm/api-client";
 import { createMockClient } from "@wdm/api-client/mock";
 import { connectWs } from "@wdm/api-client/ws";
-import { App, type AppState } from "@wdm/ui";
+import { App, PromptApp, type AppState } from "@wdm/ui";
 import { mount } from "svelte";
 import { startCrashReports } from "./crash.ts";
 import { startDeepLinks } from "./deeplinks.ts";
@@ -71,21 +75,32 @@ const client = live ? liveClient() : mockClient();
 const target = document.getElementById("app");
 if (!target) throw new Error("#app is missing from index.html");
 
-mount(App, {
-  target,
-  props: {
-    client,
-    mode: live ? "live" : "mock",
-    // The folder picker, tray and login settings exist only in the app.
-    ...(live ? { host: desktopHost() } : {}),
-    onready: (app: AppState) => {
-      startTrayUpdates(client, (bps, active) => app.i18n.t("tray.tooltip", { speed: app.i18n.speed(bps), active: app.i18n.t("status.active", { count: active }) }));
-      if (live) {
-        startNotifications(client, app);
-        startShellLanguage(app);
-        void startDeepLinks(app);
-        void startUpdateNotices(app);
-      }
+/** The shell's prompt window (`prompt.rs`): the query, or the flag its init script sets. */
+const promptView =
+  new URLSearchParams(location.search).get("view") === "prompt" || (window as { __WDM_VIEW__?: string }).__WDM_VIEW__ === "prompt";
+
+if (promptView) {
+  mount(PromptApp, {
+    target,
+    props: { client, mode: live ? "live" : "mock", ...(live ? { host: desktopHost() } : {}) },
+  });
+} else {
+  mount(App, {
+    target,
+    props: {
+      client,
+      mode: live ? "live" : "mock",
+      // The folder picker, tray and login settings exist only in the app.
+      ...(live ? { host: desktopHost() } : {}),
+      onready: (app: AppState) => {
+        startTrayUpdates(client, (bps, active) => app.i18n.t("tray.tooltip", { speed: app.i18n.speed(bps), active: app.i18n.t("status.active", { count: active }) }));
+        if (live) {
+          startNotifications(client, app);
+          startShellLanguage(app);
+          void startDeepLinks(app);
+          void startUpdateNotices(app);
+        }
+      },
     },
-  },
-});
+  });
+}

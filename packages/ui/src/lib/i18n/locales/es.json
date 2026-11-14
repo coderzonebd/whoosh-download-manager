@@ -239,6 +239,9 @@
     "later": "Descargar más tarde",
     "failed": "No se pudo hacer: {{message}}"
   },
+  "prompt": {
+    "empty": "No hay nada pendiente."
+  },
   "remove": {
     "titleOne": "¿Quitar “{{name}}”?",
     "title_one": "¿Quitar {{count}} descarga?",

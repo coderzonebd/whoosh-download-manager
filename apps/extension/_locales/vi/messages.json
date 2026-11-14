@@ -101,6 +101,12 @@
   "sniffMediaHelp": {
     "message": "Liệt kê các tệp và luồng đa phương tiện trong cửa sổ bật lên của thanh công cụ, sẵn sàng để tải xuống."
   },
+  "videoButtonOption": {
+    "message": "Hiện nút tải xuống trên video"
+  },
+  "videoButtonOptionHelp": {
+    "message": "Trỏ chuột vào video để thấy nút. Nút gửi trang đến Whoosh Download Manager, nơi bạn chọn video hay âm thanh và chất lượng."
+  },
   "preconnect": {
     "message": "Chuẩn bị kết nối khi con trỏ dừng trên liên kết tải xuống"
   },
@@ -179,6 +185,9 @@
   "popupMediaEmpty": {
     "message": "Chưa phát hiện được gì."
   },
+  "popupOfferPage": {
+    "message": "Tải video này xuống bằng WDM"
+  },
   "popupDownload": {
     "message": "Tải xuống"
   },
@@ -187,6 +196,15 @@
   },
   "popupFailed": {
     "message": "Thất bại"
+  },
+  "videoButton": {
+    "message": "Tải xuống bằng WDM"
+  },
+  "videoButtonSent": {
+    "message": "Đã gửi đến WDM"
+  },
+  "videoButtonFailed": {
+    "message": "Không kết nối được với WDM"
   },
   "popupLast": {
     "message": "Gần nhất: $NAME$ — $OUTCOME$",
