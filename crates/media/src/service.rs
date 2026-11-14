@@ -26,13 +26,13 @@ use tokio::sync::{Mutex, oneshot};
 use tokio::task::AbortHandle;
 use wdm_proto::service::{Notification, Service, ServiceError, ServiceResult};
 use wdm_proto::{
-    AddParams, AddResult, DownloadDetail, DownloadState, DownloadSummary, ErrorInfo, IdParams,
-    IdsParams, ListParams, MEDIA_CAPABILITY, MediaAddParams, MediaChoice, MediaConfigureParams,
-    MediaDownloadInfo, MediaFormatKind, MediaProbeParams, MediaProbeResult, MediaStep,
-    MediaToolsStatus, MediaUpdateParams, MediaVia, PreconnectParams, ProbeParams, ProbeResult,
-    ProgressEvent, ProgressItem, Queue, QueueConfig, QueueNameParams, QueueRenameParams,
-    RefreshUrlParams, RemoveParams, RemovedEvent, RequestContext, SegmentInfo, SetQueueParams,
-    Settings, StateEvent, Stats, error_code,
+    AddParams, AddResult, ConfirmParams, DownloadDetail, DownloadState, DownloadSummary, ErrorInfo,
+    IdParams, IdsParams, ListParams, MEDIA_CAPABILITY, MediaAddParams, MediaChoice,
+    MediaConfigureParams, MediaDownloadInfo, MediaFormatKind, MediaProbeParams, MediaProbeResult,
+    MediaStep, MediaToolsStatus, MediaUpdateParams, MediaVia, PreconnectParams, ProbeParams,
+    ProbeResult, ProgressEvent, ProgressItem, Queue, QueueConfig, QueueNameParams,
+    QueueRenameParams, RefreshUrlParams, RemoveParams, RemovedEvent, RequestContext, SegmentInfo,
+    SetQueueParams, Settings, StateEvent, Stats, error_code,
 };
 
 use crate::fetch::{Fetcher, NetFetcher};
@@ -1914,6 +1914,12 @@ impl Service for MediaService {
 
     fn resume(&self, params: IdsParams) -> BoxFuture<'_, ServiceResult<()>> {
         Box::pin(self.shared.resume(params.ids))
+    }
+
+    /// Browser downloads waiting for confirmation are the engine's own; a
+    /// media download never waits, so this goes straight through.
+    fn confirm(&self, params: ConfirmParams) -> BoxFuture<'_, ServiceResult<()>> {
+        self.shared.inner.confirm(params)
     }
 
     fn remove(&self, params: RemoveParams) -> BoxFuture<'_, ServiceResult<()>> {

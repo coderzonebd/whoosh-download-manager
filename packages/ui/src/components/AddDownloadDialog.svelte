@@ -363,6 +363,8 @@
 <style>
   .form {
     display: grid;
+    /* Long links and names truncate instead of widening the dialog. */
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--vy-space-4);
   }
   .status {

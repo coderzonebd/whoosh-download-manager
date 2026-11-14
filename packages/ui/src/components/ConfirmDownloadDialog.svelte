@@ -200,6 +200,9 @@
 <style>
   .form {
     display: grid;
+    /* One column that may be narrower than its longest unbreakable text
+       (a long host or file name), which then truncates. */
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--vy-space-4);
   }
   .preview {
@@ -212,6 +215,9 @@
     border: 1px solid var(--vy-color-border);
   }
   .facts {
+    /* Takes the rest of the row and may shrink, so a long host name is
+       cut off with an ellipsis instead of widening the dialog. */
+    flex: 1 1 auto;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -233,13 +239,15 @@
     color: var(--vy-color-warning-text);
   }
   .from {
+    flex: 1 1 100%;
+    min-inline-size: 0;
     max-inline-size: 100%;
     color: var(--vy-color-text-muted);
     font-size: var(--vy-font-size-sm);
   }
   .two {
     display: grid;
-    grid-template-columns: 1fr 180px;
+    grid-template-columns: minmax(0, 1fr) 180px;
     gap: var(--vy-space-3);
   }
   @container vy-app (max-width: 560px) {
