@@ -271,7 +271,7 @@
     "machineTranslated": "Bản dịch máy.",
     "helpTranslate": "Giúp cải thiện bản dịch",
     "media": "Trang video và âm thanh",
-    "mediaHint": "Whoosh dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng, được tải từ bản phát hành chính thức khi cần lần đầu và được kiểm tra với mã băm đã công bố.",
+    "mediaHint": "Whoosh dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng từ bản phát hành chính thức, được kiểm tra với mã băm đã công bố. Bộ cài đặt đã kèm sẵn cả hai; nếu không có, chúng được tải về khi cần lần đầu.",
     "browsers": "Trình duyệt",
     "browsersHint": "Liên kết Chrome, Edge, Firefox và các trình duyệt khác để lượt tải xuống của chúng chuyển sang Whoosh.",
     "browsersOpen": "Kết nối trình duyệt…",

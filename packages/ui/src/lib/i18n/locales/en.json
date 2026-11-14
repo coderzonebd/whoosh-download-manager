@@ -278,7 +278,7 @@
     "machineTranslated": "Machine translated.",
     "helpTranslate": "Help improve the translation",
     "media": "Video and audio sites",
-    "mediaHint": "Whoosh uses yt-dlp to find the video on a page and ffmpeg to join video and audio. Both are separate programs, downloaded from their official releases the first time they are needed and checked against the published checksum.",
+    "mediaHint": "Whoosh uses yt-dlp to find the video on a page and ffmpeg to join video and audio. Both are separate programs from their official releases, checked against the published checksum. The installer includes them; without it they are downloaded the first time they are needed.",
     "browsers": "Browsers",
     "browsersHint": "Link Chrome, Edge, Firefox and other browsers so that their downloads come to Whoosh.",
     "browsersOpen": "Connect your browser…",

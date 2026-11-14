@@ -148,6 +148,9 @@ describe("media tools in Settings", { timeout: 30_000 }, () => {
     expect(yt).toHaveTextContent("Ready");
     expect(yt).toHaveTextContent("Version 2026.10.26");
     expect(yt).toHaveTextContent("github.com/yt-dlp/yt-dlp · Unlicense");
+    // A tool that is here (downloaded, or shipped with the installer) offers no download.
+    expect(within(yt).queryByRole("button", { name: "Download yt-dlp" })).not.toBeInTheDocument();
+    expect(section).toHaveTextContent("The installer includes them");
     const ff = within(section).getByRole("listitem", { name: "ffmpeg" });
     expect(ff).toHaveTextContent("Downloaded the first time it is needed");
     expect(ff).toHaveTextContent("LGPL-2.1-or-later");

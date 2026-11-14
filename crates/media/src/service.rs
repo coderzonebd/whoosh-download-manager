@@ -75,6 +75,9 @@ pub struct MediaConfig {
     pub fetcher: Option<Arc<dyn Fetcher>>,
     /// Run the daily update check when the user enabled it.
     pub auto_update: bool,
+    /// yt-dlp and ffmpeg shipped with the desktop app ([`crate::bundle`]):
+    /// copied into the data directory instead of downloaded on first use.
+    pub bundled_tools: Option<PathBuf>,
 }
 
 impl MediaConfig {
@@ -87,6 +90,7 @@ impl MediaConfig {
             ffmpeg: None,
             fetcher: None,
             auto_update: true,
+            bundled_tools: None,
         }
     }
 }
@@ -180,6 +184,7 @@ impl MediaService {
                 system: cfg.system_tools,
                 yt_dlp: cfg.yt_dlp.clone(),
                 ffmpeg: cfg.ffmpeg.clone(),
+                bundled: cfg.bundled_tools.clone(),
             },
             fetcher,
         )

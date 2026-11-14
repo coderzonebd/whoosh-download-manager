@@ -260,7 +260,8 @@ pub struct MediaTool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MediaToolState {
-    /// Not on this machine yet; fetched on first use.
+    /// Not on this machine yet; fetched on first use. (Tools shipped with
+    /// the desktop app are `ready` from the start.)
     Missing,
     Installing,
     Ready,

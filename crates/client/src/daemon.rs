@@ -100,6 +100,18 @@ pub async fn ensure(
     who: &ClientInfo,
     exe: &Path,
 ) -> Result<Connected> {
+    ensure_with_args(data_dir, autostart, who, exe, &[]).await
+}
+
+/// [`ensure`], starting the daemon with `extra_args` (the desktop app
+/// passes where its bundled media tools are).
+pub async fn ensure_with_args(
+    data_dir: &Path,
+    autostart: bool,
+    who: &ClientInfo,
+    exe: &Path,
+    extra_args: &[String],
+) -> Result<Connected> {
     let why = match connect_running(data_dir, who).await? {
         Found::Running(connected) => return Ok(*connected),
         Found::NotRunning(why) => why,
@@ -109,7 +121,7 @@ pub async fn ensure(
             "the whoosh daemon is not running ({why}); start it with `whoosh daemon start`"
         )));
     }
-    let child = spawn_detached(data_dir, exe, &[])?;
+    let child = spawn_detached(data_dir, exe, extra_args)?;
     wait_until_up(data_dir, child, who).await
 }
 

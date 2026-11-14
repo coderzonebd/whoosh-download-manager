@@ -22,6 +22,7 @@ target/debug/whoosh-daemon --mock --mock-scenario empty --port 0
 | | `WHOOSH_LOG` | `info` | log filter (`tracing-subscriber` `EnvFilter` syntax) |
 | `--worker-threads N` | `WHOOSH_WORKER_THREADS` | `1` | async runtime worker threads (1–64) |
 | `--no-media` | `WHOOSH_DAEMON_NO_MEDIA=1` | off | turn off video and audio sites (yt-dlp/ffmpeg) in a build that has them |
+| `--media-tools-dir <dir>` | `WHOOSH_MEDIA_TOOLS_DIR` | none | yt-dlp and ffmpeg shipped with the desktop app (its `media-tools` resource directory, with `manifest.json`); copied into the data directory at start. Without it they are downloaded on first use. The desktop app passes it |
 
 Without `--mock` it serves `whoosh-engine` over `whoosh-net` and `whoosh-store`, with its state in the data directory (`state.db`, `journal/`).
 

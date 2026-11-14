@@ -1,6 +1,6 @@
 [package]
 name = "whoosh-media"
-description = "Video and audio sites: yt-dlp and ffmpeg as separate programs, fetched on first use; media downloads through the engine"
+description = "Video and audio sites: yt-dlp and ffmpeg as separate programs, shipped with the desktop app or fetched on first use; media downloads through the engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
