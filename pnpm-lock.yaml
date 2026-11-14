@@ -172,6 +172,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@fontsource-variable/baloo-da-2':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -498,6 +501,9 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@fontsource-variable/baloo-da-2@5.3.0':
+    resolution: {integrity: sha512-EWMH2MQ5k8P+XFVxiC/ohtgLC8OwRQZLFawF6OkvF4TfZJbpXDL3dEWR9792YE79H04QoT3TJQoD4T5Di0Ti6A==}
 
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
@@ -1683,6 +1689,8 @@ snapshots:
     optional: true
 
   '@exodus/bytes@1.16.0': {}
+
+  '@fontsource-variable/baloo-da-2@5.3.0': {}
 
   '@fontsource-variable/inter@5.3.0': {}
 

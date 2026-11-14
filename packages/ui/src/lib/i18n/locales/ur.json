@@ -75,7 +75,10 @@
     "searchPlaceholder": "تلاش",
     "layout": "فہرست کا لے آؤٹ",
     "details": "تفصیلات کا پینل",
-    "shortcuts": "کی بورڈ شارٹ کٹس"
+    "shortcuts": "کی بورڈ شارٹ کٹس",
+    "selectAll": "سب منتخب کریں",
+    "selectedCount": "منتخب: {{count}}",
+    "clearSelection": "انتخاب ختم کریں"
   },
   "layout": {
     "classic": "کلاسک",
@@ -96,7 +99,8 @@
       "clear": "تلاش صاف کریں"
     },
     "selected_one": "{{count}} منتخب",
-    "selected_other": "{{count}} منتخب"
+    "selected_other": "{{count}} منتخب",
+    "pick": "منتخب کریں"
   },
   "col": {
     "name": "نام",

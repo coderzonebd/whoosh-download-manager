@@ -81,7 +81,10 @@
     "searchPlaceholder": "Поиск",
     "layout": "Вид списка",
     "details": "Панель сведений",
-    "shortcuts": "Сочетания клавиш"
+    "shortcuts": "Сочетания клавиш",
+    "selectAll": "Выбрать все",
+    "selectedCount": "Выбрано: {{count}}",
+    "clearSelection": "Снять выделение"
   },
   "layout": {
     "classic": "Классический",
@@ -104,7 +107,8 @@
     "selected_one": "Выбрано: {{count}}",
     "selected_few": "Выбрано: {{count}}",
     "selected_many": "Выбрано: {{count}}",
-    "selected_other": "Выбрано: {{count}}"
+    "selected_other": "Выбрано: {{count}}",
+    "pick": "Выбрать"
   },
   "col": {
     "name": "Имя",

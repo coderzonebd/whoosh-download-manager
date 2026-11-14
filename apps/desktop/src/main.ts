@@ -10,6 +10,7 @@
 // In a plain browser (the vite dev server) there is no shell, so the UI runs
 // on the mock daemon. Dev-only query parameters for that case:
 //   ?bulk=10000   add N synthetic downloads    ?lang=bn   start in Bangla
+import "@fontsource-variable/baloo-da-2";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/noto-sans-bengali";
 import "@whoosh/ui/styles.css";

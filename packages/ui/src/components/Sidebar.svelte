@@ -169,9 +169,10 @@
     box-shadow: var(--vy-shadow-sm);
   }
   .wordmark {
-    font-size: var(--vy-font-size-lg);
-    font-weight: var(--vy-font-weight-bold);
-    letter-spacing: var(--vy-letter-spacing-tight);
+    font-family: var(--vy-font-display);
+    font-size: var(--vy-font-size-2xl);
+    font-weight: 800;
+    line-height: 1;
   }
   .scroll {
     flex: 1;
@@ -209,9 +210,9 @@
     inline-size: 100%;
     min-block-size: 30px;
     padding-block: 0;
-    padding-inline: var(--vy-space-2-5);
+    padding-inline: var(--vy-space-3);
     border: 0;
-    border-radius: var(--vy-radius-sm);
+    border-radius: var(--vy-radius-full);
     background: transparent;
     color: var(--vy-color-text-muted);
     text-align: start;
@@ -227,10 +228,9 @@
     }
   }
   .item[aria-current="page"] {
-    background: var(--vy-color-surface);
-    color: var(--vy-color-text);
-    font-weight: var(--vy-font-weight-medium);
-    box-shadow: var(--vy-shadow-sm), inset 0 0 0 1px var(--vy-color-border);
+    background: var(--vy-color-selection-strong);
+    color: var(--vy-color-accent-text);
+    font-weight: var(--vy-font-weight-semibold);
   }
   .item[aria-current="page"] > :global(.icon) {
     color: var(--vy-color-accent-text);

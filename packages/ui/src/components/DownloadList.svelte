@@ -191,8 +191,10 @@
   function onclick(e: MouseEvent): void {
     const id = rowIdAt(e);
     if (id === undefined) return;
+    // The row's checkbox adds to the selection; a plain click replaces it.
+    const pick = (e.target as Element | null)?.closest("[data-pick]") != null;
     if (e.shiftKey) store.selectRange(id);
-    else if (isMod(e)) store.toggle(id);
+    else if (isMod(e) || pick) store.toggle(id);
     else store.selectOnly(id);
   }
 

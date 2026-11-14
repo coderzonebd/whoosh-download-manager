@@ -75,7 +75,10 @@
     "searchPlaceholder": "Ara",
     "layout": "Liste düzeni",
     "details": "Ayrıntılar paneli",
-    "shortcuts": "Klavye kısayolları"
+    "shortcuts": "Klavye kısayolları",
+    "selectAll": "Tümünü seç",
+    "selectedCount": "Seçili: {{count}}",
+    "clearSelection": "Seçimi temizle"
   },
   "layout": {
     "classic": "Klasik",
@@ -96,7 +99,8 @@
       "clear": "Aramayı temizle"
     },
     "selected_one": "{{count}} seçili",
-    "selected_other": "{{count}} seçili"
+    "selected_other": "{{count}} seçili",
+    "pick": "Seç"
   },
   "col": {
     "name": "Ad",

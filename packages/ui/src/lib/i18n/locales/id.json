@@ -72,7 +72,10 @@
     "searchPlaceholder": "Cari",
     "layout": "Tata letak daftar",
     "details": "Panel detail",
-    "shortcuts": "Pintasan keyboard"
+    "shortcuts": "Pintasan keyboard",
+    "selectAll": "Pilih semua",
+    "selectedCount": "Dipilih: {{count}}",
+    "clearSelection": "Hapus pilihan"
   },
   "layout": {
     "classic": "Klasik",
@@ -92,7 +95,8 @@
       "body": "Coba nama lain, atau hapus pencarian.",
       "clear": "Hapus pencarian"
     },
-    "selected_other": "{{count}} dipilih"
+    "selected_other": "{{count}} dipilih",
+    "pick": "Pilih"
   },
   "col": {
     "name": "Nama",

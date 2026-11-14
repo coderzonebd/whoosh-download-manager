@@ -12,6 +12,8 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - No shell, no config files, no browser cookies unless the extension passed one for the page, no DRM circumvention.
 
 ### Desktop app
+- New look, shared with the website: navy ink on white with a soft blue sidebar in light mode, deep navy in dark mode; a brand-yellow "Add download" pill; rounder controls; Baloo Da 2 for the wordmark and the primary button. Colours pass the contrast tests in every theme.
+- Bulk selection you can see: a checkbox on every row and card adds it to the selection, and a box in the toolbar selects everything or clears the selection and shows how many are ticked.
 - The desktop app is a client of the daemon ([ADR 0007](docs/adr/0007-phase2-plan.md)). It starts the bundled `whoosh-daemon` when none is running, and finds it again after a restart.
 - One instance per user: a second launch shows the first window.
 - Closing the window hides it to the tray and downloads go on. Quit leaves the daemon running unless the user chose otherwise.
