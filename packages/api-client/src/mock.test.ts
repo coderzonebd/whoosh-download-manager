@@ -332,3 +332,61 @@ describe("mock queues", () => {
     expect((await c.call("settings.set", { ...s, speedSchedule: [] })).speedSchedule).toBeUndefined();
   });
 });
+
+describe("mock media (yt-dlp)", () => {
+  const page = "https://video.example.com/watch?v=abc";
+
+  it("advertises the media capability, and can do without it", async () => {
+    const hello = { token: "", nonce: "", protocol: 1, client: { name: "t", version: "0" } };
+    expect((await mock().call("session.hello", hello)).capabilities).toContain("media");
+    client?.close();
+    const off = mock({ media: false });
+    expect((await off.call("session.hello", hello)).capabilities).not.toContain("media");
+    await expect(off.call("media.tools", undefined)).rejects.toMatchObject({ code: ErrorCode.Unsupported });
+    await expect(off.call("media.probe", { url: page })).rejects.toMatchObject({ code: ErrorCode.Unsupported });
+  });
+
+  it("probes a video page and refuses a file", async () => {
+    const c = mock({ scenario: "empty" });
+    const r = await c.call("media.probe", { url: page });
+    expect(r.title).toBe("Demo video abc");
+    expect(r.formats.some((f) => f.kind === "audioOnly")).toBe(true);
+    expect(r.formats.some((f) => !f.direct)).toBe(true);
+    expect(r.subtitles.map((s) => s.lang)).toEqual(["en", "bn"]);
+    await expect(c.call("media.probe", { url: "https://example.com/file.zip" })).rejects.toMatchObject({ code: ErrorCode.Network });
+    expect((await c.call("download.probe", { url: page })).contentType).toMatch(/text\/html/);
+  });
+
+  it("adds a media download that merges and completes", async () => {
+    const c = mock({ scenario: "empty" });
+    const states = record(c, "event.download.state");
+    const { id } = await c.call("media.add", { url: page, choice: { kind: "best", maxHeight: 720 } });
+    const d = await c.call("download.get", { id });
+    expect(d.media).toMatchObject({ title: "Demo video abc", format: "720p mp4", via: "engine" });
+    expect(d.filename).toBe("Demo video abc.mp4");
+    expect(d.category).toBe("video");
+    c.advance(120_000);
+    expect(states.filter((s) => s.id === id).map((s) => s.state)).toEqual(["probing", "downloading", "verifying", "completed"]);
+    const audio = await c.call("media.add", { url: page, choice: { kind: "audio", convert: "mp3" } });
+    expect((await c.call("download.get", { id: audio.id })).filename).toBe("Demo video abc.mp3");
+  });
+
+  it("installs, checks and configures the tools", async () => {
+    const c = mock({ mediaToolsMissing: true });
+    const events = record(c, "event.media.tools");
+    let s = await c.call("media.tools", undefined);
+    expect(s.tools.map((t) => [t.name, t.state])).toEqual([["yt-dlp", "missing"], ["ffmpeg", "missing"]]);
+    // First use fetches yt-dlp.
+    await c.call("media.probe", { url: page });
+    expect((await c.call("media.tools", undefined)).tools[0]?.state).toBe("ready");
+    s = await c.call("media.updateTools", { tools: ["ffmpeg"] });
+    expect(s.tools[1]?.state).toBe("installing");
+    c.advance(2000);
+    expect((await c.call("media.tools", undefined)).tools[1]?.state).toBe("ready");
+    s = await c.call("media.checkUpdates", undefined);
+    expect(s.tools[0]).toMatchObject({ latestVersion: "2026.11.10", updateAvailable: true });
+    expect((await c.call("media.configure", { autoUpdate: true })).autoUpdate).toBe(true);
+    await expect(c.call("media.updateTools", { tools: ["curl"] })).rejects.toBeInstanceOf(WhooshRpcError);
+    expect(events.length).toBeGreaterThan(3);
+  });
+});

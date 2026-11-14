@@ -88,7 +88,7 @@ describe("i18n", () => {
 
   it("translates every key into Bangla (no English left behind)", () => {
     // Identical strings are allowed only where they are not words.
-    const sameOnPurpose = new Set<MessageKey>(["app.name", "add.urlPlaceholder", "eta.unknown", "detail.segmentRange"]);
+    const sameOnPurpose = new Set<MessageKey>(["app.name", "add.urlPlaceholder", "eta.unknown", "detail.segmentRange", "media.qualityHeight"]);
     const keys = Object.keys(en) as MessageKey[];
     for (const k of keys) {
       expect(bn[k], k).toBeDefined();

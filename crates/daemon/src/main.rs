@@ -52,6 +52,12 @@ struct Args {
           value_parser = clap::value_parser!(u16).range(1..=64))]
     worker_threads: u16,
 
+    /// Turn off video and audio sites (yt-dlp/ffmpeg) in a build that has
+    /// them.
+    #[arg(long, env = "WHOOSH_DAEMON_NO_MEDIA", action = ArgAction::SetTrue,
+          value_parser = BoolishValueParser::new())]
+    no_media: bool,
+
     /// Started in the background by `whoosh`: no logging to stderr, and SIGHUP
     /// is ignored.
     #[arg(long, hide = true)]
@@ -149,7 +155,7 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
             ..MockOptions::default()
         })
     } else {
-        match start_engine(&data_dir, &mut startup.store).await {
+        match start_engine(&data_dir, &mut startup.store, !args.no_media).await {
             Ok(engine) => engine,
             Err(e) => {
                 tracing::error!(error = %e, "cannot start the download engine");
@@ -204,7 +210,11 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
 
 /// The real service: whoosh-engine over whoosh-net and whoosh-store, with its state
 /// in the data directory (`state.db`, `journal/`).
-async fn start_engine(data_dir: &Path, store_ms: &mut f64) -> std::io::Result<Arc<dyn Service>> {
+async fn start_engine(
+    data_dir: &Path,
+    store_ms: &mut f64,
+    media: bool,
+) -> std::io::Result<Arc<dyn Service>> {
     let net = whoosh_net::NetConfig::default();
     let mut capabilities: Vec<String> = vec!["http".into(), "https".into(), "preconnect".into()];
     if net.http2 {
@@ -241,6 +251,36 @@ async fn start_engine(data_dir: &Path, store_ms: &mut f64) -> std::io::Result<Ar
     )
     .await?;
     tracing::info!("download engine started");
+    with_media(engine, data_dir, media).await
+}
+
+/// Media downloads (yt-dlp/ffmpeg) on top of the engine, in builds with the
+/// `media` feature unless turned off.
+#[cfg(feature = "media")]
+async fn with_media(
+    engine: Arc<dyn Service>,
+    data_dir: &Path,
+    on: bool,
+) -> std::io::Result<Arc<dyn Service>> {
+    if !on {
+        tracing::info!("media downloads turned off");
+        return Ok(engine);
+    }
+    let media = whoosh_media::MediaService::start(
+        engine,
+        whoosh_media::MediaConfig::new(data_dir.join("media")),
+    )
+    .await?;
+    tracing::info!("media downloads available");
+    Ok(media)
+}
+
+#[cfg(not(feature = "media"))]
+async fn with_media(
+    engine: Arc<dyn Service>,
+    _data_dir: &Path,
+    _on: bool,
+) -> std::io::Result<Arc<dyn Service>> {
     Ok(engine)
 }
 

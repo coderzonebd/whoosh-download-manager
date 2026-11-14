@@ -16,6 +16,10 @@ path = "src/lib.rs"
 name = "whoosh-daemon"
 path = "src/main.rs"
 
+[features]
+default = ["media"]
+media = ["dep:whoosh-media"]
+
 [dependencies]
 futures.workspace = true
 serde.workspace = true
@@ -30,6 +34,9 @@ whoosh-proto.workspace = true
 whoosh-engine.workspace = true
 whoosh-net.workspace = true
 whoosh-store.workspace = true
+# Video and audio sites through yt-dlp/ffmpeg (`media` feature, on by
+# default for desktop and GitHub builds; a store build turns it off).
+whoosh-media = { workspace = true, optional = true }
 
 bytes = "1"
 getrandom = "0.4"

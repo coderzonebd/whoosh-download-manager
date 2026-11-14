@@ -41,7 +41,7 @@
     <SegmentBar download={download} decorative />
     <span class="pct vy-num">{frac === undefined ? i18n.bytes(d.downloadedBytes) : i18n.percent(frac)}</span>
   </div>
-  <div class="cell" role="gridcell"><StatusBadge state={d.state} /></div>
+  <div class="cell" role="gridcell"><StatusBadge state={d.state} step={d.media?.step} /></div>
   <div class="cell num vy-num" role="gridcell">{moving ? i18n.speed(d.speedBps) : ""}</div>
   <div class="cell num vy-num" role="gridcell">{moving ? i18n.eta(d.etaSecs) : ""}</div>
   <div class="cell num vy-num" role="gridcell">{moving ? i18n.number(d.connections) : ""}</div>

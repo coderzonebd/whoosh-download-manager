@@ -57,6 +57,15 @@ app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 - **Without queues:** the UI learns from the hello's `capabilities` (or a
   -32006 answer to `queue.list`) that the daemon has no queues, and then
   shows only the main queue, with no error.
+- **Video and audio sites** (daemons with the `media` capability): when a
+  link in the add dialog turns out to be a web page, the dialog asks
+  `media.probe` and offers a format picker (video at a quality, audio only
+  as it is or MP3, subtitles) with an estimated size, or the page itself as a
+  file. Media downloads show their step (merging, refreshing a link…) in
+  the status column. Settings → Video and audio sites shows yt-dlp and
+  ffmpeg (version, source, licence), checks for updates, updates them, and
+  turns on the daily check. A daemon without media support (`-32006`) shows
+  none of this.
 - **History:** finished and failed downloads, newest first, with search and
   an All/Completed/Failed filter; clear one entry or everything shown
   (`download.remove` with `deleteFiles: false`, after a confirmation).

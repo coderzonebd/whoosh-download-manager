@@ -326,6 +326,7 @@ mod tests {
             added_at: 0,
             completed_at: None,
             error: None,
+            media: None,
         }
     }
 

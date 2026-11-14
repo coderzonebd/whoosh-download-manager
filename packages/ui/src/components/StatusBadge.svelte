@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <script lang="ts">
-  import type { DownloadState } from "@whoosh/api-client";
+  import type { DownloadState, MediaStep } from "@whoosh/api-client";
   import { getApp } from "../lib/state/app.svelte.ts";
   import { toneFor } from "../lib/tone.ts";
 
@@ -8,14 +8,17 @@
     state: DownloadState;
     /** "dot" for dense tables, "pill" for cards and the detail panel. */
     variant?: "dot" | "pill";
+    /** A media download's current step (merging, refreshing…), shown instead of the state while active. */
+    step?: MediaStep | undefined;
   }
-  let { state, variant = "dot" }: Props = $props();
+  let { state, variant = "dot", step }: Props = $props();
+  const ACTIVE = new Set<DownloadState>(["probing", "downloading", "verifying"]);
   const { t } = getApp().i18n;
 </script>
 
 <span class="badge {variant} tone-{toneFor(state)}" data-state={state}>
   <span class="dot" aria-hidden="true"></span>
-  <span class="vy-truncate">{t(`state.${state}`)}</span>
+  <span class="vy-truncate">{step && step !== "downloading" && ACTIVE.has(state) ? t(`mediaStep.${step}`) : t(`state.${state}`)}</span>
 </span>
 
 <style>

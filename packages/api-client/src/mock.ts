@@ -19,6 +19,12 @@ import {
   type DownloadState,
   type DownloadSummary,
   type EventMap,
+  type MediaAddParams,
+  type MediaChoice,
+  type MediaFormat,
+  type MediaProbeResult,
+  type MediaTool,
+  type MediaToolsStatus,
   type MethodMap,
   type ProbeResult,
   type ProgressItem,
@@ -48,6 +54,10 @@ export interface MockClientOptions {
   settings?: Partial<Settings>;
   /** Wall clock used for timestamps (default `Date.now`). */
   now?: () => number;
+  /** Advertise the `media` capability and answer `media.*` (default true). */
+  media?: boolean;
+  /** Start with yt-dlp missing, so the first probe "fetches" it (default false). */
+  mediaToolsMissing?: boolean;
 }
 
 export interface MockWhooshClient extends WhooshClient {
@@ -64,6 +74,9 @@ const GB = 1024 * MB;
 const PROGRESS_MIN_INTERVAL_MS = 250; // ≤ 4 Hz
 const STATS_INTERVAL_MS = 1000;
 const PROBE_MS = 700;
+const TOOL_INSTALL_MS = 1500;
+const MOCK_YT_DLP_VERSION = "2026.10.26";
+const MOCK_YT_DLP_LATEST = "2026.11.10";
 const VERIFY_MS = 900;
 const MIN_SPLIT_BYTES = 2 * MB;
 
@@ -117,6 +130,57 @@ function filenameFromUrl(raw: string): string {
   } catch {
     return "download";
   }
+}
+
+/** Paths of the mock's video pages (`/watch?v=…`, `/video/…`). */
+const VIDEO_PAGE = /\/(watch|video|videos|v|shorts|embed|clip)(\/|$)/i;
+
+/** A page rather than a file: no file extension in the last path segment, or a typical video-page path. */
+export function looksLikeMediaPage(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (VIDEO_PAGE.test(u.pathname) || u.searchParams.has("v")) return true;
+  const last = u.pathname.split("/").filter(Boolean).pop() ?? "";
+  return last !== "" && !/\.[a-z0-9]{1,5}$/i.test(last);
+}
+
+function mockFormats(seed: number): MediaFormat[] {
+  const scale = 0.6 + (seed % 1000) / 1000;
+  const size = (mb: number) => Math.round(mb * scale * MB);
+  return [
+    { id: "139", kind: "audioOnly", ext: "m4a", acodec: "mp4a.40.5", abrKbps: 48, sizeBytes: size(1.3), direct: true },
+    { id: "251", kind: "audioOnly", ext: "webm", acodec: "opus", abrKbps: 135, sizeBytes: size(3.6), direct: true },
+    { id: "140", kind: "audioOnly", ext: "m4a", acodec: "mp4a.40.2", abrKbps: 129, sizeBytes: size(3.4), direct: true },
+    { id: "18", kind: "videoAudio", ext: "mp4", width: 640, height: 360, vcodec: "avc1.42001E", acodec: "mp4a.40.2", sizeBytes: size(11), note: "360p", direct: true },
+    { id: "hls-480", kind: "videoAudio", ext: "mp4", width: 854, height: 480, vcodec: "avc1", acodec: "mp4a", sizeBytes: size(19), sizeApproximate: true, note: "480p", direct: false },
+    { id: "136", kind: "videoOnly", ext: "mp4", width: 1280, height: 720, fps: 30, vcodec: "avc1.4d401f", sizeBytes: size(28), note: "720p", direct: true },
+    { id: "137", kind: "videoOnly", ext: "mp4", width: 1920, height: 1080, fps: 30, vcodec: "avc1.640028", sizeBytes: size(54), note: "1080p", direct: true },
+    { id: "313", kind: "videoOnly", ext: "webm", width: 3840, height: 2160, fps: 30, vcodec: "vp9", sizeBytes: size(310), sizeApproximate: true, note: "2160p", direct: true },
+  ];
+}
+
+/** Picks formats like yt-dlp's `bv*+ba/b`, `ba/b` or exact ids. */
+function pickFormats(formats: MediaFormat[], choice: MediaChoice): MediaFormat[] {
+  const audio = formats.filter((f) => f.kind === "audioOnly");
+  const bestAudio = audio[audio.length - 1];
+  if (choice.kind === "audio") return bestAudio ? [bestAudio] : formats.slice(-1);
+  if (choice.kind === "formats") {
+    if (choice.ids.length < 1 || choice.ids.length > 2) throw invalidParams("choose one format, or one video and one audio format");
+    return choice.ids.map((id) => {
+      const f = formats.find((x) => x.id === id);
+      if (!f) throw invalidParams(`no format ${id}`);
+      return f;
+    });
+  }
+  const videos = formats.filter((f) => f.kind !== "audioOnly" && f.direct && (choice.maxHeight === undefined || (f.height ?? 0) <= choice.maxHeight));
+  const v = videos[videos.length - 1];
+  if (!v) return formats.slice(-1);
+  return v.kind === "videoOnly" && bestAudio ? [v, bestAudio] : [v];
 }
 
 function invalidParams(message: string): WhooshRpcError {
@@ -213,6 +277,28 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
   let lastStatsAt = 0;
   let closed = false;
   let timer: ReturnType<typeof setInterval> | undefined;
+  const mediaOn = options.media ?? true;
+  const mediaProbes = new Map<string, MediaProbeResult>();
+  const tool = (name: string, ready: boolean, version?: string): MediaTool => {
+    const t: MediaTool = {
+      name,
+      state: ready ? "ready" : "missing",
+      upstream: name === "yt-dlp" ? "github.com/yt-dlp/yt-dlp" : "github.com/BtbN/FFmpeg-Builds",
+      license: name === "yt-dlp" ? "Unlicense" : "LGPL-2.1-or-later",
+    };
+    if (ready) {
+      t.source = "managed";
+      if (version) t.version = version;
+      t.path = `~/.local/share/whoosh/media/bin/${name}`;
+    }
+    return t;
+  };
+  const mediaTools: MediaToolsStatus = {
+    tools: [tool("yt-dlp", !options.mediaToolsMissing, MOCK_YT_DLP_VERSION), tool("ffmpeg", false)],
+    autoUpdate: false,
+  };
+  /** Simulated time at which an installing tool is ready. */
+  const toolReadyAt = new Map<string, number>();
 
   // ---------------------------------------------------------------- helpers
 
@@ -279,8 +365,14 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       d.connections = 0;
     }
     if (state === "completed") d.completedAt = wallNow();
+    if (d.media) {
+      if (state === "verifying") d.media.step = d.media.format.startsWith("audio") ? "converting" : "merging";
+      else delete d.media.step;
+    }
     sim.dirty = true;
     emit("event.download.state", error ? { id: d.id, state, error } : { id: d.id, state });
+    // The step is a descriptive field: clients get it with the summary.
+    if (d.media) emit("event.download.updated", summary(d));
   }
 
   function addSim(seed: Seed, at: number): Sim {
@@ -375,6 +467,12 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
   function step(dtMs: number): void {
     simTime += dtMs;
     const dt = dtMs / 1000;
+
+    for (const [name, at] of toolReadyAt) {
+      if (simTime < at) continue;
+      toolReadyAt.delete(name);
+      finishInstall(name);
+    }
 
     // Probing / verifying timers.
     for (const sim of sims.values()) {
@@ -515,6 +613,10 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     if (u.hostname.endsWith(".invalid")) {
       throw new WhooshRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
     }
+    if (mediaOn && looksLikeMediaPage(href) && VIDEO_PAGE.test(u.pathname)) {
+      // A video page: the server sends HTML (so the add dialog asks media.probe).
+      return { resumable: false, filename: `${filenameFromUrl(href)}.html`, finalUrl: href, contentType: "text/html; charset=utf-8", totalBytes: 48 * 1024 };
+    }
     const filename = filenameFromUrl(href);
     const category = categoryForFilename(filename);
     const result: ProbeResult = { resumable: !/noresume|live|stream/.test(href), filename, finalUrl: href };
@@ -538,6 +640,108 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       if (!queues.has(params.queue)) throw invalidParams(`no queue named "${params.queue}"`);
       sim.d.queue = params.queue;
     }
+    emit("event.download.added", summary(sim.d));
+    return sim.d.id;
+  }
+
+  // ---------------------------------------------------------------- media
+
+  function requireMedia(method: string): void {
+    if (!mediaOn) throw new WhooshRpcError(ErrorCode.Unsupported, `${method} is not supported by this daemon`);
+  }
+
+  function toolsChanged(): void {
+    emit("event.media.tools", structuredClone(mediaTools));
+  }
+
+  function findTool(name: string): MediaTool {
+    const t = mediaTools.tools.find((x) => x.name === name);
+    if (!t) throw invalidParams(`no tool named "${name}"`);
+    return t;
+  }
+
+  function finishInstall(name: string): void {
+    const t = findTool(name);
+    t.state = "ready";
+    t.source = "managed";
+    t.version = t.latestVersion ?? (name === "yt-dlp" ? MOCK_YT_DLP_VERSION : "9.0");
+    t.path = `~/.local/share/whoosh/media/bin/${name}`;
+    t.updateAvailable = false;
+    delete t.downloadedBytes;
+    delete t.totalBytes;
+    toolsChanged();
+  }
+
+  function beginInstall(name: string): void {
+    const t = findTool(name);
+    t.state = "installing";
+    t.downloadedBytes = 0;
+    t.totalBytes = name === "yt-dlp" ? 37 * MB : 34 * MB;
+    toolReadyAt.set(name, simTime + TOOL_INSTALL_MS);
+    toolsChanged();
+  }
+
+  function mediaProbe(rawUrl: unknown): MediaProbeResult {
+    requireMedia("media.probe");
+    const u = parseUrl(rawUrl);
+    if (u.protocol === "ftp:") throw invalidParams("only http and https pages");
+    if (u.hostname.endsWith(".invalid")) throw new WhooshRpcError(ErrorCode.Network, `Could not resolve host ${u.hostname}.`);
+    // First use: yt-dlp is "fetched" on the spot.
+    const yt = findTool("yt-dlp");
+    if (yt.state !== "ready") {
+      toolReadyAt.delete("yt-dlp");
+      finishInstall("yt-dlp");
+    }
+    // Like yt-dlp's generic extractor: only real video pages have video.
+    if (!looksLikeMediaPage(u.toString()) || !VIDEO_PAGE.test(u.pathname)) {
+      throw new WhooshRpcError(ErrorCode.Network, `[generic] Unsupported URL: ${u.toString()}`);
+    }
+    const href = u.toString();
+    const words = (u.pathname.split("/").filter(Boolean).pop() ?? u.hostname).replace(/[-_]+/g, " ");
+    const result: MediaProbeResult = {
+      url: href,
+      title: u.searchParams.get("v") ? `Demo video ${u.searchParams.get("v")}` : decodeURIComponent(words) || "Demo video",
+      extractor: u.hostname.replace(/^www\./, "").split(".")[0] ?? "generic",
+      thumbnail: `https://${u.hostname}/thumbnail.jpg`,
+      durationSecs: 60 + (hashString(href) % 3000),
+      uploader: "Demo channel",
+      formats: mockFormats(hashString(href)),
+      subtitles: [
+        { lang: "en", name: "English" },
+        { lang: "bn", name: "Bangla", automatic: true },
+      ],
+    };
+    mediaProbes.set(href, result);
+    return result;
+  }
+
+  function mediaAdd(params: MediaAddParams): string {
+    requireMedia("media.add");
+    if (!params?.choice) throw invalidParams("choice is required");
+    const href = parseUrl(params.url).toString();
+    const info = mediaProbes.get(href) ?? mediaProbe(href);
+    const picked = pickFormats(info.formats, params.choice);
+    const audioOnly = params.choice.kind === "audio";
+    const mp3 = params.choice.kind === "audio" && params.choice.convert === "mp3";
+    const ext = mp3 ? "mp3" : picked.length === 2 ? (picked.every((f) => f.ext === "mp4" || f.ext === "m4a") ? "mp4" : "mkv") : (picked[0]?.ext ?? "mp4");
+    const height = Math.max(0, ...picked.map((f) => f.height ?? 0));
+    const format = audioOnly ? `audio ${ext}` : height > 0 ? `${height}p ${ext}` : ext;
+    const size = picked.reduce((a, f) => a + (f.sizeBytes ?? 0), 0);
+    const stem = (params.filename?.trim() || info.title).replace(/[\\/]/g, "-");
+    const directory = params.directory?.trim() || settings.defaultDirectory;
+    const start = params.start ?? true;
+    const seed: Seed = { url: href, filename: uniqueFilename(directory, `${stem}.${ext}`), state: start ? "queued" : "paused", ageMin: 0, resumable: picked.every((f) => f.direct) };
+    if (size > 0) seed.size = size;
+    const sim = addSim(seed, wallNow());
+    sim.d.directory = directory;
+    sim.d.category = params.category ?? (audioOnly ? "music" : "video");
+    sim.d.media = { title: info.title, format, via: picked.every((f) => f.direct) ? "engine" : "ytDlp" };
+    if (params.queue && params.queue !== MAIN_QUEUE) {
+      if (!queues.has(params.queue)) throw invalidParams(`no queue named "${params.queue}"`);
+      sim.d.queue = params.queue;
+    }
+    // ffmpeg is fetched when a merge or conversion needs it.
+    if ((picked.length > 1 || mp3) && findTool("ffmpeg").state === "missing") beginInstall("ffmpeg");
     emit("event.download.added", summary(sim.d));
     return sim.d.id;
   }
@@ -632,7 +836,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
         throw new WhooshRpcError(ErrorCode.Unsupported, `protocol ${String(p?.protocol)} not supported`);
       }
       // The in-process mock has no transport to authenticate, so no real proof.
-      return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock", "queues"], proof: "" };
+      return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock", "queues", ...(mediaOn ? ["media"] : [])], proof: "" };
     },
     "daemon.shutdown": () => null,
     "download.probe": (p) => probe(p?.url),
@@ -772,6 +976,36 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       if (p?.name !== MAIN_QUEUE) namedQueue(p?.name);
       return null;
     },
+    "media.probe": (p) => mediaProbe(p?.url),
+    "media.add": (p) => ({ id: mediaAdd(p) }),
+    "media.tools": () => {
+      requireMedia("media.tools");
+      return mediaTools;
+    },
+    "media.checkUpdates": () => {
+      requireMedia("media.checkUpdates");
+      for (const t of mediaTools.tools) {
+        t.latestVersion = t.name === "yt-dlp" ? MOCK_YT_DLP_LATEST : "9.0";
+        t.updateAvailable = t.state === "ready" && t.version !== t.latestVersion;
+      }
+      mediaTools.lastCheckAt = wallNow();
+      toolsChanged();
+      return mediaTools;
+    },
+    "media.updateTools": (p) => {
+      requireMedia("media.updateTools");
+      const names = p?.tools && p.tools.length > 0 ? p.tools : mediaTools.tools.map((t) => t.name);
+      for (const n of names) findTool(n);
+      for (const n of names) beginInstall(n);
+      return mediaTools;
+    },
+    "media.configure": (p) => {
+      requireMedia("media.configure");
+      if (typeof p?.autoUpdate !== "boolean") throw invalidParams("autoUpdate must be a boolean");
+      mediaTools.autoUpdate = p.autoUpdate;
+      toolsChanged();
+      return mediaTools;
+    },
     "settings.get": () => ({ ...settings }),
     "settings.set": (p) => {
       const next = validateSettings(p);
@@ -810,7 +1044,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     call(method, params) {
       if (closed) return Promise.reject(new WhooshConnectionError("closed"));
       const fn = handlersByMethod[method] as ((p: unknown) => unknown) | undefined;
-      const delay = method === "download.probe" ? latencyMs * 6 : latencyMs;
+      const delay = method === "download.probe" || method === "media.probe" ? latencyMs * 6 : latencyMs;
       const run = () => {
         if (!fn) throw new WhooshRpcError(JsonRpcErrorCode.MethodNotFound, `method not found: ${method}`);
         return structuredClone(fn(params));

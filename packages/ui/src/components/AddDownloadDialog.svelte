@@ -3,9 +3,16 @@
   URL → probe → confirm. The link is checked as you type (debounced), so by
   the time you look up the file name, size and resumability are there; the
   name and category follow the probe until you edit them yourself.
+
+  With a daemon that has media support (yt-dlp), a link that turns out to be
+  a web page (or that the plain probe can't reach) is also asked about
+  video; when there is some, the dialog offers a format picker instead of
+  the file, with a way back to downloading the page itself.
 -->
 <script lang="ts">
-  import { MAIN_QUEUE, type ProbeResult } from "@whoosh/api-client";
+  import { MAIN_QUEUE, type MediaAddParams, type MediaProbeResult, type ProbeResult } from "@whoosh/api-client";
+  import { choiceFor, isWebPage, type AudioConvert, type MediaMode, type Quality } from "../lib/media.ts";
+  import MediaPicker from "./MediaPicker.svelte";
   import { isDownloadUrl } from "../lib/host.ts";
   import { CATEGORIES, categoryForFilename, type Category } from "@whoosh/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
@@ -38,8 +45,24 @@
   let startNow = $state(true);
   // Adding from a named queue's view puts the download in that queue.
   let queue = $state(untrackQueue());
-  let picking = $state(false);
+  let choosingFolder = $state(false);
   let probe = $state<Probe>({ status: "idle" });
+
+  type MediaProbe =
+    | { status: "idle" }
+    | { status: "checking"; url: string }
+    | { status: "ok"; url: string; result: MediaProbeResult }
+    | { status: "error"; url: string; message: string };
+  let media = $state<MediaProbe>({ status: "idle" });
+  /** The user chose the page itself over the video on it. */
+  let asFile = $state(false);
+  let mediaMode = $state<MediaMode>("video");
+  let quality = $state<Quality>("best");
+  let convert = $state<AudioConvert>("original");
+  let subtitles = $state<string[]>([]);
+  let stem = $state("");
+  let stemEdited = $state(false);
+  let mediaSeq = 0;
   let submitting = $state(false);
   let submitError = $state<string | undefined>(undefined);
   let touched = $state(false);
@@ -59,15 +82,15 @@
 
   async function chooseFolder(): Promise<void> {
     const pick = app.host.pickFolder;
-    if (!pick || picking) return;
-    picking = true;
+    if (!pick || choosingFolder) return;
+    choosingFolder = true;
     try {
       const dir = await pick({ title: t("add.chooseFolder"), defaultPath: directory.trim() || undefined });
       if (dir) directory = dir;
     } catch (e) {
       app.report(e);
     } finally {
-      picking = false;
+      choosingFolder = false;
     }
   }
 
@@ -84,9 +107,29 @@
       probe = { status: "ok", url: target, result };
       if (!filenameEdited) filename = result.filename;
       if (!categoryEdited) category = categoryForFilename(result.filename);
+      if (isWebPage(result.contentType)) void runMediaProbe(target);
     } catch (e) {
       if (mine !== seq) return;
       probe = { status: "error", url: target, message: app.describe(e) };
+      // Video pages often refuse a plain request; yt-dlp may still find the video.
+      void runMediaProbe(target);
+    }
+  }
+
+  async function runMediaProbe(target: string): Promise<void> {
+    if (!app.media.enabled || !/^https?:/i.test(target)) return;
+    const mine = ++mediaSeq;
+    media = { status: "checking", url: target };
+    try {
+      const result = await app.client.call("media.probe", { url: target });
+      if (mine !== mediaSeq) return;
+      media = { status: "ok", url: target, result };
+      if (!stemEdited) stem = result.title;
+      subtitles = [];
+      quality = "best";
+    } catch (e) {
+      if (mine !== mediaSeq) return;
+      media = { status: "error", url: target, message: app.describe(e) };
     }
   }
 
@@ -95,9 +138,14 @@
     const target = trimmed;
     if (!isUrl(target)) {
       seq++;
+      mediaSeq++;
       probe = { status: "idle" };
+      media = { status: "idle" };
       return;
     }
+    mediaSeq++;
+    media = { status: "idle" };
+    asFile = false;
     const timer = setTimeout(() => void runProbe(target), 350);
     return () => clearTimeout(timer);
   });
@@ -108,7 +156,12 @@
     if (dir && directory === "") directory = dir;
   });
 
-  const ready = $derived(valid && probe.status === "ok" && probe.url === trimmed && !submitting);
+  const mediaResult = $derived(media.status === "ok" && media.url === trimmed ? media.result : undefined);
+  /** The video picker is showing (instead of the file). */
+  const picking = $derived(mediaResult !== undefined && !asFile);
+  const ready = $derived(
+    valid && !submitting && (picking ? stem.trim() !== "" : probe.status === "ok" && probe.url === trimmed),
+  );
 
   async function submit(e: SubmitEvent): Promise<void> {
     e.preventDefault();
@@ -116,6 +169,24 @@
     if (!ready) return;
     submitting = true;
     submitError = undefined;
+    if (picking && mediaResult) {
+      try {
+        const params: MediaAddParams = { url: trimmed, start: startNow, choice: choiceFor(mediaMode, quality, convert) };
+        if (subtitles.length > 0) params.subtitles = [...subtitles];
+        if (stem.trim() && stem.trim() !== mediaResult.title) params.filename = stem.trim();
+        if (directory.trim()) params.directory = directory.trim();
+        if (queue !== MAIN_QUEUE && app.queues.has(queue)) params.queue = queue;
+        const id = await app.addMedia(params);
+        app.toasts.push({ tone: "success", message: t("add.added", { name: mediaResult.title }) }, 3000);
+        onclose();
+        app.reveal(id);
+      } catch (err) {
+        submitError = t("add.failed", { message: app.describe(err) });
+      } finally {
+        submitting = false;
+      }
+      return;
+    }
     try {
       const params: Parameters<typeof app.add>[0] = { url: trimmed, start: startNow, category };
       if (filename.trim()) params.filename = filename.trim();
@@ -160,16 +231,53 @@
           <span class="vy-error">{t("add.invalidUrl")}</span>
         {:else if probe.status === "checking"}
           <span class="checking"><span class="vy-spinner" aria-hidden="true"></span>{t("add.checking")}</span>
+        {:else if media.status === "checking"}
+          <span class="checking"><span class="vy-spinner" aria-hidden="true"></span>{t("add.lookingForMedia")}</span>
+        {:else if mediaResult}
+          <button type="button" class="vy-btn vy-btn--sm" onclick={() => (asFile = !asFile)} disabled={asFile && probe.status !== "ok"}>
+            <Icon name={asFile ? "video" : "file"} size={13} />{asFile ? t("add.asMedia") : t("add.asFile")}
+          </button>
         {:else if probe.status === "error"}
           <span class="vy-error">{t("add.probeFailed", { message: probe.message })}</span>
           <button type="button" class="vy-btn vy-btn--sm" onclick={() => probe.status === "error" && runProbe(probe.url)}>
             <Icon name="refresh" size={13} />{t("add.retry")}
           </button>
+        {:else if media.status === "error" && media.url === trimmed}
+          <span class="note">{t("add.mediaFailed", { message: media.message })}</span>
         {/if}
       </div>
     </div>
 
-    {#if result}
+    {#if picking && mediaResult}
+      <MediaPicker result={mediaResult} bind:mode={mediaMode} bind:quality bind:convert bind:subtitles />
+      <div class="vy-field">
+        <label class="vy-label" for="vy-add-stem">{t("add.filename")}</label>
+        <input id="vy-add-stem" class="vy-input" dir="auto" bind:value={stem} oninput={() => (stemEdited = true)} aria-describedby="vy-add-stem-hint" />
+        <span id="vy-add-stem-hint" class="vy-hint">{t("media.filenameHint")}</span>
+      </div>
+      <div class="vy-field">
+        <label class="vy-label" for="vy-add-dir">{t("add.folder")}</label>
+        <div class="folder-row">
+          <div class="with-icon">
+            <Icon name="folder" size={15} />
+            <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
+          </div>
+          {#if app.host.pickFolder}
+            <button type="button" class="vy-btn" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
+          {/if}
+        </div>
+      </div>
+      {#if queueNames.length > 1}
+        <div class="vy-field">
+          <label class="vy-label" for="vy-add-queue">{t("add.queue")}</label>
+          <select id="vy-add-queue" class="vy-select queue" bind:value={queue}>
+            {#each queueNames as n (n)}
+              <option value={n}>{app.queueLabel(n)}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+    {:else if result}
       <div class="preview">
         <FileIcon category={category} size="lg" />
         <div class="facts">
@@ -195,7 +303,7 @@
               <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
             </div>
             {#if app.host.pickFolder}
-              <button type="button" class="vy-btn" disabled={picking} onclick={chooseFolder}>{t("action.browse")}</button>
+              <button type="button" class="vy-btn" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
             {/if}
           </div>
         </div>
@@ -247,6 +355,9 @@
     gap: var(--vy-space-2);
     min-block-size: 1.5em;
     font-size: var(--vy-font-size-sm);
+  }
+  .note {
+    color: var(--vy-color-text-muted);
   }
   .checking {
     display: inline-flex;

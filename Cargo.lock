@@ -5841,6 +5841,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "whoosh-engine",
+ "whoosh-media",
  "whoosh-net",
  "whoosh-proto",
  "whoosh-store",
@@ -5919,6 +5920,29 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "whoosh-core",
+]
+
+[[package]]
+name = "whoosh-media"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "getrandom 0.4.3",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "whoosh-core",
+ "whoosh-engine",
+ "whoosh-labserver",
+ "whoosh-net",
+ "whoosh-proto",
+ "whoosh-store",
 ]
 
 [[package]]
