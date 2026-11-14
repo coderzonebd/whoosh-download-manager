@@ -7,13 +7,11 @@
   ],
   "permissions": [
     "core:default",
-    "core:window:allow-show",
-    "core:window:allow-unminimize",
-    "core:window:allow-set-focus",
     "notification:default",
     "dialog:allow-open",
     "autostart:allow-enable",
     "autostart:allow-disable",
-    "autostart:allow-is-enabled"
+    "autostart:allow-is-enabled",
+    "clipboard-manager:allow-read-text"
   ]
 }

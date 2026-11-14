@@ -89,6 +89,11 @@ export interface Host {
    * when a download from the browser waits for the user's confirmation.
    */
   showWindow?: () => Promise<void>;
+  /**
+   * The clipboard's text, for the add dialog: opened empty, it fills in a
+   * download link found there. Undefined when there is none.
+   */
+  readClipboard?: () => Promise<string | undefined>;
   /** Signed in-app updates (desktop app). */
   updates?: {
     /** undefined when this is the newest version. */

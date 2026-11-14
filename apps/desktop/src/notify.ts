@@ -36,6 +36,23 @@ export function startNotifications(client: WhooshClient, app: AppState): void {
     notify(title, t(e.state === "completed" ? "toast.completed" : "toast.failed", { name }));
   });
 
+  // Launch at login was just turned on (first start of an installed build):
+  // say so once, with the way to Settings, where it can be turned off.
+  void import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke<boolean>("take_login_notice"))
+    .then((first) => {
+      if (!first) return;
+      app.toasts.push(
+        {
+          tone: "info",
+          message: t("desktop.loginNotice"),
+          action: { label: t("desktop.loginNoticeAction"), run: () => (app.view = "settings") },
+        },
+        12_000,
+      );
+    })
+    .catch(() => {});
+
   void import("@tauri-apps/api/event").then(({ listen }) =>
     listen<{ first: boolean }>("desktop://hidden-to-tray", (ev) => {
       if (ev.payload.first) notify?.(t("app.name"), t("desktop.trayNotice"));

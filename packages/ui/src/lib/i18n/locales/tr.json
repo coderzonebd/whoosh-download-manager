@@ -445,7 +445,9 @@
     "same": "Başlangıç ve bitiş aynı saat olamaz."
   },
   "desktop": {
-    "trayNotice": "Whoosh Download Manager sistem tepsisinde çalışmaya devam ediyor, bu yüzden indirmeler sürüyor. Çıkmak için tepsi menüsünü kullanın."
+    "trayNotice": "Whoosh Download Manager sistem tepsisinde çalışmaya devam ediyor, bu yüzden indirmeler sürüyor. Çıkmak için tepsi menüsünü kullanın.",
+    "loginNotice": "Whoosh Download Manager artık oturum açtığınızda başlar ve tepside bekler; böylece tarayıcı indirmelerinin her zaman gideceği bir yer olur. Bunu Ayarlar’dan kapatabilirsiniz.",
+    "loginNoticeAction": "Ayarlar"
   },
   "tray": {
     "show": "Whoosh Download Manager’ı göster",

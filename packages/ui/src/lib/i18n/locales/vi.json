@@ -430,7 +430,9 @@
     "same": "Giờ bắt đầu và giờ kết thúc không được trùng nhau."
   },
   "desktop": {
-    "trayNotice": "Whoosh Download Manager vẫn đang chạy trong khay hệ thống nên các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống."
+    "trayNotice": "Whoosh Download Manager vẫn đang chạy trong khay hệ thống nên các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống.",
+    "loginNotice": "Whoosh Download Manager giờ sẽ khởi động khi bạn đăng nhập và chờ ở khay hệ thống, để tệp tải từ trình duyệt luôn có nơi để đến. Bạn có thể tắt trong Cài đặt.",
+    "loginNoticeAction": "Cài đặt"
   },
   "tray": {
     "show": "Hiện Whoosh Download Manager",

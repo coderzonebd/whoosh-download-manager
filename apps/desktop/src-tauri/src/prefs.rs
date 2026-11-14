@@ -32,6 +32,9 @@ pub struct Prefs {
     pub last_update_check: u64,
     /// The "Connect your browser" page has been shown once (first run).
     pub browser_setup_shown: bool,
+    /// Launch at login was turned on at the first start (`login_item`);
+    /// never again, so turning it off in Settings sticks.
+    pub login_item_set: bool,
 }
 
 impl Default for Prefs {
@@ -44,6 +47,7 @@ impl Default for Prefs {
             auto_update_check: true,
             last_update_check: 0,
             browser_setup_shown: false,
+            login_item_set: false,
         }
     }
 }
@@ -111,6 +115,8 @@ mod tests {
         assert!(!p.stop_daemon_on_quit);
         assert!(p.auto_update_check);
         assert!(!p.browser_setup_shown);
+        // Not set yet: the first start of an installed build turns launch at login on.
+        assert!(!p.login_item_set);
     }
 
     #[test]

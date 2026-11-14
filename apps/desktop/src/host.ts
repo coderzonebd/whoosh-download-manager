@@ -71,6 +71,10 @@ export function desktopHost(): Host {
         await invoke("dismiss_crash_notice");
       },
     },
+    async readClipboard() {
+      const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+      return readText();
+    },
     launchAtLogin: {
       async get() {
         const { isEnabled } = await import("@tauri-apps/plugin-autostart");
@@ -97,12 +101,9 @@ export function desktopHost(): Host {
       },
     },
     // A browser download waits for confirmation: show the window, also from the tray.
+    // The shell's own show: on macOS it also brings the app back into the Dock.
     async showWindow() {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      const win = getCurrentWindow();
-      await win.unminimize();
-      await win.show();
-      await win.setFocus();
+      await invoke("show_window");
     },
     updates: {
       async check() {
