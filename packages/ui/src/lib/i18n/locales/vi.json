@@ -72,7 +72,10 @@
     "searchPlaceholder": "Tìm kiếm",
     "layout": "Bố cục danh sách",
     "details": "Bảng chi tiết",
-    "shortcuts": "Phím tắt"
+    "shortcuts": "Phím tắt",
+    "selectAll": "Chọn tất cả",
+    "selectedCount": "Đã chọn: {{count}}",
+    "clearSelection": "Bỏ chọn"
   },
   "layout": {
     "classic": "Cổ điển",
@@ -92,7 +95,8 @@
       "body": "Thử tên khác, hoặc xóa nội dung tìm kiếm.",
       "clear": "Xóa tìm kiếm"
     },
-    "selected_other": "Đã chọn {{count}}"
+    "selected_other": "Đã chọn {{count}}",
+    "pick": "Chọn"
   },
   "col": {
     "name": "Tên",

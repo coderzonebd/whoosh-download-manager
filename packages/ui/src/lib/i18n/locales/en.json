@@ -75,7 +75,10 @@
     "searchPlaceholder": "Search",
     "layout": "List layout",
     "details": "Details panel",
-    "shortcuts": "Keyboard shortcuts"
+    "shortcuts": "Keyboard shortcuts",
+    "selectAll": "Select all",
+    "selectedCount": "Selected: {{count}}",
+    "clearSelection": "Clear selection"
   },
   "layout": {
     "classic": "Classic",
@@ -96,7 +99,8 @@
       "clear": "Clear search"
     },
     "selected_one": "{{count}} selected",
-    "selected_other": "{{count}} selected"
+    "selected_other": "{{count}} selected",
+    "pick": "Select"
   },
   "col": {
     "name": "Name",

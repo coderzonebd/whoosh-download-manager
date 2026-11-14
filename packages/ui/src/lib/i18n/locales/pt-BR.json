@@ -78,7 +78,10 @@
     "searchPlaceholder": "Pesquisar",
     "layout": "Layout da lista",
     "details": "Painel de detalhes",
-    "shortcuts": "Atalhos de teclado"
+    "shortcuts": "Atalhos de teclado",
+    "selectAll": "Selecionar tudo",
+    "selectedCount": "Selecionados: {{count}}",
+    "clearSelection": "Limpar seleção"
   },
   "layout": {
     "classic": "Clássico",
@@ -100,7 +103,8 @@
     },
     "selected_one": "{{count}} selecionado",
     "selected_many": "{{count}} selecionados",
-    "selected_other": "{{count}} selecionados"
+    "selected_other": "{{count}} selecionados",
+    "pick": "Selecionar"
   },
   "col": {
     "name": "Nome",

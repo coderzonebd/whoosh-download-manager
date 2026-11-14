@@ -75,7 +75,10 @@
     "searchPlaceholder": "খুঁজুন",
     "layout": "তালিকার ধরন",
     "details": "বিস্তারিত প্যানেল",
-    "shortcuts": "কিবোর্ড শর্টকাট"
+    "shortcuts": "কিবোর্ড শর্টকাট",
+    "selectAll": "সব নির্বাচন করুন",
+    "selectedCount": "নির্বাচিত: {{count}}টি",
+    "clearSelection": "নির্বাচন বাদ দিন"
   },
   "layout": {
     "classic": "ক্লাসিক",
@@ -96,7 +99,8 @@
       "clear": "খোঁজ মুছুন"
     },
     "selected_one": "{{count}}টি নির্বাচিত",
-    "selected_other": "{{count}}টি নির্বাচিত"
+    "selected_other": "{{count}}টি নির্বাচিত",
+    "pick": "নির্বাচন করুন"
   },
   "col": {
     "name": "নাম",

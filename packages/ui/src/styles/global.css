@@ -162,10 +162,21 @@ p {
   border-color: var(--vy-color-border);
   box-shadow: var(--vy-shadow-sm);
 }
+/* The one loud control: a brand-yellow pill with a hard edge. */
 .vy-btn--primary {
-  background: var(--vy-color-accent);
-  color: var(--vy-color-text-on-accent);
-  box-shadow: var(--vy-shadow-sm);
+  padding-inline: var(--vy-space-4);
+  border: 2px solid var(--vy-color-primary-edge);
+  border-radius: var(--vy-radius-full);
+  background: var(--vy-color-primary);
+  color: var(--vy-color-primary-text);
+  font-family: var(--vy-font-display);
+  font-weight: var(--vy-font-weight-bold);
+  font-size: var(--vy-font-size-lg);
+  box-shadow: 0 3px 0 var(--vy-color-primary-edge);
+}
+.vy-btn--primary:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--vy-color-primary-edge);
 }
 .vy-btn--danger {
   background: var(--vy-color-danger);
@@ -197,14 +208,14 @@ p {
     border-color: var(--vy-color-border-strong);
   }
   .vy-btn--primary:hover:not(:disabled) {
-    background: var(--vy-color-accent-hover);
+    background: var(--vy-color-primary-hover);
   }
   .vy-btn--danger:hover:not(:disabled) {
     background: var(--vy-color-danger-text);
   }
 }
 .vy-btn--primary:active:not(:disabled) {
-  background: var(--vy-color-accent-active);
+  background: var(--vy-color-primary);
 }
 
 /* ------------------------------------------------------------------ form fields */
@@ -322,5 +333,55 @@ p {
 @media (forced-colors: active) {
   .vy-btn--primary {
     border-color: ButtonText;
+  }
+}
+
+/* ------------------------------------------------------------------ checkbox */
+
+/* A drawn checkbox: on a row it adds the row to the selection; in the toolbar
+   it selects everything or clears the selection. State comes from aria-checked
+   on the box itself or on the control around it. */
+.vy-check {
+  position: relative;
+  flex: none;
+  inline-size: 1rem;
+  block-size: 1rem;
+  border: 1.5px solid var(--vy-color-border-strong);
+  border-radius: var(--vy-radius-xs);
+  background: var(--vy-color-surface);
+  cursor: pointer;
+  transition:
+    background-color var(--vy-duration-fast) var(--vy-ease-standard),
+    border-color var(--vy-duration-fast) var(--vy-ease-standard);
+}
+.vy-check[aria-checked="true"],
+[aria-checked="true"] > .vy-check,
+[aria-checked="mixed"] > .vy-check {
+  border-color: var(--vy-color-accent);
+  background: var(--vy-color-accent);
+}
+.vy-check[aria-checked="true"]::after,
+[aria-checked="true"] > .vy-check::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0.28rem;
+  inset-block-start: 0.08rem;
+  inline-size: 0.28rem;
+  block-size: 0.55rem;
+  border: solid var(--vy-color-text-on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+[aria-checked="mixed"] > .vy-check::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0.2rem;
+  inset-block-start: 0.38rem;
+  block-size: 2px;
+  background: var(--vy-color-text-on-accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .vy-check:hover {
+    border-color: var(--vy-color-accent);
   }
 }

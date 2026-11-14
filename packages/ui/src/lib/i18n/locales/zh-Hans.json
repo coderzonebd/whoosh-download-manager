@@ -72,7 +72,10 @@
     "searchPlaceholder": "搜索",
     "layout": "列表布局",
     "details": "详细信息面板",
-    "shortcuts": "键盘快捷键"
+    "shortcuts": "键盘快捷键",
+    "selectAll": "全选",
+    "selectedCount": "已选择：{{count}}",
+    "clearSelection": "取消选择"
   },
   "layout": {
     "classic": "经典",
@@ -92,7 +95,8 @@
       "body": "换个名称试试，或清除搜索。",
       "clear": "清除搜索"
     },
-    "selected_other": "已选择 {{count}} 项"
+    "selected_other": "已选择 {{count}} 项",
+    "pick": "选择"
   },
   "col": {
     "name": "名称",

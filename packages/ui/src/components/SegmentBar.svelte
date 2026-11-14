@@ -83,7 +83,6 @@
   }
   .lg {
     block-size: 12px;
-    border-radius: var(--vy-radius-xs);
   }
 
   .seg {

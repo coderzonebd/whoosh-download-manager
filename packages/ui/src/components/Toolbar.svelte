@@ -11,6 +11,9 @@
   const canPause = $derived(app.pausableIds(selected).length > 0);
   const canResume = $derived(app.resumableIds(selected).length > 0);
   const canRemove = $derived(selected.length > 0);
+  /** Ticked rows only: `selected` also falls back to the active row. */
+  const picked = $derived(store.selection.size);
+  const allSelected = $derived(picked > 0 && picked === store.visible.length);
   /** Selection actions, search and layout belong to the download list only. */
   const onSettings = $derived(app.view !== "downloads");
 </script>
@@ -27,6 +30,17 @@
 
   {#if !onSettings}
     <div class="group" role="group" aria-label={t("toolbar.label")}>
+      <button
+        class="vy-btn pick-all"
+        role="checkbox"
+        aria-checked={allSelected ? "true" : picked > 0 ? "mixed" : "false"}
+        disabled={store.visible.length === 0}
+        title={t(picked > 0 ? "toolbar.clearSelection" : "toolbar.selectAll")}
+        onclick={() => (picked > 0 ? store.clearSelection() : store.selectAll())}
+      >
+        <span class="vy-check" aria-hidden="true"></span>
+        <span class="text">{picked > 0 ? t("toolbar.selectedCount", { count: picked }) : t("toolbar.selectAll")}</span>
+      </button>
       <button class="vy-btn" disabled={!canResume} onclick={() => app.resume()} title={t("toolbar.resume")}>
         <Icon name="play" size={15} />
         <span class="text">{t("toolbar.resume")}</span>
@@ -127,6 +141,7 @@
     padding-inline-start: var(--vy-space-8);
     background: var(--vy-color-bg);
     border-color: var(--vy-color-border-strong);
+    border-radius: var(--vy-radius-full);
   }
   .search input::-webkit-search-cancel-button {
     cursor: pointer;

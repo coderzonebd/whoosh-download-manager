@@ -32,6 +32,28 @@ async function setup(opts: Parameters<typeof createMockClient>[0] = {}) {
 const rows = (grid: HTMLElement) => within(grid).getAllByRole("row").filter((r) => r.dataset.rowId);
 const tick = (c: MockWhooshClient, ms: number) => act(() => c.advance(ms));
 
+describe("bulk selection", () => {
+  it("row checkboxes add to the selection and the toolbar box selects all or clears", async () => {
+    const { grid, user } = await setup();
+    const boxes = () => rows(grid).map((r) => within(r).getByRole("checkbox", { name: "Select" }));
+    const picked = () => rows(grid).filter((r) => r.getAttribute("aria-selected") === "true").length;
+    await user.click(boxes()[0]!);
+    await user.click(boxes()[2]!);
+    expect(picked()).toBe(2);
+    expect(boxes()[2]).toHaveAttribute("aria-checked", "true");
+    const all = screen.getByRole("checkbox", { name: "Selected: 2" });
+    expect(all).toHaveAttribute("aria-checked", "mixed");
+    await user.click(boxes()[0]!);
+    expect(picked()).toBe(1);
+    await user.click(screen.getByRole("checkbox", { name: "Selected: 1" }));
+    expect(picked()).toBe(0);
+    await user.click(await screen.findByRole("checkbox", { name: "Select all" }));
+    expect(picked()).toBe(rows(grid).length);
+    expect(screen.getByRole("checkbox", { name: `Selected: ${rows(grid).length}` })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
+  });
+});
+
 describe("App shell", () => {
   it("renders sidebar, toolbar, Classic grid with headers, and status bar", async () => {
     const { grid } = await setup();

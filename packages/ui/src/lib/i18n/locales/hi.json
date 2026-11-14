@@ -75,7 +75,10 @@
     "searchPlaceholder": "खोजें",
     "layout": "सूची का लेआउट",
     "details": "विवरण पैनल",
-    "shortcuts": "कीबोर्ड शॉर्टकट"
+    "shortcuts": "कीबोर्ड शॉर्टकट",
+    "selectAll": "सभी चुनें",
+    "selectedCount": "चयनित: {{count}}",
+    "clearSelection": "चयन हटाएँ"
   },
   "layout": {
     "classic": "क्लासिक",
@@ -96,7 +99,8 @@
       "clear": "खोज साफ़ करें"
     },
     "selected_one": "{{count}} चुना गया",
-    "selected_other": "{{count}} चुने गए"
+    "selected_other": "{{count}} चुने गए",
+    "pick": "चुनें"
   },
   "col": {
     "name": "नाम",

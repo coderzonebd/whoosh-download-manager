@@ -87,7 +87,10 @@
     "searchPlaceholder": "بحث",
     "layout": "تخطيط القائمة",
     "details": "لوحة التفاصيل",
-    "shortcuts": "اختصارات لوحة المفاتيح"
+    "shortcuts": "اختصارات لوحة المفاتيح",
+    "selectAll": "تحديد الكل",
+    "selectedCount": "المحدد: {{count}}",
+    "clearSelection": "إلغاء التحديد"
   },
   "layout": {
     "classic": "كلاسيكي",
@@ -112,7 +115,8 @@
     "selected_two": "تم تحديد عنصرين",
     "selected_few": "تم تحديد {{count}} عناصر",
     "selected_many": "تم تحديد {{count}} عنصرًا",
-    "selected_other": "تم تحديد {{count}} عنصر"
+    "selected_other": "تم تحديد {{count}} عنصر",
+    "pick": "تحديد"
   },
   "col": {
     "name": "الاسم",
