@@ -1,0 +1,327 @@
+{
+  "extName": {
+    "message": "Whoosh"
+  },
+  "extDescription": {
+    "message": "يُسلّم تنزيلات متصفحك إلى مدير التنزيلات Whoosh مع ملفات تعريف الارتباط والمُحيل نفسها."
+  },
+  "optionsTitle": {
+    "message": "إعدادات Whoosh"
+  },
+  "optionsIntro": {
+    "message": "تُحفظ التغييرات فور إجرائها وتُطبَّق مباشرة."
+  },
+  "storeNote": {
+    "message": "هذه نسخة متجر المتصفح. لا تلتقط الوسائط على YouTube ومواقع البث المماثلة، ولا تكتشفها ولا تنزّلها."
+  },
+  "captureLegend": {
+    "message": "التقاط التنزيلات"
+  },
+  "captureEnabled": {
+    "message": "إرسال تنزيلات المتصفح إلى Whoosh"
+  },
+  "captureEnabledHelp": {
+    "message": "عند الإيقاف، يبقى كل تنزيل في المتصفح، ويظهر على زر شريط الأدوات «معطل»."
+  },
+  "captureIncognito": {
+    "message": "في النوافذ الخاصة أيضًا"
+  },
+  "captureIncognitoHelp": {
+    "message": "معطّل افتراضيًا. لا تُحفظ التنزيلات من النوافذ الخاصة أبدًا لغرض الإصلاح الذاتي."
+  },
+  "minSizeLegend": {
+    "message": "الحد الأدنى لحجم الملف"
+  },
+  "minSize": {
+    "message": "ترك الملفات الأصغر للمتصفح"
+  },
+  "minSizeUnit": {
+    "message": "الوحدة"
+  },
+  "minSizeHelp": {
+    "message": "0 يعني بلا حد أدنى. الملفات التي لا يُعرف حجمها مسبقًا تُرسَل دائمًا."
+  },
+  "minSizeInvalid": {
+    "message": "أدخل رقمًا يساوي 0 أو أكثر."
+  },
+  "fileTypesLegend": {
+    "message": "أنواع الملفات"
+  },
+  "fileTypes": {
+    "message": "الامتدادات المراد التقاطها"
+  },
+  "fileTypesHelp": {
+    "message": "مفصولة بمسافات أو فواصل، دون النقطة (zip iso mp4). اتركها فارغة لالتقاط كل الأنواع."
+  },
+  "fileTypesReset": {
+    "message": "استعادة القائمة الافتراضية"
+  },
+  "fileTypesEmpty": {
+    "message": "سيُلتقط كل نوع من الملفات."
+  },
+  "sitesLegend": {
+    "message": "المواقع"
+  },
+  "excludedSites": {
+    "message": "عدم التقاط التنزيلات من هذه المواقع أبدًا"
+  },
+  "excludedSitesHelp": {
+    "message": "موقع واحد في كل سطر، مثل example.com. يشمل الموقع نطاقاته الفرعية."
+  },
+  "excludedSitesInvalid": {
+    "message": "ليس اسم موقع: $SITES$",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "Alt+نقر على رابط"
+  },
+  "altClickBrowser": {
+    "message": "دع المتصفح ينزّله"
+  },
+  "altClickWhoosh": {
+    "message": "أرسله إلى Whoosh بغض النظر عن القواعد أعلاه"
+  },
+  "altClickOff": {
+    "message": "لا تفعل شيئًا خاصًا"
+  },
+  "extrasLegend": {
+    "message": "الوسائط والروابط"
+  },
+  "sniffMedia": {
+    "message": "اكتشاف الصوت والفيديو في الصفحات"
+  },
+  "sniffMediaHelp": {
+    "message": "يعرض ملفات الوسائط والبث في النافذة المنبثقة لشريط الأدوات، جاهزة للتنزيل."
+  },
+  "preconnect": {
+    "message": "تجهيز الاتصال عندما يستقر المؤشر على رابط تنزيل"
+  },
+  "preconnectHelp": {
+    "message": "يُمرَّر عنوان الموقع فقط إلى Whoosh، وليس الرابط نفسه أبدًا."
+  },
+  "selfHealing": {
+    "message": "إصلاح روابط التنزيل المنتهية الصلاحية"
+  },
+  "selfHealingHelp": {
+    "message": "عندما تنتهي صلاحية عنوان تنزيل متوقف مؤقتًا، يبحث Whoosh عن العنوان الجديد في الصفحة التي جاء منها، ويسألك عند الشك."
+  },
+  "saved": {
+    "message": "حُفظ."
+  },
+  "saveFailed": {
+    "message": "تعذّر الحفظ: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "جارٍ التحقق…"
+  },
+  "popupNotConnected": {
+    "message": "غير متصل"
+  },
+  "popupNoHost": {
+    "message": "المضيف الأصلي لـ Whoosh غير مثبّت."
+  },
+  "popupAppNotRunning": {
+    "message": "التطبيق لا يعمل"
+  },
+  "popupStartApp": {
+    "message": "شغّل Whoosh؛ تبقى التنزيلات في المتصفح حتى ذلك الحين."
+  },
+  "popupConnected": {
+    "message": "متصل"
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "خطأ"
+  },
+  "popupActive": {
+    "message": "نشطة"
+  },
+  "popupQueued": {
+    "message": "في الانتظار"
+  },
+  "popupCapture": {
+    "message": "التقاط تنزيلات المتصفح"
+  },
+  "popupCaptureSite": {
+    "message": "التقاط التنزيلات على $SITE$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "الوسائط في هذه الصفحة"
+  },
+  "popupMediaEmpty": {
+    "message": "لم يُكتشف شيء بعد."
+  },
+  "popupDownload": {
+    "message": "تنزيل"
+  },
+  "popupSent": {
+    "message": "أُرسل"
+  },
+  "popupFailed": {
+    "message": "فشل"
+  },
+  "popupLast": {
+    "message": "الأخير: $NAME$ — $OUTCOME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "الإعدادات"
+  },
+  "altHintBrowser": {
+    "message": "اضغط مع الاستمرار على $KEY$ أثناء النقر على رابط ليتولى المتصفح تنزيله.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "اضغط مع الاستمرار على $KEY$ أثناء النقر على رابط لإرساله إلى Whoosh بغض النظر عن القواعد.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "نسخة Whoosh من متجر المتصفح لا تعمل على هذا الموقع."
+  },
+  "healTitle": {
+    "message": "روابط منتهية الصلاحية"
+  },
+  "healOpenPage": {
+    "message": "يحتاج Whoosh إلى صفحة التنزيل مرة أخرى من أجل $FILE$.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "هل هذا هو الملف نفسه $FILE$؟",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "فتح الصفحة"
+  },
+  "healUseButton": {
+    "message": "استخدام هذا الرابط"
+  },
+  "healDismissButton": {
+    "message": "تجاهل"
+  },
+  "menuLink": {
+    "message": "تنزيل الرابط باستخدام Whoosh"
+  },
+  "menuSelection": {
+    "message": "تنزيل الروابط المحددة باستخدام Whoosh"
+  },
+  "menuPage": {
+    "message": "تنزيل كل الروابط باستخدام Whoosh"
+  },
+  "badgeOff": {
+    "message": "معطل"
+  },
+  "outcomeSent": {
+    "message": "أُرسل إلى Whoosh"
+  },
+  "outcomeHealed": {
+    "message": "استُكمل تنزيل منتهي الصلاحية في Whoosh"
+  },
+  "outcomeSkipped": {
+    "message": "تُرك للمتصفح ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "احتفظ به المتصفح ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "روابط أُرسلت إلى Whoosh: $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "فشل: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "غير متاح على هذا الموقع"
+  },
+  "outcomeNoLinks": {
+    "message": "تعذّرت قراءة الروابط: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "نسخة Whoosh من متجر المتصفح لا تنزّل من هذا الموقع."
+  },
+  "errorRefused": {
+    "message": "لم يقبل Whoosh ذلك العنوان."
+  }
+}

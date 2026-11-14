@@ -5,7 +5,7 @@
 import { filenameFromUrl } from "../shared/filename";
 import { formatBytes } from "../shared/format";
 import type { ActionReply, HealAnswer, HealQuestion, MediaEntry, PopupMessage, PopupState } from "../shared/messages";
-import { t } from "../shared/strings";
+import { localizePage, t, tNodes } from "../shared/i18n";
 
 type Api = typeof chrome;
 const g = globalThis as { browser?: Api; chrome?: Api };
@@ -22,6 +22,13 @@ function ask<T>(message: PopupMessage): Promise<T> {
 }
 
 let tab: chrome.tabs.Tab | undefined;
+/** The current tab's site, as the per-site switch shows it. */
+let siteHost = "";
+
+const counter = new Intl.NumberFormat(api.i18n?.getUILanguage?.());
+function count(n: number): string {
+  return counter.format(n);
+}
 
 function renderStatus(state: PopupState): void {
   const status = $("status");
@@ -29,34 +36,40 @@ function renderStatus(state: PopupState): void {
   const s = state.status;
   if (!s.hostAvailable) {
     status.dataset["state"] = "bad";
-    status.textContent = "Not connected";
-    detail.textContent = s.error ?? "The whoosh native host is not installed.";
+    status.textContent = t("popupNotConnected");
+    detail.textContent = s.error ?? t("popupNoHost");
   } else if (!s.daemonRunning) {
     status.dataset["state"] = "warn";
-    status.textContent = "App not running";
-    detail.textContent = "Start whoosh; downloads stay in the browser until then.";
+    status.textContent = t("popupAppNotRunning");
+    detail.textContent = t("popupStartApp");
   } else {
     status.dataset["state"] = "ok";
-    status.textContent = "Connected";
-    detail.textContent = s.daemonVersion ? `whoosh ${s.daemonVersion}` : "";
+    status.textContent = t("popupConnected");
+    detail.textContent = s.daemonVersion ? t("popupVersion", s.daemonVersion) : "";
   }
 
   const counts = $("counts");
   counts.hidden = state.active === undefined;
-  $("active").textContent = String(state.active ?? 0);
-  $("queued").textContent = String(state.queued ?? 0);
+  $("active").textContent = count(state.active ?? 0);
+  $("queued").textContent = count(state.queued ?? 0);
 }
 
 function renderToggles(state: PopupState): void {
   $("alt-hint").hidden = state.altClick === "off";
-  $("alt-hint-text").textContent = state.altClick === "whoosh" ? t("altHintWhoosh") : t("altHintBrowser");
+  const key = document.createElement("kbd");
+  key.textContent = "Alt";
+  $("alt-hint").replaceChildren(...tNodes(state.altClick === "whoosh" ? "altHintWhoosh" : "altHintBrowser", [key]));
   const capture = $("capture") as HTMLInputElement;
   capture.checked = state.captureEnabled;
 
   const row = $("site-row");
   row.hidden = state.host === undefined;
   if (state.host) {
-    $("site-host").textContent = state.host;
+    siteHost = state.host;
+    const host = document.createElement("span");
+    host.id = "site-host";
+    host.textContent = state.host;
+    $("site-text").replaceChildren(...tNodes("popupCaptureSite", [host]));
     const site = $("site") as HTMLInputElement;
     site.checked = !state.siteExcluded;
     site.disabled = !state.captureEnabled;
@@ -80,13 +93,13 @@ function mediaItem(entry: MediaEntry): HTMLLIElement {
   }
   const button = document.createElement("button");
   button.type = "button";
-  button.textContent = "Download";
+  button.textContent = t("popupDownload");
   button.addEventListener("click", () => {
     button.disabled = true;
     const message: PopupMessage = { type: "whoosh/download-media", url: entry.url };
     if (tab?.url) message.pageUrl = tab.url;
     void ask<ActionReply>(message).then((reply) => {
-      button.textContent = reply.ok ? "Sent" : "Failed";
+      button.textContent = reply.ok ? t("popupSent") : t("popupFailed");
       if (!reply.ok) button.title = reply.error;
     });
   });
@@ -119,13 +132,13 @@ function healItem(question: HealQuestion): HTMLLIElement {
   const li = document.createElement("li");
   const text = document.createElement("p");
   if (question.kind === "confirm" && question.candidateUrl) {
-    text.textContent = `${t("healConfirm")} ${question.filename}`;
+    text.textContent = t("healConfirm", question.filename);
     const link = document.createElement("span");
     link.className = "size";
     link.textContent = ` → ${question.candidateUrl}`;
     text.append(link);
   } else {
-    text.textContent = `${t("healOpenPage")} ${question.filename}.`;
+    text.textContent = t("healOpenPage", question.filename);
   }
   const actions = document.createElement("div");
   actions.className = "actions";
@@ -140,7 +153,6 @@ function healItem(question: HealQuestion): HTMLLIElement {
 
 function renderHeals(state: PopupState): void {
   $("heals-section").hidden = state.heals.length === 0;
-  $("heals-title").textContent = t("healTitle");
   $("heals").replaceChildren(...state.heals.map(healItem));
   const blocked = $("page-blocked");
   blocked.hidden = !state.pageBlocked;
@@ -150,7 +162,7 @@ function renderHeals(state: PopupState): void {
 
 function renderLast(state: PopupState): void {
   const last = state.lastCapture;
-  $("last").textContent = last ? `Last: ${filenameFromUrl(last.url) || last.url} — ${last.outcome}` : "";
+  $("last").textContent = last ? t("popupLast", [filenameFromUrl(last.url) || last.url, last.outcome]) : "";
 }
 
 async function refresh(): Promise<void> {
@@ -166,18 +178,18 @@ async function refresh(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  localizePage(document);
   [tab] = await api.tabs.query({ active: true, currentWindow: true });
 
   ($("capture") as HTMLInputElement).addEventListener("change", (event) => {
     const enabled = (event.target as HTMLInputElement).checked;
     void ask<ActionReply>({ type: "whoosh/set-capture", enabled }).then(refresh);
   });
-  $("open-options").textContent = t("openSettings");
   $("open-options").addEventListener("click", () => {
     void api.runtime.openOptionsPage().then(() => window.close());
   });
   ($("site") as HTMLInputElement).addEventListener("change", (event) => {
-    const host = $("site-host").textContent ?? "";
+    const host = siteHost;
     const excluded = !(event.target as HTMLInputElement).checked;
     void ask<ActionReply>({ type: "whoosh/set-site-excluded", host, excluded }).then(refresh);
   });
@@ -187,6 +199,6 @@ async function main(): Promise<void> {
 
 void main().catch((error: unknown) => {
   $("status").dataset["state"] = "bad";
-  $("status").textContent = "Error";
+  $("status").textContent = t("popupError");
   $("detail").textContent = error instanceof Error ? error.message : String(error);
 });

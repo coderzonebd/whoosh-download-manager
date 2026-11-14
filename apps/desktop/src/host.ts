@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // What the desktop shell adds to the shared UI (`Host` in @whoosh/ui): the
 // native folder picker, the app's own settings (`desktop.json`, through the
-// `desktop_prefs` / `set_desktop_prefs` commands) and launch at login.
+// `desktop_prefs` / `set_desktop_prefs` commands), launch at login, and
+// opening the translation site from the language picker.
 import type { DesktopPrefs, Host } from "@whoosh/ui";
 
 /** The full `desktop.json` as the shell sends it (`prefs.rs`). */
 interface ShellPrefs extends DesktopPrefs {
   trayNoticeShown: boolean;
+  /** Kept by the shell for the tray (`shell_i18n.rs`). */
+  language: string;
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -37,6 +40,10 @@ export function desktopHost(): Host {
         const saved = await invoke<ShellPrefs>("set_desktop_prefs", { prefs: { ...current, ...pick(next) } });
         return pick(saved);
       },
+    },
+    // Only translation pages: the shell refuses anything else.
+    async openUrl(url) {
+      await invoke("open_translation_page", { url });
     },
     launchAtLogin: {
       async get() {

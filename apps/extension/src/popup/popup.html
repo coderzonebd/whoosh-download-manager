@@ -1,5 +1,6 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Text comes from _locales/<lang>/messages.json (the data-text attributes, and popup.ts). -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -11,36 +12,36 @@
     <main>
       <header>
         <h1>Whoosh</h1>
-        <span id="status" class="status" data-state="checking" role="status">Checking…</span>
+        <span id="status" class="status" data-state="checking" role="status" data-text="popupChecking">Checking…</span>
       </header>
       <p id="detail" class="detail"></p>
 
       <section id="heals-section" class="heals" aria-labelledby="heals-title" hidden>
-        <h2 id="heals-title">Expired links</h2>
+        <h2 id="heals-title" data-text="healTitle">Expired links</h2>
         <ul id="heals"></ul>
       </section>
 
       <p id="page-blocked" class="note" hidden></p>
 
       <dl id="counts" class="counts" hidden>
-        <div><dt>Active</dt><dd id="active">0</dd></div>
-        <div><dt>Queued</dt><dd id="queued">0</dd></div>
+        <div><dt data-text="popupActive">Active</dt><dd id="active">0</dd></div>
+        <div><dt data-text="popupQueued">Queued</dt><dd id="queued">0</dd></div>
       </dl>
 
       <div class="toggles">
-        <label><input type="checkbox" id="capture" /> Catch browser downloads</label>
-        <label id="site-row" hidden><input type="checkbox" id="site" /> Catch downloads on <span id="site-host"></span></label>
-        <p class="hint" id="alt-hint">Hold <kbd>Alt</kbd> <span id="alt-hint-text">while clicking a link to let the browser download it.</span></p>
+        <label><input type="checkbox" id="capture" /> <span data-text="popupCapture">Catch browser downloads</span></label>
+        <label id="site-row" hidden><input type="checkbox" id="site" /> <span id="site-text"></span></label>
+        <p class="hint" id="alt-hint"></p>
       </div>
 
       <section aria-labelledby="media-title">
-        <h2 id="media-title">Media on this page</h2>
+        <h2 id="media-title" data-text="popupMediaTitle">Media on this page</h2>
         <ul id="media"></ul>
-        <p id="media-empty" class="muted">None detected yet.</p>
+        <p id="media-empty" class="muted" data-text="popupMediaEmpty">None detected yet.</p>
       </section>
 
       <p id="last" class="muted"></p>
-      <p class="footer"><button type="button" id="open-options" class="link">Settings</button></p>
+      <p class="footer"><button type="button" id="open-options" class="link" data-text="openSettings">Settings</button></p>
     </main>
     <script src="popup.js"></script>
   </body>

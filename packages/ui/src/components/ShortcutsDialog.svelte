@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <script lang="ts">
   import { getApp } from "../lib/state/app.svelte.ts";
-  import type { MessageKey } from "../lib/i18n/en.ts";
+  import type { MessageKey } from "../lib/i18n/i18n.svelte.ts";
   import Dialog from "./Dialog.svelte";
 
   interface Props {

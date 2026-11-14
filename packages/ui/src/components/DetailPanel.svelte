@@ -93,7 +93,7 @@
       <div><dt>{t("detail.connections")}</dt><dd class="vy-num">{moving ? i18n.number(d.connections) : "—"}</dd></div>
       <div><dt>{t("detail.size")}</dt><dd class="vy-num">{i18n.bytes(d.totalBytes)}</dd></div>
       <div class="wide">
-        <dt>{t("detail.resumable")}</dt>
+        <dt>{t("detail.resumable.label")}</dt>
         <dd>{d.resumable ? t("detail.resumable.yes") : t("detail.resumable.no")}</dd>
       </div>
       <div class="wide"><dt>{t("detail.savedTo")}</dt><dd class="path" dir="auto">{d.directory}/{d.filename}</dd></div>

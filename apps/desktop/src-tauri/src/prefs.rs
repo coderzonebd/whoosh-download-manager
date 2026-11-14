@@ -22,6 +22,9 @@ pub struct Prefs {
     pub stop_daemon_on_quit: bool,
     /// The "still running in the tray" notice has been shown once.
     pub tray_notice_shown: bool,
+    /// The UI's language when it last ran, so the tray starts in it
+    /// (`shell_i18n`). Empty: English.
+    pub language: String,
 }
 
 impl Default for Prefs {
@@ -30,6 +33,7 @@ impl Default for Prefs {
             close_to_tray: true,
             stop_daemon_on_quit: false,
             tray_notice_shown: false,
+            language: String::new(),
         }
     }
 }

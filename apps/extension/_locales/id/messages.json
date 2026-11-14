@@ -1,0 +1,327 @@
+{
+  "extName": {
+    "message": "Whoosh"
+  },
+  "extDescription": {
+    "message": "Meneruskan unduhan browser Anda ke pengelola unduhan Whoosh, dengan cookie dan perujuk yang sama."
+  },
+  "optionsTitle": {
+    "message": "Pengaturan Whoosh"
+  },
+  "optionsIntro": {
+    "message": "Perubahan disimpan saat Anda membuatnya dan langsung berlaku."
+  },
+  "storeNote": {
+    "message": "Ini edisi toko browser. Edisi ini tidak menangkap, mendeteksi, atau mengunduh media di YouTube dan situs streaming serupa."
+  },
+  "captureLegend": {
+    "message": "Menangkap unduhan"
+  },
+  "captureEnabled": {
+    "message": "Kirim unduhan browser ke Whoosh"
+  },
+  "captureEnabledHelp": {
+    "message": "Jika nonaktif, semua unduhan tetap di browser. Tombol toolbar menampilkan “mati”."
+  },
+  "captureIncognito": {
+    "message": "Juga di jendela pribadi"
+  },
+  "captureIncognitoHelp": {
+    "message": "Nonaktif secara bawaan. Unduhan dari jendela pribadi tidak pernah diingat untuk perbaikan otomatis."
+  },
+  "minSizeLegend": {
+    "message": "Ukuran file minimum"
+  },
+  "minSize": {
+    "message": "Biarkan browser menangani file yang lebih kecil dari"
+  },
+  "minSizeUnit": {
+    "message": "Satuan"
+  },
+  "minSizeHelp": {
+    "message": "0 berarti tanpa minimum. File yang ukurannya tidak diketahui sebelumnya selalu dikirim."
+  },
+  "minSizeInvalid": {
+    "message": "Masukkan angka 0 atau lebih."
+  },
+  "fileTypesLegend": {
+    "message": "Jenis file"
+  },
+  "fileTypes": {
+    "message": "Ekstensi yang ditangkap"
+  },
+  "fileTypesHelp": {
+    "message": "Dipisahkan spasi atau koma, tanpa titik (zip iso mp4). Kosongkan untuk menangkap semua jenis."
+  },
+  "fileTypesReset": {
+    "message": "Pulihkan daftar bawaan"
+  },
+  "fileTypesEmpty": {
+    "message": "Semua jenis file akan ditangkap."
+  },
+  "sitesLegend": {
+    "message": "Situs"
+  },
+  "excludedSites": {
+    "message": "Jangan pernah tangkap unduhan dari situs ini"
+  },
+  "excludedSitesHelp": {
+    "message": "Satu per baris, mis. example.com. Sebuah situs mencakup subdomainnya."
+  },
+  "excludedSitesInvalid": {
+    "message": "Bukan nama situs: $SITES$",
+    "placeholders": {
+      "sites": {
+        "content": "$1",
+        "example": "not a site, !!"
+      }
+    }
+  },
+  "altClickLegend": {
+    "message": "Alt+klik pada tautan"
+  },
+  "altClickBrowser": {
+    "message": "Biarkan browser mengunduhnya"
+  },
+  "altClickWhoosh": {
+    "message": "Kirim ke Whoosh, apa pun aturan di atas"
+  },
+  "altClickOff": {
+    "message": "Tidak melakukan hal khusus"
+  },
+  "extrasLegend": {
+    "message": "Media dan tautan"
+  },
+  "sniffMedia": {
+    "message": "Deteksi audio dan video di halaman"
+  },
+  "sniffMediaHelp": {
+    "message": "Menampilkan file media dan stream di popup toolbar, siap diunduh."
+  },
+  "preconnect": {
+    "message": "Siapkan koneksi saat penunjuk berhenti di atas tautan unduhan"
+  },
+  "preconnectHelp": {
+    "message": "Hanya alamat situs yang diteruskan ke Whoosh, tidak pernah tautannya sendiri."
+  },
+  "selfHealing": {
+    "message": "Perbaiki tautan unduhan yang kedaluwarsa"
+  },
+  "selfHealingHelp": {
+    "message": "Jika alamat unduhan yang dijeda sudah kedaluwarsa, Whoosh mencari alamat baru di halaman asalnya, dan bertanya kepada Anda jika ragu."
+  },
+  "saved": {
+    "message": "Disimpan."
+  },
+  "saveFailed": {
+    "message": "Tidak dapat menyimpan: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "QuotaExceededError"
+      }
+    }
+  },
+  "popupChecking": {
+    "message": "Memeriksa…"
+  },
+  "popupNotConnected": {
+    "message": "Tidak terhubung"
+  },
+  "popupNoHost": {
+    "message": "Host native Whoosh belum terpasang."
+  },
+  "popupAppNotRunning": {
+    "message": "Aplikasi tidak berjalan"
+  },
+  "popupStartApp": {
+    "message": "Jalankan Whoosh; sampai saat itu unduhan tetap di browser."
+  },
+  "popupConnected": {
+    "message": "Terhubung"
+  },
+  "popupVersion": {
+    "message": "Whoosh $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "popupError": {
+    "message": "Galat"
+  },
+  "popupActive": {
+    "message": "Aktif"
+  },
+  "popupQueued": {
+    "message": "Dalam antrean"
+  },
+  "popupCapture": {
+    "message": "Tangkap unduhan browser"
+  },
+  "popupCaptureSite": {
+    "message": "Tangkap unduhan di $SITE$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "example.com"
+      }
+    }
+  },
+  "popupMediaTitle": {
+    "message": "Media di halaman ini"
+  },
+  "popupMediaEmpty": {
+    "message": "Belum ada yang terdeteksi."
+  },
+  "popupDownload": {
+    "message": "Unduh"
+  },
+  "popupSent": {
+    "message": "Terkirim"
+  },
+  "popupFailed": {
+    "message": "Gagal"
+  },
+  "popupLast": {
+    "message": "Terakhir: $NAME$ — $OUTCOME$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "file.zip"
+      },
+      "outcome": {
+        "content": "$2",
+        "example": "sent to Whoosh"
+      }
+    }
+  },
+  "openSettings": {
+    "message": "Pengaturan"
+  },
+  "altHintBrowser": {
+    "message": "Tahan $KEY$ sambil mengeklik tautan agar browser yang mengunduhnya.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "altHintWhoosh": {
+    "message": "Tahan $KEY$ sambil mengeklik tautan untuk mengirimnya ke Whoosh, apa pun aturannya.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt"
+      }
+    }
+  },
+  "pageBlocked": {
+    "message": "Whoosh dari toko browser tidak berfungsi di situs ini."
+  },
+  "healTitle": {
+    "message": "Tautan kedaluwarsa"
+  },
+  "healOpenPage": {
+    "message": "Whoosh memerlukan halaman unduhan sekali lagi untuk $FILE$.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healConfirm": {
+    "message": "Apakah ini file yang sama dengan $FILE$?",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "video.mp4"
+      }
+    }
+  },
+  "healOpenPageButton": {
+    "message": "Buka halaman"
+  },
+  "healUseButton": {
+    "message": "Gunakan tautan ini"
+  },
+  "healDismissButton": {
+    "message": "Tutup"
+  },
+  "menuLink": {
+    "message": "Unduh tautan dengan Whoosh"
+  },
+  "menuSelection": {
+    "message": "Unduh tautan yang dipilih dengan Whoosh"
+  },
+  "menuPage": {
+    "message": "Unduh semua tautan dengan Whoosh"
+  },
+  "badgeOff": {
+    "message": "mati"
+  },
+  "outcomeSent": {
+    "message": "dikirim ke Whoosh"
+  },
+  "outcomeHealed": {
+    "message": "melanjutkan unduhan Whoosh yang kedaluwarsa"
+  },
+  "outcomeSkipped": {
+    "message": "diserahkan ke browser ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "too-small"
+      }
+    }
+  },
+  "outcomeKept": {
+    "message": "ditahan oleh browser ($REASON$)",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "timeout"
+      }
+    }
+  },
+  "outcomeLinksSent": {
+    "message": "tautan dikirim ke Whoosh: $COUNT$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "outcomeFailed": {
+    "message": "gagal: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "the daemon refused"
+      }
+    }
+  },
+  "outcomeBlocked": {
+    "message": "tidak tersedia di situs ini"
+  },
+  "outcomeNoLinks": {
+    "message": "tidak dapat membaca tautan: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "no link list from the page"
+      }
+    }
+  },
+  "errorStoreBlocked": {
+    "message": "Whoosh dari toko browser tidak mengunduh dari situs ini."
+  },
+  "errorRefused": {
+    "message": "Whoosh tidak menerima alamat tersebut."
+  }
+}

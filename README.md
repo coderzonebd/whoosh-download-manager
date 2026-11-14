@@ -108,7 +108,7 @@ flowchart LR
 |---|---|---|
 | **0 · Foundations** | monorepo, CI, design system, labserver, bench, baseline report | ✅ done |
 | **1 · Engine** | H1/H2/H3 engine, daemon, CLI, crash-proof journal; [public gate](MASTER-PLAN.md#phase-1--engine-months-13) | ✅ done |
-| **2 · v1.0** | desktop app (Windows, macOS, Linux), extension Pro mode, self-healing links, yt-dlp, signed installers, Bangla + English | next |
+| **2 · v1.0** | desktop app (Windows, macOS, Linux), extension Pro mode, self-healing links, yt-dlp, signed installers, Bangla + English and ten machine-seeded languages on Weblate | next |
 | **3 · v1.5** | BitTorrent, FTP/SFTP, HLS/DASH, multi-source + LAN peers, BDIX mode, Docker, web remote | planned |
 | **4 · v2.0** | extension Lite mode (WASM), Android, iOS companion, send-to-device, plugins | planned |
 
