@@ -790,7 +790,9 @@ impl StorageProvider for CrashFs {
 // --------------------------------------------------------------- harness
 
 pub const URL: &str = "https://lab.test/files/data.bin";
-pub const DIR: &str = "/dl";
+/// The download directory. Storage here is in memory, so it never exists;
+/// it only has to be absolute, which on Windows needs a drive.
+pub const DIR: &str = if cfg!(windows) { r"C:\dl" } else { "/dl" };
 
 pub fn config() -> EngineConfig {
     let mut c = EngineConfig::new(DIR);

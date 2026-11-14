@@ -810,9 +810,11 @@ mod tests {
         let j = FileJournal::open(d.path()).unwrap();
         let id = "big".to_string();
         let path = j.path_for(&id).unwrap();
-        // Sparse, so the test needs no disk: a corrupt file claiming 64 GiB.
+        // A corrupt file one byte longer than any journal can be. Not a
+        // huge sparse file: NTFS files are not sparse unless asked, so
+        // extending one allocates (and zeroes) every byte.
         let f = std::fs::File::create(&path).unwrap();
-        f.set_len(64 << 30).unwrap();
+        f.set_len(format::MAX_FILE + 1).unwrap();
         drop(f);
         assert_eq!(j.load(&id).await.unwrap(), None);
         j.commit(&id, &cp(1, 1)).await.unwrap();

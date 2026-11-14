@@ -111,6 +111,41 @@ pub(crate) fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<us
     Ok(done)
 }
 
+// ------------------------------------------------------------ identity
+
+/// What identifies `file` on its filesystem: (device, inode) on Unix,
+/// (volume serial number, file index) on Windows. `None` if unknown.
+pub(crate) fn file_id(file: &File) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        file.metadata().ok().map(|m| (m.dev(), m.ino()))
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+        // SAFETY: an all-zero BY_HANDLE_FILE_INFORMATION is a valid value
+        // (plain integers and FILETIMEs).
+        let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: `file` is an open handle borrowed for the whole call, and
+        // `info` is a writable BY_HANDLE_FILE_INFORMATION on our stack that
+        // outlives it; the call does not retain the pointer.
+        let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &raw mut info) };
+        (ok != 0).then(|| {
+            let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+            (u64::from(info.dwVolumeSerialNumber), index)
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = file;
+        None
+    }
+}
+
 // ------------------------------------------------------------ page cache
 
 /// Linux: `posix_fadvise(POSIX_FADV_DONTNEED)` over the whole file: the

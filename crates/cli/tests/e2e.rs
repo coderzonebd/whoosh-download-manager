@@ -137,15 +137,48 @@ impl Drop for World {
         if let Some(pid) = self.runtime().and_then(|r| r["pid"].as_u64())
             && is_whoosh_daemon(pid)
         {
-            let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+            kill(pid);
         }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
+#[cfg(unix)]
 fn is_whoosh_daemon(pid: u64) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/comm"))
         .is_ok_and(|comm| comm.trim() == "whoosh-daemon")
+}
+
+/// The image name of process `pid`, from `tasklist` (in every Windows).
+#[cfg(windows)]
+fn image_name(pid: u64) -> Option<String> {
+    let out = Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    // `"whoosh-daemon.exe","1234","Console","1","10,000 K"`, or an
+    // "INFO: No tasks ..." line when there is no such process.
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut fields = text.trim().split("\",\"");
+    let name = fields.next()?.trim_start_matches('"').to_owned();
+    (fields.next()? == pid.to_string()).then_some(name)
+}
+
+#[cfg(windows)]
+fn is_whoosh_daemon(pid: u64) -> bool {
+    image_name(pid).is_some_and(|n| n.eq_ignore_ascii_case("whoosh-daemon.exe"))
+}
+
+fn kill(pid: u64) {
+    #[cfg(unix)]
+    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+    #[cfg(windows)]
+    let _ = Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 #[derive(Debug)]
@@ -182,11 +215,18 @@ fn run(mut cmd: Command) -> Run {
 }
 
 fn pid_alive(pid: u64) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    #[cfg(unix)]
+    {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+    #[cfg(windows)]
+    {
+        image_name(pid).is_some()
+    }
 }
 
 // ---------------------------------------------------------------- lifecycle

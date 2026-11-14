@@ -495,18 +495,10 @@ fn lock_stats<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// (device, inode) on Unix, to tell a replaced WAL file from the same one.
+/// (device, inode) on Unix, (volume serial, file index) on Windows: tells a
+/// replaced WAL file from the same one.
 fn file_id(f: &std::fs::File) -> Option<(u64, u64)> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        f.metadata().ok().map(|m| (m.dev(), m.ino()))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = f;
-        None
-    }
+    sys::file_id(f)
 }
 
 /// Copy the WAL into the database and cut the WAL to zero bytes.
