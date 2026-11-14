@@ -66,6 +66,7 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ### Browser extension
 - The extension is named "Whoosh Download Manager (WDM)" in the browser and the stores (`extName`, all languages); the short name stays "Whoosh". Version 0.1.2.
+- Microsoft Edge Add-ons assigned the extension its ID (`lbcnfampnnfcbfacehkdjlggmbigpbdh`). It is in `packaging/browsers/extension-ids.json`, so the native host accepts the Edge store build and the installers offer it to Edge from the next release.
 - The toolbar icon is the Whoosh logo instead of the placeholder arrow. The Firefox manifest sets Firefox for Android 142 as its minimum, the first version that reads `data_collection_permissions` (an AMO validation warning). Version 0.1.1 across the app and the extension.
 - Self-healing links: when a captured download's address expires (`needs_refresh`), the extension retries it with fresh cookies, then finds the fresh link on the page it came from (an open tab or a muted background tab), or takes over a new browser download of the same file, and hands it to the daemon with `download.refreshUrl`. When unsure it asks in the popup (badge `!`). Can be turned off.
 - No more lost events after the native port's idle close: the port stays open while handed-over downloads run, and each time it opens the extension lists unfinished downloads to catch up.

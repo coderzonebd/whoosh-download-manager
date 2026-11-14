@@ -7,7 +7,8 @@
           "/etc/opt/chrome/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
           "/etc/chromium/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
           "/etc/opt/edge/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
-          "/usr/lib/mozilla/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-firefox.json"
+          "/usr/lib/mozilla/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-firefox.json",
+          "/usr/share/microsoft-edge/extensions/lbcnfampnnfcbfacehkdjlggmbigpbdh.json": "installer/linux/offer-edge-lbcnfampnnfcbfacehkdjlggmbigpbdh.json"
         }
       },
       "rpm": {
@@ -15,7 +16,8 @@
           "/etc/opt/chrome/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
           "/etc/chromium/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
           "/etc/opt/edge/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-chromium.json",
-          "/usr/lib/mozilla/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-firefox.json"
+          "/usr/lib/mozilla/native-messaging-hosts/com.coderzonebd.whoosh.json": "installer/linux/host-firefox.json",
+          "/usr/share/microsoft-edge/extensions/lbcnfampnnfcbfacehkdjlggmbigpbdh.json": "installer/linux/offer-edge-lbcnfampnnfcbfacehkdjlggmbigpbdh.json"
         }
       }
     }

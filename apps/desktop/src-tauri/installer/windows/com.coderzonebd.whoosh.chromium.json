@@ -4,6 +4,7 @@
   "path": "whoosh-nmhost.exe",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/"
+    "chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/",
+    "chrome-extension://lbcnfampnnfcbfacehkdjlggmbigpbdh/"
   ]
 }
