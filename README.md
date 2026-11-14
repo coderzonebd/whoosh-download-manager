@@ -13,7 +13,7 @@ Open-source, crash-proof, and measured against every competitor in public.
 [![Platforms](https://img.shields.io/badge/targets-Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-6a4bd8)](MASTER-PLAN.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome%20(into%20dev)-2f74ec)](CONTRIBUTING.md)
 
-[Benchmarks](#measured-not-claimed) · [Features](#what-the-engine-does-today) · [Quick start](#quick-start) · [Roadmap](#roadmap) · [Contributing](#contributing)
+[Benchmarks](#measured-not-claimed) · [Features](#what-the-engine-does-today) · [Quick start](#quick-start) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh)
 
 </div>
 
@@ -124,6 +124,16 @@ feat/your-change ──PR──▶ dev ──release PR──▶ pub ──tag�
 - **`pub`** holds releases only. It takes release PRs from `dev`, and any other PR into it is moved to `dev` automatically.
 
 Setup, rules and commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Please report security issues privately, as described in [SECURITY.md](SECURITY.md).
+
+## Support Whoosh
+
+Whoosh is free and has no ads or telemetry. If it saves you time, you can help keep it going:
+
+- [GitHub Sponsors](https://github.com/sponsors/coderzonebd)
+- [Open Collective](https://opencollective.com/coderzonebd): the budget and every expense are public
+- [Buy Me a Coffee](https://buymeacoffee.com/devrkb21)
+
+Starring the repository, reporting bugs and translating help too.
 
 ## License
 
