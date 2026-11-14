@@ -75,7 +75,7 @@
         </label>
       {/each}
     </div>
-    <button class="vy-btn" disabled={entries.length === 0} onclick={() => (app.clearIds = entries.map((d) => d.id))}>
+    <button class="vy-btn vy-btn--secondary" disabled={entries.length === 0} onclick={() => (app.clearIds = entries.map((d) => d.id))}>
       <Icon name="trash" size={15} />
       {query.trim() || filter !== "all" ? t("history.clearShown") : t("history.clear")}
     </button>
@@ -131,7 +131,7 @@
     </ul>
     {#if entries.length > shown.length}
       <div class="more">
-        <button class="vy-btn" onclick={() => (limit += PAGE)}>{t("history.more", { count: entries.length - shown.length })}</button>
+        <button class="vy-btn vy-btn--secondary" onclick={() => (limit += PAGE)}>{t("history.more", { count: entries.length - shown.length })}</button>
       </div>
     {/if}
   {/if}

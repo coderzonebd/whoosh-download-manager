@@ -95,11 +95,11 @@
               </div>
             </div>
             {#if !r.hostRegistered}
-              <button class="vy-btn vy-btn--primary" disabled={busy !== undefined} onclick={() => connect(r.browser)}>
+              <button class="vy-btn vy-btn--secondary" disabled={busy !== undefined} onclick={() => connect(r.browser)}>
                 {#if busy === r.browser}<span class="vy-spinner" aria-hidden="true"></span>{/if}{t("browsers.connect")}
               </button>
             {:else if !r.extensionFound}
-              <button class="vy-btn vy-btn--primary" onclick={() => openStore(r.browser)}>{t(`browsers.store.${r.store}`)}</button>
+              <button class="vy-btn vy-btn--secondary" onclick={() => openStore(r.browser)}>{t(`browsers.store.${r.store}`)}</button>
             {/if}
           </li>
         {/each}
@@ -110,7 +110,7 @@
     {/if}
 
     <div class="actions">
-      <button class="vy-btn" onclick={() => load()}><Icon name="refresh" size={15} />{t("browsers.recheck")}</button>
+      <button class="vy-btn vy-btn--secondary" onclick={() => load()}><Icon name="refresh" size={15} />{t("browsers.recheck")}</button>
       <button class="vy-btn vy-btn--primary" onclick={() => (app.view = "downloads")}>{t("browsers.done")}</button>
     </div>
     <p class="vy-hint">{t("browsers.later")}</p>
