@@ -36,6 +36,7 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - No shell, no config files, no browser cookies unless the extension passed one for the page, no DRM circumvention.
 
 ### Desktop app
+- Fixed: the labels of checkboxes (Settings, the add, queue and remove dialogs, the media picker) were squeezed into a 1rem column and overlapped, because the new selection checkbox shared their class name. The selection checkbox is now `.vy-pick`.
 - New look, shared with the website: navy ink on white with a soft blue sidebar in light mode, deep navy in dark mode; a brand-yellow "Add download" pill; rounder controls; Baloo Da 2 for the wordmark and the primary button. Colours pass the contrast tests in every theme.
 - Bulk selection you can see: a checkbox on every row and card adds it to the selection, and a box in the toolbar selects everything or clears the selection and shows how many are ticked.
 - The desktop app is a client of the daemon ([ADR 0007](docs/adr/0007-phase2-plan.md)). It starts the bundled `whoosh-daemon` when none is running, and finds it again after a restart.
