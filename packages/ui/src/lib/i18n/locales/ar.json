@@ -186,6 +186,8 @@
     "source": "العنوان",
     "added": "أُضيف",
     "finished": "انتهى",
+    "timeTaken": "المدة المستغرقة",
+    "averageSpeed": "متوسط السرعة",
     "speedHistory": "السرعة، آخر 30 ثانية",
     "peak": "الذروة {{speed}}",
     "segmentMap": "خريطة الأجزاء",
@@ -242,6 +244,15 @@
     "mediaFailed": "لم يُعثر على فيديو في هذه الصفحة: {{message}}",
     "asFile": "نزّل الصفحة نفسها بدلًا من ذلك",
     "asMedia": "اختر صيغة فيديو بدلًا من ذلك"
+  },
+  "confirm": {
+    "title": "تنزيل جديد من متصفحك",
+    "description": "تحقق من اسم الملف ومكان حفظه. لن يبدأ Whoosh Download Manager التنزيل إلا عندما تطلب ذلك.",
+    "from": "من {{host}}",
+    "position": "{{index}} من {{total}}",
+    "start": "بدء التنزيل",
+    "later": "التنزيل لاحقًا",
+    "failed": "تعذّر ذلك: {{message}}"
   },
   "remove": {
     "titleOne": "هل تريد إزالة «{{name}}»؟",
@@ -309,6 +320,8 @@
     "mediaHint": "يستخدم Whoosh Download Manager أداة yt-dlp للعثور على الفيديو في الصفحة وffmpeg لدمج الفيديو والصوت. كلاهما برنامج مستقل من إصداراته الرسمية ويُطابَق مع المجموع الاختباري المنشور. يتضمّنهما برنامج التثبيت؛ ومن دونه يُنزَّلان عند الحاجة إليهما أول مرة.",
     "browsers": "المتصفحات",
     "browsersHint": "اربط Chrome وEdge وFirefox وغيرها من المتصفحات لتصل تنزيلاتها إلى Whoosh Download Manager.",
+    "confirmBrowser": "السؤال قبل التنزيل من المتصفح",
+    "confirmBrowserHint": "ينتظر التنزيل الذي يرسله المتصفح حتى تتحقق من اسمه ومجلده، ثم تبدؤه الآن أو لاحقًا.",
     "browsersOpen": "اربط متصفحك…",
     "updates": "التحديثات",
     "autoUpdateCheck": "البحث عن إصدار جديد من Whoosh Download Manager مرة يوميًا",

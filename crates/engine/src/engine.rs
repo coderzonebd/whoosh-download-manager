@@ -17,11 +17,11 @@ use tokio::time::{Instant, MissedTickBehavior};
 use whoosh_core::{DownloadRecord, Journal, SourceFactory, StateStore, StorageProvider};
 use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
 use whoosh_proto::{
-    AddParams, AddResult, DownloadDetail, DownloadId, DownloadState, DownloadSummary, Durability,
-    ErrorInfo, IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult,
-    ProgressEvent, ProgressItem, Queue, QueueConfig, QueueNameParams, QueueRenameParams,
-    RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, SetQueueParams, Settings,
-    StateEvent, Stats,
+    AddParams, AddResult, ConfirmParams, DownloadDetail, DownloadId, DownloadState,
+    DownloadSummary, Durability, ErrorInfo, IdParams, IdsParams, ListParams, PreconnectParams,
+    ProbeParams, ProbeResult, ProgressEvent, ProgressItem, Queue, QueueConfig, QueueNameParams,
+    QueueRenameParams, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, SetQueueParams,
+    Settings, StateEvent, Stats,
 };
 
 use crate::bus::Bus;
@@ -120,6 +120,8 @@ struct Entry {
     last_segments_sent: Option<Instant>,
     /// `remove` is in progress: never start this download again.
     removing: bool,
+    /// When the current run started (for `DownloadRecord::active_ms`).
+    run_started: Option<Instant>,
 }
 
 struct St {
@@ -238,6 +240,7 @@ impl Engine {
                     last_progress: None,
                     last_segments_sent: None,
                     removing: false,
+                    run_started: None,
                 },
             );
         }
@@ -472,6 +475,11 @@ impl Inner {
                 _ => outcome,
             };
             e.run = None;
+            if let Some(started) = e.run_started.take()
+                && let Some(ms) = e.record.active_ms.as_mut()
+            {
+                *ms = ms.saturating_add(started.elapsed().as_millis() as u64);
+            }
             e.last_segments = segments;
             if let Some(l) = &e.live {
                 e.record.downloaded_bytes = l.downloaded.load(Ordering::Relaxed);
@@ -608,6 +616,13 @@ impl Inner {
                 q.pending = None;
             }
             e.generation += 1;
+            e.run_started = Some(Instant::now());
+            e.record.awaiting_confirmation = false;
+            // A record from before active time was kept counts from here
+            // only if nothing was downloaded yet (else it would be short).
+            if e.record.active_ms.is_none() && e.record.downloaded_bytes == 0 {
+                e.record.active_ms = Some(0);
+            }
             let live = Arc::new(Live::new(&e.record));
             e.live = Some(live.clone());
             e.last_progress = None;
@@ -687,6 +702,14 @@ impl Inner {
             completed_at: r.completed_at,
             error: r.error.clone(),
             media: None,
+            awaiting_confirmation: r.awaiting_confirmation,
+            active_ms: r.active_ms.map(|ms| {
+                let current = match (&e.run_started, running) {
+                    (Some(t), true) => t.elapsed().as_millis() as u64,
+                    _ => 0,
+                };
+                ms.saturating_add(current)
+            }),
         }
     }
 
@@ -847,6 +870,8 @@ impl Inner {
             return Err(ServiceError::invalid_params("filename is not usable"));
         }
         let user_category = p.category.clone().filter(|c| !c.trim().is_empty());
+        // Caught in a browser: wait for the user (PROTOCOL.md, download.confirm).
+        let ask = p.from_browser && p.start && lock(&self.st).settings.confirm_browser_downloads;
         let mut record = DownloadRecord {
             id: id.clone(),
             url: p.url,
@@ -857,7 +882,7 @@ impl Inner {
             directory,
             category: None,
             queue,
-            state: if p.start {
+            state: if p.start && !ask {
                 DownloadState::Queued
             } else {
                 DownloadState::Paused
@@ -869,6 +894,8 @@ impl Inner {
             added_at: unix_millis(),
             completed_at: None,
             error: None,
+            awaiting_confirmation: ask,
+            active_ms: Some(0),
         };
         let (summary, created_queue) = {
             let mut st = lock(&self.st);
@@ -898,6 +925,7 @@ impl Inner {
                 last_progress: None,
                 last_segments_sent: None,
                 removing: false,
+                run_started: None,
             };
             let summary = self.summary(&entry);
             st.downloads.insert(id.clone(), entry);
@@ -917,7 +945,165 @@ impl Inner {
         if created_queue {
             self.save_queues().await;
         }
-        Ok(AddResult { id })
+        if ask {
+            self.probe_waiting(id.clone());
+        }
+        Ok(AddResult {
+            awaiting_confirmation: ask,
+            ..AddResult::new(id)
+        })
+    }
+
+    /// Learn the size, resumability and server's name of a download that
+    /// waits for confirmation, so the dialog can show them. Best effort:
+    /// a failed probe leaves the record as it was (the run probes again).
+    fn probe_waiting(self: &Arc<Self>, id: DownloadId) {
+        let inner = self.clone();
+        tokio::spawn(async move {
+            let Some(rec) = inner.record(&id).filter(|r| r.awaiting_confirmation) else {
+                return;
+            };
+            let meta = match inner.deps.sources.source(&rec.url, rec.request.as_ref()) {
+                Ok(src) => match src.probe().await {
+                    Ok(meta) => meta,
+                    Err(e) => {
+                        tracing::debug!(id, "probing a download that waits failed: {e}");
+                        return;
+                    }
+                },
+                Err(_) => return,
+            };
+            let url = meta.final_url.as_deref().unwrap_or(&rec.url);
+            let wanted = names::resolve(
+                None,
+                meta.filename.as_deref(),
+                url,
+                meta.content_type.as_deref(),
+            );
+            {
+                let mut st = lock(&inner.st);
+                let Some(e) = st.downloads.get(&id) else {
+                    return;
+                };
+                if !e.record.awaiting_confirmation || e.run.is_some() {
+                    return;
+                }
+                let name = if e.record.filename_locked {
+                    None
+                } else {
+                    let dir = PathBuf::from(&e.record.directory);
+                    let n = unique_in(&st, &dir, &wanted, &id);
+                    names::part_path(&dir, &n).is_some().then_some(n)
+                };
+                let Some(e) = st.downloads.get_mut(&id) else {
+                    return;
+                };
+                if let Some(name) = name
+                    && name != e.record.filename
+                {
+                    if e.record.category.as_deref() == Some(category_for(&e.record.filename)) {
+                        e.record.category = Some(category_for(&name).to_string());
+                    }
+                    e.record.filename = name;
+                }
+                e.record.total_bytes = meta.size;
+                e.record.resumable = meta.accepts_ranges && meta.size.is_some();
+            }
+            inner.announce(&id);
+            inner.save(&id).await;
+        });
+    }
+
+    /// `download.confirm`: the user answered a download that waits.
+    async fn confirm(self: &Arc<Self>, p: ConfirmParams) -> ServiceResult<()> {
+        self.check_open()?;
+        let user_name = match &p.filename {
+            Some(f) => Some(
+                names::sanitize(f)
+                    .ok_or_else(|| ServiceError::invalid_params("filename is not usable"))?,
+            ),
+            None => None,
+        };
+        if let Some(d) = &p.directory
+            && !Path::new(d).is_absolute()
+        {
+            return Err(ServiceError::invalid_params("directory must be absolute"));
+        }
+        let queue = p.queue.as_deref().map(|q| queues::normalize(Some(q)));
+        if let Some(Some(q)) = &queue
+            && !whoosh_proto::queue::is_queue_name(q)
+        {
+            return Err(ServiceError::invalid_params(
+                "a queue name is 1–64 characters, without control characters",
+            ));
+        }
+        let category = p.category.clone().filter(|c| !c.trim().is_empty());
+        let created_queue = {
+            let mut guard = lock(&self.st);
+            let st = &mut *guard;
+            let e = st
+                .downloads
+                .get(&p.id)
+                .ok_or_else(|| ServiceError::not_found(&p.id))?;
+            if !e.record.awaiting_confirmation || e.run.is_some() {
+                return Err(ServiceError::invalid_state(
+                    "this download is not waiting for confirmation",
+                ));
+            }
+            let directory = p.directory.clone().unwrap_or(e.record.directory.clone());
+            let old_name = e.record.filename.clone();
+            let category_auto = e.record.category.as_deref() == Some(category_for(&old_name));
+            let wanted = user_name.clone().unwrap_or(old_name.clone());
+            if names::part_path(Path::new(&directory), &wanted).is_none() {
+                return Err(ServiceError::invalid_params("filename is not usable"));
+            }
+            let name = unique_in(st, Path::new(&directory), &wanted, &p.id);
+            let created_queue = match &queue {
+                Some(Some(q)) if !st.queues.contains_key(q) => {
+                    st.queues.insert(q.clone(), QueueEntry::new(1, None));
+                    true
+                }
+                _ => false,
+            };
+            let e = st.downloads.get_mut(&p.id).expect("checked above");
+            if user_name.is_some() {
+                e.record.filename_locked = true;
+            }
+            e.record.category = match category {
+                Some(c) => Some(c),
+                None if category_auto && name != old_name => Some(category_for(&name).to_string()),
+                None => e.record.category.clone(),
+            };
+            e.record.filename = name;
+            e.record.directory = directory;
+            if let Some(q) = queue {
+                e.record.queue = q;
+            }
+            e.record.awaiting_confirmation = false;
+            // "Later" in a stopped named queue waits with the rest of it,
+            // as a download added to it does; elsewhere it stays paused.
+            let stopped = e
+                .record
+                .queue
+                .as_ref()
+                .and_then(|q| st.queues.get(q))
+                .is_some_and(|q| !q.running);
+            e.record.state = if p.start || stopped {
+                DownloadState::Queued
+            } else {
+                DownloadState::Paused
+            };
+            e.record.error = None;
+            created_queue
+        };
+        if created_queue {
+            self.emit_queues();
+            self.save_queues().await;
+        }
+        self.announce(&p.id);
+        self.emit_state_and_save(&p.id).await;
+        self.pump();
+        Ok(())
     }
 
     fn list(&self, p: ListParams) -> Vec<DownloadSummary> {
@@ -1020,6 +1206,7 @@ impl Inner {
         self.check_open()?;
         self.validate_ids(&ids)?;
         let mut changed = Vec::new();
+        let mut confirmed = Vec::new();
         {
             let mut st = lock(&self.st);
             for id in &ids {
@@ -1046,9 +1233,16 @@ impl Inner {
                 {
                     e.record.state = DownloadState::Queued;
                     e.record.error = None;
+                    if std::mem::take(&mut e.record.awaiting_confirmation) {
+                        confirmed.push(id.clone());
+                    }
                     changed.push(id.clone());
                 }
             }
+        }
+        // Resuming a download that waits answers it ("Start download").
+        for id in &confirmed {
+            self.announce(id);
         }
         for id in &changed {
             self.emit_state_and_save(id).await;
@@ -1380,6 +1574,10 @@ impl Service for Engine {
 
     fn set_queue(&self, params: SetQueueParams) -> BoxFuture<'_, ServiceResult<()>> {
         Box::pin(self.inner.set_queue(params))
+    }
+
+    fn confirm(&self, params: ConfirmParams) -> BoxFuture<'_, ServiceResult<()>> {
+        Box::pin(self.inner.confirm(params))
     }
 
     fn queues(&self) -> BoxFuture<'_, ServiceResult<Vec<Queue>>> {

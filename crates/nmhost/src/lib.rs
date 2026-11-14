@@ -11,6 +11,7 @@ pub mod detect;
 pub mod external;
 pub mod framing;
 pub mod ids;
+pub mod launch;
 pub mod log;
 pub mod register;
 pub mod relay;

@@ -146,6 +146,7 @@ pub async fn dispatch(service: &Arc<dyn Service>, req: Request) -> Result<Value,
         }
         method::SETTINGS_SET => to_value(service.set_settings(by_name(params)?).await?),
         method::DOWNLOAD_SET_QUEUE => to_value(service.set_queue(by_name(params)?).await?),
+        method::DOWNLOAD_CONFIRM => to_value(service.confirm(by_name(params)?).await?),
         method::QUEUE_LIST => {
             no_params(params)?;
             to_value(service.queues().await?)

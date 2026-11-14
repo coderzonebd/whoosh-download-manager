@@ -52,6 +52,7 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 - One extra method answered by the host itself: `nm.status` → `NmStatus { daemonRunning, daemonVersion?, hostVersion }`.
 - The host sends `event.nm.status` (same payload) whenever its daemon connection goes up or down. Request ids starting with `nmhost:` are reserved for the host.
 - When the daemon is not running, rejects the token, or the connection drops before an answer, the host answers the request with error `-32007`.
+- When the daemon answers a `download.add` with `needsApp: true` (the download waits for confirmation and no desktop window is connected; see "Downloads from the browser"), the host starts the desktop app, at most once every 30 seconds: on macOS the `.app` bundle it is in (`open <bundle>`; a host outside a bundle asks for the bundle id `com.coderzonebd.whoosh` with `open -b`), elsewhere `whoosh-desktop` next to the host, started outside the browser's process group or job. No app found (command-line-only installs, an AppImage whose host is a copy in the data directory): nothing is started and the download waits until the app is opened. `WHOOSH_NMHOST_NO_LAUNCH=1` turns this off.
 - Host name: `com.coderzonebd.whoosh` (renamed with the product). The host manifest lists the extension IDs allowed to connect.
 
 ## 2. Conventions
@@ -69,7 +70,8 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | `session.hello` | `HelloParams { token, nonce, protocol, client: { name, version } }` | `HelloResult { daemonVersion, protocol, capabilities[], proof }` |
 | `daemon.shutdown` | — | `null`, then the daemon stops: it pauses transfers, saves state, closes every connection with `1001` and exits. Used by `whoosh daemon stop`, and by the desktop app's Quit when the user chose to stop the daemon with the app |
 | `download.probe` | `ProbeParams { url, request? }` | `ProbeResult { totalBytes?, resumable, filename, contentType?, finalUrl }` |
-| `download.add` | `AddParams { url, request?, filename?, directory?, category?, start = true, mirrors[], checksum?, connections?, queue? }` | `AddResult { id }`. `connections` (1–64) fixes the connection count instead of learning it (still lowered if the server throttles); `queue` names the queue it joins (absent or `"main"`: the main queue; see "Queues and the scheduler") |
+| `download.add` | `AddParams { url, request?, filename?, directory?, category?, start = true, mirrors[], checksum?, connections?, queue?, fromBrowser = false }` | `AddResult { id, awaitingConfirmation = false, needsApp = false }`. `connections` (1–64) fixes the connection count instead of learning it (still lowered if the server throttles); `queue` names the queue it joins (absent or `"main"`: the main queue; see "Queues and the scheduler"). `fromBrowser` is set by the daemon, see "Downloads from the browser" |
+| `download.confirm` | `ConfirmParams { id, start, filename?, directory?, category?, queue? }` | `null`; answers a download that waits for confirmation (see "Downloads from the browser"). `-32003` if it is not waiting |
 | `download.list` | `ListParams { states[], category?, offset?, limit? }` | `DownloadSummary[]` (newest first) |
 | `download.get` | `IdParams { id }` | `DownloadDetail` (summary fields + `segments[]`) |
 | `download.pause` | `IdsParams { ids }` | `null` |
@@ -100,6 +102,18 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 
 `Settings.speedSchedule` (`SpeedWindow[] { days?, from, to, limitBps }`, absent when empty): while a window is open its `limitBps` replaces `speedLimitBps`; where windows overlap the lowest limit wins; `from` after `to` spans midnight.
 
+`Settings.confirmBrowserDownloads` (default `true`; absent in a `settings.set` means `true`): downloads from the browser wait for the user before they start (next section).
+
+### Downloads from the browser
+
+With `Settings.confirmBrowserDownloads` on ("Ask before downloading from the browser"), a download the browser extension hands over is created but not started, like IDM's "Download File Info" window:
+
+- **Who counts as the browser.** The daemon decides, not the request: `download.add` from a session whose `client.name` starts with `extension` (what `whoosh-nmhost` says) gets `fromBrowser: true`, and every other session's `fromBrowser` is dropped. Downloads from the app's own add dialog, the CLI, deep links and `media.add` never wait. A request with `start: false` does not wait either (it was not going to start).
+- **Waiting.** The download is `paused` with `awaitingConfirmation: true` in its `DownloadSummary`, announced with `event.download.added` like any other. `download.add` answers `awaitingConfirmation: true`, and `needsApp: true` when no desktop window (`client.name` `"desktop"`) is connected to ask, so the native host starts the app (§1). While it waits the daemon probes it once and sends `event.download.updated` with the size, `resumable` and the server's file name (unless the client chose one), so the dialog can show them. The waiting survives a daemon restart. UIs should ask about every download with `awaitingConfirmation` in the list they load at start, not only about new ones.
+- **The answer.** `download.confirm { id, start }`, optionally with the name, folder, category and queue the user picked (they replace the download's; a new name is kept from then on, as `AddParams.filename` is). `start: true` ("Start download") queues it at once. `start: false` ("Download later") keeps it paused, except in a named queue that is stopped, where it is `queued` and starts with the queue. Either way `awaitingConfirmation` goes away (`event.download.updated`, then `event.download.state`). "Cancel" is `download.remove`. `download.resume` on a waiting download also answers it, so clients that know nothing of confirmation just see a paused download.
+
+`DownloadSummary.activeMs` (absent for downloads from before it was kept): how long the download has actually been running, in milliseconds: the time from each start (`probing`) to its stop, summed over every run, so time spent `paused`, `queued`, waiting for confirmation or for a queue is left out. It is saved with the download and survives restarts; a completed download's `activeMs` is its total download time ("Time taken" in the desktop app, with the average speed `totalBytes / activeMs`). Media downloads (`media.add`) do not report it yet.
+
 ### Queues and the scheduler
 
 Every download is in one queue: the **main queue**, named `"main"` (the default; it runs up to `Settings.maxActiveDownloads` at once and cannot be renamed, removed or stopped), or a **named queue**, which runs up to its `maxActive` (default 1), oldest first. A queue name is 1–64 characters without control characters.
@@ -122,7 +136,7 @@ Desktop and GitHub builds of the daemon download from video and audio sites thro
 
 ### Download states
 
-`queued → probing → downloading ⇄ paused → verifying → completed`, plus `failed` and `needs_refresh` (the link expired; the extension, or the user, supplies a fresh URL through `download.refreshUrl` and the download continues from where it was).
+`queued → probing → downloading ⇄ paused → verifying → completed`, plus `failed` and `needs_refresh` (the link expired; the extension, or the user, supplies a fresh URL through `download.refreshUrl` and the download continues from where it was). A download from the browser that waits for the user is `paused` with `awaitingConfirmation: true` until `download.confirm` (or `download.resume`, or `download.remove`).
 
 ## 4. Events (daemon → client notifications)
 

@@ -84,6 +84,11 @@ export interface Host {
     /** True once, on the first run: the page opens by itself. */
     firstRun(): Promise<boolean>;
   };
+  /**
+   * Bring the app window to the front, also when it is hidden in the tray (desktop app). Called
+   * when a download from the browser waits for the user's confirmation.
+   */
+  showWindow?: () => Promise<void>;
   /** Signed in-app updates (desktop app). */
   updates?: {
     /** undefined when this is the newest version. */

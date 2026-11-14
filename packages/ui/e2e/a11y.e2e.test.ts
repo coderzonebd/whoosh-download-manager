@@ -95,6 +95,25 @@ const SCREENS: Screen[] = [
     },
   },
   {
+    name: "browser download confirmation",
+    async open(page) {
+      // What the extension sends through the native host (which sets fromBrowser).
+      await withApp(
+        page,
+        `await app.client.call("download.add", { url: "https://cdn.example.com/releases/whoosh-handbook-2026.pdf", fromBrowser: true });
+         await app.client.call("download.add", { url: "https://mirror.example.org/iso/debian-13.1.0-amd64-netinst.iso", fromBrowser: true });`,
+      );
+      await page.locator("#vy-confirm-start").waitFor();
+    },
+  },
+  {
+    name: "details of a finished download (time taken)",
+    async open(page) {
+      await withApp(page, `app.prefs.layout = "classic"; app.reveal(app.store.all().find((d) => d.data.filename.startsWith("node-v24")).id);`);
+      await page.locator("aside dl").waitFor();
+    },
+  },
+  {
     name: "media format picker",
     async open(page) {
       await withApp(page, `app.openAdd("https://video.example.com/watch?v=aqz-KE-bpKQ");`);

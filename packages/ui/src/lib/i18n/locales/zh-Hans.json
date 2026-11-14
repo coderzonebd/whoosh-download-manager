@@ -161,6 +161,8 @@
     "source": "地址",
     "added": "添加时间",
     "finished": "完成时间",
+    "timeTaken": "用时",
+    "averageSpeed": "平均速度",
     "speedHistory": "速度（最近 30 秒）",
     "peak": "峰值 {{speed}}",
     "segmentMap": "分段图",
@@ -218,6 +220,15 @@
     "asFile": "改为下载页面本身",
     "asMedia": "改为选择视频格式"
   },
+  "confirm": {
+    "title": "来自浏览器的新下载",
+    "description": "请确认文件名和保存位置。只有在你同意后，Whoosh Download Manager 才会开始下载。",
+    "from": "来自 {{host}}",
+    "position": "第 {{index}} 个，共 {{total}} 个",
+    "start": "开始下载",
+    "later": "稍后下载",
+    "failed": "无法完成：{{message}}"
+  },
   "remove": {
     "titleOne": "移除“{{name}}”？",
     "title_other": "移除 {{count}} 个下载？",
@@ -274,6 +285,8 @@
     "mediaHint": "Whoosh Download Manager 用 yt-dlp 查找页面上的视频，用 ffmpeg 合并视频和音频。两者都是来自官方发布的独立程序，并用公布的校验和核对。安装程序已包含它们；没有安装程序时，会在首次需要时下载。",
     "browsers": "浏览器",
     "browsersHint": "连接 Chrome、Edge、Firefox 等浏览器，让它们的下载交给 Whoosh Download Manager。",
+    "confirmBrowser": "从浏览器下载前先询问",
+    "confirmBrowserHint": "浏览器转来的下载会先等待，你确认文件名和文件夹后，可以立即开始或稍后下载。",
     "browsersOpen": "连接你的浏览器…",
     "updates": "更新",
     "autoUpdateCheck": "每天检查一次 Whoosh Download Manager 新版本",

@@ -117,6 +117,12 @@
       </div>
       <div><dt>{t("detail.added")}</dt><dd class="vy-num">{i18n.date(d.addedAt)}</dd></div>
       {#if d.completedAt}<div><dt>{t("detail.finished")}</dt><dd class="vy-num">{i18n.date(d.completedAt)}</dd></div>{/if}
+      {#if d.state === "completed" && d.activeMs !== undefined}
+        <div><dt>{t("detail.timeTaken")}</dt><dd class="vy-num">{i18n.eta(Math.max(1, Math.round(d.activeMs / 1000)))}</dd></div>
+        {#if d.totalBytes !== undefined && d.activeMs > 0}
+          <div><dt>{t("detail.averageSpeed")}</dt><dd class="vy-num">{i18n.speed(Math.round((d.totalBytes * 1000) / d.activeMs))}</dd></div>
+        {/if}
+      {/if}
     </dl>
 
     {#if d.state !== "completed"}

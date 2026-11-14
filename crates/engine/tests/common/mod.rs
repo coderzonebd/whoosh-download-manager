@@ -895,6 +895,7 @@ pub fn add_params(url: &str) -> AddParams {
         checksum: None,
         connections: None,
         queue: None,
+        from_browser: false,
     }
 }
 

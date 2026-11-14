@@ -237,5 +237,7 @@ fn record(id: &str, url: &str, name: &str) -> DownloadRecord {
         added_at: 1,
         completed_at: None,
         error: None,
+        awaiting_confirmation: false,
+        active_ms: None,
     }
 }

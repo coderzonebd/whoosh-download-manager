@@ -41,6 +41,9 @@ The store IDs of this build are always allowed: {STORE_IDS}
 ENVIRONMENT:
     WHOOSH_DATA_DIR           daemon data directory (holds runtime.json)
     WHOOSH_NMHOST_LOG=debug   verbose logging on stderr
+    WHOOSH_NMHOST_NO_LAUNCH=1 never start the desktop app (it is started when a
+                              browser download waits for confirmation and no
+                              app window is open)
 ";
 
 fn main() -> ExitCode {
@@ -112,11 +115,11 @@ fn run_host(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let result = rt.block_on(relay::run(
-        tokio::io::stdin(),
-        tokio::io::stdout(),
-        Config::new(runtime_file, client),
-    ));
+    let mut config = Config::new(runtime_file, client);
+    if std::env::var_os("WHOOSH_NMHOST_NO_LAUNCH").is_some_and(|v| !v.is_empty()) {
+        config.launcher = relay::Launcher(std::sync::Arc::new(|| {}));
+    }
+    let result = rt.block_on(relay::run(tokio::io::stdin(), tokio::io::stdout(), config));
     let code = match result {
         Ok(()) => 0,
         Err(e) => {
