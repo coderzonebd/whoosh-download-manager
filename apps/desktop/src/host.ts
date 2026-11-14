@@ -70,6 +70,10 @@ export function desktopHost(): Host {
         await invoke("dismiss_crash_notice");
       },
     },
+    async readClipboard() {
+      const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+      return readText();
+    },
     launchAtLogin: {
       async get() {
         const { isEnabled } = await import("@tauri-apps/plugin-autostart");

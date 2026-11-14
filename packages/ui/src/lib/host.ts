@@ -84,6 +84,11 @@ export interface Host {
     /** True once, on the first run: the page opens by itself. */
     firstRun(): Promise<boolean>;
   };
+  /**
+   * The clipboard's text, for the add dialog: opened empty, it fills in a
+   * download link found there. Undefined when there is none.
+   */
+  readClipboard?: () => Promise<string | undefined>;
   /** Signed in-app updates (desktop app). */
   updates?: {
     /** undefined when this is the newest version. */

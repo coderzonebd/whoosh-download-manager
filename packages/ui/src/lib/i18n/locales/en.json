@@ -432,7 +432,9 @@
     "same": "Start and end can’t be the same time."
   },
   "desktop": {
-    "trayNotice": "Whoosh Download Manager is still running in the tray, so downloads go on. Quit it from the tray menu."
+    "trayNotice": "Whoosh Download Manager is still running in the tray, so downloads go on. Quit it from the tray menu.",
+    "loginNotice": "Whoosh Download Manager now starts when you log in and waits in the tray, so browser downloads always have somewhere to go. You can turn this off in Settings.",
+    "loginNoticeAction": "Settings"
   },
   "tray": {
     "show": "Show Whoosh Download Manager",

@@ -19,6 +19,7 @@
   import Dialog from "./Dialog.svelte";
   import FileIcon from "./FileIcon.svelte";
   import Icon from "./Icon.svelte";
+  import { onMount } from "svelte";
 
   interface Props {
     initialUrl?: string;
@@ -148,6 +149,21 @@
     asFile = false;
     const timer = setTimeout(() => void runProbe(target), 350);
     return () => clearTimeout(timer);
+  });
+
+  // Opened empty: a download link on the clipboard is filled in and selected,
+  // so it starts checking at once and typing replaces it.
+  onMount(() => {
+    const read = app.host.readClipboard;
+    if (initialUrl !== "" || !read) return;
+    read()
+      .then((text) => {
+        const link = text?.trim() ?? "";
+        if (url !== "" || !isUrl(link)) return;
+        url = link;
+        queueMicrotask(() => document.querySelector<HTMLInputElement>("#vy-add-url")?.select());
+      })
+      .catch(() => {});
   });
 
   // The default folder arrives with settings; fill it in if the user hasn't typed one.

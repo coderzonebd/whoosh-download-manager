@@ -391,6 +391,38 @@ describe("settings", () => {
   });
 });
 
+describe("clipboard", () => {
+  it("fills in a download link from the clipboard when the add dialog opens empty", async () => {
+    const host: Host = { readClipboard: async () => "  https://example.com/from-clipboard.iso\n" };
+    const { user } = await setup({ host });
+    await user.click(screen.getByRole("button", { name: "Add download" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a download" });
+    const address = within(dialog).getByRole("textbox", { name: "Address" });
+    await waitFor(() => expect(address).toHaveValue("https://example.com/from-clipboard.iso"));
+    // Selected, so typing replaces it.
+    await waitFor(() => expect((address as HTMLInputElement).selectionEnd).toBe("https://example.com/from-clipboard.iso".length));
+    expect((address as HTMLInputElement).selectionStart).toBe(0);
+  }, 20_000);
+
+  it("leaves the address empty when the clipboard holds no link", async () => {
+    const readClipboard = vi.fn(async () => "just some words");
+    const { user } = await setup({ host: { readClipboard } });
+    await user.click(screen.getByRole("button", { name: "Add download" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a download" });
+    await waitFor(() => expect(readClipboard).toHaveBeenCalled());
+    expect(within(dialog).getByRole("textbox", { name: "Address" })).toHaveValue("");
+  });
+
+  it("does not read the clipboard when the dialog opens with a link", async () => {
+    const readClipboard = vi.fn(async () => "https://example.com/other.zip");
+    const { app } = await setup({ host: { readClipboard } });
+    act(() => app.openAdd("https://example.com/from-link.zip"));
+    const dialog = await screen.findByRole("dialog", { name: "Add a download" });
+    expect(within(dialog).getByRole("textbox", { name: "Address" })).toHaveValue("https://example.com/from-link.zip");
+    expect(readClipboard).not.toHaveBeenCalled();
+  });
+});
+
 describe("deep links", () => {
   it("opens the add dialog with the address filled in", async () => {
     const { app } = await setup();
