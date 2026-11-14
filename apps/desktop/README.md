@@ -19,8 +19,30 @@ GPL-3.0-or-later.
   (a Linux desktop with no status notifier) closing quits. *Quit* in the tray
   leaves the daemon running for the CLI and the browser extension, unless
   `stopDaemonOnQuit` is set. These two choices are in
-  `<app config dir>/desktop.json` (`desktop_prefs` / `set_desktop_prefs`;
-  the settings screen comes in Phase 2's desktop-features work).
+  `<app config dir>/desktop.json` (`desktop_prefs` / `set_desktop_prefs`),
+  shown in Settings → *This computer*.
+- **Launch at login.** Off by default; turned on in Settings → *This
+  computer* (`tauri-plugin-autostart`: a LaunchAgent on macOS, the registry
+  on Windows, an XDG autostart entry on Linux). The login item passes
+  `--autostart`, and the app then starts hidden in the tray (when there is a
+  tray).
+- **Folder picker.** The default folder (Settings) and the add dialog's folder
+  have a *Browse…* button (`tauri-plugin-dialog`, `dialog:allow-open` only).
+- **`whoosh://` links.** `whoosh://add?url=<percent-encoded address>` brings
+  the window forward and opens the add dialog with the address filled in;
+  nothing is downloaded until the user confirms. Only http, https and ftp
+  addresses are accepted (`parseDeepLink` in `@whoosh/ui`). A link that
+  launches the app, one passed to a second launch (through the
+  single-instance plugin's `deep-link` feature) and one sent by macOS to the
+  running app all go through `src-tauri/src/deep_links.rs`, which keeps them
+  until the UI asks (`take_deep_links`) so none is lost while the UI loads.
+  Installers register the scheme (Info.plist on macOS, the registry for
+  NSIS/MSI, the `.desktop` file for deb/rpm); a portable Windows zip, an
+  AppImage and a debug build register it at run time. On macOS links only
+  work in a bundled app, not under `tauri dev`.
+- **What the UI gets from the shell** is in `src/host.ts` (the `Host`
+  interface of `@whoosh/ui`); in a plain browser none of it is passed, so
+  those controls are hidden.
 - **Notifications.** A download that finishes or fails while the window is
   not in front raises a system notification, in the UI's language.
 - In a plain browser (`pnpm --filter @whoosh/desktop dev`) there is no shell,

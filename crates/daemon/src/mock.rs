@@ -381,6 +381,7 @@ impl State {
                 language: "en".into(),
                 theme: "system".into(),
                 durability: Default::default(),
+                speed_schedule: Vec::new(),
             },
             subscribers: Vec::new(),
             next_id: 1,

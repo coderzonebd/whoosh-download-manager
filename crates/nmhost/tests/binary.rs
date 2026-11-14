@@ -6,6 +6,13 @@ use std::process::{Command, Stdio};
 
 const EXE: &str = env!("CARGO_BIN_EXE_whoosh-nmhost");
 
+/// An absolute host path on every OS (on Windows one needs a drive).
+const HOST: &str = if cfg!(windows) {
+    r"C:\Program Files\Whoosh\whoosh-nmhost.exe"
+} else {
+    "/opt/whoosh/whoosh-nmhost"
+};
+
 fn frame(payload: &[u8]) -> Vec<u8> {
     let mut out = (payload.len() as u32).to_ne_bytes().to_vec();
     out.extend_from_slice(payload);
@@ -52,18 +59,13 @@ fn answers_nm_status_over_stdio_and_exits_on_eof() {
 #[test]
 fn prints_manifests() {
     let out = Command::new(EXE)
-        .args([
-            "--print-manifest",
-            "chromium",
-            "--host-path",
-            "/opt/whoosh/whoosh-nmhost",
-        ])
+        .args(["--print-manifest", "chromium", "--host-path", HOST])
         .output()
         .unwrap();
     assert!(out.status.success());
     let manifest: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(manifest["name"], "com.coderzonebd.whoosh");
-    assert_eq!(manifest["path"], "/opt/whoosh/whoosh-nmhost");
+    assert_eq!(manifest["path"], HOST);
     assert_eq!(
         manifest["allowed_origins"][0],
         "chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/"

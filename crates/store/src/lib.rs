@@ -6,6 +6,10 @@
 //! | [`FileJournal`] | [`whoosh_core::Journal`] | one two-slot, CRC32C-checksummed file per download |
 //! | [`SqliteStateStore`] | [`whoosh_core::StateStore`] | SQLite (WAL) on a dedicated thread, batched writes, owner-only files |
 //!
+//! [`motw::mark_of_the_web`] marks a file as downloaded from the internet
+//! (Windows `Zone.Identifier`, macOS quarantine); [`FileStorage`] does it
+//! for the engine before a download's final move.
+//!
 //! Callers choose every path: the daemon owns the data directory.
 //!
 //! ```no_run
@@ -21,6 +25,7 @@
 mod blocking;
 mod file;
 mod journal;
+pub mod motw;
 #[cfg(feature = "sqlite")]
 mod state;
 mod sys;

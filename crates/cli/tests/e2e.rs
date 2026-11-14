@@ -137,15 +137,48 @@ impl Drop for World {
         if let Some(pid) = self.runtime().and_then(|r| r["pid"].as_u64())
             && is_whoosh_daemon(pid)
         {
-            let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+            kill(pid);
         }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
+#[cfg(unix)]
 fn is_whoosh_daemon(pid: u64) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/comm"))
         .is_ok_and(|comm| comm.trim() == "whoosh-daemon")
+}
+
+/// The image name of process `pid`, from `tasklist` (in every Windows).
+#[cfg(windows)]
+fn image_name(pid: u64) -> Option<String> {
+    let out = Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    // `"whoosh-daemon.exe","1234","Console","1","10,000 K"`, or an
+    // "INFO: No tasks ..." line when there is no such process.
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut fields = text.trim().split("\",\"");
+    let name = fields.next()?.trim_start_matches('"').to_owned();
+    (fields.next()? == pid.to_string()).then_some(name)
+}
+
+#[cfg(windows)]
+fn is_whoosh_daemon(pid: u64) -> bool {
+    image_name(pid).is_some_and(|n| n.eq_ignore_ascii_case("whoosh-daemon.exe"))
+}
+
+fn kill(pid: u64) {
+    #[cfg(unix)]
+    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+    #[cfg(windows)]
+    let _ = Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 #[derive(Debug)]
@@ -181,12 +214,57 @@ fn run(mut cmd: Command) -> Run {
     }
 }
 
+/// Unix: nothing. Windows: the child leads a process group of its own, so
+/// [`interrupt`] can reach it alone.
+fn own_group(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd
+}
+
+/// What the user's Ctrl-C does: `SIGINT` on Unix; on Windows Ctrl-Break
+/// sent to the child's process group (see [`own_group`]), since Ctrl-C
+/// cannot be sent to one group alone.
+fn interrupt(child: &Child) {
+    #[cfg(unix)]
+    {
+        let status = Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    #[cfg(windows)]
+    #[allow(unsafe_code)]
+    {
+        use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, GenerateConsoleCtrlEvent};
+        // SAFETY: a plain Win32 call with integer arguments.
+        let ok = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, child.id()) };
+        assert!(
+            ok != 0,
+            "GenerateConsoleCtrlEvent: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
 fn pid_alive(pid: u64) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    #[cfg(unix)]
+    {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+    #[cfg(windows)]
+    {
+        image_name(pid).is_some()
+    }
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -264,6 +342,48 @@ fn concurrent_commands_share_one_daemon() {
     }
     let pid = w.runtime().unwrap()["pid"].as_u64().unwrap();
     assert!(pid_alive(pid));
+}
+
+/// `whoosh-autostart`, what the logon entry runs: it starts the daemon
+/// found next to it, detached, and exits without waiting.
+#[test]
+fn the_logon_launcher_starts_the_daemon_and_exits() {
+    let w = World::new("launcher");
+    let mut launcher = Command::new(env!("CARGO_BIN_EXE_whoosh-autostart"));
+    launcher
+        .args(["--data-dir".as_ref(), w.data().as_os_str()])
+        .env("WHOOSH_DAEMON_MOCK", "1")
+        .env("WHOOSH_DAEMON_MOCK_SCENARIO", "empty")
+        .env("WHOOSH_DAEMON_PORT", "0")
+        .env_remove("WHOOSH_DATA_DIR")
+        .env_remove("WHOOSH_DAEMON_BIN")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(path) = std::env::var_os("WHOOSH_DAEMON_BIN_FOR_TESTS") {
+        launcher.env("WHOOSH_DAEMON_BIN", path);
+    }
+    let status = launcher.status().unwrap();
+    assert!(status.success(), "{status}");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let pid = loop {
+        if let Some(rt) = w.runtime() {
+            break rt["pid"].as_u64().unwrap();
+        }
+        assert!(Instant::now() < deadline, "no runtime.json");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert!(pid_alive(pid));
+    assert_eq!(w.json(&["daemon", "status"])["pid"], pid);
+    // A second run while it is up starts nothing new.
+    assert!(launcher.status().unwrap().success());
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(w.runtime().unwrap()["pid"], pid);
+    let bad = Command::new(env!("CARGO_BIN_EXE_whoosh-autostart"))
+        .arg("--nope")
+        .status()
+        .unwrap();
+    assert_eq!(bad.code(), Some(2));
 }
 
 #[test]
@@ -468,13 +588,11 @@ fn get_exit_codes() {
     assert_eq!(err["error"]["code"], -32005);
 }
 
-#[cfg(unix)]
 #[test]
 fn ctrl_c_pauses_the_download_and_exits_130() {
     let w = World::new("get-int");
     assert_eq!(w.run(&["daemon", "start"]).code, 0);
-    let child = w
-        .cmd(&["get", "https://example.com/slow.bin?size=1GiB&bps=1MiB"])
+    let child = own_group(&mut w.cmd(&["get", "https://example.com/slow.bin?size=1GiB&bps=1MiB"]))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -489,10 +607,7 @@ fn ctrl_c_pauses_the_download_and_exits_130() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(100));
     };
-    Command::new("kill")
-        .args(["-INT", &child.id().to_string()])
-        .status()
-        .unwrap();
+    interrupt(&child);
     let out = child.wait_with_output().unwrap();
     assert_eq!(out.status.code(), Some(130));
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -626,8 +741,7 @@ fn preconnect_and_watch() {
     assert_eq!(w.run(&["preconnect", "gopher://x"]).code, 10);
 
     // Not a terminal: one JSON event per line.
-    let mut watch = w
-        .cmd(&["watch"])
+    let mut watch = own_group(&mut w.cmd(&["watch"]))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -672,19 +786,8 @@ fn preconnect_and_watch() {
             .any(|m| m["method"] == "event.download.progress"),
         "{methods:?}"
     );
-    #[cfg(unix)]
-    {
-        Command::new("kill")
-            .args(["-INT", &watch.id().to_string()])
-            .status()
-            .unwrap();
-        assert_eq!(watch.wait().unwrap().code(), Some(0));
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = watch.kill();
-        let _ = watch.wait();
-    }
+    interrupt(&watch);
+    assert_eq!(watch.wait().unwrap().code(), Some(0));
 }
 
 // ---------------------------------------------------------------- stale runtime files
@@ -693,14 +796,12 @@ fn preconnect_and_watch() {
 /// `token`, it proves itself like a real daemon (and records requests);
 /// without, it answers hello with a wrong proof, like an impostor on the
 /// port of a stale runtime file. Every message it receives is recorded.
-#[cfg(unix)]
 struct Fake {
     rt: tokio::runtime::Runtime,
     port: u16,
     received: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
 }
 
-#[cfg(unix)]
 impl Fake {
     fn start(token: Option<&str>) -> Self {
         use futures::{SinkExt, StreamExt};
@@ -751,28 +852,38 @@ impl Fake {
     }
 }
 
-#[cfg(unix)]
 impl Drop for Fake {
     fn drop(&mut self) {
         let _ = &self.rt;
     }
 }
 
-/// Writes `runtime.json` the way a daemon does (private dir, 0600 file).
-#[cfg(unix)]
+/// Writes `runtime.json` the way a daemon does: a private directory and a
+/// private file (0700 and 0600 on Unix, owner-only DACLs on Windows).
 fn write_runtime(data: &Path, port: u16, token: &str, pid: u32) {
     use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    std::fs::create_dir_all(data).unwrap();
-    std::fs::set_permissions(data, std::fs::Permissions::from_mode(0o700)).unwrap();
     let path = data.join("runtime.json");
-    let _ = std::fs::remove_file(&path);
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
-        .unwrap();
+    #[cfg(unix)]
+    let mut f = {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        std::fs::create_dir_all(data).unwrap();
+        std::fs::set_permissions(data, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let _ = std::fs::remove_file(&path);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap()
+    };
+    #[cfg(windows)]
+    let mut f = {
+        use whoosh_proto::winacl;
+        winacl::create_private_dir(data).unwrap();
+        winacl::make_private(data).unwrap();
+        let _ = std::fs::remove_file(&path);
+        winacl::create_private_file(&path).unwrap()
+    };
     write!(
         f,
         r#"{{"port":{port},"token":"{token}","pid":{pid},"version":"0"}}"#
@@ -780,7 +891,6 @@ fn write_runtime(data: &Path, port: u16, token: &str, pid: u32) {
     .unwrap();
 }
 
-#[cfg(unix)]
 #[test]
 fn a_stale_runtime_file_whose_port_was_taken_gets_nothing_but_a_hello() {
     let w = World::new("impostor");
@@ -827,7 +937,6 @@ fn a_daemon_of_another_data_dir_on_the_port_means_start_our_own() {
     assert_eq!(a.run(&["daemon", "start"]).code, 0);
     let a_rt = a.runtime().unwrap();
     let b = World::new("other-b");
-    #[cfg(unix)]
     write_runtime(
         &b.data(),
         a_rt["port"].as_u64().unwrap() as u16,
@@ -843,7 +952,6 @@ fn a_daemon_of_another_data_dir_on_the_port_means_start_our_own() {
     assert_eq!(a.run(&["daemon", "status"]).code, 0);
 }
 
-#[cfg(unix)]
 #[test]
 fn requests_carry_files_headers_connections_and_queue() {
     let w = World::new("recorded");
@@ -936,5 +1044,41 @@ fn a_loose_data_dir_is_tightened_and_files_are_private() {
     for entry in std::fs::read_dir(data.join("logs")).unwrap() {
         let path = entry.unwrap().path();
         assert_eq!(mode(path.clone()), 0o600, "{}", path.display());
+    }
+}
+
+/// Windows: the same, with access control lists. "Loose" is Everyone
+/// granted modify access, inherited by what is created inside.
+#[cfg(windows)]
+#[test]
+fn a_loose_data_dir_is_tightened_and_files_are_private() {
+    use whoosh_proto::runtime::{check_private_dir, check_private_file};
+    let w = World::new("loose");
+    let data = w.data();
+    std::fs::create_dir_all(&data).unwrap();
+    let out = Command::new("icacls")
+        .arg(&data)
+        .args(["/grant", "*S-1-1-0:(OI)(CI)M"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    // A runtime file everyone may change (an old build?) is not trusted...
+    std::fs::write(
+        data.join("runtime.json"),
+        r#"{"port":1,"token":"t","pid":1,"version":"0"}"#,
+    )
+    .unwrap();
+    assert!(check_private_file(&data.join("runtime.json")).is_err());
+    let r = w.run(&["--no-start", "list"]);
+    assert_eq!(r.code, 3, "{r:?}");
+    // ...and starting a daemon fixes everything.
+    let r = w.run(&["list"]);
+    assert_eq!(r.code, 0, "{r:?}");
+    check_private_dir(&data).unwrap();
+    check_private_file(&data.join("runtime.json")).unwrap();
+    check_private_dir(&data.join("logs")).unwrap();
+    for entry in std::fs::read_dir(data.join("logs")).unwrap() {
+        let path = entry.unwrap().path();
+        check_private_file(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 }

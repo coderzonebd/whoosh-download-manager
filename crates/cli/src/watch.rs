@@ -23,7 +23,7 @@ pub async fn watch(ctx: &Ctx) -> Result<u8> {
         .await?;
     let mut stats: Stats = client.call(method::STATS_GET, Value::Null).await?;
 
-    let ctrl_c = tokio::signal::ctrl_c();
+    let ctrl_c = crate::interrupt::interrupted();
     tokio::pin!(ctrl_c);
     let mut tick = tokio::time::interval(Duration::from_millis(250));
     let mut dirty = true;
@@ -52,7 +52,7 @@ pub async fn watch(ctx: &Ctx) -> Result<u8> {
 
 /// Non-interactive: every notification as one JSON line.
 async fn stream(client: &Client) -> Result<u8> {
-    let ctrl_c = tokio::signal::ctrl_c();
+    let ctrl_c = crate::interrupt::interrupted();
     tokio::pin!(ctrl_c);
     loop {
         tokio::select! {

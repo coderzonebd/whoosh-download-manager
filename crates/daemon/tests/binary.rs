@@ -13,6 +13,13 @@ const EXE: &str = env!("CARGO_BIN_EXE_whoosh-daemon");
 
 fn daemon(data_dir: &Path) -> Command {
     let mut cmd = Command::new(EXE);
+    #[cfg(windows)]
+    {
+        // A process group of its own, so `stop` can reach it alone.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    }
     cmd.args(["--mock", "--mock-scenario", "empty", "--port", "0"])
         .env("WHOOSH_DATA_DIR", data_dir)
         .env_remove("WHOOSH_DAEMON_MOCK")
@@ -51,7 +58,6 @@ fn wait_exit(child: &mut Child, within: Duration) -> std::process::ExitStatus {
     }
 }
 
-#[cfg(unix)]
 fn stderr_of(child: &mut Child) -> String {
     use std::io::Read;
     let mut s = String::new();
@@ -70,9 +76,63 @@ fn signal(child: &Child, sig: &str) {
     assert!(status.success());
 }
 
-#[cfg(unix)]
+/// Asks the daemon to stop the way its OS does: `SIGTERM` on Unix; on
+/// Windows Ctrl-Break to its process group (a console's Ctrl-C cannot be
+/// sent to one group alone; closing the console, log-off and shutdown
+/// arrive through the same handler).
+fn stop(child: &Child) {
+    #[cfg(unix)]
+    signal(child, "TERM");
+    #[cfg(windows)]
+    ctrl_break(child);
+}
+
+/// The interrupt: `SIGINT` on Unix, Ctrl-Break on Windows.
+fn interrupt(child: &Child) {
+    #[cfg(unix)]
+    signal(child, "INT");
+    #[cfg(windows)]
+    ctrl_break(child);
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn ctrl_break(child: &Child) {
+    use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, GenerateConsoleCtrlEvent};
+    // SAFETY: a plain Win32 call with integer arguments.
+    let ok = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, child.id()) };
+    assert!(
+        ok != 0,
+        "GenerateConsoleCtrlEvent: {}",
+        std::io::Error::last_os_error()
+    );
+}
+
+/// Owner-only: 0600 files and 0700 directories on Unix; an owner-only DACL
+/// on Windows.
+fn assert_private(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let meta = std::fs::metadata(path).unwrap();
+        let want = if meta.is_dir() { 0o700 } else { 0o600 };
+        let mode = meta.permissions().mode() & 0o777;
+        assert_eq!(mode, want, "{} is {mode:o}", path.display());
+    }
+    #[cfg(windows)]
+    {
+        use whoosh_proto::runtime::{check_private_dir, check_private_file};
+        let r = if path.is_dir() {
+            check_private_dir(path)
+        } else {
+            check_private_file(path)
+        };
+        r.unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    }
+}
+
 #[test]
-fn serves_refuses_a_second_instance_and_stops_cleanly_on_sigterm() {
+fn serves_refuses_a_second_instance_and_stops_cleanly_when_asked() {
     let dir = TempDir::new("bin");
     let mut first = daemon(dir.path()).spawn().unwrap();
     let info = wait_for_runtime(dir.path(), &mut first);
@@ -100,7 +160,7 @@ fn serves_refuses_a_second_instance_and_stops_cleanly_on_sigterm() {
     // ...and leaves the first one's runtime file alone.
     assert_eq!(runtime::read(dir.path()).unwrap(), Some(info.clone()));
 
-    signal(&first, "TERM");
+    stop(&first);
     let status = wait_exit(&mut first, Duration::from_secs(20));
     assert!(status.success(), "{status}");
     assert!(!dir.path().join("runtime.json").exists());
@@ -115,31 +175,27 @@ fn serves_refuses_a_second_instance_and_stops_cleanly_on_sigterm() {
         let text = std::fs::read_to_string(&log).unwrap();
         assert!(text.contains("whoosh-daemon ready"), "{text}");
         assert!(!text.contains(&info.token), "token in {}", log.display());
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "{} is {mode:o}", log.display());
+        assert_private(&log);
     }
-    let mode = |p: &Path| {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(p).unwrap().permissions().mode() & 0o777
-    };
-    assert_eq!(mode(dir.path()), 0o700, "the data dir was made private");
-    assert_eq!(mode(&dir.path().join("logs")), 0o700);
+    assert_private(dir.path());
+    assert_private(&dir.path().join("logs"));
     // Foreground mode also logs to stderr.
     assert!(stderr_of(&mut first).contains("whoosh-daemon ready"));
 }
 
-#[cfg(unix)]
 #[test]
-fn sigint_also_stops_it_and_detached_mode_is_quiet() {
+fn an_interrupt_also_stops_it_and_detached_mode_is_quiet() {
     let dir = TempDir::new("bin-int");
     let mut child = daemon(dir.path()).arg("--detached").spawn().unwrap();
     wait_for_runtime(dir.path(), &mut child);
     // Detached daemons ignore SIGHUP (the terminal that started `whoosh` closed).
-    signal(&child, "HUP");
-    std::thread::sleep(Duration::from_millis(300));
-    assert!(child.try_wait().unwrap().is_none(), "SIGHUP killed it");
-    signal(&child, "INT");
+    #[cfg(unix)]
+    {
+        signal(&child, "HUP");
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(child.try_wait().unwrap().is_none(), "SIGHUP killed it");
+    }
+    interrupt(&child);
     assert!(wait_exit(&mut child, Duration::from_secs(20)).success());
     assert!(!dir.path().join("runtime.json").exists());
     assert_eq!(

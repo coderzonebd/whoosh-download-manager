@@ -1,12 +1,12 @@
 //! Where the daemon publishes its port and token (PROTOCOL.md §1), shared by
 //! the daemon, the CLI and `whoosh-nmhost` so the three always agree.
 //!
-//! On Unix, [`read_runtime`] refuses a file that another user could have
-//! written: a symlink, a file not owned by the current user or readable by
-//! anyone else, or one in a directory that others can write to. Otherwise a
-//! local attacker could point clients at a port of their choosing. On Windows
-//! the data directory under `%LOCALAPPDATA%` is private by inheritance and no
-//! check is made.
+//! [`read_runtime`] refuses a file that another user could have written: a
+//! symlink, a file not owned by the current user or readable by anyone else,
+//! or one in a directory that others can write to. Otherwise a local attacker
+//! could point clients at a port of their choosing. On Unix that is the
+//! owner and the mode bits; on Windows the owner and the DACL, with the same
+//! rules (see [`crate::winacl`]).
 
 use std::path::{Path, PathBuf};
 
@@ -164,10 +164,17 @@ pub fn read_runtime(path: &Path) -> Result<RuntimeInfo, RuntimeError> {
 }
 
 /// Checks that `dir` is a directory owned by the current user that no one
-/// else can write to (Unix; always Ok on Windows). The daemon calls this on
-/// its data directory at start, after tightening a directory it owns.
+/// else can write to. The daemon calls this on its data directory at start,
+/// after tightening a directory it owns.
 pub fn check_private_dir(dir: &Path) -> Result<(), RuntimeError> {
     imp::check_dir(dir)
+}
+
+/// Checks that `path` is a regular file owned by the current user that no
+/// one else can read or write: what [`read_runtime`] demands of
+/// `runtime.json` itself.
+pub fn check_private_file(path: &Path) -> Result<(), RuntimeError> {
+    imp::check_file(path)
 }
 
 fn check_runtime_file(path: &Path) -> Result<(), RuntimeError> {
@@ -249,7 +256,39 @@ mod imp {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+mod imp {
+    use std::path::Path;
+
+    use super::RuntimeError;
+    use crate::winacl::{self, CheckError, Kind};
+
+    fn check(path: &Path, kind: Kind) -> Result<(), RuntimeError> {
+        winacl::check_private(path, kind).map_err(|e| match e {
+            CheckError::Io(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                RuntimeError::Missing(path.to_owned())
+            }
+            CheckError::Io(source) => RuntimeError::Io {
+                path: path.to_owned(),
+                source,
+            },
+            CheckError::Insecure(reason) => RuntimeError::Insecure {
+                path: path.to_owned(),
+                reason,
+            },
+        })
+    }
+
+    pub(super) fn check_file(path: &Path) -> Result<(), RuntimeError> {
+        check(path, Kind::File)
+    }
+
+    pub(super) fn check_dir(dir: &Path) -> Result<(), RuntimeError> {
+        check(dir, Kind::Dir)
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 mod imp {
     use std::path::Path;
 
@@ -407,6 +446,83 @@ mod tests {
             std::os::unix::fs::symlink(&real, dir.0.join(RUNTIME_FILE)).unwrap();
             let err = read_runtime(&dir.0.join(RUNTIME_FILE)).unwrap_err();
             assert!(matches!(err, RuntimeError::Insecure { .. }), "{err}");
+        }
+    }
+    #[cfg(windows)]
+    mod windows {
+        use std::io::Write;
+        use std::process::Command;
+
+        use super::*;
+        use crate::winacl;
+
+        struct TempDir(PathBuf);
+        impl TempDir {
+            fn new(tag: &str) -> Self {
+                let dir = std::env::temp_dir().join(format!(
+                    "whoosh-proto-rt-{tag}-{}-{:?}",
+                    std::process::id(),
+                    std::thread::current().id()
+                ));
+                let _ = std::fs::remove_dir_all(&dir);
+                winacl::create_private_dir(&dir).unwrap();
+                Self(dir)
+            }
+        }
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        /// Grants Everyone modify access, as `chmod 0666`/`0777` would.
+        fn loosen(path: &Path) {
+            let out = Command::new("icacls")
+                .arg(path)
+                .args(["/grant", "*S-1-1-0:M"])
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{out:?}");
+        }
+
+        fn write(dir: &Path) -> PathBuf {
+            let path = dir.join(RUNTIME_FILE);
+            let mut f = winacl::create_private_file(&path).unwrap();
+            f.write_all(br#"{"port":47210,"token":"t","pid":42,"version":"0.1.0","extra":true}"#)
+                .unwrap();
+            path
+        }
+
+        #[test]
+        fn reads_a_private_file_and_ignores_unknown_fields() {
+            let dir = TempDir::new("ok");
+            let info = read_runtime(&write(&dir.0)).unwrap();
+            assert_eq!((info.port, info.token.as_str(), info.pid), (47210, "t", 42));
+            check_private_file(&dir.0.join(RUNTIME_FILE)).unwrap();
+        }
+
+        #[test]
+        fn refuses_a_file_others_can_open() {
+            let dir = TempDir::new("acl");
+            let path = write(&dir.0);
+            loosen(&path);
+            let err = read_runtime(&path).unwrap_err();
+            assert!(matches!(err, RuntimeError::Insecure { .. }), "{err}");
+            winacl::make_private(&path).unwrap();
+            read_runtime(&path).unwrap();
+        }
+
+        #[test]
+        fn refuses_a_directory_others_can_write() {
+            let dir = TempDir::new("dir");
+            let path = write(&dir.0);
+            loosen(&dir.0);
+            let err = read_runtime(&path).unwrap_err();
+            assert!(matches!(err, RuntimeError::Insecure { .. }), "{err}");
+            assert!(check_private_dir(&dir.0).is_err());
+            winacl::make_private(&dir.0).unwrap();
+            assert!(check_private_dir(&dir.0).is_ok());
+            read_runtime(&path).unwrap();
         }
     }
 }

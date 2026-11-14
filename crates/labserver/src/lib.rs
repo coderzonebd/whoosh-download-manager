@@ -325,8 +325,15 @@ impl LabServer {
 
 /// Binds the TLS listener and the HTTP/3 endpoint, as configured. With
 /// `h3_port` 0 the endpoint takes the TLS port's number; if the OS picked
-/// that port and the UDP port of the same number is taken, both are
+/// that port and the UDP port of the same number cannot be had, both are
 /// rebound.
+///
+/// "Cannot be had" is either taken (`AddrInUse`) or, on Windows, refused
+/// with `WSAEACCES` (`PermissionDenied`): Windows reserves blocks of ports
+/// per protocol (Hyper-V, WinNAT and Docker do, and the CI runners have
+/// such blocks; `netsh int ipv4 show excludedportrange protocol=udp` lists
+/// them). A TCP port the OS handed out can fall inside a UDP reservation,
+/// and binding UDP there fails with 10013 rather than "in use".
 async fn bind_tls_and_h3(
     bind: IpAddr,
     tls_port: Option<u16>,
@@ -349,8 +356,10 @@ async fn bind_tls_and_h3(
         match quic::endpoint(SocketAddr::new(bind, udp_port), tls.quic.clone()) {
             Ok(ep) => return Ok((listener, Some(ep))),
             Err(e)
-                if e.kind() == std::io::ErrorKind::AddrInUse
-                    && h3_port == 0
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied
+                ) && h3_port == 0
                     && tls_port == Some(0)
                     && attempts < 20 =>
             {

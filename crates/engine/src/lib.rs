@@ -27,8 +27,12 @@
 //!   restarts from zero once, then fails), fall back to one connection when
 //!   ranges are unsupported, flush before every journal commit, verify
 //!   segment tails on resume, verify checksums.
-//! - **Service**: queues, categories, a global speed limit, events,
-//!   settings.
+//! - **Service**: categories, a global speed limit, events, settings.
+//! - **Queues and the scheduler**: named queues with their own
+//!   `maxActive`, started and stopped at local clock times, speed-limit
+//!   windows, and after-done actions (sleep, shut down) behind
+//!   [`Clock`] and [`PowerControl`] so tests drive time and never touch
+//!   the machine.
 //!
 //! See the crate README for the policies in full and how to test and
 //! benchmark the engine.
@@ -36,19 +40,24 @@
 mod bus;
 mod category;
 mod checksum;
+mod clock;
 mod config;
 mod engine;
 mod limiter;
 mod names;
+mod power;
 mod run;
+mod schedule;
 mod segment;
 mod tuner;
 mod util;
 mod worker;
 
 pub use category::category_for;
+pub use clock::{Clock, LocalTime, SystemClock};
 pub use config::{EngineConfig, Tuning};
-pub use engine::{CONNECTIONS_KEY, Engine, EngineDeps, SETTINGS_KEY};
+pub use engine::{CONNECTIONS_KEY, Engine, EngineDeps, QUEUES_KEY, SETTINGS_KEY};
+pub use power::{PowerControl, SystemPower};
 
 /// Suffix of in-progress files: `<final name>.whoosh-part`.
 pub const PART_SUFFIX: &str = names::PART_SUFFIX;

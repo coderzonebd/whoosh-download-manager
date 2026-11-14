@@ -1,8 +1,9 @@
 //! Unauthenticated peers cannot make the daemon buffer or parse large
 //! messages (review finding: one 16 MiB `[0,0,…]` frame took the daemon from
 //! 13 MB to 292 MB). A test binary of its own so nothing else allocates
-//! while it measures.
-#![cfg(target_os = "linux")]
+//! while it measures. Linux reads the peak from `/proc`; Windows asks for
+//! the peak working set.
+#![cfg(any(target_os = "linux", windows))]
 
 mod common;
 
@@ -12,6 +13,7 @@ use common::*;
 use tokio::io::AsyncWriteExt;
 
 /// Peak resident memory of this process so far (KiB).
+#[cfg(target_os = "linux")]
 fn peak_rss_kib() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
@@ -21,6 +23,26 @@ fn peak_rss_kib() -> u64 {
                 .and_then(|l| l.split_whitespace().nth(1)?.parse().ok())
         })
         .unwrap_or(0)
+}
+
+/// Peak working set of this process so far (KiB): the Windows measure of
+/// resident memory.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn peak_rss_kib() -> u64 {
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    // SAFETY: an all-zero PROCESS_MEMORY_COUNTERS is a valid value.
+    let mut c: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    c.cb = size;
+    // SAFETY: the pseudo-handle of this process needs no closing; `c` is
+    // writable and exactly `size` bytes.
+    let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, size) };
+    assert!(ok != 0, "{}", std::io::Error::last_os_error());
+    c.PeakWorkingSetSize as u64 / 1024
 }
 
 /// Opens a WebSocket and streams one masked 16 MiB text frame of `[0,0,0,…`
@@ -54,7 +76,6 @@ async fn hostile(d: &whoosh_daemon::RunningDaemon) {
     .await;
 }
 
-#[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hostile_first_frames_do_not_grow_memory() {
     let dir = TempDir::new("memory");

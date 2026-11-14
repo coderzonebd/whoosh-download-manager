@@ -179,7 +179,12 @@ pub struct MemStorage {
     data: Mutex<Vec<u8>>,
     finished: Mutex<Option<PathBuf>>,
     files: Arc<Mutex<HashMap<PathBuf, Bytes>>>,
+    origins: Arc<Mutex<HashMap<PathBuf, Origin>>>,
+    origin: Mutex<Option<Origin>>,
 }
+
+/// What [`Storage::mark_origin`] recorded: the URL and the referrer.
+pub type Origin = (String, Option<String>);
 
 impl MemStorage {
     pub fn contents(&self) -> Bytes {
@@ -226,9 +231,22 @@ impl Storage for MemStorage {
         } else {
             files.insert(final_path.to_path_buf(), self.contents());
             *lock(&self.finished) = Some(final_path.to_path_buf());
+            // The mark moves with the file, as a stream or xattr does.
+            if let Some(origin) = lock(&self.origin).clone() {
+                lock(&self.origins).insert(final_path.to_path_buf(), origin);
+            }
             Ok(())
         };
         futures::future::ready(res).boxed()
+    }
+
+    fn mark_origin<'a>(
+        &'a self,
+        url: &'a str,
+        referrer: Option<&'a str>,
+    ) -> BoxFuture<'a, io::Result<()>> {
+        *lock(&self.origin) = Some((url.to_owned(), referrer.map(str::to_owned)));
+        futures::future::ready(Ok(())).boxed()
     }
 }
 
@@ -237,12 +255,19 @@ impl Storage for MemStorage {
 pub struct MemStorageProvider {
     open: Mutex<HashMap<PathBuf, Arc<MemStorage>>>,
     finished: Arc<Mutex<HashMap<PathBuf, Bytes>>>,
+    origins: Arc<Mutex<HashMap<PathBuf, Origin>>>,
 }
 
 impl MemStorageProvider {
     /// A finished file's contents, by final path.
     pub fn finished(&self, path: &Path) -> Option<Bytes> {
         lock(&self.finished).get(path).cloned()
+    }
+
+    /// The origin marked on a finished file ([`Storage::mark_origin`]), by
+    /// final path.
+    pub fn origin(&self, path: &Path) -> Option<Origin> {
+        lock(&self.origins).get(path).cloned()
     }
 
     /// An in-progress file, by path.
@@ -262,6 +287,7 @@ impl StorageProvider for MemStorageProvider {
             // New, or the previous file at this path finished: a new file.
             let s = Arc::new(MemStorage {
                 files: self.finished.clone(),
+                origins: self.origins.clone(),
                 ..MemStorage::default()
             });
             open.insert(path.to_path_buf(), s.clone());
@@ -284,6 +310,7 @@ impl StorageProvider for MemStorageProvider {
     fn remove<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
         lock(&self.open).remove(path);
         lock(&self.finished).remove(path);
+        lock(&self.origins).remove(path);
         futures::future::ready(Ok(())).boxed()
     }
 }

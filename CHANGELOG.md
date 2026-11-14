@@ -10,9 +10,49 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - Closing the window hides it to the tray and downloads go on. Quit leaves the daemon running unless the user chose otherwise.
 - System notifications when a download finishes or fails while the window is in the background.
 - Installers ship `whoosh-daemon` and `whoosh-nmhost` next to the app.
+- Named queues in the sidebar: create, rename and delete them, move downloads between queues (context menu, or the queue picker in the add dialog), start and stop a queue.
+- A schedule per queue: start and stop times on chosen days, and what to do when the queue is done (nothing, sleep, shut down), with a one-minute countdown and a Cancel button.
+- Speed limits by time of day in Settings.
+- A history view of finished and failed downloads, with search and a filter; entries can be cleared one by one or all at once, and the files stay on disk.
+- A native folder picker for the default folder and in the add dialog.
+- `whoosh://add?url=…` links open the add dialog with the address filled in.
+- Launch at login (off by default; it starts in the tray), and settings for "close to tray" and "Quit also stops downloads".
+- Against a daemon without the `queues` capability, the queue and scheduler controls are hidden and no error is shown.
+- Saving Settings no longer drops fields the screen does not show (such as `durability`).
+
+### Engine
+- Queues and the scheduler: named queues, each running up to its own `maxActive`, kept across restarts; queues started and stopped at local clock times on chosen days (DST, time-zone changes and a sleeping machine handled); speed-limit windows by time of day, also over midnight; after-done actions (sleep or shut down) announced with `event.queue.finished` and run 60 s later unless cancelled. The daemon now advertises the `queues` capability.
+
+### Browser extension
+- Self-healing links: when a captured download's address expires (`needs_refresh`), the extension retries it with fresh cookies, then finds the fresh link on the page it came from (an open tab or a muted background tab), or takes over a new browser download of the same file, and hands it to the daemon with `download.refreshUrl`. When unsure it asks in the popup (badge `!`). Can be turned off.
+- No more lost events after the native port's idle close: the port stays open while handed-over downloads run, and each time it opens the extension lists unfinished downloads to catch up.
+- Options page: capture on/off, private windows, minimum size, file types, excluded sites, Alt+click behaviour (browser / send to Whoosh / nothing), media detection, hover preconnect, self-healing.
+- Store build (`build:store`, `package:store`): never captures, detects, offers or repairs anything on YouTube and similar streaming sites; the GitHub build is unchanged.
+- Privacy policy (`apps/extension/PRIVACY.md`), store listing text, permission justifications and screenshots (`apps/extension/store/`).
+- The e2e suite runs on macOS too, and covers self-healing, catch-up and the options page.
+
+### Native messaging host
+- `--register --browser brave` also writes Chrome's location (macOS: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts`), which is where Brave looks; Brave never found the host before. Verified on macOS with Brave 1.99. `--unregister` removes each location once.
+
+### Windows
+- The engine, daemon and CLI are ported: the whole Rust test suite runs on Windows in CI and blocks a merge, like Linux and macOS ([docs/windows.md](docs/windows.md)).
+- The data directory, `runtime.json`, logs, journal and state database are owner-only on Windows too: created with an owner-only access control list, checked by every client the way the Unix 0700/0600 modes are, and tightened when loose.
+- `whoosh daemon autostart on|off|status`: start the daemon at logon, per user and without administrator rights, through the new windowless `whoosh-autostart` launcher. It sees, and can undo, Task Manager's "disabled" switch.
+- `whoosh get` and `whoosh watch` treat Ctrl-Break like Ctrl-C.
+- The journal's crash safety without a directory fsync is explained in the store (NTFS's ordered metadata log, `MOVEFILE_WRITE_THROUGH`).
+- The state database tells WAL files apart on Windows too (volume serial and file index), so its once-per-file directory step runs once, as on Unix.
+
+### Downloads
+- Finished downloads carry the mark of the web, so the OS warns before running them: a `Zone.Identifier` stream on Windows (`ZoneId=3`, with the referrer and the download URL, minus user info, query and fragment), `com.apple.quarantine` on macOS, `user.xdg.origin.url` on Linux.
 
 ### Internal
 - New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
+- `Storage::mark_origin` in `whoosh-core` (default: does nothing): the engine calls it before a download's final move.
+- labserver: HTTP/3 tests no longer fail on Windows when the TLS port's number falls in a reserved UDP port range (`WSAEACCES`).
+
+### Protocol
+- Queues and the scheduler ([PROTOCOL.md](docs/api/PROTOCOL.md#queues-and-the-scheduler)): `queue.list/create/update/rename/remove/start/stop/cancelAction`, `download.setQueue`, `event.queues`, `event.queue.finished`, and `Settings.speedSchedule`. The engine implements them (see Engine above); the mock client supports them too.
+- `download.add` with `queue: "main"` means the main queue.
 
 ## 0.1.0: Phase 1, the engine
 

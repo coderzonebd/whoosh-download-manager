@@ -737,6 +737,12 @@ async fn runtime_file_contents_and_permissions() {
         assert_eq!(mode(&data.join("runtime.json")), 0o600);
         assert_eq!(mode(&data), 0o700, "a new data dir is owner-only");
     }
+    #[cfg(windows)]
+    {
+        use whoosh_proto::runtime::{check_private_dir, check_private_file};
+        check_private_file(&data.join("runtime.json")).unwrap();
+        check_private_dir(&data).expect("a new data dir is owner-only");
+    }
     // Every start gets a new token.
     d.shutdown().await;
     let d2 = start(ScriptedService::new(), &data).await;
@@ -1094,4 +1100,295 @@ async fn the_data_dir_is_made_private_or_refused() {
         }
         other => panic!("a symlinked data dir was accepted: {other:?}"),
     }
+}
+
+/// Windows: the same with access control lists. "Others may write" is
+/// Everyone granted modify access; a junction stands in for the symlink
+/// (it needs no privilege to create).
+#[cfg(windows)]
+#[tokio::test]
+async fn the_data_dir_is_made_private_or_refused() {
+    use whoosh_proto::runtime::check_private_dir;
+    let base = TempDir::new("private");
+    let data = base.path().join("data");
+    std::fs::create_dir(&data).unwrap();
+    let out = std::process::Command::new("icacls")
+        .arg(&data)
+        .args(["/grant", "*S-1-1-0:(OI)(CI)M"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(check_private_dir(&data).is_err());
+    let d = start(ScriptedService::new(), &data).await;
+    check_private_dir(&data).expect("tightened");
+    d.shutdown().await;
+
+    let link = base.path().join("link");
+    let out = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&data)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    match whoosh_daemon::serve(ScriptedService::new(), config(&link)).await {
+        Err(ServeError::InsecureDataDir(_, reason)) => {
+            assert!(reason.contains("junction"), "{reason}")
+        }
+        other => panic!("a data dir behind a junction was accepted: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn queue_methods_are_unsupported_until_the_service_has_them() {
+    let dir = TempDir::new("queues");
+    let d = start(ScriptedService::new(), dir.path()).await;
+    let mut ws = authed(&d).await;
+    for (id, (method, params)) in [
+        ("queue.list", json!({})),
+        ("queue.create", json!({"name": "Night"})),
+        ("queue.update", json!({"name": "Night", "maxActive": 2})),
+        ("queue.rename", json!({"name": "Night", "newName": "Late"})),
+        ("queue.remove", json!({"name": "Late"})),
+        ("queue.start", json!({"name": "Late"})),
+        ("queue.stop", json!({"name": "Late"})),
+        ("queue.cancelAction", json!({"name": "Late"})),
+        ("download.setQueue", json!({"ids": ["x"], "queue": "Late"})),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let reply = call(&mut ws, id as i64 + 1, method, params).await;
+        assert_eq!(reply["error"]["code"], -32006, "{method}: {reply}");
+    }
+    // Malformed params are still invalid params, not "unsupported".
+    let reply = call(&mut ws, 99, "queue.create", json!({"maxActive": 1})).await;
+    assert_eq!(reply["error"]["code"], -32602);
+    d.shutdown().await;
+}
+
+// ------------------------------------------- queues with the real engine
+
+/// whoosh-engine over whoosh-net and whoosh-store, its state in `dir`.
+async fn real_engine(dir: &std::path::Path) -> Arc<whoosh_engine::Engine> {
+    std::fs::create_dir_all(dir).unwrap();
+    let state = whoosh_store::SqliteStateStore::open(dir.join("state.db"))
+        .await
+        .unwrap();
+    let journal = whoosh_store::FileJournal::open(dir.join("journal")).unwrap();
+    whoosh_engine::Engine::start(
+        whoosh_engine::EngineDeps {
+            sources: whoosh_net::HttpSourceFactory::new(whoosh_net::NetConfig::default()),
+            storage: Arc::new(whoosh_store::FileStorageProvider::new(
+                whoosh_store::StorageOptions::default(),
+            )),
+            journal: Arc::new(journal),
+            state: Arc::new(state),
+        },
+        whoosh_engine::EngineConfig::new(dir.join("downloads").to_string_lossy()),
+    )
+    .await
+    .unwrap()
+}
+
+/// Calls `method` and reads until its reply and an `event` notification
+/// (in either order) have arrived; returns both, plus every notification.
+async fn call_and_event(
+    ws: &mut Ws,
+    id: i64,
+    method: &str,
+    params: Value,
+    event: &str,
+) -> (Value, Value, Vec<Value>) {
+    send(
+        ws,
+        &json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }),
+    )
+    .await;
+    let (mut reply, mut ev, mut all) = (None, None, Vec::new());
+    while reply.is_none() || ev.is_none() {
+        let msg = next_json(ws).await;
+        match msg.get("method").and_then(Value::as_str) {
+            None => {
+                assert_eq!(msg["id"], id, "{msg}");
+                reply = Some(msg);
+            }
+            Some(m) => {
+                if m == event && ev.is_none() {
+                    ev = Some(msg["params"].clone());
+                }
+                all.push(msg);
+            }
+        }
+    }
+    (reply.unwrap(), ev.unwrap(), all)
+}
+
+#[tokio::test]
+async fn queue_methods_work_through_the_daemon_with_the_engine() {
+    let dir = TempDir::new("engine-queues");
+    let engine_dir = dir.path().join("engine");
+    let engine = real_engine(&engine_dir).await;
+    let d = start(engine, dir.path()).await;
+    let mut ws = ws(&d).await;
+    let hello = say_hello(&mut ws, &d).await;
+    let caps = hello["result"]["capabilities"].as_array().unwrap();
+    assert!(caps.contains(&json!("queues")), "{hello}");
+
+    let reply = call(&mut ws, 1, "queue.list", json!({})).await;
+    assert_eq!(
+        reply["result"],
+        json!([{"name": "main", "maxActive": 3, "running": true}])
+    );
+
+    // Create: a queue with a start time waits for it.
+    let night = json!({"name": "Night", "maxActive": 2,
+                       "schedule": {"start": {"at": "01:00"}, "afterDone": "sleep"}});
+    let (reply, ev, _) = call_and_event(&mut ws, 2, "queue.create", night, "event.queues").await;
+    assert_eq!(
+        reply["result"],
+        json!({"name": "Night", "maxActive": 2, "running": false,
+               "schedule": {"start": {"at": "01:00"}, "afterDone": "sleep"}})
+    );
+    assert_eq!(ev[1]["name"], "Night", "{ev}");
+
+    let reply = call(
+        &mut ws,
+        3,
+        "download.add",
+        json!({"url": "https://example.com/files/a.iso", "start": false, "queue": "Night"}),
+    )
+    .await;
+    let id = reply["result"]["id"].as_str().unwrap().to_owned();
+
+    // Rename: the download follows.
+    let (reply, ev, all) = call_and_event(
+        &mut ws,
+        4,
+        "queue.rename",
+        json!({"name": "Night", "newName": "Late"}),
+        "event.queues",
+    )
+    .await;
+    assert_eq!(reply["result"]["name"], "Late");
+    assert_eq!(ev[1]["name"], "Late");
+    assert!(
+        all.iter()
+            .any(|m| m["method"] == "event.download.updated" && m["params"]["queue"] == "Late"),
+        "{all:?}"
+    );
+
+    // Update replaces the schedule (absent = none), start and stop.
+    let (reply, _, _) = call_and_event(
+        &mut ws,
+        5,
+        "queue.update",
+        json!({"name": "Late", "maxActive": 4}),
+        "event.queues",
+    )
+    .await;
+    assert_eq!(
+        reply["result"],
+        json!({"name": "Late", "maxActive": 4, "running": false})
+    );
+    let (reply, ev, _) = call_and_event(
+        &mut ws,
+        6,
+        "queue.start",
+        json!({"name": "Late"}),
+        "event.queues",
+    )
+    .await;
+    assert_eq!(reply["result"], Value::Null);
+    assert_eq!(ev[1]["running"], true);
+    let (_, ev, _) = call_and_event(
+        &mut ws,
+        7,
+        "queue.stop",
+        json!({"name": "Late"}),
+        "event.queues",
+    )
+    .await;
+    assert_eq!(ev[1]["running"], false);
+    let reply = call(&mut ws, 8, "queue.cancelAction", json!({"name": "Late"})).await;
+    assert_eq!(reply["result"], Value::Null, "{reply}");
+
+    // download.setQueue to the main queue and back.
+    let reply = call(&mut ws, 9, "download.setQueue", json!({"ids": [id]})).await;
+    assert_eq!(reply["result"], Value::Null, "{reply}");
+    let reply = call(
+        &mut ws,
+        10,
+        "download.setQueue",
+        json!({"ids": [id], "queue": "Late"}),
+    )
+    .await;
+    assert_eq!(reply["result"], Value::Null, "{reply}");
+
+    // The main queue's maxActive is the setting.
+    let (reply, _, _) = call_and_event(
+        &mut ws,
+        11,
+        "queue.update",
+        json!({"name": "main", "maxActive": 5}),
+        "event.settings",
+    )
+    .await;
+    assert_eq!(reply["result"]["maxActive"], 5);
+    let reply = call(&mut ws, 12, "settings.get", json!({})).await;
+    assert_eq!(reply["result"]["maxActiveDownloads"], 5);
+
+    // Errors.
+    for (n, (method, params, code)) in [
+        ("queue.stop", json!({"name": "main"}), -32602),
+        ("queue.remove", json!({"name": "main"}), -32602),
+        ("queue.remove", json!({"name": "Nope"}), -32002),
+        ("queue.create", json!({"name": "Late"}), -32602),
+        (
+            "queue.create",
+            json!({"name": "Bad", "maxActive": 0}),
+            -32602,
+        ),
+        ("queue.create", json!({"maxActive": 1}), -32602),
+        (
+            "download.setQueue",
+            json!({"ids": [id], "queue": "Nope"}),
+            -32002,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let reply = call(&mut ws, 20 + n as i64, method, params).await;
+        assert_eq!(reply["error"]["code"], code, "{method}: {reply}");
+    }
+    d.shutdown().await;
+
+    // Everything survives a restart.
+    let engine = real_engine(&engine_dir).await;
+    let d = start(engine, dir.path()).await;
+    let mut ws = authed(&d).await;
+    let reply = call(&mut ws, 1, "queue.list", json!({})).await;
+    assert_eq!(
+        reply["result"],
+        json!([{"name": "main", "maxActive": 5, "running": true},
+               {"name": "Late", "maxActive": 4, "running": false}])
+    );
+    let reply = call(&mut ws, 2, "download.get", json!({"id": id})).await;
+    assert_eq!(reply["result"]["queue"], "Late", "{reply}");
+
+    // Remove: the download goes to the main queue.
+    let (reply, ev, _) = call_and_event(
+        &mut ws,
+        3,
+        "queue.remove",
+        json!({"name": "Late"}),
+        "event.queues",
+    )
+    .await;
+    assert_eq!(reply["result"], Value::Null);
+    assert_eq!(ev.as_array().unwrap().len(), 1);
+    let reply = call(&mut ws, 4, "download.get", json!({"id": id})).await;
+    assert!(reply["result"].get("queue").is_none(), "{reply}");
+    d.shutdown().await;
 }

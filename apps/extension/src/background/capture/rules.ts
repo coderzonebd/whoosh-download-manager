@@ -43,7 +43,9 @@ export type SkipReason =
   | "post"
   | "excluded-site"
   | "file-type"
-  | "too-small";
+  | "too-small"
+  /** Store build: a site the store extension stays away from (MASTER-PLAN §6). */
+  | "store-policy";
 
 export type CaptureDecision = { capture: true } | { capture: false; reason: SkipReason };
 
@@ -52,6 +54,14 @@ export interface RuleContext {
   bypass: boolean;
   /** The download came from a non-GET request we cannot replay faithfully. */
   nonGetRequest: boolean;
+  /**
+   * The user asked for this one to go to Whoosh (Alt+click with the
+   * "send to Whoosh" setting): capture on/off, site, type and size rules are
+   * skipped; the safety rules still apply.
+   */
+  force?: boolean;
+  /** Store build: the download, its link or its page is on a blocked site. */
+  blocked?: boolean;
 }
 
 /**
@@ -78,17 +88,30 @@ export function matchesFileTypes(c: Pick<CandidateDownload, "filename" | "url" |
   return type !== "" && types.includes(type);
 }
 
+/**
+ * The rules no user choice overrides: what Whoosh cannot repeat faithfully,
+ * what the browser must keep showing a warning for, and the store policy.
+ * Also used before a browser download is taken over to refresh an expired one.
+ */
+export function safetySkip(c: CandidateDownload, settings: Settings, ctx: RuleContext): SkipReason | undefined {
+  if (!isHttpUrl(c.url)) return "not-http";
+  if (ctx.blocked) return "store-policy";
+  if (c.incognito && !settings.captureIncognito) return "incognito";
+  if (c.byExtensionId) return "extension";
+  if (c.danger !== undefined && !HANDOFF_DANGER.has(c.danger)) return "dangerous";
+  if (c.state !== undefined && c.state !== "in_progress") return "not-in-progress";
+  if (ctx.nonGetRequest) return "post";
+  return undefined;
+}
+
 export function evaluateCapture(c: CandidateDownload, settings: Settings, ctx: RuleContext): CaptureDecision {
   const skip = (reason: SkipReason): CaptureDecision => ({ capture: false, reason });
 
-  if (!settings.captureEnabled) return skip("disabled");
+  if (!settings.captureEnabled && !ctx.force) return skip("disabled");
   if (ctx.bypass) return skip("bypassed");
-  if (!isHttpUrl(c.url)) return skip("not-http");
-  if (c.incognito && !settings.captureIncognito) return skip("incognito");
-  if (c.byExtensionId) return skip("extension");
-  if (c.danger !== undefined && !HANDOFF_DANGER.has(c.danger)) return skip("dangerous");
-  if (c.state !== undefined && c.state !== "in_progress") return skip("not-in-progress");
-  if (ctx.nonGetRequest) return skip("post");
+  const unsafe = safetySkip(c, settings, ctx);
+  if (unsafe) return skip(unsafe);
+  if (ctx.force) return { capture: true };
   if (isSiteExcluded([c.url, c.originalUrl, c.referrer], settings.excludedSites)) return skip("excluded-site");
   if (!matchesFileTypes(c, settings.fileTypes)) return skip("file-type");
   if (settings.minSizeBytes > 0 && c.totalBytes !== undefined && c.totalBytes > 0 && c.totalBytes < settings.minSizeBytes) {

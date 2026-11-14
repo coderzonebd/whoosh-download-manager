@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Content script (every http(s) page and frame):
-//  * Alt+click → tell the background to leave the next download to the browser.
+//  * Alt+click → tell the background to leave the next download to the browser
+//    (or, per the options, to send it to Whoosh whatever the rules say).
+//  * Clicking a download-looking link → its text, for self-healing.
 //  * Hovering a download-looking link for ~150 ms → ask for a preconnect.
 //  * Answer "collect links" for the context menus.
 
@@ -37,11 +39,22 @@ function start(api: Api): void {
     }
   };
 
-  // Alt+click: pointerdown comes before the navigation that starts the download.
+  // pointerdown comes before the navigation that starts the download.
   window.addEventListener(
     "pointerdown",
     (event) => {
-      if (event.altKey && event.button === 0 && settings.captureEnabled) send({ type: "whoosh/bypass-next" });
+      if (event.button !== 0) return;
+      if (event.altKey) {
+        // Alt+click: the browser keeps it, or Whoosh takes it, as set in the options.
+        if (settings.altClick === "browser" && settings.captureEnabled) send({ type: "whoosh/bypass-next" });
+        else if (settings.altClick === "whoosh") send({ type: "whoosh/force-next" });
+      }
+      // The link's text lets self-healing find the same link again later.
+      const link = linkFromTarget(event.target);
+      if (link && looksLikeDownloadLink(link.href, settings.fileTypes, link.hasAttribute("download"))) {
+        const text = (link.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+        if (text) send({ type: "whoosh/link-click", url: link.href, text });
+      }
     },
     { capture: true, passive: true },
   );

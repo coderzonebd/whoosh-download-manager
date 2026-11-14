@@ -1,10 +1,10 @@
 //! The platform layer: positional I/O, preallocation, no-replace rename,
-//! directory fsync and error mapping.
+//! directory fsync, file identity and error mapping.
 //!
 //! This is the only module allowed to use `unsafe` (the workspace denies
 //! `unsafe_code`). Linux and macOS need none: `rustix` and `nix` wrap the
-//! calls safely. Windows needs two blocks, each with a `// SAFETY:` comment
-//! and listed in the crate README.
+//! calls safely. Windows needs a few blocks, each with a `// SAFETY:`
+//! comment and listed in the crate README.
 #![allow(unsafe_code)]
 
 use std::fs::File;
@@ -31,6 +31,8 @@ pub(crate) fn map_err(e: io::Error) -> io::Error {
 /// Write all of `buf` at `offset` without moving a shared cursor (Unix) or
 /// from the single thread that owns the handle (Windows).
 pub(crate) fn write_all_at(file: &File, buf: &[u8], offset: u64) -> io::Result<()> {
+    #[cfg(test)]
+    faults::check(file, faults::Op::Write)?;
     #[cfg(unix)]
     {
         std::os::unix::fs::FileExt::write_all_at(file, buf, offset)
@@ -62,6 +64,8 @@ pub(crate) fn write_vectored_at(
     bufs: &mut [IoSlice<'_>],
     offset: u64,
 ) -> io::Result<()> {
+    #[cfg(test)]
+    faults::check(file, faults::Op::Write)?;
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         const IOV_MAX: usize = 1024;
@@ -109,6 +113,101 @@ pub(crate) fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<us
         }
     }
     Ok(done)
+}
+
+/// `fdatasync` (`FlushFileBuffers` on Windows).
+pub(crate) fn sync_data(file: &File) -> io::Result<()> {
+    #[cfg(test)]
+    faults::check(file, faults::Op::Sync)?;
+    file.sync_data()
+}
+
+/// Test hook: make writes or syncs of one file fail with a given OS error,
+/// on every OS (`/dev/full` and `/dev/null` do that only on Linux). Files
+/// are told apart by [`file_id`], so tests running side by side do not
+/// see each other's faults.
+#[cfg(test)]
+pub(crate) mod faults {
+    use std::fs::File;
+    use std::io;
+    use std::sync::Mutex;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum Op {
+        Write,
+        Sync,
+    }
+
+    /// (file id, operation, raw OS error).
+    type Fault = ((u64, u64), Op, i32);
+
+    static FAULTS: Mutex<Vec<Fault>> = Mutex::new(Vec::new());
+
+    fn faults() -> std::sync::MutexGuard<'static, Vec<Fault>> {
+        FAULTS.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// From now on, `op` on the file at `path` fails with the raw OS
+    /// error `code`.
+    pub(crate) fn inject(path: &std::path::Path, op: Op, code: i32) {
+        let id = super::file_id(&File::open(path).unwrap()).unwrap();
+        faults().push((id, op, code));
+    }
+
+    /// Removes every fault of the file at `path`.
+    pub(crate) fn clear(path: &std::path::Path) {
+        let id = super::file_id(&File::open(path).unwrap()).unwrap();
+        faults().retain(|(i, _, _)| *i != id);
+    }
+
+    pub(super) fn check(file: &File, op: Op) -> io::Result<()> {
+        let faults = faults();
+        if faults.is_empty() {
+            return Ok(());
+        }
+        let Some(id) = super::file_id(file) else {
+            return Ok(());
+        };
+        match faults.iter().find(|(i, o, _)| *i == id && *o == op) {
+            Some((_, _, code)) => Err(io::Error::from_raw_os_error(*code)),
+            None => Ok(()),
+        }
+    }
+}
+
+// ------------------------------------------------------------ identity
+
+/// What identifies `file` on its filesystem: (device, inode) on Unix,
+/// (volume serial number, file index) on Windows. `None` if unknown.
+pub(crate) fn file_id(file: &File) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        file.metadata().ok().map(|m| (m.dev(), m.ino()))
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+        // SAFETY: an all-zero BY_HANDLE_FILE_INFORMATION is a valid value
+        // (plain integers and FILETIMEs).
+        let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: `file` is an open handle borrowed for the whole call, and
+        // `info` is a writable BY_HANDLE_FILE_INFORMATION on our stack that
+        // outlives it; the call does not retain the pointer.
+        let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &raw mut info) };
+        (ok != 0).then(|| {
+            let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+            (u64::from(info.dwVolumeSerialNumber), index)
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = file;
+        None
+    }
 }
 
 // ------------------------------------------------------------ page cache
@@ -382,9 +481,49 @@ fn wide(p: &Path) -> io::Result<Vec<u16>> {
 
 // ------------------------------------------------------------ directories
 
-/// Make a directory entry change (create, rename) durable. A no-op on
-/// Windows, which has no portable directory fsync; `MoveFileExW` is called
-/// with `MOVEFILE_WRITE_THROUGH` there instead.
+/// Make a directory entry change (create, rename) durable.
+///
+/// # Windows: a no-op, and why that is safe
+///
+/// Windows has no directory fsync that works for unprivileged handles on
+/// every filesystem, and none is needed for what this crate relies on.
+/// Every caller syncs a directory for one of two reasons, and both are met
+/// another way:
+///
+/// 1. **A file created in it** (a journal file, the database, its WAL, a
+///    part file, and the directories `create_dirs` made above them) must
+///    still be there after a power cut once its first sync returns. On
+///    NTFS, creating a file and adding its name to the directory are
+///    metadata changes written to the volume's log (`$LogFile`) before
+///    they are applied, and the log is one ordered stream: making any
+///    record durable makes every earlier record durable too. Each of those
+///    files is created, then grown by a write (a journal file from zero to
+///    its first slot, the WAL by its first frames, a part file by
+///    preallocation), and then `FlushFileBuffers`ed (`sync_data`). For that
+///    flush to keep its promise (the data readable after a crash) the new
+///    size must be durable, and the size lives in the log after the
+///    creation records, so the flush commits the log past them. On FAT and
+///    exFAT the size is stored in the file's directory entry itself, so
+///    flushing the file writes that entry. A later process's first commit
+///    may not grow its journal file, but by then an earlier commit did, and
+///    its flush already made the name durable (a journal file is only
+///    written by commits, each flushed before the next one starts).
+/// 2. **A rename into it** (`finish`, a corrupt database moved aside) must
+///    be durable once it returns. [`rename_noreplace`] passes
+///    `MOVEFILE_WRITE_THROUGH`, documented as "does not return until the
+///    file is actually moved on the disk"; and as in (1), committing the
+///    rename's log record also commits every earlier one on that volume,
+///    including directories created for the move.
+///
+/// What this does not cover: power-loss behaviour of filesystems without
+/// such ordering (ReFS keeps metadata copy-on-write, which we expect to
+/// behave the same but have not verified); the order of changes on two
+/// different volumes, which no caller depends on; and one corner of (1): a
+/// WAL file that a crashed process created and never synced, which SQLite
+/// then overwrites in place without growing it. There the argument rests on
+/// `FlushFileBuffers` committing the whole NTFS log, not just the records
+/// of the file's size, which we expect but cannot show without a power-cut
+/// test rig.
 pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
@@ -412,9 +551,12 @@ pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
 /// Who may read the directories [`create_dirs`] makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DirMode {
-    /// The process's default (0777 minus umask on Unix).
+    /// The process's default (0777 minus umask on Unix; the inherited ACL
+    /// on Windows).
     Default,
-    /// Owner-only (0700 on Unix).
+    /// Owner-only: 0700 on Unix; on Windows a protected DACL for the user,
+    /// `SYSTEM` and `Administrators`, which files created inside inherit
+    /// (see `whoosh_proto::winacl`).
     Private,
 }
 
@@ -430,14 +572,23 @@ pub(crate) fn create_dirs(dir: &Path, mode: DirMode) -> io::Result<Vec<PathBuf>>
     if missing.is_empty() {
         return Ok(Vec::new());
     }
-    let mut b = std::fs::DirBuilder::new();
-    b.recursive(true);
-    #[cfg(unix)]
+    #[cfg(windows)]
     if mode == DirMode::Private {
-        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        whoosh_proto::winacl::create_private_dir(dir)?;
     }
-    let _ = mode;
-    b.create(dir)?;
+    #[cfg(windows)]
+    let done = mode == DirMode::Private;
+    #[cfg(not(windows))]
+    let done = false;
+    if !done {
+        let mut b = std::fs::DirBuilder::new();
+        b.recursive(true);
+        #[cfg(unix)]
+        if mode == DirMode::Private {
+            std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        }
+        b.create(dir)?;
+    }
     let mut changed: Vec<PathBuf> = missing.iter().map(|d| parent_or_cwd(d)).collect();
     changed.dedup();
     Ok(changed)
@@ -508,7 +659,9 @@ pub(crate) fn open_nofollow(opts: &mut std::fs::OpenOptions, path: &Path) -> io:
     }
 }
 
-/// Open options for a file only the user may read (0600 on Unix).
+/// Open options for a file only the user may read: 0600 on Unix. On
+/// Windows the file inherits the ACL of its directory, which
+/// [`create_dirs`] with [`DirMode::Private`] makes owner-only.
 pub(crate) fn private_file_options() -> std::fs::OpenOptions {
     #[allow(unused_mut)]
     let mut o = std::fs::OpenOptions::new();

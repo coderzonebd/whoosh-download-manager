@@ -22,10 +22,13 @@ import {
   type MethodMap,
   type ProbeResult,
   type ProgressItem,
+  type Queue,
+  type QueueConfig,
   type SegmentInfo,
   type Settings,
   type Stats,
   type WhooshClient,
+  MAIN_QUEUE,
 } from "./types";
 
 export interface MockClientOptions {
@@ -199,6 +202,9 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
   const rng = mulberry32(options.seed ?? 0x5eed);
 
   const settings: Settings = { ...DEFAULT_SETTINGS, ...options.settings };
+  // Queues and schedules are stored and reported, not enforced: the mock
+  // runs every download as one main queue.
+  const queues = new Map<string, Queue>();
   const sims = new Map<string, Sim>();
   const handlers = new Map<keyof EventMap, Set<(p: never) => void>>();
   let nextId = 1;
@@ -528,6 +534,10 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
     const sim = addSim(seed, wallNow());
     sim.d.directory = directory;
     if (params.category) sim.d.category = params.category;
+    if (params.queue && params.queue !== MAIN_QUEUE) {
+      if (!queues.has(params.queue)) throw invalidParams(`no queue named "${params.queue}"`);
+      sim.d.queue = params.queue;
+    }
     emit("event.download.added", summary(sim.d));
     return sim.d.id;
   }
@@ -550,7 +560,70 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       theme: v.theme as Settings["theme"],
     };
     if (v.speedLimitBps !== undefined) out.speedLimitBps = v.speedLimitBps;
+    if (v.durability !== undefined) out.durability = v.durability;
+    if (v.speedSchedule !== undefined) {
+      for (const w of v.speedSchedule) {
+        if (!isClockTime(w.from) || !isClockTime(w.to)) throw invalidParams("speed window times must be HH:MM");
+        if (!intIn(w.limitBps, 1, Number.MAX_SAFE_INTEGER)) throw invalidParams("speed window limitBps must be a positive integer");
+        checkDays(w.days);
+      }
+      if (v.speedSchedule.length > 0) out.speedSchedule = structuredClone(v.speedSchedule);
+    }
     return out;
+  }
+
+  function isClockTime(s: unknown): boolean {
+    const m = typeof s === "string" ? /^(\d\d):(\d\d)$/.exec(s) : null;
+    return m !== null && Number(m[1]) < 24 && Number(m[2]) < 60;
+  }
+
+  function checkDays(days: unknown): void {
+    if (days === undefined) return;
+    if (!Array.isArray(days) || days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw invalidParams("days are 0 (Sunday) to 6");
+  }
+
+  function mainQueue(): Queue {
+    return { name: MAIN_QUEUE, maxActive: settings.maxActiveDownloads, running: true };
+  }
+
+  function queueList(): Queue[] {
+    const named = [...queues.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return [mainQueue(), ...named].map((q) => structuredClone(q));
+  }
+
+  function namedQueue(name: unknown): Queue {
+    if (name === MAIN_QUEUE) throw invalidParams("the main queue cannot be changed this way");
+    const q = typeof name === "string" ? queues.get(name) : undefined;
+    if (!q) throw new WhooshRpcError(ErrorCode.NotFound, `no queue named "${String(name)}"`);
+    return q;
+  }
+
+  function checkQueueName(name: unknown): string {
+    if (typeof name !== "string" || name.trim() === "" || [...name].length > 64 || /\p{Cc}/u.test(name)) {
+      throw invalidParams("a queue name is 1–64 characters, without control characters");
+    }
+    return name;
+  }
+
+  function applyQueueConfig(q: Queue, c: QueueConfig): void {
+    if (c.maxActive !== undefined && !(Number.isInteger(c.maxActive) && c.maxActive >= 1 && c.maxActive <= 64)) {
+      throw invalidParams("maxActive must be 1–64");
+    }
+    const s = c.schedule;
+    if (s) {
+      for (const t of [s.start, s.stop]) {
+        if (t && !isClockTime(t.at)) throw invalidParams("schedule times must be HH:MM");
+        checkDays(t?.days);
+      }
+      if (s.afterDone !== undefined && !["none", "sleep", "shutdown"].includes(s.afterDone)) throw invalidParams("afterDone must be none, sleep or shutdown");
+    }
+    q.maxActive = c.maxActive ?? q.maxActive;
+    if (s) q.schedule = structuredClone(s);
+    else delete q.schedule;
+  }
+
+  function queuesChanged(): void {
+    emit("event.queues", queueList());
   }
 
   const handlersByMethod: { [M in keyof MethodMap]: (params: MethodMap[M]["params"]) => MethodMap[M]["result"] } = {
@@ -559,7 +632,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
         throw new WhooshRpcError(ErrorCode.Unsupported, `protocol ${String(p?.protocol)} not supported`);
       }
       // The in-process mock has no transport to authenticate, so no real proof.
-      return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock"], proof: "" };
+      return { daemonVersion: MOCK_DAEMON_VERSION, protocol: PROTOCOL_VERSION, capabilities: ["http", "mock", "queues"], proof: "" };
     },
     "daemon.shutdown": () => null,
     "download.probe": (p) => probe(p?.url),
@@ -625,10 +698,85 @@ export function createMockClient(options: MockClientOptions = {}): MockWhooshCli
       return null;
     },
     "stats.get": () => stats(),
+    "download.setQueue": (p) => {
+      const targets = idsOf(p);
+      const queue = p?.queue && p.queue !== MAIN_QUEUE ? namedQueue(p.queue).name : undefined;
+      for (const sim of targets) {
+        if (queue) sim.d.queue = queue;
+        else delete sim.d.queue;
+        emit("event.download.updated", summary(sim.d));
+      }
+      return null;
+    },
+    "queue.list": () => queueList(),
+    "queue.create": (p) => {
+      const name = checkQueueName(p?.name);
+      if (name === MAIN_QUEUE || queues.has(name)) throw invalidParams(`a queue named "${name}" already exists`);
+      const q: Queue = { name, maxActive: 1, running: true };
+      applyQueueConfig(q, p);
+      queues.set(name, q);
+      queuesChanged();
+      return structuredClone(q);
+    },
+    "queue.update": (p) => {
+      if (p?.name === MAIN_QUEUE) {
+        if (p.schedule) throw invalidParams("the main queue has no schedule; use a named queue");
+        if (p.maxActive !== undefined) handlersByMethod["settings.set"]({ ...settings, maxActiveDownloads: p.maxActive });
+        queuesChanged();
+        return mainQueue();
+      }
+      const q = namedQueue(p?.name);
+      applyQueueConfig(q, p);
+      queuesChanged();
+      return structuredClone(q);
+    },
+    "queue.rename": (p) => {
+      const q = namedQueue(p?.name);
+      const to = checkQueueName(p?.newName);
+      if (to === MAIN_QUEUE || queues.has(to)) throw invalidParams(`a queue named "${to}" already exists`);
+      queues.delete(q.name);
+      const from = q.name;
+      q.name = to;
+      queues.set(to, q);
+      for (const sim of sims.values()) {
+        if (sim.d.queue !== from) continue;
+        sim.d.queue = to;
+        emit("event.download.updated", summary(sim.d));
+      }
+      queuesChanged();
+      return structuredClone(q);
+    },
+    "queue.remove": (p) => {
+      const q = namedQueue(p?.name);
+      queues.delete(q.name);
+      for (const sim of sims.values()) {
+        if (sim.d.queue !== q.name) continue;
+        delete sim.d.queue;
+        emit("event.download.updated", summary(sim.d));
+      }
+      queuesChanged();
+      return null;
+    },
+    "queue.start": (p) => {
+      if (p?.name !== MAIN_QUEUE) namedQueue(p?.name).running = true;
+      queuesChanged();
+      return null;
+    },
+    "queue.stop": (p) => {
+      if (p?.name === MAIN_QUEUE) throw invalidParams("the main queue cannot be stopped; pause its downloads");
+      namedQueue(p?.name).running = false;
+      queuesChanged();
+      return null;
+    },
+    "queue.cancelAction": (p) => {
+      if (p?.name !== MAIN_QUEUE) namedQueue(p?.name);
+      return null;
+    },
     "settings.get": () => ({ ...settings }),
     "settings.set": (p) => {
       const next = validateSettings(p);
       if (next.speedLimitBps === undefined) delete settings.speedLimitBps;
+      if (next.speedSchedule === undefined) delete settings.speedSchedule;
       Object.assign(settings, next);
       return { ...settings };
     },

@@ -44,5 +44,12 @@ tracing-appender = "0.2"
 [target."cfg(unix)".dependencies]
 rustix = { version = "1", default-features = false, features = ["std", "process"] }
 
+[target."cfg(windows)".dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_System_Console",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }
+
 [lints]
 workspace = true

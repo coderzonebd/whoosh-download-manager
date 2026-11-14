@@ -19,7 +19,7 @@ Open-source, crash-proof, and measured against every competitor in public.
 
 ---
 
-> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux and macOS and can be built from source; the Windows port comes with Phase 2. The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
+> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux, macOS and Windows and can be built from source (on Windows the whole test suite runs in CI; see [docs/windows.md](docs/windows.md)). The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
 
 ## Measured, not claimed
 
@@ -130,7 +130,6 @@ Setup, rules and commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Please repo
 Whoosh is free and has no ads or telemetry. If it saves you time, you can help keep it going:
 
 - [GitHub Sponsors](https://github.com/sponsors/coderzonebd)
-- [Open Collective](https://opencollective.com/coderzonebd): the budget and every expense are public
 - [Buy Me a Coffee](https://buymeacoffee.com/devrkb21)
 
 Starring the repository, reporting bugs and translating help too.

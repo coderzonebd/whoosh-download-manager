@@ -32,7 +32,7 @@ pub async fn get(ctx: &Ctx, url: String, opts: &DownloadOpts) -> Result<u8> {
     let mut bar = Bar::new(!ctx.json && std::io::stderr().is_terminal());
     let mut summary = fetch(&client, &id).await?.ok_or_else(|| removed(&id))?;
 
-    let ctrl_c = tokio::signal::ctrl_c();
+    let ctrl_c = crate::interrupt::interrupted();
     tokio::pin!(ctrl_c);
     let mut poll = tokio::time::interval_at(tokio::time::Instant::now() + POLL, POLL);
     let outcome = loop {

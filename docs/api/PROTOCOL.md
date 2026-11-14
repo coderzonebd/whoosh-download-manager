@@ -69,7 +69,7 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | `session.hello` | `HelloParams { token, nonce, protocol, client: { name, version } }` | `HelloResult { daemonVersion, protocol, capabilities[], proof }` |
 | `daemon.shutdown` | — | `null`, then the daemon stops: it pauses transfers, saves state, closes every connection with `1001` and exits. Used by `whoosh daemon stop`, and by the desktop app's Quit when the user chose to stop the daemon with the app |
 | `download.probe` | `ProbeParams { url, request? }` | `ProbeResult { totalBytes?, resumable, filename, contentType?, finalUrl }` |
-| `download.add` | `AddParams { url, request?, filename?, directory?, category?, start = true, mirrors[], checksum?, connections?, queue? }` | `AddResult { id }`. `connections` (1–64) fixes the connection count instead of learning it (still lowered if the server throttles); `queue` names a queue that runs one download at a time |
+| `download.add` | `AddParams { url, request?, filename?, directory?, category?, start = true, mirrors[], checksum?, connections?, queue? }` | `AddResult { id }`. `connections` (1–64) fixes the connection count instead of learning it (still lowered if the server throttles); `queue` names the queue it joins (absent or `"main"`: the main queue; see "Queues and the scheduler") |
 | `download.list` | `ListParams { states[], category?, offset?, limit? }` | `DownloadSummary[]` (newest first) |
 | `download.get` | `IdParams { id }` | `DownloadDetail` (summary fields + `segments[]`) |
 | `download.pause` | `IdsParams { ids }` | `null` |
@@ -80,8 +80,27 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | `stats.get` | — | `Stats { downloadBps, uploadBps, active, queued }` |
 | `settings.get` | — | `Settings` |
 | `settings.set` | `Settings` (full object) | `Settings` (as stored) |
+| `download.setQueue` | `SetQueueParams { ids, queue? }` | `null`; moves downloads to `queue` (absent or `"main"`: the main queue) |
+| `queue.list` | — | `Queue[]`: the main queue first, then named queues by name |
+| `queue.create` | `QueueConfig { name, maxActive?, schedule? }` | `Queue`. Named queues default to `maxActive` 1 |
+| `queue.update` | `QueueConfig` | `Queue`. `maxActive` and `schedule` replace the queue's; an absent `schedule` removes it. On `"main"`, `maxActive` sets `Settings.maxActiveDownloads` and a schedule is refused |
+| `queue.rename` | `QueueRenameParams { name, newName }` | `Queue`; its downloads follow |
+| `queue.remove` | `QueueNameParams { name }` | `null`; its downloads move to the main queue |
+| `queue.start` | `QueueNameParams` | `null`; the queue runs now, whatever its schedule |
+| `queue.stop` | `QueueNameParams` | `null`; pauses what the queue is running and holds the rest until `queue.start` or the next scheduled start. Not for `"main"` |
+| `queue.cancelAction` | `QueueNameParams` | `null`; cancels a pending after-done action (see `event.queue.finished`) |
 
 `Settings.durability` is `powerSafe` (default: data is forced to disk before a file is finished or its progress journalled, so a power cut never damages a finished file) or `processSafe` (data is handed to the OS without forcing it to disk: faster on small files and fast links, survives a killed Whoosh but not a power cut).
+
+`Settings.speedSchedule` (`SpeedWindow[] { days?, from, to, limitBps }`, absent when empty): while a window is open its `limitBps` replaces `speedLimitBps`; where windows overlap the lowest limit wins; `from` after `to` spans midnight.
+
+### Queues and the scheduler
+
+Every download is in one queue: the **main queue**, named `"main"` (the default; it runs up to `Settings.maxActiveDownloads` at once and cannot be renamed, removed or stopped), or a **named queue**, which runs up to its `maxActive` (default 1), oldest first. A queue name is 1–64 characters without control characters.
+
+`Queue { name, maxActive, schedule?, running }`. `Schedule { start?, stop?, afterDone = "none" }`: `start` and `stop` are `ClockTime { at: "HH:MM", days? }` in the daemon machine's local time, `days` being 0 (Sunday) to 6 and absent meaning every day. At `start` the queue runs; at `stop` it pauses what it is running. Once nothing is left in the queue, `afterDone` (`none`, `sleep`, `shutdown`) is announced with `event.queue.finished` and carried out 60 seconds later unless a client calls `queue.cancelAction`.
+
+A daemon that implements queues and the scheduler advertises the `queues` capability in `HelloResult.capabilities` (the daemon with the Whoosh engine does); one that does not answers these methods with `-32006`.
 
 `request` (`RequestContext`) carries what the browser would have sent: `method`, `headers[]` (`{ name, value }`), `cookie`, `referer`, `userAgent`, `bodyBase64`.
 
@@ -100,6 +119,8 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | `event.download.removed` | `{ ids }` | on change |
 | `event.stats` | `Stats` | 1 per second |
 | `event.settings` | `Settings` | after any change |
+| `event.queues` | `Queue[]` | after any change to a queue |
+| `event.queue.finished` | `{ name, action, atMs }`: the queue's after-done action runs at `atMs` unless cancelled | on change |
 | `event.nm.status` | `NmStatus` | native host only, on daemon connect/disconnect |
 
 Clients subscribe implicitly by completing `session.hello`.

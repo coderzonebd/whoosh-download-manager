@@ -155,8 +155,7 @@ C toolchain (see [Testing](#testing)).
     `WriteFile`s. So the syncer opens its own handle for each flush.
     `FlushFileBuffers` writes out the file's data whichever handle wrote
     it. If that handle can't be opened, the shared one is used: slower,
-    never less durable. This path compiles and passes clippy, but has not
-    been run on Windows.
+    never less durable. The Windows CI job runs this path.
   - Opt in to `StorageOptions::drop_cache_after_flush` (Linux) to drop the
     file's clean pages after each flush, so a big download doesn't push
     everything else out of the page cache. It is off by default: it
@@ -415,16 +414,49 @@ C toolchain (see [Testing](#testing)).
   migration. `filename_locked` (amendment 1) round-trips, and rows written
   before it existed read as `false` (`#[serde(default)]`).
 
+### Mark of the web (`motw`)
+
+`FileStorage::mark_origin`, which the engine calls just before `finish`,
+marks the part file as downloaded from the internet; the mark moves with
+the rename, so the finished file is never seen without it.
+`motw::mark_of_the_web` does the same for any file.
+
+| Platform | Mark |
+|---|---|
+| Windows | `Zone.Identifier` stream: `ZoneId=3`, `ReferrerUrl`, `HostUrl` |
+| macOS | `com.apple.quarantine` = `0081;<hex time>;Whoosh;` |
+| Linux | `user.xdg.origin.url`, `user.xdg.referrer.url` (where user xattrs work) |
+
+URLs keep scheme, host, port and path; user info, query and fragment are
+dropped (tokens live there). Only `http`, `https`, `ftp` and `ftps` URLs
+are recorded. A filesystem that cannot hold the mark (FAT, tmpfs before
+Linux 6.6) makes `mark_origin` fail; the engine logs it and finishes.
+
+### Windows
+
+- **Private directories and files.** `DirMode::Private` creates the
+  journal and state directories with an owner-only DACL
+  (`whoosh_proto::winacl`); files created inside inherit it. A state file
+  that grants others access is tightened on open, as 0600 is enforced on
+  Unix.
+- **No directory fsync.** `sys::sync_dir` is a no-op; the doc comment on it
+  explains why the journal stays crash-safe (NTFS's ordered metadata log,
+  `MOVEFILE_WRITE_THROUGH`). Summary in [docs/windows.md](../../docs/windows.md).
+
 ## `unsafe`
 
 The workspace denies `unsafe_code`. The single exception is `src/sys.rs`
 (`#![allow(unsafe_code)]`). Linux and macOS need no `unsafe` at all:
-rustix and nix wrap those calls safely. Windows needs two blocks:
+rustix and nix wrap those calls safely. Windows needs `unsafe` for three calls:
 
 | Where | Call | Why it is sound |
 |---|---|---|
 | `sys::reserve` (Windows) | `SetFileInformationByHandle(h, FileAllocationInfo, &info, size_of(info))` | The handle is borrowed from a live `File` for the whole call. `info` is an initialised `FILE_ALLOCATION_INFO` on the stack that outlives the call, and the size passed is its exact size. The call keeps no pointer. |
 | `sys::rename_noreplace` (Windows) | `MoveFileExW(from, to, MOVEFILE_WRITE_THROUGH)` | Both arguments are NUL-terminated UTF-16 buffers. `wide` rejects interior NULs. Both buffers live until the call returns, and the call only reads them. |
+| `sys::file_id` (Windows) | `GetFileInformationByHandle(h, &info)` | The handle is borrowed from a live `File` for the whole call; `info` is a zeroed `BY_HANDLE_FILE_INFORMATION` on the stack (all-zero is valid for it) that outlives the call. The call keeps no pointer. |
+
+Owner-only ACLs on Windows come from `whoosh_proto::winacl`, whose `unsafe`
+is documented there.
 
 ## Testing
 
@@ -433,6 +465,13 @@ scripts/cargo-slot.sh cargo test -p whoosh-store
 scripts/cargo-slot.sh cargo clippy -p whoosh-store --all-targets -- -D warnings
 WHOOSH_KILL_ITERS=1000 scripts/cargo-slot.sh cargo test -p whoosh-store --test journal_kill -- --nocapture
 ```
+
+Everything below runs on Linux, macOS and Windows in CI. Where a test
+needs a failing device (`/dev/full`, `/dev/null`, Linux only), a twin runs
+on every OS with the `sys::faults` test hook, which makes writes or syncs
+of one file fail with a chosen OS error. Windows has its own forms of the
+owner-only tests (`icacls` to loosen, ACL checks to verify). The mark of
+the web is checked on the finished file on each OS.
 
 **Storage** (`src/file.rs` unit tests, `tests/storage.rs`):
 - Backpressure: a paused writer makes the fifth 16 KiB write wait on a
@@ -923,14 +962,13 @@ database.
 
 ## Not tested here
 
-- **Windows and macOS** have not been run. The Windows and macOS code
-  compiles and passes clippy for `x86_64-pc-windows-gnu` and
-  `aarch64-apple-darwin` (library, tests and examples), without SQLite.
-  Specifically:
-  - Windows: `FileAllocationInfo`, `MoveFileExW`, and long-path `\\?\`
-    handling.
-  - macOS: `F_PREALLOCATE`, `renameatx_np`.
-  - CI on those platforms is the first real run.
+- **Windows and macOS** run the whole suite in CI (NTFS on Windows, APFS
+  on macOS), but only there: no power-cut tests, no other filesystems.
+  - Windows durability without a directory fsync rests on NTFS's ordered
+    metadata log and `MOVEFILE_WRITE_THROUGH` (see `sys::sync_dir` and
+    [docs/windows.md](../../docs/windows.md)); ReFS and real power cuts
+    are not tested.
+  - Long-path (`\\?\`) handling on Windows has no test of its own.
 - **FAT/exFAT, NFS, SMB and FUSE** have not been run.
   - The two rename fallbacks (`link`+`unlink`, and the `O_EXCL` claim) are
     unit-tested on ext4 by calling them directly.

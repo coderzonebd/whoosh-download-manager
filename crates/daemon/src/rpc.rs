@@ -145,6 +145,20 @@ pub async fn dispatch(service: &Arc<dyn Service>, req: Request) -> Result<Value,
             to_value(service.settings().await?)
         }
         method::SETTINGS_SET => to_value(service.set_settings(by_name(params)?).await?),
+        method::DOWNLOAD_SET_QUEUE => to_value(service.set_queue(by_name(params)?).await?),
+        method::QUEUE_LIST => {
+            no_params(params)?;
+            to_value(service.queues().await?)
+        }
+        method::QUEUE_CREATE => to_value(service.create_queue(by_name(params)?).await?),
+        method::QUEUE_UPDATE => to_value(service.update_queue(by_name(params)?).await?),
+        method::QUEUE_RENAME => to_value(service.rename_queue(by_name(params)?).await?),
+        method::QUEUE_REMOVE => to_value(service.remove_queue(by_name(params)?).await?),
+        method::QUEUE_START => to_value(service.start_queue(by_name(params)?).await?),
+        method::QUEUE_STOP => to_value(service.stop_queue(by_name(params)?).await?),
+        method::QUEUE_CANCEL_ACTION => {
+            to_value(service.cancel_queue_action(by_name(params)?).await?)
+        }
         other => Err(ServiceError::new(
             METHOD_NOT_FOUND,
             format!("method not found: {other}"),

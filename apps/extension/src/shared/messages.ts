@@ -5,6 +5,19 @@
 
 import type { ConnectionStatus } from "../transport/types";
 
+/** A question from self-healing for the user (mirrors `HealAsk` in the background). */
+export interface HealQuestion {
+  id: string;
+  filename: string;
+  pageUrl?: string;
+  kind: "open-page" | "confirm";
+  candidateUrl?: string;
+  askedAt: number;
+}
+
+export type HealAnswer = "open-page" | "use-candidate" | "dismiss";
+const HEAL_ANSWERS: readonly string[] = ["open-page", "use-candidate", "dismiss"];
+
 export interface MediaEntry {
   url: string;
   kind: "hls" | "dash" | "video" | "audio";
@@ -23,7 +36,11 @@ export interface LinkInfo {
 export type ContentMessage =
   | { type: "whoosh/preconnect"; url: string }
   /** The user Alt+clicked: let the browser keep the next download. */
-  | { type: "whoosh/bypass-next" };
+  | { type: "whoosh/bypass-next" }
+  /** The user Alt+clicked with "send to Whoosh": capture the next download whatever the rules say. */
+  | { type: "whoosh/force-next" }
+  /** The user clicked a download-looking link; its text helps self-healing find it again. */
+  | { type: "whoosh/link-click"; url: string; text: string };
 
 /** Background → content script. */
 export type CollectLinksMessage = { type: "whoosh/collect-links"; scope: "all" | "selection" };
@@ -36,7 +53,8 @@ export type PopupMessage =
   | { type: "whoosh/popup-state"; tabId?: number; pageUrl?: string }
   | { type: "whoosh/set-capture"; enabled: boolean }
   | { type: "whoosh/set-site-excluded"; host: string; excluded: boolean }
-  | { type: "whoosh/download-media"; url: string; pageUrl?: string };
+  | { type: "whoosh/download-media"; url: string; pageUrl?: string }
+  | { type: "whoosh/heal-answer"; id: string; answer: HealAnswer };
 
 export interface PopupState {
   status: ConnectionStatus;
@@ -47,6 +65,12 @@ export interface PopupState {
   siteExcluded: boolean;
   media: MediaEntry[];
   lastCapture?: { url: string; outcome: string; at: number };
+  /** Expired downloads that need the user (self-healing). */
+  heals: HealQuestion[];
+  /** Store build: this page is on a site the store extension does not work on. */
+  pageBlocked: boolean;
+  /** What Alt+click does (for the hint). */
+  altClick: "browser" | "whoosh" | "off";
 }
 
 export type ActionReply = { ok: true } | { ok: false; error: string };
@@ -62,6 +86,10 @@ export function asContentMessage(value: unknown): ContentMessage | undefined {
     return { type: "whoosh/preconnect", url: value["url"] };
   }
   if (value["type"] === "whoosh/bypass-next") return { type: "whoosh/bypass-next" };
+  if (value["type"] === "whoosh/force-next") return { type: "whoosh/force-next" };
+  if (value["type"] === "whoosh/link-click" && typeof value["url"] === "string" && typeof value["text"] === "string") {
+    return { type: "whoosh/link-click", url: value["url"], text: value["text"].slice(0, 200) };
+  }
   return undefined;
 }
 
@@ -92,6 +120,12 @@ export function asPopupMessage(value: unknown): PopupMessage | undefined {
       if (pageUrl !== undefined) msg.pageUrl = pageUrl;
       return msg;
     }
+    case "whoosh/heal-answer":
+      return typeof value["id"] === "string" &&
+        typeof value["answer"] === "string" &&
+        HEAL_ANSWERS.includes(value["answer"])
+        ? { type: "whoosh/heal-answer", id: value["id"], answer: value["answer"] as HealAnswer }
+        : undefined;
     default:
       return undefined;
   }

@@ -1,0 +1,118 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Text comes from src/shared/strings.ts (data-text="key"); English only until wave 3. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Whoosh settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1 data-text="optionsTitle">Whoosh settings</h1>
+      <p class="intro" data-text="optionsIntro"></p>
+      <p id="store-note" class="note" data-text="storeNote" hidden></p>
+
+      <form id="form" novalidate>
+        <fieldset>
+          <legend data-text="captureLegend"></legend>
+          <div class="row">
+            <input type="checkbox" id="captureEnabled" aria-describedby="captureEnabled-help" />
+            <label for="captureEnabled" data-text="captureEnabled"></label>
+          </div>
+          <p id="captureEnabled-help" class="help" data-text="captureEnabledHelp"></p>
+          <div class="row">
+            <input type="checkbox" id="captureIncognito" aria-describedby="captureIncognito-help" />
+            <label for="captureIncognito" data-text="captureIncognito"></label>
+          </div>
+          <p id="captureIncognito-help" class="help" data-text="captureIncognitoHelp"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend data-text="minSizeLegend"></legend>
+          <label for="minSize" data-text="minSize"></label>
+          <div class="inline">
+            <input
+              type="text"
+              id="minSize"
+              inputmode="decimal"
+              autocomplete="off"
+              size="8"
+              aria-describedby="minSize-help minSize-error"
+            />
+            <label for="minSizeUnit" class="visually-hidden" data-text="minSizeUnit"></label>
+            <select id="minSizeUnit">
+              <option value="KB">KB</option>
+              <option value="MB">MB</option>
+              <option value="GB">GB</option>
+            </select>
+          </div>
+          <p id="minSize-help" class="help" data-text="minSizeHelp"></p>
+          <p id="minSize-error" class="error" role="alert" hidden></p>
+        </fieldset>
+
+        <fieldset>
+          <legend data-text="fileTypesLegend"></legend>
+          <label for="fileTypes" data-text="fileTypes"></label>
+          <textarea id="fileTypes" rows="5" spellcheck="false" autocomplete="off" aria-describedby="fileTypes-help fileTypes-note"></textarea>
+          <p id="fileTypes-help" class="help" data-text="fileTypesHelp"></p>
+          <p id="fileTypes-note" class="help" data-text="fileTypesEmpty" hidden></p>
+          <button type="button" id="fileTypesReset" data-text="fileTypesReset"></button>
+        </fieldset>
+
+        <fieldset>
+          <legend data-text="sitesLegend"></legend>
+          <label for="excludedSites" data-text="excludedSites"></label>
+          <textarea
+            id="excludedSites"
+            rows="4"
+            spellcheck="false"
+            autocomplete="off"
+            aria-describedby="excludedSites-help excludedSites-error"
+          ></textarea>
+          <p id="excludedSites-help" class="help" data-text="excludedSitesHelp"></p>
+          <p id="excludedSites-error" class="error" role="alert" hidden></p>
+        </fieldset>
+
+        <fieldset>
+          <legend data-text="altClickLegend"></legend>
+          <div class="row">
+            <input type="radio" name="altClick" id="altClick-browser" value="browser" />
+            <label for="altClick-browser" data-text="altClickBrowser"></label>
+          </div>
+          <div class="row">
+            <input type="radio" name="altClick" id="altClick-whoosh" value="whoosh" />
+            <label for="altClick-whoosh" data-text="altClickWhoosh"></label>
+          </div>
+          <div class="row">
+            <input type="radio" name="altClick" id="altClick-off" value="off" />
+            <label for="altClick-off" data-text="altClickOff"></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend data-text="extrasLegend"></legend>
+          <div class="row">
+            <input type="checkbox" id="sniffMedia" aria-describedby="sniffMedia-help" />
+            <label for="sniffMedia" data-text="sniffMedia"></label>
+          </div>
+          <p id="sniffMedia-help" class="help" data-text="sniffMediaHelp"></p>
+          <div class="row">
+            <input type="checkbox" id="preconnect" aria-describedby="preconnect-help" />
+            <label for="preconnect" data-text="preconnect"></label>
+          </div>
+          <p id="preconnect-help" class="help" data-text="preconnectHelp"></p>
+          <div class="row">
+            <input type="checkbox" id="selfHealing" aria-describedby="selfHealing-help" />
+            <label for="selfHealing" data-text="selfHealing"></label>
+          </div>
+          <p id="selfHealing-help" class="help" data-text="selfHealingHelp"></p>
+        </fieldset>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -23,24 +23,33 @@ pub fn runtime_file(data_dir: &Path) -> PathBuf {
     data_dir.join(RUNTIME_FILE)
 }
 
-/// Creates a directory and its parents; the new ones are owner-only (0700)
-/// on Unix. Use [`secure_dir`] afterwards for one that already existed.
+/// Creates a directory and its parents; the new ones are owner-only (0700
+/// on Unix, an owner-only DACL on Windows). Use [`secure_dir`] afterwards
+/// for one that already existed.
 pub fn create_data_dir(dir: &Path) -> io::Result<()> {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
+        whoosh_proto::winacl::create_private_dir(dir)
     }
-    builder.create(dir)
+    #[cfg(not(windows))]
+    {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(dir)
+    }
 }
 
 /// Makes `dir` private, or refuses it (PROTOCOL.md §1): a directory of ours
-/// that others could read or write is tightened to 0700; a symlink or a
-/// directory owned by someone else is refused, since that user could swap
-/// `runtime.json` under us. Always Ok on Windows, where `%LOCALAPPDATA%` is
-/// private by inheritance.
+/// that others could read or write is tightened (to 0700 on Unix; on
+/// Windows to an owner-only DACL, protected from inheritance and passed on
+/// to what is inside); a symlink, a junction or a directory owned by
+/// someone else is refused, since that user could swap `runtime.json`
+/// under us.
 pub fn secure_dir(dir: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -61,22 +70,48 @@ pub fn secure_dir(dir: &Path) -> Result<(), String> {
                 .map_err(|e| format!("cannot make it private (chmod 700): {e}"))?;
         }
     }
+    #[cfg(windows)]
+    {
+        use whoosh_proto::winacl;
+        let access = winacl::access(dir).map_err(|e| e.to_string())?;
+        if access.is_link || !access.is_dir {
+            return Err("not a directory (a symlink or junction is not accepted)".into());
+        }
+        if !access.owner_trusted {
+            let me = winacl::current_user_sid().unwrap_or_default();
+            return Err(format!(
+                "owned by {}, not by this user ({me})",
+                access.owner
+            ));
+        }
+        if access.is_loose() {
+            winacl::make_private(dir)
+                .map_err(|e| format!("cannot make it private (owner-only ACL): {e}"))?;
+        }
+    }
     whoosh_proto::runtime::check_private_dir(dir).map_err(|e| e.to_string())
 }
 
 /// Creates a new, empty file that only the owner can read or write. The
-/// permissions are part of the `open` call, so there is no moment at which
-/// the file exists with wider permissions. On Windows the file inherits the
-/// ACL of the data directory, which under `%LOCALAPPDATA%` is the user's own.
+/// permissions are part of the `open` call (the mode on Unix, a security
+/// descriptor with an owner-only DACL on Windows), so there is no moment at
+/// which the file exists with wider permissions.
 pub fn create_private_file(path: &Path) -> io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        whoosh_proto::winacl::create_private_file(path)
     }
-    options.open(path)
+    #[cfg(not(windows))]
+    {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options.open(path)
+    }
 }
 
 /// Writes `info` to `<dir>/runtime.json` atomically (see the module docs).
@@ -262,6 +297,70 @@ mod tests {
         std::os::unix::fs::symlink(&open, &link).unwrap();
         let err = secure_dir(&link).unwrap_err();
         assert!(err.contains("symlink"), "{err}");
+        let file = dir.join("file");
+        std::fs::write(&file, b"").unwrap();
+        assert!(secure_dir(&file).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Grants Everyone modify access, inherited by what is created inside,
+    /// as `chmod 777` (and a umask of 0) would.
+    #[cfg(windows)]
+    fn loosen(path: &Path) {
+        let out = std::process::Command::new("icacls")
+            .arg(path)
+            .args(["/grant", "*S-1-1-0:(OI)(CI)M"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn private_files_are_owner_only_from_creation() {
+        use whoosh_proto::runtime::check_private_file;
+        let dir = temp_dir("perm");
+        // Even where everything created would inherit "Everyone may
+        // modify", the file is owner-only while still empty.
+        loosen(&dir);
+        let path = dir.join("x");
+        let file = create_private_file(&path).unwrap();
+        assert_eq!(file.metadata().unwrap().len(), 0);
+        drop(file);
+        check_private_file(&path).unwrap();
+
+        // A pre-existing, loose runtime.json is replaced by a private one
+        // (the renamed file keeps its own security descriptor).
+        std::fs::write(runtime_file(&dir), b"{}").unwrap();
+        assert!(check_private_file(&runtime_file(&dir)).is_err());
+        write_atomic(&dir, &info(1)).unwrap();
+        check_private_file(&runtime_file(&dir)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn secure_dir_tightens_ours_and_refuses_junctions() {
+        use whoosh_proto::runtime::check_private_dir;
+        let dir = temp_dir("secure");
+        let open = dir.join("open");
+        std::fs::create_dir(&open).unwrap();
+        loosen(&open);
+        assert!(check_private_dir(&open).is_err());
+        secure_dir(&open).unwrap();
+        check_private_dir(&open).unwrap();
+
+        // A junction (the link that needs no privilege) is refused.
+        let link = dir.join("link");
+        let out = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link)
+            .arg(&open)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let err = secure_dir(&link).unwrap_err();
+        assert!(err.contains("junction"), "{err}");
         let file = dir.join("file");
         std::fs::write(&file, b"").unwrap();
         assert!(secure_dir(&file).is_err());

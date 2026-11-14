@@ -15,7 +15,6 @@ use std::time::Duration;
 use common::*;
 use serde_json::{Value, json};
 use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
-#[cfg(target_os = "linux")]
 use whoosh_daemon::paths;
 
 fn nmhost() -> &'static Path {
@@ -200,22 +199,34 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
 }
 
 /// Without `WHOOSH_DATA_DIR`, both sides must derive the same directory from
-/// the platform rule (here Linux/XDG).
-#[cfg(target_os = "linux")]
+/// the platform rule: `$XDG_DATA_HOME/whoosh` on Linux, `~/Library/Application
+/// Support/whoosh` on macOS, `%LOCALAPPDATA%\whoosh` on Windows.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_native_host_and_the_daemon_agree_on_the_xdg_data_dir() {
-    let base = TempDir::new("nmhost-xdg");
+async fn the_native_host_and_the_daemon_agree_on_the_platform_data_dir() {
+    let base = TempDir::new("nmhost-platform");
+    let home = base.path().join("home");
+    let local = base.path().join("local");
     let env = paths::Env {
         xdg_data_home: Some(base.path().to_owned()),
-        home: Some(base.path().join("home")),
+        home: Some(home.clone()),
+        local_app_data: Some(local.clone()),
         ..paths::Env::default()
     };
-    let data_dir = paths::data_dir(paths::Os::Linux, &env).unwrap();
-    assert_eq!(data_dir, base.path().join("whoosh"));
+    let data_dir = paths::data_dir(paths::Os::current(), &env).unwrap();
+    let expected = match paths::Os::current() {
+        paths::Os::Linux => base.path().join("whoosh"),
+        paths::Os::MacOs => home.join("Library/Application Support/whoosh"),
+        paths::Os::Windows => local.join("whoosh"),
+    };
+    assert_eq!(data_dir, expected);
     let d = start(mock(), &data_dir).await;
-    let home = base.path().join("home");
     let mut host = tokio::task::block_in_place(|| {
-        Host::spawn(&[("XDG_DATA_HOME", base.path()), ("HOME", &home)])
+        Host::spawn(&[
+            ("XDG_DATA_HOME", base.path()),
+            ("HOME", &home),
+            ("USERPROFILE", &home),
+            ("LOCALAPPDATA", &local),
+        ])
     });
     tokio::task::block_in_place(|| {
         let mut events = Vec::new();
