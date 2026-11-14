@@ -4,7 +4,7 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## 0.1.0: Phase 1, the engine
 
-The first release: the download engine, its daemon and the command line, all measured against nine other downloaders in a public, reproducible benchmark (gate: [MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
+Tagged `v0.1.0` as the engine milestone; not published as a release. The first public release comes with the desktop app (Phase 2). Contents: the download engine, its daemon and the command line, all measured against nine other downloaders in a public, reproducible benchmark (gate: [MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
 
 Gate result ([gate run 4](docs/bench/data/2026-11-13-pop-os-phase1-gate4/report.md)): all 25 labserver rows pass, with 175 of 175 runs byte-exact. The 1,000-kill crash test leaves 0 corrupt and 0 duplicate files. On three real CDNs no competitor is significantly faster, and Whoosh uses the least CPU. Two 1 MiB rows pass under the small-file allowance added to rule 3 on 2026-11-13: wget is 4.7 and 8.1 ms faster there, because Whoosh forces the file to disk before calling it done.
 
