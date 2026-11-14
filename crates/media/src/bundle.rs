@@ -9,7 +9,11 @@
 //! and x86_64 ffmpeg into one universal program with `lipo` (yt-dlp's macOS
 //! build is universal already). It writes the programs and a
 //! [`MANIFEST`] that records the versions, the upstream files and their
-//! checksums, and the SHA-256 of every file as shipped (plus, in
+//! checksums, and the SHA-256 of every file as shipped. For Linux each
+//! program goes into an uncompressed `<name>.tar` (the AppImage bundler
+//! rewrites every ELF program in the image, a tar it leaves alone), and the
+//! manifest records the checksums of both the tar and the program in it
+//! (plus, in
 //! `LICENSES/`, the licence that comes inside BtbN's ffmpeg archive).
 //! Signing changes the
 //! files, so after signing the workflow runs [`rehash`]; after bundling,
@@ -17,7 +21,8 @@
 //!
 //! **At run time** the desktop app passes the bundle's directory to the
 //! daemon (`--media-tools-dir`). [`crate::Tools`] copies the programs into
-//! `<data dir>/media/bin`, checking each against the manifest, so they can
+//! `<data dir>/media/bin` (unpacking the Linux tars with the system's `tar`
+//! first), checking each against the manifest, so they can
 //! be updated there like a downloaded copy. They are never run from the
 //! bundle. Without a bundle (the command line, distribution packages), or
 //! when a file does not match, the tools are downloaded on first use as
@@ -63,10 +68,67 @@ pub struct BundledTool {
     /// The upstream files this came from, with the checksums upstream
     /// publishes (two for a universal macOS ffmpeg).
     pub sources: Vec<Source>,
-    /// File name in the bundle directory → SHA-256 (lower-case hex) of the
-    /// file as shipped. The tool's program is one of them; ffmpeg may bring
-    /// ffprobe.
+    /// File name → SHA-256 (lower-case hex) of the file as shipped. The
+    /// tool's program is one of them; ffmpeg may bring ffprobe.
     pub files: BTreeMap<String, String>,
+    /// Files shipped inside an uncompressed `<name>.tar` (Linux): file name
+    /// → SHA-256 of the tar. The AppImage bundler (linuxdeploy) rewrites
+    /// every ELF program it finds in the image; a tar it leaves alone.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tars: BTreeMap<String, String>,
+}
+
+/// The tar a file is shipped in.
+pub fn tar_name(name: &str) -> String {
+    format!("{name}.tar")
+}
+
+/// Whether `dir` has `name` of `tool`, as a file or in its tar.
+pub fn shipped(dir: &Path, tool: &BundledTool, name: &str) -> bool {
+    if tool.tars.contains_key(name) {
+        dir.join(tar_name(name)).is_file()
+    } else {
+        dir.join(name).is_file()
+    }
+}
+
+/// The path of `name` from `dir`: the file itself, or, for a file shipped
+/// in a tar, the tar's checksum checked and the file unpacked into a new
+/// directory below `scratch`. The file's own checksum is the caller's to
+/// check.
+pub async fn extract(
+    dir: &Path,
+    tool: &BundledTool,
+    name: &str,
+    scratch: &Path,
+) -> Result<PathBuf, String> {
+    if !valid_file_name(name) {
+        return Err(format!("bad file name {name:?}"));
+    }
+    let Some(tar_sha) = tool.tars.get(name) else {
+        return Ok(dir.join(name));
+    };
+    let tar = dir.join(tar_name(name));
+    let got = sha256_file(&tar).await?;
+    if !got.eq_ignore_ascii_case(tar_sha) {
+        return Err(format!(
+            "checksum mismatch for {}: the manifest says {tar_sha}, the file is {got}",
+            tar.display()
+        ));
+    }
+    let out = scratch.join(format!("x-{name}-{}", crate::util::random_hex(4)));
+    tokio::fs::create_dir_all(&out)
+        .await
+        .map_err(|e| format!("{}: {e}", out.display()))?;
+    tools::unpack(&tar, &out).await?;
+    let file = out.join(name);
+    let meta = tokio::fs::symlink_metadata(&file)
+        .await
+        .map_err(|e| format!("{name} is not in {}: {e}", tar.display()))?;
+    if !meta.is_file() {
+        return Err(format!("{name} in {} is not a regular file", tar.display()));
+    }
+    Ok(file)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,7 +159,12 @@ pub async fn read(dir: &Path) -> Result<Manifest, String> {
     let m: Manifest =
         serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     for tool in m.tools.values() {
-        if let Some(bad) = tool.files.keys().find(|n| !valid_file_name(n)) {
+        if let Some(bad) = tool
+            .files
+            .keys()
+            .chain(tool.tars.keys())
+            .find(|n| !valid_file_name(n))
+        {
             return Err(format!("{}: bad file name {bad:?}", path.display()));
         }
     }
@@ -251,6 +318,7 @@ async fn fetch_into(
                 sha256: asset.sha256,
             }],
             files: BTreeMap::from([(name, String::new())]),
+            tars: BTreeMap::new(),
         },
     );
 
@@ -333,11 +401,61 @@ async fn fetch_into(
                 })
                 .collect(),
             files,
+            tars: BTreeMap::new(),
         },
     );
     hash_files(out, &mut manifest).await?;
+    if first.os == "linux" {
+        pack(out, &mut manifest).await?;
+    }
     write(out, &manifest).await?;
     Ok(manifest)
+}
+
+/// Puts every file into an uncompressed `<name>.tar` next to it (and
+/// removes the file), recording the tars' checksums.
+async fn pack(dir: &Path, m: &mut Manifest) -> Result<(), String> {
+    let tar = tools::system_tar().ok_or("no `tar` program to pack the tools with")?;
+    for tool in m.tools.values_mut() {
+        for name in tool.files.keys() {
+            let packed = dir.join(tar_name(name));
+            let _ = tokio::fs::remove_file(&packed).await;
+            let out = process::run(
+                &Tool::new(&tar),
+                vec![
+                    OsString::from("-cf"),
+                    packed.as_os_str().to_owned(),
+                    OsString::from("-C"),
+                    dir.as_os_str().to_owned(),
+                    OsString::from(name),
+                ],
+                Duration::from_secs(300),
+                64 * 1024,
+            )
+            .await
+            .map_err(|e| format!("tar: {e}"))?;
+            if !out.success {
+                return Err(format!("tar: {}", out.error_line()));
+            }
+            tool.tars.insert(name.clone(), sha256_file(&packed).await?);
+            tokio::fs::remove_file(dir.join(name))
+                .await
+                .map_err(|e| format!("{}: {e}", dir.join(name).display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// A scratch directory for unpacking tars, removed by the caller.
+async fn scratch_dir() -> Result<PathBuf, String> {
+    let d = std::env::temp_dir().join(format!(
+        "whoosh-media-bundle-{}",
+        crate::util::random_hex(6)
+    ));
+    tokio::fs::create_dir_all(&d)
+        .await
+        .map_err(|e| format!("{}: {e}", d.display()))?;
+    Ok(d)
 }
 
 /// Downloads `asset` into `dir` and checks it against upstream's checksum.
@@ -383,12 +501,25 @@ async fn lipo(parts: &[&PathBuf], to: &Path) -> Result<(), String> {
 }
 
 async fn hash_files(dir: &Path, m: &mut Manifest) -> Result<(), String> {
-    for tool in m.tools.values_mut() {
-        for (name, sha) in tool.files.iter_mut() {
-            *sha = sha256_file(&dir.join(name)).await?;
+    let scratch = scratch_dir().await?;
+    let result = async {
+        for tool in m.tools.values_mut() {
+            // Re-taking the tars' checksums first, so `extract` accepts them.
+            for (name, sha) in tool.tars.iter_mut() {
+                *sha = sha256_file(&dir.join(tar_name(name))).await?;
+            }
+            let names: Vec<String> = tool.files.keys().cloned().collect();
+            for name in names {
+                let file = extract(dir, tool, &name, &scratch).await?;
+                let sha = sha256_file(&file).await?;
+                tool.files.insert(name, sha);
+            }
         }
+        Ok(())
     }
-    Ok(())
+    .await;
+    let _ = tokio::fs::remove_dir_all(&scratch).await;
+    result
 }
 
 /// After signing changed the files: records their checksums again.
@@ -401,20 +532,28 @@ pub async fn rehash(dir: &Path) -> Result<Manifest, String> {
 
 /// Checks every file in `dir` against its manifest (the copy inside a
 /// built app: the bundler must not have changed them).
+/// Files shipped in a tar are checked twice: the tar, and the file in it.
 pub async fn verify(dir: &Path) -> Result<Manifest, String> {
     let m = read(dir).await?;
-    for tool in m.tools.values() {
-        for (name, sha) in &tool.files {
-            let got = sha256_file(&dir.join(name)).await?;
-            if !got.eq_ignore_ascii_case(sha) {
-                return Err(format!(
-                    "{}: the manifest says {sha}, the file is {got}",
-                    dir.join(name).display()
-                ));
+    let scratch = scratch_dir().await?;
+    let result = async {
+        for tool in m.tools.values() {
+            for (name, sha) in &tool.files {
+                let file = extract(dir, tool, name, &scratch).await?;
+                let got = sha256_file(&file).await?;
+                if !got.eq_ignore_ascii_case(sha) {
+                    return Err(format!(
+                        "{name} in {}: the manifest says {sha}, the file is {got}",
+                        dir.display()
+                    ));
+                }
             }
         }
+        Ok(())
     }
-    Ok(m)
+    .await;
+    let _ = tokio::fs::remove_dir_all(&scratch).await;
+    result.map(|()| m)
 }
 
 #[cfg(test)]

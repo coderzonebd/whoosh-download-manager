@@ -20,6 +20,12 @@ This directory holds what is copied next to the programs:
 checksums, the SHA-256 of every shipped file) and, for BtbN builds,
 `LICENSES/ffmpeg-build-LICENSE.txt` from the archive.
 
+On Linux the programs are shipped as uncompressed tars (`yt-dlp.tar`,
+`ffmpeg.tar`, `ffprobe.tar`): the AppImage bundler (linuxdeploy) rewrites
+every ELF program in the image, a tar it leaves alone. The manifest has the
+SHA-256 of each tar and of the program inside it; the daemon unpacks them
+with the system's `tar`. macOS and Windows ship the programs as they are.
+
 Where the directory ends up:
 
 | Bundle | Path |

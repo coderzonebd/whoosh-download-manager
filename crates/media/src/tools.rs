@@ -314,7 +314,7 @@ impl Tools {
         let (dir, m) = self.bundle.as_ref()?;
         let entry = m.tools.get(kind.name())?;
         let main = kind.file_name();
-        (entry.files.contains_key(&main) && dir.join(&main).is_file()).then_some(entry)
+        (entry.files.contains_key(&main) && bundle::shipped(dir, entry, &main)).then_some(entry)
     }
 
     /// Whether the installer's copy should go into `bin`: there is no
@@ -618,7 +618,10 @@ impl Tools {
             .map_err(|e| format!("{}: {e}", work.display()))?;
         let copied = async {
             for (name, sha) in &entry.files {
-                bundle::copy_verified(&dir.join(name), &work.join(name), sha).await?;
+                // Linux ships each program in a tar: unpacked first, below
+                // `work`, then checked like a plain file.
+                let from = bundle::extract(&dir, &entry, name, &work).await?;
+                bundle::copy_verified(&from, &work.join(name), sha).await?;
                 make_executable(&work.join(name)).await?;
             }
             // The program last: it is what marks the tool as here.
@@ -855,7 +858,7 @@ pub(crate) async fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
     }
 }
 
-fn system_tar() -> Option<PathBuf> {
+pub(crate) fn system_tar() -> Option<PathBuf> {
     if cfg!(windows) {
         let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
         let p = PathBuf::from(root).join("System32").join("tar.exe");
