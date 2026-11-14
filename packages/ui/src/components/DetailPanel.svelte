@@ -52,7 +52,7 @@
     <FileIcon category={download.category} size="lg" />
     <div class="title">
       <h2 id="vy-detail-title" dir="auto">{d.filename}</h2>
-      <StatusBadge state={d.state} variant="pill" />
+      <StatusBadge state={d.state} variant="pill" step={d.media?.step} />
     </div>
     <button class="vy-btn vy-btn--icon vy-btn--sm" aria-label={t("detail.close")} title={t("detail.close")} onclick={() => (prefs.detailOpen = false)}>
       <Icon name="x" size={15} />
@@ -67,7 +67,7 @@
         {#if PAUSABLE.has(d.state)}
           <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.pause([download.id])}><Icon name="pause" size={14} />{t("action.pause")}</button>
         {:else if d.state === "needs_refresh"}
-          <button class="vy-btn vy-btn--primary vy-btn--sm" onclick={() => (app.refreshId = download.id)}><Icon name="refresh" size={14} />{t("action.refreshLink")}</button>
+          <button class="vy-btn vy-btn--primary vy-btn--sm" onclick={() => app.refreshLink(download.id)}><Icon name="refresh" size={14} />{t("action.refreshLink")}</button>
         {:else if RESUMABLE.has(d.state)}
           <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.resume([download.id])}>
             <Icon name={d.state === "failed" ? "refresh" : "play"} size={14} />{t(d.state === "failed" ? "action.retry" : "action.resume")}

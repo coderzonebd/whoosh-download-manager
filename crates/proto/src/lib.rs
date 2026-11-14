@@ -13,12 +13,19 @@
 use serde::{Deserialize, Serialize};
 
 pub mod auth;
+pub mod media;
 pub mod queue;
 pub mod runtime;
 pub mod service;
 #[cfg(windows)]
 pub mod winacl;
 
+pub use media::{
+    AudioConvert, MEDIA_CAPABILITY, MediaAddParams, MediaChoice, MediaConfigureParams,
+    MediaDownloadInfo, MediaFormat, MediaFormatKind, MediaProbeParams, MediaProbeResult, MediaStep,
+    MediaSubtitle, MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus, MediaUpdateParams,
+    MediaVia,
+};
 pub use queue::{
     AfterDone, ClockTime, MAIN_QUEUE, Queue, QueueConfig, QueueFinishedEvent, QueueNameParams,
     QueueRenameParams, Schedule, SetQueueParams, SpeedWindow,
@@ -60,6 +67,14 @@ pub mod method {
 
     pub const NET_PRECONNECT: &str = "net.preconnect";
 
+    // Media (yt-dlp / ffmpeg): only with the `media` capability.
+    pub const MEDIA_PROBE: &str = "media.probe";
+    pub const MEDIA_ADD: &str = "media.add";
+    pub const MEDIA_TOOLS: &str = "media.tools";
+    pub const MEDIA_CHECK_UPDATES: &str = "media.checkUpdates";
+    pub const MEDIA_UPDATE_TOOLS: &str = "media.updateTools";
+    pub const MEDIA_CONFIGURE: &str = "media.configure";
+
     pub const STATS_GET: &str = "stats.get";
     pub const SETTINGS_GET: &str = "settings.get";
     pub const SETTINGS_SET: &str = "settings.set";
@@ -82,6 +97,9 @@ pub mod event {
     pub const QUEUES: &str = "event.queues";
     /// A queue finished and its after-done action is about to run.
     pub const QUEUE_FINISHED: &str = "event.queue.finished";
+    /// `MediaToolsStatus`, after any change to the media tools (install
+    /// progress at most once per second).
+    pub const MEDIA_TOOLS: &str = "event.media.tools";
 }
 
 /// Answered by `whoosh-nmhost` itself, never by the daemon (PROTOCOL.md §1).
@@ -271,7 +289,7 @@ pub struct AddParams {
 /// Bounds of [`AddParams::connections`].
 pub const MAX_CONNECTIONS_PER_DOWNLOAD: u32 = 64;
 
-fn default_true() -> bool {
+pub(crate) fn default_true() -> bool {
     true
 }
 
@@ -374,6 +392,9 @@ pub struct DownloadSummary {
     pub completed_at: Option<UnixMillis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+    /// Present on media downloads (`media.add`): `url` is then the page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaDownloadInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -545,6 +566,7 @@ mod tests {
                 added_at: 0,
                 completed_at: None,
                 error: None,
+                media: None,
             },
             segments: vec![],
         };

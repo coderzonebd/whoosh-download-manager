@@ -13,6 +13,11 @@ GPL-3.0-or-later.
   development build finds `target/debug/whoosh-daemon` once
   `cargo build -p whoosh-daemon` has run. `WHOOSH_DATA_DIR` picks another
   data directory, as for the CLI.
+- **Video and audio sites.** The bundled daemon is built with its `media`
+  feature (the default), so the add dialog offers a format picker on video
+  pages and Settings shows *Video and audio sites* (yt-dlp and ffmpeg,
+  fetched by the daemon on first use; see
+  [`crates/media`](../../crates/media/README.md)). Nothing is bundled.
 - **One instance.** A second launch shows the first one's window and exits.
 - **Closing and quitting.** Closing the window hides it to the tray, and
   downloads go on; the first time, a notification says so. Without a tray

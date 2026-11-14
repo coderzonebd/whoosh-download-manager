@@ -208,7 +208,11 @@
     "added": "已添加“{{name}}”",
     "failed": "无法添加下载：{{message}}",
     "chooseFolder": "选择文件的保存位置",
-    "queue": "队列"
+    "queue": "队列",
+    "lookingForMedia": "正在此页面上查找视频…",
+    "mediaFailed": "此页面上没有找到视频：{{message}}",
+    "asFile": "改为下载页面本身",
+    "asMedia": "改为选择视频格式"
   },
   "remove": {
     "titleOne": "移除“{{name}}”？",
@@ -258,7 +262,9 @@
     "stopDaemonOnQuit": "退出时同时停止下载",
     "stopDaemonOnQuitHint": "关闭时：下载会在后台继续，供浏览器扩展和命令行使用。",
     "machineTranslated": "机器翻译。",
-    "helpTranslate": "帮助改进翻译"
+    "helpTranslate": "帮助改进翻译",
+    "media": "视频和音频网站",
+    "mediaHint": "Whoosh 用 yt-dlp 查找页面上的视频，用 ffmpeg 合并视频和音频。两者都是独立程序，首次需要时从官方发布页下载，并用公布的校验和核对。"
   },
   "theme": {
     "system": "跟随系统",
@@ -391,5 +397,57 @@
     "show": "显示 Whoosh",
     "quit": "退出",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "此页面上的视频",
+    "length": "时长 {{time}}",
+    "by": "来自 {{name}}",
+    "kind": "下载为",
+    "video": "视频",
+    "audio": "仅音频",
+    "quality": "画质",
+    "qualityBest": "最佳可用",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p（约 {{size}}）",
+    "audioFormat": "音频格式",
+    "audioOriginal": "保持原样（不转换）",
+    "audioMp3": "MP3（转换）",
+    "subtitles": "字幕",
+    "subtitlesHint": "作为单独的文件保存在视频旁边。",
+    "subtitleAuto": "{{name}}（自动生成）",
+    "size": "约 {{size}}",
+    "sizeUnknown": "大小暂时未知",
+    "viaEngine": "Whoosh 使用多个连接下载，可以暂停和继续。",
+    "viaYtDlp": "流媒体格式：yt-dlp 使用单个连接下载。",
+    "filenameHint": "不带扩展名，Whoosh 会自动添加。",
+    "live": "这是直播。"
+  },
+  "mediaStep": {
+    "preparingTools": "正在获取工具",
+    "refreshing": "正在刷新链接",
+    "downloading": "正在下载",
+    "subtitles": "字幕",
+    "merging": "正在合并",
+    "converting": "正在转换"
+  },
+  "mediaTools": {
+    "ready": "就绪",
+    "missing": "首次需要时下载",
+    "installing": "正在下载…",
+    "installingProgress": "正在下载… {{percent}}",
+    "version": "版本 {{version}}",
+    "managed": "由 Whoosh 保持更新",
+    "system": "已安装在这台电脑上",
+    "updateAvailable": "有新版本 {{version}}",
+    "upToDate": "已是最新",
+    "source": "来自 {{upstream}} · {{license}}",
+    "check": "检查更新",
+    "lastCheck": "上次检查：{{time}}",
+    "install": "下载 {{name}}",
+    "update": "更新 {{name}}",
+    "autoUpdate": "每天检查一次更新",
+    "autoUpdateHint": "否则 Whoosh 只在你要求时检查。",
+    "error": "上次尝试失败：{{message}}",
+    "checkFailed": "无法检查更新：{{message}}"
   }
 }

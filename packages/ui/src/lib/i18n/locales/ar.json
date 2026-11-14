@@ -233,7 +233,11 @@
     "added": "أُضيف «{{name}}»",
     "failed": "تعذّرت إضافة التنزيل: {{message}}",
     "chooseFolder": "اختر مكان حفظ الملف",
-    "queue": "قائمة الانتظار"
+    "queue": "قائمة الانتظار",
+    "lookingForMedia": "جارٍ البحث عن فيديو في هذه الصفحة…",
+    "mediaFailed": "لم يُعثر على فيديو في هذه الصفحة: {{message}}",
+    "asFile": "نزّل الصفحة نفسها بدلًا من ذلك",
+    "asMedia": "اختر صيغة فيديو بدلًا من ذلك"
   },
   "remove": {
     "titleOne": "هل تريد إزالة «{{name}}»؟",
@@ -293,7 +297,9 @@
     "stopDaemonOnQuit": "الإنهاء يوقف التنزيلات أيضًا",
     "stopDaemonOnQuitHint": "عند إيقاف هذا الخيار: تستمر التنزيلات في الخلفية لإضافة المتصفح وسطر الأوامر.",
     "machineTranslated": "ترجمة آلية.",
-    "helpTranslate": "ساعد في تحسين الترجمة"
+    "helpTranslate": "ساعد في تحسين الترجمة",
+    "media": "مواقع الفيديو والصوت",
+    "mediaHint": "يستخدم Whoosh أداة yt-dlp للعثور على الفيديو في الصفحة وffmpeg لدمج الفيديو والصوت. كلاهما برنامج مستقل يُنزَّل من إصداراته الرسمية عند الحاجة إليه أول مرة ويُطابَق مع المجموع الاختباري المنشور."
   },
   "theme": {
     "system": "مطابقة النظام",
@@ -466,5 +472,57 @@
     "show": "إظهار Whoosh",
     "quit": "إنهاء",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "الفيديو في هذه الصفحة",
+    "length": "المدة {{time}}",
+    "by": "من {{name}}",
+    "kind": "التنزيل بصيغة",
+    "video": "فيديو",
+    "audio": "صوت فقط",
+    "quality": "الجودة",
+    "qualityBest": "أفضل جودة متاحة",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (نحو {{size}})",
+    "audioFormat": "صيغة الصوت",
+    "audioOriginal": "كما هو (دون تحويل)",
+    "audioMp3": "MP3 (بعد التحويل)",
+    "subtitles": "الترجمة النصية",
+    "subtitlesHint": "تُحفظ ملفاتٍ منفصلة بجانب الفيديو.",
+    "subtitleAuto": "{{name}} (مُنشأة تلقائيًا)",
+    "size": "نحو {{size}}",
+    "sizeUnknown": "الحجم غير معروف بعد",
+    "viaEngine": "ينزّله Whoosh بعدة اتصالات؛ يمكن إيقافه مؤقتًا واستئنافه.",
+    "viaYtDlp": "صيغة بث: تنزّلها yt-dlp باتصال واحد.",
+    "filenameHint": "دون الامتداد؛ يضيفه Whoosh.",
+    "live": "هذا بث مباشر."
+  },
+  "mediaStep": {
+    "preparingTools": "جارٍ جلب الأدوات",
+    "refreshing": "جارٍ تحديث الرابط",
+    "downloading": "جارٍ التنزيل",
+    "subtitles": "الترجمة النصية",
+    "merging": "جارٍ الدمج",
+    "converting": "جارٍ التحويل"
+  },
+  "mediaTools": {
+    "ready": "جاهز",
+    "missing": "يُنزَّل عند الحاجة إليه أول مرة",
+    "installing": "جارٍ التنزيل…",
+    "installingProgress": "جارٍ التنزيل… {{percent}}",
+    "version": "الإصدار {{version}}",
+    "managed": "يحدّثه Whoosh تلقائيًا",
+    "system": "مثبّت على هذا الحاسوب",
+    "updateAvailable": "الإصدار {{version}} متاح",
+    "upToDate": "محدّث",
+    "source": "من {{upstream}} · {{license}}",
+    "check": "التحقق من التحديثات",
+    "lastCheck": "آخر تحقق {{time}}",
+    "install": "تنزيل {{name}}",
+    "update": "تحديث {{name}}",
+    "autoUpdate": "التحقق من التحديثات مرة يوميًا",
+    "autoUpdateHint": "وإلا فلن يتحقق Whoosh إلا عندما تطلب.",
+    "error": "فشلت المحاولة الأخيرة: {{message}}",
+    "checkFailed": "تعذّر التحقق من التحديثات: {{message}}"
   }
 }

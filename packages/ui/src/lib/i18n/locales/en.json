@@ -213,7 +213,11 @@
     "added": "Added “{{name}}”",
     "failed": "Couldn’t add the download: {{message}}",
     "chooseFolder": "Choose where to save the file",
-    "queue": "Queue"
+    "queue": "Queue",
+    "lookingForMedia": "Looking for video on this page…",
+    "mediaFailed": "No video found on this page: {{message}}",
+    "asFile": "Download the page itself instead",
+    "asMedia": "Choose a video format instead"
   },
   "remove": {
     "titleOne": "Remove “{{name}}”?",
@@ -265,7 +269,9 @@
     "stopDaemonOnQuit": "Quitting also stops downloads",
     "stopDaemonOnQuitHint": "Off: downloads keep going in the background for the browser extension and the command line.",
     "machineTranslated": "Machine translated.",
-    "helpTranslate": "Help improve the translation"
+    "helpTranslate": "Help improve the translation",
+    "media": "Video and audio sites",
+    "mediaHint": "Whoosh uses yt-dlp to find the video on a page and ffmpeg to join video and audio. Both are separate programs, downloaded from their official releases the first time they are needed and checked against the published checksum."
   },
   "theme": {
     "system": "Match system",
@@ -406,5 +412,57 @@
     "show": "Show Whoosh",
     "quit": "Quit",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "Video on this page",
+    "length": "Length {{time}}",
+    "by": "From {{name}}",
+    "kind": "Download as",
+    "video": "Video",
+    "audio": "Audio only",
+    "quality": "Quality",
+    "qualityBest": "Best available",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (about {{size}})",
+    "audioFormat": "Audio format",
+    "audioOriginal": "As it is (no conversion)",
+    "audioMp3": "MP3 (converted)",
+    "subtitles": "Subtitles",
+    "subtitlesHint": "Saved as separate files next to the video.",
+    "subtitleAuto": "{{name}} (auto-generated)",
+    "size": "About {{size}}",
+    "sizeUnknown": "Size not known yet",
+    "viaEngine": "Whoosh downloads it with several connections; it can pause and resume.",
+    "viaYtDlp": "A streaming format: yt-dlp downloads it on one connection.",
+    "filenameHint": "Without the extension; Whoosh adds it.",
+    "live": "This is a live stream."
+  },
+  "mediaStep": {
+    "preparingTools": "Getting tools",
+    "refreshing": "Refreshing link",
+    "downloading": "Downloading",
+    "subtitles": "Subtitles",
+    "merging": "Merging",
+    "converting": "Converting"
+  },
+  "mediaTools": {
+    "ready": "Ready",
+    "missing": "Downloaded the first time it is needed",
+    "installing": "Downloading…",
+    "installingProgress": "Downloading… {{percent}}",
+    "version": "Version {{version}}",
+    "managed": "Kept up to date by Whoosh",
+    "system": "Installed on this computer",
+    "updateAvailable": "Version {{version}} is available",
+    "upToDate": "Up to date",
+    "source": "From {{upstream}} · {{license}}",
+    "check": "Check for updates",
+    "lastCheck": "Last checked {{time}}",
+    "install": "Download {{name}}",
+    "update": "Update {{name}}",
+    "autoUpdate": "Check for updates once a day",
+    "autoUpdateHint": "Otherwise Whoosh checks only when you ask.",
+    "error": "Last attempt failed: {{message}}",
+    "checkFailed": "Couldn’t check for updates: {{message}}"
   }
 }

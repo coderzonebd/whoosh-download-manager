@@ -213,7 +213,11 @@
     "added": "“{{name}}” eklendi",
     "failed": "İndirme eklenemedi: {{message}}",
     "chooseFolder": "Dosyanın kaydedileceği yeri seçin",
-    "queue": "Kuyruk"
+    "queue": "Kuyruk",
+    "lookingForMedia": "Bu sayfada video aranıyor…",
+    "mediaFailed": "Bu sayfada video bulunamadı: {{message}}",
+    "asFile": "Bunun yerine sayfanın kendisini indir",
+    "asMedia": "Bunun yerine bir video biçimi seç"
   },
   "remove": {
     "titleOne": "“{{name}}” kaldırılsın mı?",
@@ -265,7 +269,9 @@
     "stopDaemonOnQuit": "Çıkınca indirmeler de dursun",
     "stopDaemonOnQuitHint": "Kapalıyken: indirmeler tarayıcı eklentisi ve komut satırı için arka planda sürer.",
     "machineTranslated": "Makine çevirisi.",
-    "helpTranslate": "Çeviriyi iyileştirmeye yardım edin"
+    "helpTranslate": "Çeviriyi iyileştirmeye yardım edin",
+    "media": "Video ve ses siteleri",
+    "mediaHint": "Whoosh, bir sayfadaki videoyu bulmak için yt-dlp'yi, video ile sesi birleştirmek için ffmpeg'i kullanır. İkisi de ayrı programlardır; ilk gerektiklerinde resmi sürümlerinden indirilir ve yayımlanan sağlama toplamıyla doğrulanır."
   },
   "theme": {
     "system": "Sisteme uy",
@@ -406,5 +412,57 @@
     "show": "Whoosh’u göster",
     "quit": "Çık",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "Bu sayfadaki video",
+    "length": "Süre {{time}}",
+    "by": "{{name}} tarafından",
+    "kind": "İndirme şekli",
+    "video": "Video",
+    "audio": "Yalnızca ses",
+    "quality": "Kalite",
+    "qualityBest": "Mevcut en iyisi",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (yaklaşık {{size}})",
+    "audioFormat": "Ses biçimi",
+    "audioOriginal": "Olduğu gibi (dönüştürmeden)",
+    "audioMp3": "MP3 (dönüştürülerek)",
+    "subtitles": "Altyazılar",
+    "subtitlesHint": "Videonun yanına ayrı dosyalar olarak kaydedilir.",
+    "subtitleAuto": "{{name}} (otomatik oluşturulmuş)",
+    "size": "Yaklaşık {{size}}",
+    "sizeUnknown": "Boyut henüz bilinmiyor",
+    "viaEngine": "Whoosh birden çok bağlantıyla indirir; duraklatılıp sürdürülebilir.",
+    "viaYtDlp": "Bir akış biçimi: yt-dlp tek bağlantıyla indirir.",
+    "filenameHint": "Uzantı olmadan; Whoosh ekler.",
+    "live": "Bu bir canlı yayın."
+  },
+  "mediaStep": {
+    "preparingTools": "Araçlar alınıyor",
+    "refreshing": "Bağlantı yenileniyor",
+    "downloading": "İndiriliyor",
+    "subtitles": "Altyazılar",
+    "merging": "Birleştiriliyor",
+    "converting": "Dönüştürülüyor"
+  },
+  "mediaTools": {
+    "ready": "Hazır",
+    "missing": "İlk gerektiğinde indirilir",
+    "installing": "İndiriliyor…",
+    "installingProgress": "İndiriliyor… {{percent}}",
+    "version": "Sürüm {{version}}",
+    "managed": "Whoosh tarafından güncel tutulur",
+    "system": "Bu bilgisayarda kurulu",
+    "updateAvailable": "{{version}} sürümü mevcut",
+    "upToDate": "Güncel",
+    "source": "Kaynak: {{upstream}} · {{license}}",
+    "check": "Güncellemeleri denetle",
+    "lastCheck": "Son denetim: {{time}}",
+    "install": "{{name}} indir",
+    "update": "{{name}} güncelle",
+    "autoUpdate": "Güncellemeleri günde bir kez denetle",
+    "autoUpdateHint": "Aksi halde Whoosh yalnızca siz istediğinizde denetler.",
+    "error": "Son deneme başarısız oldu: {{message}}",
+    "checkFailed": "Güncellemeler denetlenemedi: {{message}}"
   }
 }

@@ -686,6 +686,7 @@ impl Inner {
             added_at: r.added_at,
             completed_at: r.completed_at,
             error: r.error.clone(),
+            media: None,
         }
     }
 

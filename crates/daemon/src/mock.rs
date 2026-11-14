@@ -562,6 +562,7 @@ impl State {
                 added_at: now_ms(),
                 completed_at: None,
                 error: None,
+                media: None,
             },
             segments: Vec::new(),
             size: probed.size,
@@ -963,6 +964,7 @@ impl State {
                     completed_at: (d.state == DownloadState::Completed)
                         .then_some(added_at + 90_000),
                     error,
+                    media: None,
                 },
                 segments: Vec::new(),
                 size,

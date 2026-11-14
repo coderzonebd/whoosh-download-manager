@@ -10,9 +10,10 @@ use serde::Serialize;
 
 use crate::{
     AddParams, AddResult, DownloadDetail, DownloadSummary, IdParams, IdsParams, ListParams,
-    PreconnectParams, ProbeParams, ProbeResult, ProgressEvent, Queue, QueueConfig,
-    QueueFinishedEvent, QueueNameParams, QueueRenameParams, RefreshUrlParams, RemoveParams,
-    RemovedEvent, SetQueueParams, Settings, StateEvent, Stats, error_code, event,
+    MediaAddParams, MediaConfigureParams, MediaProbeParams, MediaProbeResult, MediaToolsStatus,
+    MediaUpdateParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent, Queue,
+    QueueConfig, QueueFinishedEvent, QueueNameParams, QueueRenameParams, RefreshUrlParams,
+    RemoveParams, RemovedEvent, SetQueueParams, Settings, StateEvent, Stats, error_code, event,
 };
 
 /// A method failed. `code` is a JSON-RPC error code: [`error_code`], or
@@ -73,6 +74,7 @@ pub enum Notification {
     Settings(Settings),
     Queues(Vec<Queue>),
     QueueFinished(QueueFinishedEvent),
+    MediaTools(MediaToolsStatus),
 }
 
 impl Notification {
@@ -88,6 +90,7 @@ impl Notification {
             Self::Settings(_) => event::SETTINGS,
             Self::Queues(_) => event::QUEUES,
             Self::QueueFinished(_) => event::QUEUE_FINISHED,
+            Self::MediaTools(_) => event::MEDIA_TOOLS,
         }
     }
 
@@ -106,6 +109,7 @@ impl Notification {
             Self::Settings(v) => json(v),
             Self::Queues(v) => json(v),
             Self::QueueFinished(v) => json(v),
+            Self::MediaTools(v) => json(v),
         }
     }
 
@@ -165,6 +169,37 @@ pub trait Service: Send + Sync {
         unsupported("queue.cancelAction")
     }
 
+    // Media (yt-dlp / ffmpeg). A service that has them advertises the
+    // `media` capability; the others answer "unsupported".
+
+    fn media_probe(
+        &self,
+        _params: MediaProbeParams,
+    ) -> BoxFuture<'_, ServiceResult<MediaProbeResult>> {
+        unsupported("media.probe")
+    }
+    fn media_add(&self, _params: MediaAddParams) -> BoxFuture<'_, ServiceResult<AddResult>> {
+        unsupported("media.add")
+    }
+    fn media_tools(&self) -> BoxFuture<'_, ServiceResult<MediaToolsStatus>> {
+        unsupported("media.tools")
+    }
+    fn media_check_updates(&self) -> BoxFuture<'_, ServiceResult<MediaToolsStatus>> {
+        unsupported("media.checkUpdates")
+    }
+    fn media_update_tools(
+        &self,
+        _params: MediaUpdateParams,
+    ) -> BoxFuture<'_, ServiceResult<MediaToolsStatus>> {
+        unsupported("media.updateTools")
+    }
+    fn media_configure(
+        &self,
+        _params: MediaConfigureParams,
+    ) -> BoxFuture<'_, ServiceResult<MediaToolsStatus>> {
+        unsupported("media.configure")
+    }
+
     /// A new, independent subscription to every notification (one per client
     /// connection). Ends when the service shuts down. Notifications for
     /// which [`Notification::is_lossy`] is false are never dropped; lossy
@@ -178,6 +213,6 @@ pub trait Service: Send + Sync {
 }
 
 fn unsupported<T: Send + 'static>(method: &str) -> BoxFuture<'static, ServiceResult<T>> {
-    let err = ServiceError::unsupported(format!("{method} is not supported by this daemon yet"));
+    let err = ServiceError::unsupported(format!("{method} is not supported by this daemon"));
     Box::pin(async move { Err(err) })
 }

@@ -14,6 +14,7 @@
   import { getApp } from "../lib/state/app.svelte.ts";
   import DaysPicker from "./DaysPicker.svelte";
   import Icon from "./Icon.svelte";
+  import MediaToolsSection from "./MediaToolsSection.svelte";
 
   const app = getApp();
   const { i18n, prefs } = app;
@@ -493,6 +494,9 @@
         </section>
       {/if}
 
+      {#if app.media.enabled}
+        <MediaToolsSection />
+      {/if}
     </form>
   {/if}
 </div>

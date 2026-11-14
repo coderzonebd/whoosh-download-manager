@@ -89,6 +89,12 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | `queue.start` | `QueueNameParams` | `null`; the queue runs now, whatever its schedule |
 | `queue.stop` | `QueueNameParams` | `null`; pauses what the queue is running and holds the rest until `queue.start` or the next scheduled start. Not for `"main"` |
 | `queue.cancelAction` | `QueueNameParams` | `null`; cancels a pending after-done action (see `event.queue.finished`) |
+| `media.probe` | `MediaProbeParams { url, request? }` | `MediaProbeResult`: what a video page offers (see "Media") |
+| `media.add` | `MediaAddParams { url, request?, choice, subtitles[], filename?, directory?, category?, queue?, start = true }` | `AddResult { id }`: one media download |
+| `media.tools` | — | `MediaToolsStatus` |
+| `media.checkUpdates` | — | `MediaToolsStatus` after asking upstream for the newest versions (network; nothing is installed) |
+| `media.updateTools` | `MediaUpdateParams { tools[] }` (names; all when empty) | `MediaToolsStatus` at once (the tools show `installing`); the install runs in the background and reports through `event.media.tools` |
+| `media.configure` | `MediaConfigureParams { autoUpdate }` | `MediaToolsStatus` |
 
 `Settings.durability` is `powerSafe` (default: data is forced to disk before a file is finished or its progress journalled, so a power cut never damages a finished file) or `processSafe` (data is handed to the OS without forcing it to disk: faster on small files and fast links, survives a killed Whoosh but not a power cut).
 
@@ -101,6 +107,16 @@ Every download is in one queue: the **main queue**, named `"main"` (the default;
 `Queue { name, maxActive, schedule?, running }`. `Schedule { start?, stop?, afterDone = "none" }`: `start` and `stop` are `ClockTime { at: "HH:MM", days? }` in the daemon machine's local time, `days` being 0 (Sunday) to 6 and absent meaning every day. At `start` the queue runs; at `stop` it pauses what it is running. Once nothing is left in the queue, `afterDone` (`none`, `sleep`, `shutdown`) is announced with `event.queue.finished` and carried out 60 seconds later unless a client calls `queue.cancelAction`.
 
 A daemon that implements queues and the scheduler advertises the `queues` capability in `HelloResult.capabilities` (the daemon with the Whoosh engine does); one that does not answers these methods with `-32006`.
+
+### Media (video and audio sites)
+
+Desktop and GitHub builds of the daemon download from video and audio sites through **yt-dlp** and **ffmpeg**. They advertise the `media` capability; a daemon without it (a build with the `media` feature off, or started with `--no-media`) answers every `media.*` method with `-32006`. Store builds of the extension never call these methods (MASTER-PLAN §6).
+
+- **Tools.** yt-dlp and ffmpeg are separate programs, never linked. The daemon fetches each on first use into `<data dir>/media/bin` and checks it against the checksum its project publishes before using it: yt-dlp from `github.com/yt-dlp/yt-dlp` releases (`SHA2-256SUMS`); ffmpeg from `github.com/BtbN/FFmpeg-Builds` (the static **LGPL** build of the newest release branch, `checksums.sha256`) on Windows and Linux, and from `ffmpeg.martin-riedl.de` (its release build and `.sha256` file) on macOS, where no LGPL build is published. On Linux the system's `yt-dlp`/`ffmpeg` are used when there is no managed copy, and on macOS the system's (Homebrew) ffmpeg. Updates happen only through `media.updateTools`, or at most once a day when `autoUpdate` is on. `MediaToolsStatus { tools: MediaTool[], autoUpdate, lastCheckAt? }`, `MediaTool { name ("yt-dlp" | "ffmpeg"), state ("missing" | "installing" | "ready"), source? ("managed" | "system"), version?, path?, latestVersion?, updateAvailable, upstream, license, downloadedBytes?, totalBytes?, error? }`.
+- **Probe.** `media.probe` runs yt-dlp on the page and answers `MediaProbeResult { url, title, extractor, thumbnail?, durationSecs?, uploader?, live, formats: MediaFormat[], subtitles: MediaSubtitle[] }`. Formats are worst first: `MediaFormat { id, kind ("videoAudio" | "videoOnly" | "audioOnly"), ext, width?, height?, fps?, vcodec?, acodec?, abrKbps?, sizeBytes?, sizeApproximate, note?, direct }`; `direct` means a plain HTTP(S) URL the engine can download. `MediaSubtitle { lang, name?, automatic }`. A playlist page is refused with `-32602`; yt-dlp's own errors (unsupported site, private video) come back as `-32005` with its message.
+- **Add.** `choice` is `{ kind: "best", maxHeight? }` (best video with the best audio, at most `maxHeight` pixels high), `{ kind: "audio", convert = "original" | "mp3" }`, or `{ kind: "formats", ids }` (one format, or a video and an audio format from `media.probe`). `subtitles` lists languages to save next to the file as `<name>.<lang>.<ext>`. `filename` is the name without extension (default: the title), sanitized like any file name. The download appears at once as one `DownloadSummary` with `media: MediaDownloadInfo { title, format, via ("engine" | "ytDlp"), step? }` and the page as its `url`; `step` (`preparingTools`, `refreshing`, `downloading`, `subtitles`, `merging`, `converting`) says what an active download is doing.
+- **How the bytes move.** When every chosen format is `direct`, the daemon downloads them with its own engine as hidden downloads (multi-connection, resumable, crash-safe, in the download's queue, under the scheduler and speed limits), then ffmpeg joins video and audio without re-encoding (or takes the audio out, or encodes MP3) while the download reports `verifying`. When a link expires, the daemon asks yt-dlp for fresh links to the same formats by itself; `download.refreshUrl` on a media download does the same on demand (its `url` is ignored). Formats the engine cannot fetch yet (HLS, DASH fragments and other streaming protocols) are downloaded by yt-dlp itself (`via: "ytDlp"`): not split into connections, paused by stopping yt-dlp and resumed from its partial files, at most two at a time, started when the download's queue runs.
+- **Safety.** yt-dlp and ffmpeg get an argument array, never a shell, and yt-dlp runs without config files (`--ignore-config`) and with the page URL after `--`. Cookies reach yt-dlp only when the client passed one in `request.cookie` (the extension, for that page), as a temporary cookie file for the page's host; the daemon never reads a browser's cookie store. The parts get only the headers and cookies yt-dlp reports for their own URLs. No DRM circumvention and no site-specific workarounds: what yt-dlp can download is all there is.
 
 `request` (`RequestContext`) carries what the browser would have sent: `method`, `headers[]` (`{ name, value }`), `cookie`, `referer`, `userAgent`, `bodyBase64`.
 
@@ -121,6 +137,7 @@ A daemon that implements queues and the scheduler advertises the `queues` capabi
 | `event.settings` | `Settings` | after any change |
 | `event.queues` | `Queue[]` | after any change to a queue |
 | `event.queue.finished` | `{ name, action, atMs }`: the queue's after-done action runs at `atMs` unless cancelled | on change |
+| `event.media.tools` | `MediaToolsStatus` | after any change to the media tools; install progress at most once per second |
 | `event.nm.status` | `NmStatus` | native host only, on daemon connect/disconnect |
 
 Clients subscribe implicitly by completing `session.hello`.
@@ -140,7 +157,7 @@ Standard JSON-RPC codes, plus:
 | `-32007` | daemon unavailable (native host only) |
 | `-32008` | message too large for native messaging (native host only) |
 
-Per-download failures are reported in `DownloadSummary.error` / `event.download.state` as `{ code, message }` with stable codes such as `remote_changed`, `link_expired`, `disk_full`, `ranges_unsupported`.
+Per-download failures are reported in `DownloadSummary.error` / `event.download.state` as `{ code, message }` with stable codes such as `remote_changed`, `link_expired`, `disk_full`, `ranges_unsupported`. Media downloads add `tools_unavailable` (yt-dlp or ffmpeg could not be fetched or checked), `media_unavailable` (yt-dlp found nothing to download), `format_unavailable`, `merge_failed`, `download_failed` (yt-dlp's own download), `part_missing`.
 
 ## 6. Example
 

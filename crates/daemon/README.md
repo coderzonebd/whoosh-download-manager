@@ -21,8 +21,11 @@ target/debug/whoosh-daemon --mock --mock-scenario empty --port 0
 | `--detached` (hidden) | | off | used by `whoosh` when it starts the daemon: no stderr logging, SIGHUP ignored |
 | | `WHOOSH_LOG` | `info` | log filter (`tracing-subscriber` `EnvFilter` syntax) |
 | `--worker-threads N` | `WHOOSH_WORKER_THREADS` | `1` | async runtime worker threads (1–64) |
+| `--no-media` | `WHOOSH_DAEMON_NO_MEDIA=1` | off | turn off video and audio sites (yt-dlp/ffmpeg) in a build that has them |
 
 Without `--mock` it serves `whoosh-engine` over `whoosh-net` and `whoosh-store`, with its state in the data directory (`state.db`, `journal/`).
+
+**Video and audio sites.** With the `media` cargo feature (on by default: desktop and GitHub builds) the engine is wrapped in [`whoosh-media`](../media/README.md), which adds the `media.*` methods and the `media` capability, and keeps its tools and jobs in `<data dir>/media/`. Build with `--no-default-features` for a daemon without it; such a daemon answers `media.*` with `-32006`.
 
 **Exit codes:** `0` clean shutdown · `1` error · `2` usage · `3` another daemon already runs for this data directory · `130` forced (second signal).
 

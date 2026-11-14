@@ -213,7 +213,11 @@
     "added": "“{{name}}” যোগ করা হয়েছে",
     "failed": "ডাউনলোড যোগ করা যায়নি: {{message}}",
     "chooseFolder": "ফাইলটি কোথায় রাখবেন বেছে নিন",
-    "queue": "সারি"
+    "queue": "সারি",
+    "lookingForMedia": "এই পেজে ভিডিও খোঁজা হচ্ছে…",
+    "mediaFailed": "এই পেজে কোনো ভিডিও পাওয়া যায়নি: {{message}}",
+    "asFile": "বরং পেজটাই ফাইল হিসেবে ডাউনলোড করুন",
+    "asMedia": "বরং ভিডিওর ফরম্যাট বেছে নিন"
   },
   "remove": {
     "titleOne": "“{{name}}” সরাবেন?",
@@ -265,7 +269,9 @@
     "stopDaemonOnQuit": "প্রস্থান করলে ডাউনলোডও থামবে",
     "stopDaemonOnQuitHint": "এটি বন্ধ থাকলে ব্রাউজার এক্সটেনশন ও কমান্ড লাইনের জন্য ডাউনলোড পেছনে চলতে থাকে।",
     "machineTranslated": "এই ভাষার অনুবাদ যন্ত্রে করা।",
-    "helpTranslate": "অনুবাদ আরও ভালো করতে সাহায্য করুন"
+    "helpTranslate": "অনুবাদ আরও ভালো করতে সাহায্য করুন",
+    "media": "ভিডিও ও অডিও সাইট",
+    "mediaHint": "পেজের ভিডিও খুঁজতে Whoosh yt-dlp আর ভিডিও-অডিও জোড়া লাগাতে ffmpeg ব্যবহার করে। দুটোই আলাদা প্রোগ্রাম; প্রথমবার দরকার হলে এদের অফিশিয়াল রিলিজ থেকে ডাউনলোড হয় আর প্রকাশিত চেকসামের সঙ্গে মিলিয়ে দেখা হয়।"
   },
   "theme": {
     "system": "সিস্টেমের মতো",
@@ -406,5 +412,57 @@
     "show": "Whoosh দেখান",
     "quit": "প্রস্থান",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "এই পেজের ভিডিও",
+    "length": "দৈর্ঘ্য {{time}}",
+    "by": "{{name}} থেকে",
+    "kind": "যেভাবে ডাউনলোড হবে",
+    "video": "ভিডিও",
+    "audio": "শুধু অডিও",
+    "quality": "কোয়ালিটি",
+    "qualityBest": "সবচেয়ে ভালোটা",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (প্রায় {{size}})",
+    "audioFormat": "অডিও ফরম্যাট",
+    "audioOriginal": "যেমন আছে (কনভার্ট ছাড়া)",
+    "audioMp3": "MP3 (কনভার্ট করে)",
+    "subtitles": "সাবটাইটেল",
+    "subtitlesHint": "ভিডিওর পাশে আলাদা ফাইল হিসেবে সেভ হবে।",
+    "subtitleAuto": "{{name}} (স্বয়ংক্রিয়)",
+    "size": "প্রায় {{size}}",
+    "sizeUnknown": "সাইজ এখনো জানা নেই",
+    "viaEngine": "Whoosh কয়েকটি সংযোগে ডাউনলোড করবে; থামিয়ে আবার চালানো যাবে।",
+    "viaYtDlp": "এটা স্ট্রিমিং ফরম্যাট: yt-dlp একটি সংযোগে ডাউনলোড করবে।",
+    "filenameHint": "এক্সটেনশন ছাড়া লিখুন; Whoosh নিজেই যোগ করবে।",
+    "live": "এটা লাইভ স্ট্রিম।"
+  },
+  "mediaStep": {
+    "preparingTools": "টুল আনা হচ্ছে",
+    "refreshing": "লিংক নতুন করা হচ্ছে",
+    "downloading": "ডাউনলোড হচ্ছে",
+    "subtitles": "সাবটাইটেল",
+    "merging": "জোড়া লাগানো হচ্ছে",
+    "converting": "কনভার্ট হচ্ছে"
+  },
+  "mediaTools": {
+    "ready": "তৈরি",
+    "missing": "প্রথমবার দরকার হলে ডাউনলোড হবে",
+    "installing": "ডাউনলোড হচ্ছে…",
+    "installingProgress": "ডাউনলোড হচ্ছে… {{percent}}",
+    "version": "ভার্সন {{version}}",
+    "managed": "Whoosh নিজেই আপডেট রাখে",
+    "system": "এই কম্পিউটারে ইনস্টল করা",
+    "updateAvailable": "ভার্সন {{version}} পাওয়া যাচ্ছে",
+    "upToDate": "সর্বশেষ ভার্সন",
+    "source": "{{upstream}} থেকে · {{license}}",
+    "check": "আপডেট আছে কি না দেখুন",
+    "lastCheck": "শেষবার দেখা হয়েছে {{time}}",
+    "install": "{{name}} ডাউনলোড করুন",
+    "update": "{{name}} আপডেট করুন",
+    "autoUpdate": "দিনে একবার আপডেট দেখুন",
+    "autoUpdateHint": "না হলে আপনি চাইলেই কেবল Whoosh আপডেট দেখবে।",
+    "error": "শেষ চেষ্টা ব্যর্থ হয়েছে: {{message}}",
+    "checkFailed": "আপডেট দেখা গেল না: {{message}}"
   }
 }

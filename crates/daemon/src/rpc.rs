@@ -159,6 +159,18 @@ pub async fn dispatch(service: &Arc<dyn Service>, req: Request) -> Result<Value,
         method::QUEUE_CANCEL_ACTION => {
             to_value(service.cancel_queue_action(by_name(params)?).await?)
         }
+        method::MEDIA_PROBE => to_value(service.media_probe(by_name(params)?).await?),
+        method::MEDIA_ADD => to_value(service.media_add(by_name(params)?).await?),
+        method::MEDIA_TOOLS => {
+            no_params(params)?;
+            to_value(service.media_tools().await?)
+        }
+        method::MEDIA_CHECK_UPDATES => {
+            no_params(params)?;
+            to_value(service.media_check_updates().await?)
+        }
+        method::MEDIA_UPDATE_TOOLS => to_value(service.media_update_tools(by_name(params)?).await?),
+        method::MEDIA_CONFIGURE => to_value(service.media_configure(by_name(params)?).await?),
         other => Err(ServiceError::new(
             METHOD_NOT_FOUND,
             format!("method not found: {other}"),

@@ -208,7 +208,11 @@
     "added": "“{{name}}” ditambahkan",
     "failed": "Tidak dapat menambahkan unduhan: {{message}}",
     "chooseFolder": "Pilih lokasi penyimpanan file",
-    "queue": "Antrean"
+    "queue": "Antrean",
+    "lookingForMedia": "Mencari video di halaman ini…",
+    "mediaFailed": "Tidak ada video di halaman ini: {{message}}",
+    "asFile": "Unduh halamannya saja",
+    "asMedia": "Pilih format video"
   },
   "remove": {
     "titleOne": "Hapus “{{name}}”?",
@@ -258,7 +262,9 @@
     "stopDaemonOnQuit": "Keluar juga menghentikan unduhan",
     "stopDaemonOnQuitHint": "Jika nonaktif: unduhan tetap berjalan di latar belakang untuk ekstensi browser dan baris perintah.",
     "machineTranslated": "Diterjemahkan oleh mesin.",
-    "helpTranslate": "Bantu sempurnakan terjemahan"
+    "helpTranslate": "Bantu sempurnakan terjemahan",
+    "media": "Situs video dan audio",
+    "mediaHint": "Whoosh memakai yt-dlp untuk menemukan video di sebuah halaman dan ffmpeg untuk menggabungkan video dan audio. Keduanya program terpisah, diunduh dari rilis resminya saat pertama kali dibutuhkan dan dicocokkan dengan checksum yang diterbitkan."
   },
   "theme": {
     "system": "Ikuti sistem",
@@ -391,5 +397,57 @@
     "show": "Tampilkan Whoosh",
     "quit": "Keluar",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "Video di halaman ini",
+    "length": "Durasi {{time}}",
+    "by": "Dari {{name}}",
+    "kind": "Unduh sebagai",
+    "video": "Video",
+    "audio": "Audio saja",
+    "quality": "Kualitas",
+    "qualityBest": "Terbaik yang tersedia",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (sekitar {{size}})",
+    "audioFormat": "Format audio",
+    "audioOriginal": "Apa adanya (tanpa konversi)",
+    "audioMp3": "MP3 (dikonversi)",
+    "subtitles": "Subtitel",
+    "subtitlesHint": "Disimpan sebagai file terpisah di samping video.",
+    "subtitleAuto": "{{name}} (dibuat otomatis)",
+    "size": "Sekitar {{size}}",
+    "sizeUnknown": "Ukuran belum diketahui",
+    "viaEngine": "Whoosh mengunduhnya dengan beberapa koneksi; bisa dijeda dan dilanjutkan.",
+    "viaYtDlp": "Format streaming: yt-dlp mengunduhnya dengan satu koneksi.",
+    "filenameHint": "Tanpa ekstensi; Whoosh menambahkannya.",
+    "live": "Ini siaran langsung."
+  },
+  "mediaStep": {
+    "preparingTools": "Mengambil alat",
+    "refreshing": "Memperbarui tautan",
+    "downloading": "Mengunduh",
+    "subtitles": "Subtitel",
+    "merging": "Menggabungkan",
+    "converting": "Mengonversi"
+  },
+  "mediaTools": {
+    "ready": "Siap",
+    "missing": "Diunduh saat pertama kali dibutuhkan",
+    "installing": "Mengunduh…",
+    "installingProgress": "Mengunduh… {{percent}}",
+    "version": "Versi {{version}}",
+    "managed": "Diperbarui oleh Whoosh",
+    "system": "Terpasang di komputer ini",
+    "updateAvailable": "Versi {{version}} tersedia",
+    "upToDate": "Terbaru",
+    "source": "Dari {{upstream}} · {{license}}",
+    "check": "Periksa pembaruan",
+    "lastCheck": "Terakhir diperiksa {{time}}",
+    "install": "Unduh {{name}}",
+    "update": "Perbarui {{name}}",
+    "autoUpdate": "Periksa pembaruan sekali sehari",
+    "autoUpdateHint": "Jika tidak, Whoosh hanya memeriksa saat Anda minta.",
+    "error": "Percobaan terakhir gagal: {{message}}",
+    "checkFailed": "Tidak bisa memeriksa pembaruan: {{message}}"
   }
 }

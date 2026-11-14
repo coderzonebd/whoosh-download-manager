@@ -46,7 +46,7 @@
 
   const primary = $derived.by(() => {
     if (PAUSABLE.has(d.state)) return { icon: "pause", label: t("action.pause"), run: () => app.pause([download.id]) } as const;
-    if (d.state === "needs_refresh") return { icon: "refresh", label: t("action.refreshLink"), run: () => (app.refreshId = download.id) } as const;
+    if (d.state === "needs_refresh") return { icon: "refresh", label: t("action.refreshLink"), run: () => app.refreshLink(download.id) } as const;
     if (RESUMABLE.has(d.state)) return { icon: d.state === "failed" ? "refresh" : "play", label: t(d.state === "failed" ? "action.retry" : "action.resume"), run: () => app.resume([download.id]) } as const;
     return undefined;
   });
@@ -75,7 +75,7 @@
     <div class="main">
       <div class="title">
         <span class="name vy-truncate" title={d.filename} dir="auto">{d.filename}</span>
-        <StatusBadge state={d.state} variant="pill" />
+        <StatusBadge state={d.state} variant="pill" step={d.media?.step} />
       </div>
       <SegmentBar download={download} size="md" />
       <div class="meta vy-num" class:problem={d.state === "failed" || d.state === "needs_refresh"}>

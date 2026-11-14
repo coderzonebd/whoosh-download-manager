@@ -218,7 +218,11 @@
     "added": "Se añadió “{{name}}”",
     "failed": "No se pudo añadir la descarga: {{message}}",
     "chooseFolder": "Elige dónde guardar el archivo",
-    "queue": "Cola"
+    "queue": "Cola",
+    "lookingForMedia": "Buscando un vídeo en esta página…",
+    "mediaFailed": "No se encontró ningún vídeo en esta página: {{message}}",
+    "asFile": "Descargar la página en su lugar",
+    "asMedia": "Elegir un formato de vídeo en su lugar"
   },
   "remove": {
     "titleOne": "¿Quitar “{{name}}”?",
@@ -272,7 +276,9 @@
     "stopDaemonOnQuit": "Al salir, también se detienen las descargas",
     "stopDaemonOnQuitHint": "Desactivado: las descargas siguen en segundo plano para la extensión del navegador y la línea de comandos.",
     "machineTranslated": "Traducción automática.",
-    "helpTranslate": "Ayuda a mejorar la traducción"
+    "helpTranslate": "Ayuda a mejorar la traducción",
+    "media": "Sitios de vídeo y audio",
+    "mediaHint": "Whoosh usa yt-dlp para encontrar el vídeo de una página y ffmpeg para unir vídeo y audio. Ambos son programas independientes que se descargan de sus versiones oficiales la primera vez que hacen falta y se comprueban con la suma de verificación publicada."
   },
   "theme": {
     "system": "Igual que el sistema",
@@ -421,5 +427,57 @@
     "show": "Mostrar Whoosh",
     "quit": "Salir",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "Vídeo en esta página",
+    "length": "Duración {{time}}",
+    "by": "De {{name}}",
+    "kind": "Descargar como",
+    "video": "Vídeo",
+    "audio": "Solo audio",
+    "quality": "Calidad",
+    "qualityBest": "La mejor disponible",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (unos {{size}})",
+    "audioFormat": "Formato de audio",
+    "audioOriginal": "Tal cual (sin convertir)",
+    "audioMp3": "MP3 (convertido)",
+    "subtitles": "Subtítulos",
+    "subtitlesHint": "Se guardan como archivos aparte junto al vídeo.",
+    "subtitleAuto": "{{name}} (generados automáticamente)",
+    "size": "Unos {{size}}",
+    "sizeUnknown": "Tamaño aún desconocido",
+    "viaEngine": "Whoosh lo descarga con varias conexiones; se puede pausar y reanudar.",
+    "viaYtDlp": "Un formato de streaming: yt-dlp lo descarga con una sola conexión.",
+    "filenameHint": "Sin la extensión; Whoosh la añade.",
+    "live": "Es una transmisión en directo."
+  },
+  "mediaStep": {
+    "preparingTools": "Obteniendo herramientas",
+    "refreshing": "Renovando el enlace",
+    "downloading": "Descargando",
+    "subtitles": "Subtítulos",
+    "merging": "Uniendo",
+    "converting": "Convirtiendo"
+  },
+  "mediaTools": {
+    "ready": "Lista",
+    "missing": "Se descarga la primera vez que haga falta",
+    "installing": "Descargando…",
+    "installingProgress": "Descargando… {{percent}}",
+    "version": "Versión {{version}}",
+    "managed": "Whoosh la mantiene actualizada",
+    "system": "Instalada en este equipo",
+    "updateAvailable": "La versión {{version}} está disponible",
+    "upToDate": "Actualizada",
+    "source": "De {{upstream}} · {{license}}",
+    "check": "Buscar actualizaciones",
+    "lastCheck": "Última comprobación: {{time}}",
+    "install": "Descargar {{name}}",
+    "update": "Actualizar {{name}}",
+    "autoUpdate": "Buscar actualizaciones una vez al día",
+    "autoUpdateHint": "Si no, Whoosh solo busca cuando usted lo pide.",
+    "error": "El último intento falló: {{message}}",
+    "checkFailed": "No se pudo buscar actualizaciones: {{message}}"
   }
 }

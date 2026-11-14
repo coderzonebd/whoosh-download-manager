@@ -3,7 +3,7 @@
 // from context (`getApp()`), so the same tree runs on the mock, the real
 // WebSocket client or (in the extension) a native-messaging client.
 
-import { MAIN_QUEUE, type AddParams, type DownloadSummary, type Queue, type QueueConfig, type Settings, type Stats, type WhooshClient } from "@whoosh/api-client";
+import { MAIN_QUEUE, type AddParams, type DownloadSummary, type MediaAddParams, type Queue, type QueueConfig, type Settings, type Stats, type WhooshClient } from "@whoosh/api-client";
 import { isWhooshConnectionError, isWhooshRpcError } from "@whoosh/api-client/errors";
 import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
@@ -12,6 +12,7 @@ import { DownloadStore, PAUSABLE, RESUMABLE, type Download } from "./downloads.s
 import { Prefs } from "./prefs.svelte.ts";
 import { SegmentCache } from "./segments.svelte.ts";
 import { QUEUES_CAPABILITY, QueueStore, isUnsupported } from "./queues.svelte.ts";
+import { MEDIA_CAPABILITY, MediaStore, isMediaUnsupported } from "./media.svelte.ts";
 import { ToastStore } from "./toasts.svelte.ts";
 
 export type Connection = "demo" | "connecting" | "open" | "reconnecting" | "closed";
@@ -55,6 +56,7 @@ export class AppState {
   readonly prefs: Prefs;
   readonly segments: SegmentCache;
   readonly queues = new QueueStore();
+  readonly media = new MediaStore();
   readonly host: Host;
 
   settings = $state.raw<Settings | undefined>(undefined);
@@ -156,7 +158,20 @@ export class AppState {
       this.i18n.setLocale(settings.value.language);
     }
     if (stats.status === "fulfilled") this.stats = stats.value;
-    await this.loadQueues();
+    await Promise.all([this.loadQueues(), this.loadMedia()]);
+  }
+
+  /** Learn whether the daemon offers video and audio sites (yt-dlp). Never reports -32006. */
+  async loadMedia(): Promise<void> {
+    if (this.#capabilities && !this.#capabilities.includes(MEDIA_CAPABILITY)) {
+      this.media.disable();
+      return;
+    }
+    try {
+      this.media.replace(await this.client.call("media.tools", undefined));
+    } catch (e) {
+      if (isMediaUnsupported(e)) this.media.disable();
+    }
   }
 
   /** Learn whether the daemon has queues, and load them if it does. Never reports -32006. */
@@ -195,6 +210,7 @@ export class AppState {
         this.queues.replace(list);
       }),
       c.on("event.queue.finished", (e) => this.queues.finished(e)),
+      c.on("event.media.tools", (s) => this.media.replace(s)),
       c.on("event.download.state", (e) => {
         const prev = this.store.applyState(e);
         const d = this.store.get(e.id);
@@ -215,12 +231,26 @@ export class AppState {
       this.toasts.push({
         tone: "warning",
         message: t("toast.expired", { name }),
-        action: { label: t("action.refreshLink"), run: () => (this.refreshId = d.id) },
+        action: { label: t("action.refreshLink"), run: () => this.refreshLink(d.id) },
       });
     }
   }
 
   // ---------------------------------------------------------------- actions
+
+  /**
+   * A link expired. A media download asks the daemon to get fresh links from
+   * its page (yt-dlp) by itself; anything else needs a new address from the
+   * user.
+   */
+  refreshLink(id: string): void {
+    const d = this.store.get(id);
+    if (d?.data.media) {
+      this.client.call("download.refreshUrl", { id, url: d.data.url }).catch((e: unknown) => this.report(e));
+      return;
+    }
+    this.refreshId = id;
+  }
 
   /** Open the add dialog, optionally with an address filled in. */
   openAdd(url = ""): void {
@@ -283,7 +313,7 @@ export class AppState {
     if (pausable.length > 0) return this.pause(pausable);
     const needsRefresh = sel.find((d) => d.data.state === "needs_refresh");
     if (needsRefresh && sel.length === 1) {
-      this.refreshId = needsRefresh.id;
+      this.refreshLink(needsRefresh.id);
       return;
     }
     return this.resume(this.resumableIds(sel));
@@ -310,6 +340,18 @@ export class AppState {
 
   async add(params: AddParams): Promise<string> {
     const { id } = await this.client.call("download.add", params);
+    await this.#ensureRow(id);
+    return id;
+  }
+
+  /** A video or audio download from a page (`media.add`). */
+  async addMedia(params: MediaAddParams): Promise<string> {
+    const { id } = await this.client.call("media.add", params);
+    await this.#ensureRow(id);
+    return id;
+  }
+
+  async #ensureRow(id: string): Promise<void> {
     // The added event usually arrives first; make sure the row exists either way.
     if (!this.store.get(id)) {
       try {
@@ -318,7 +360,6 @@ export class AppState {
         // the event will bring it
       }
     }
-    return id;
   }
 
   async copyLink(id: string): Promise<void> {

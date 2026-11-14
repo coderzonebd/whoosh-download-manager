@@ -97,7 +97,7 @@ describe("locale files", () => {
 
   it("Bangla is complete, every plural form included, and leaves nothing in English", () => {
     const bn = flat("bn");
-    const sameOnPurpose = new Set(["app.name", "add.urlPlaceholder", "eta.unknown", "detail.segmentRange", "tray.tooltip"]);
+    const sameOnPurpose = new Set(["app.name", "add.urlPlaceholder", "eta.unknown", "detail.segmentRange", "tray.tooltip", "media.qualityHeight"]);
     for (const key of expectedKeys(SOURCE_MESSAGES, "bn")) {
       expect(bn[key], key).toBeTruthy();
       const b = base(key);

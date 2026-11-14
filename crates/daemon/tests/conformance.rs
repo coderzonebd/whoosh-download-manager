@@ -690,6 +690,7 @@ async fn clients_too_far_behind_on_lossless_events_are_closed_with_4429() {
         added_at: 0,
         completed_at: None,
         error: None,
+        media: None,
     };
     // Emit until the slow client's subscription is dropped by the daemon.
     let mut sent = 0u64;

@@ -208,7 +208,11 @@
     "added": "Đã thêm “{{name}}”",
     "failed": "Không thể thêm tải xuống: {{message}}",
     "chooseFolder": "Chọn nơi lưu tệp",
-    "queue": "Hàng đợi"
+    "queue": "Hàng đợi",
+    "lookingForMedia": "Đang tìm video trên trang này…",
+    "mediaFailed": "Không tìm thấy video trên trang này: {{message}}",
+    "asFile": "Tải chính trang này xuống",
+    "asMedia": "Chọn định dạng video"
   },
   "remove": {
     "titleOne": "Gỡ bỏ “{{name}}”?",
@@ -258,7 +262,9 @@
     "stopDaemonOnQuit": "Thoát cũng dừng các tải xuống",
     "stopDaemonOnQuitHint": "Khi tắt: các tải xuống vẫn chạy nền cho tiện ích trình duyệt và dòng lệnh.",
     "machineTranslated": "Bản dịch máy.",
-    "helpTranslate": "Giúp cải thiện bản dịch"
+    "helpTranslate": "Giúp cải thiện bản dịch",
+    "media": "Trang video và âm thanh",
+    "mediaHint": "Whoosh dùng yt-dlp để tìm video trên một trang và ffmpeg để ghép video với âm thanh. Cả hai là chương trình riêng, được tải từ bản phát hành chính thức khi cần lần đầu và được kiểm tra với mã băm đã công bố."
   },
   "theme": {
     "system": "Theo hệ thống",
@@ -391,5 +397,57 @@
     "show": "Hiện Whoosh",
     "quit": "Thoát",
     "tooltip": "Whoosh — ↓ {{speed}} · {{active}}"
+  },
+  "media": {
+    "found": "Video trên trang này",
+    "length": "Thời lượng {{time}}",
+    "by": "Từ {{name}}",
+    "kind": "Tải dưới dạng",
+    "video": "Video",
+    "audio": "Chỉ âm thanh",
+    "quality": "Chất lượng",
+    "qualityBest": "Tốt nhất hiện có",
+    "qualityHeight": "{{height}}p",
+    "qualityHeightSize": "{{height}}p (khoảng {{size}})",
+    "audioFormat": "Định dạng âm thanh",
+    "audioOriginal": "Giữ nguyên (không chuyển đổi)",
+    "audioMp3": "MP3 (chuyển đổi)",
+    "subtitles": "Phụ đề",
+    "subtitlesHint": "Lưu thành tệp riêng cạnh video.",
+    "subtitleAuto": "{{name}} (tự động tạo)",
+    "size": "Khoảng {{size}}",
+    "sizeUnknown": "Chưa biết dung lượng",
+    "viaEngine": "Whoosh tải bằng nhiều kết nối; có thể tạm dừng và tiếp tục.",
+    "viaYtDlp": "Định dạng phát trực tuyến: yt-dlp tải bằng một kết nối.",
+    "filenameHint": "Không cần phần mở rộng; Whoosh tự thêm.",
+    "live": "Đây là buổi phát trực tiếp."
+  },
+  "mediaStep": {
+    "preparingTools": "Đang lấy công cụ",
+    "refreshing": "Đang làm mới liên kết",
+    "downloading": "Đang tải",
+    "subtitles": "Phụ đề",
+    "merging": "Đang ghép",
+    "converting": "Đang chuyển đổi"
+  },
+  "mediaTools": {
+    "ready": "Sẵn sàng",
+    "missing": "Sẽ được tải khi cần lần đầu",
+    "installing": "Đang tải…",
+    "installingProgress": "Đang tải… {{percent}}",
+    "version": "Phiên bản {{version}}",
+    "managed": "Whoosh tự cập nhật",
+    "system": "Đã cài trên máy này",
+    "updateAvailable": "Đã có phiên bản {{version}}",
+    "upToDate": "Đã mới nhất",
+    "source": "Từ {{upstream}} · {{license}}",
+    "check": "Kiểm tra cập nhật",
+    "lastCheck": "Kiểm tra lần cuối {{time}}",
+    "install": "Tải {{name}}",
+    "update": "Cập nhật {{name}}",
+    "autoUpdate": "Kiểm tra cập nhật mỗi ngày một lần",
+    "autoUpdateHint": "Nếu không, Whoosh chỉ kiểm tra khi bạn yêu cầu.",
+    "error": "Lần thử gần nhất thất bại: {{message}}",
+    "checkFailed": "Không thể kiểm tra cập nhật: {{message}}"
   }
 }

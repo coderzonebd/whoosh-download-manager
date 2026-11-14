@@ -4,6 +4,13 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## Unreleased: Phase 2
 
+### Video and audio sites (yt-dlp, ffmpeg)
+- Desktop and GitHub builds download from video and audio sites. The add dialog notices a video page and offers a format picker: video at a chosen quality (or the best), audio only (as it is, or MP3), and subtitles. Store builds of the extension never offer it.
+- yt-dlp and ffmpeg are separate programs, fetched by the daemon the first time they are needed from their official releases (yt-dlp's GitHub releases; ffmpeg's LGPL builds from BtbN on Windows and Linux, and Martin Riedl's release build on macOS) and checked against the published SHA-256 before use. Linux uses the system's yt-dlp and ffmpeg when there is no managed copy; macOS uses a Homebrew ffmpeg if present.
+- Settings → Video and audio sites shows both tools with their version, source and licence, checks for updates on request, updates them, and can check once a day.
+- Formats with a plain HTTP(S) link download through Whoosh's engine (several connections, resumable, crash-safe, in queues and under the scheduler); ffmpeg then joins video and audio without re-encoding. Expired links are refreshed through yt-dlp automatically. Streaming formats (HLS, DASH fragments) are downloaded by yt-dlp itself.
+- No shell, no config files, no browser cookies unless the extension passed one for the page, no DRM circumvention.
+
 ### Desktop app
 - The desktop app is a client of the daemon ([ADR 0007](docs/adr/0007-phase2-plan.md)). It starts the bundled `whoosh-daemon` when none is running, and finds it again after a restart.
 - One instance per user: a second launch shows the first window.
@@ -54,11 +61,13 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - Finished downloads carry the mark of the web, so the OS warns before running them: a `Zone.Identifier` stream on Windows (`ZoneId=3`, with the referrer and the download URL, minus user info, query and fragment), `com.apple.quarantine` on macOS, `user.xdg.origin.url` on Linux.
 
 ### Internal
+- New crate `whoosh-media`: the yt-dlp/ffmpeg tools, checksums, and the media layer over the engine. Its tests run a fake yt-dlp and ffmpeg (the test binary itself, printing canned JSON) against the labserver, without the network.
 - New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
 - `Storage::mark_origin` in `whoosh-core` (default: does nothing): the engine calls it before a download's final move.
 - labserver: HTTP/3 tests no longer fail on Windows when the TLS port's number falls in a reserved UDP port range (`WSAEACCES`).
 
 ### Protocol
+- Media ([PROTOCOL.md](docs/api/PROTOCOL.md#media-video-and-audio-sites)): `media.probe`, `media.add`, `media.tools`, `media.checkUpdates`, `media.updateTools`, `media.configure`, `event.media.tools`, `DownloadSummary.media`, and the `media` capability. The daemon implements them with the `media` feature (default on; `--no-media` turns it off at run time); the mock client too.
 - Queues and the scheduler ([PROTOCOL.md](docs/api/PROTOCOL.md#queues-and-the-scheduler)): `queue.list/create/update/rename/remove/start/stop/cancelAction`, `download.setQueue`, `event.queues`, `event.queue.finished`, and `Settings.speedSchedule`. The engine implements them (see Engine above); the mock client supports them too.
 - `download.add` with `queue: "main"` means the main queue.
 

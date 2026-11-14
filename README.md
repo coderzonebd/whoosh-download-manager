@@ -97,6 +97,7 @@ flowchart LR
 |---|---|
 | [`crates/core`](crates/core) | engine types and traits (ranges, sources, storage, journal) |
 | [`crates/net`](crates/net) · [`engine`](crates/engine) · [`store`](crates/store) | network, scheduling, durable storage |
+| [`crates/media`](crates/media) | video and audio sites: yt-dlp and ffmpeg as separate programs, fetched on first use, downloads through the engine |
 | [`crates/daemon`](crates/daemon) · [`cli`](crates/cli) · [`nmhost`](crates/nmhost) | the service and its clients |
 | [`crates/proto`](crates/proto) · [`packages/api-client`](packages/api-client) | the local API, in Rust and TypeScript |
 | [`crates/labserver`](crates/labserver) · [`bench`](crates/bench) | fault-injecting test server and benchmark harness |
