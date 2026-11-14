@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/desktop/src-tauri/icons/whoosh.svg" width="112" alt="Whoosh Download Manager logo">
+<img src="apps/desktop/src-tauri/icons/wdm.svg" width="112" alt="Whoosh Download Manager logo">
 
 # Whoosh Download Manager
 
@@ -13,17 +13,17 @@ Open-source, crash-proof, and measured against every competitor in public.
 [![Platforms](https://img.shields.io/badge/targets-Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-6a4bd8)](MASTER-PLAN.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome%20(into%20dev)-2f74ec)](CONTRIBUTING.md)
 
-[Benchmarks](#measured-not-claimed) · [Features](#what-the-engine-does-today) · [Quick start](#quick-start) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh)
+[Benchmarks](#measured-not-claimed) · [Features](#what-the-engine-does-today) · [Quick start](#quick-start) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh-download-manager)
 
 </div>
 
 ---
 
-> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux, macOS and Windows and can be built from source (on Windows the whole test suite runs in CI; see [docs/windows.md](docs/windows.md)). The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
+> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux, macOS and Windows and can be built from source (on Windows the whole test suite runs in CI; see [docs/windows.md](docs/windows.md)). The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `wdm`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
 
 ## Measured, not claimed
 
-Every number below comes from [`whoosh-bench`](crates/bench). It runs Whoosh Download Manager and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
+Every number below comes from [`wdm-bench`](crates/bench). It runs Whoosh Download Manager and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
 
 | | WDM | Best competitor |
 |---|---|---|
@@ -59,23 +59,23 @@ Whoosh Download Manager doesn't call a download done until the bytes are synced 
   - Bangla and other Unicode file names (RFC 5987), with path-traversal protection.
 - **Download manager basics:** queues, categories, a global speed limit, pause and resume, checksums, mirrors.
 - **One daemon, many clients:**
-  - `whoosh-daemon` with a local, token-protected JSON-RPC/WebSocket API ([protocol](docs/api/PROTOCOL.md));
-  - the `whoosh` CLI;
+  - `wdm-daemon` with a local, token-protected JSON-RPC/WebSocket API ([protocol](docs/api/PROTOCOL.md));
+  - the `wdm` CLI;
   - a native-messaging host for the browser extension.
 
 ## Quick start
 
 ```bash
 # build (Rust toolchain pinned in rust-toolchain.toml)
-cargo build --release -p whoosh-cli -p whoosh-daemon
+cargo build --release -p wdm-cli -p wdm-daemon
 
 # download: the daemon starts on first use and keeps running
-target/release/whoosh get https://example.com/big.iso -o ~/Downloads
+target/release/wdm get https://example.com/big.iso -o ~/Downloads
 
 # queue a few, watch them, inspect one
-target/release/whoosh add https://example.com/a.zip https://example.com/b.zip --queue night
-target/release/whoosh watch
-target/release/whoosh info <id>
+target/release/wdm add https://example.com/a.zip https://example.com/b.zip --queue night
+target/release/wdm watch
+target/release/wdm info <id>
 ```
 
 All commands are listed in [`crates/cli`](crates/cli/README.md). To benchmark on your own machine, see [`docs/bench`](docs/bench/README.md).
@@ -84,13 +84,13 @@ All commands are listed in [`crates/cli`](crates/cli/README.md). To benchmark on
 
 ```mermaid
 flowchart LR
-  ext[Browser extension] -- native messaging --> nm[whoosh-nmhost]
-  cli[whoosh CLI] -- JSON-RPC / WebSocket --> d
+  ext[Browser extension] -- native messaging --> nm[wdm-nmhost]
+  cli[wdm CLI] -- JSON-RPC / WebSocket --> d
   ui[Desktop app · Phase 2] -- JSON-RPC / WebSocket --> d
-  nm --> d[whoosh-daemon]
-  d --> e[whoosh-engine<br/>scheduler · tuner · journal]
-  e --> n[whoosh-net<br/>H1 · H2 · H3 · TLS]
-  e --> s[whoosh-store<br/>files · journal · SQLite]
+  nm --> d[wdm-daemon]
+  d --> e[wdm-engine<br/>scheduler · tuner · journal]
+  e --> n[wdm-net<br/>H1 · H2 · H3 · TLS]
+  e --> s[wdm-store<br/>files · journal · SQLite]
 ```
 
 | Path | What |

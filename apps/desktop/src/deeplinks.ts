@@ -4,7 +4,7 @@
 // (`desktop://deep-link`), so a link that launched the app is not lost while
 // the UI is still loading. Each opens the add dialog with the address filled
 // in; nothing is downloaded until the user confirms.
-import { parseDeepLink, type AppState } from "@whoosh/ui";
+import { parseDeepLink, type AppState } from "@wdm/ui";
 
 export async function startDeepLinks(app: AppState): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");

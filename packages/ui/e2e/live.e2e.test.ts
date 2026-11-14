@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // End-to-end: the shared UI (the harness page, ?client=live) drives a real
-// whoosh-daemon started on a temporary data directory, downloading from the
+// wdm-daemon started on a temporary data directory, downloading from the
 // labserver. Covers adding a download, pause and resume, bulk remove,
 // creating a queue, and a media probe through a fake yt-dlp.
 //
@@ -9,9 +9,9 @@
 // connects through a small TCP relay in this process that drops the
 // browser's Origin header, the way a native client connects. Test-only.
 //
-// Binaries: WHOOSH_E2E_DAEMON and WHOOSH_E2E_LABSERVER, else target/debug.
-// Run: cargo build -p whoosh-daemon -p whoosh-labserver
-//      pnpm --filter @whoosh/ui test:e2e
+// Binaries: WDM_E2E_DAEMON and WDM_E2E_LABSERVER, else target/debug.
+// Run: cargo build -p wdm-daemon -p wdm-labserver
+//      pnpm --filter @wdm/ui test:e2e
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { createServer, connect, type Server, type Socket } from "node:net";
@@ -23,15 +23,15 @@ import { chromeOrSkip, launch } from "./browser.ts";
 
 const repo = join(import.meta.dirname, "..", "..", "..");
 const exe = process.platform === "win32" ? ".exe" : "";
-const daemonBin = process.env["WHOOSH_E2E_DAEMON"] ?? join(repo, "target", "debug", `whoosh-daemon${exe}`);
-const labBin = process.env["WHOOSH_E2E_LABSERVER"] ?? join(repo, "target", "debug", `whoosh-labserver${exe}`);
+const daemonBin = process.env["WDM_E2E_DAEMON"] ?? join(repo, "target", "debug", `wdm-daemon${exe}`);
+const labBin = process.env["WDM_E2E_LABSERVER"] ?? join(repo, "target", "debug", `wdm-labserver${exe}`);
 const fixture = join(repo, "crates", "media", "tests", "fixtures", "info.json");
 
 const chrome = chromeOrSkip();
 const haveBins = existsSync(daemonBin) && existsSync(labBin);
 if (!haveBins) {
-  if (process.env["WHOOSH_E2E_REQUIRE"] === "1") throw new Error(`missing ${daemonBin} or ${labBin}`);
-  console.warn("e2e: build whoosh-daemon and whoosh-labserver first (cargo build -p whoosh-daemon -p whoosh-labserver); skipping");
+  if (process.env["WDM_E2E_REQUIRE"] === "1") throw new Error(`missing ${daemonBin} or ${labBin}`);
+  console.warn("e2e: build wdm-daemon and wdm-labserver first (cargo build -p wdm-daemon -p wdm-labserver); skipping");
 }
 // The fake yt-dlp is a Node script with a shebang: not on Windows.
 const canFakeYtDlp = process.platform !== "win32";
@@ -133,8 +133,8 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
     page = await context.newPage();
     page.on("pageerror", (e) => console.error("page error:", e.message));
     await page.goto(`${base}?client=live&lang=en`);
-    await page.waitForFunction(() => window.__whooshApp?.connection === "open", undefined, { timeout: 20_000 });
-    await page.waitForFunction(() => window.__whooshApp?.store.loaded === true, undefined, { timeout: 20_000 });
+    await page.waitForFunction(() => window.__wdmApp?.connection === "open", undefined, { timeout: 20_000 });
+    await page.waitForFunction(() => window.__wdmApp?.store.loaded === true, undefined, { timeout: 20_000 });
   }
 
   const row = (name: string) => page.locator('[role="grid"] [role="row"][data-row-id]').filter({ hasText: name });
@@ -152,7 +152,7 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
   }
 
   beforeAll(async () => {
-    root = mkdtempSync(join(tmpdir(), "whoosh-e2e-"));
+    root = mkdtempSync(join(tmpdir(), "wdm-e2e-"));
     const data = join(root, "data");
     downloads = join(root, "downloads");
     mkdirSync(downloads, { recursive: true });
@@ -170,8 +170,8 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
         ...process.env,
         // The fake yt-dlp's `#!/usr/bin/env node` must find this Node.
         PATH: `${dirname(process.execPath)}${process.platform === "win32" ? ";" : ":"}${process.env["PATH"] ?? ""}`,
-        WHOOSH_FAKE_FIXTURE: fixture,
-        WHOOSH_FAKE_BASE: lab.base,
+        WDM_FAKE_FIXTURE: fixture,
+        WDM_FAKE_BASE: lab.base,
         RUST_LOG: process.env["RUST_LOG"] ?? "warn",
       },
     });
@@ -190,7 +190,7 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
     context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     await context.addInitScript(
       (conn) => {
-        window.__WHOOSH_E2E__ = conn;
+        window.__WDM_E2E__ = conn;
       },
       { url: `ws://127.0.0.1:${relay.port}/rpc`, token },
     );
@@ -223,7 +223,7 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
     await expect.poll(() => r.getAttribute("data-state"), { timeout: 15_000 }).toBe("paused");
     const progress = (): Promise<number> =>
       page.evaluate(() => {
-        const d = window.__whooshApp?.store.all().find((x) => x.data.filename === "1g.bin");
+        const d = window.__wdmApp?.store.all().find((x) => x.data.filename === "1g.bin");
         return d?.data.downloadedBytes ?? -1;
       });
     const atPause = await progress();
@@ -248,7 +248,7 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
     await dialog.getByRole("button", { name: "Remove", exact: true }).click();
     await expect.poll(() => page.locator('[role="grid"] [role="row"][data-row-id]').count(), { timeout: 15_000 }).toBe(0);
     // The daemon agrees.
-    const left = await page.evaluate(async () => (await window.__whooshApp!.client.call("download.list", {})).length);
+    const left = await page.evaluate(async () => (await window.__wdmApp!.client.call("download.list", {})).length);
     expect(left).toBe(0);
   });
 
@@ -274,7 +274,7 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
       await dialog.locator("#vy-media-title").waitFor({ timeout: 20_000 });
     } catch (e) {
       const debug = await page.evaluate(async (u) => {
-        const app = window.__whooshApp!;
+        const app = window.__wdmApp!;
         let probe: string;
         try {
           probe = JSON.stringify(await app.client.call("media.probe", { url: u })).slice(0, 200);

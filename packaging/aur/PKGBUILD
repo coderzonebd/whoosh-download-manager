@@ -5,7 +5,7 @@
 # .github/scripts/package-manifests.mjs fills in the version and checksum
 # for each release.
 
-pkgname=whoosh
+pkgname=wdm
 # The release version; pkgver may not contain "-" (1.0.0-beta.1 -> 1.0.0_beta.1).
 _version=0.0.1
 pkgver=${_version//-/_}
@@ -31,23 +31,23 @@ depends=(
 makedepends=('cargo' 'nodejs' 'pnpm')
 # makepkg's LTO flags break Rust linking; the release profile already uses thin LTO.
 options=('!lto')
-source=("$pkgname-$_version.tar.gz::$url/releases/download/v$_version/whoosh-$_version-source.tar.gz")
+source=("$pkgname-$_version.tar.gz::$url/releases/download/v$_version/wdm-$_version-source.tar.gz")
 sha256sums=('SKIP')
 
 _appid=com.coderzonebd.whoosh
 
 prepare() {
-  cd "whoosh-$_version"
+  cd "wdm-$_version"
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/^host: //p')"
   pnpm install --frozen-lockfile
 }
 
 build() {
-  cd "whoosh-$_version"
+  cd "wdm-$_version"
   export RUSTUP_TOOLCHAIN=stable
   # Absolute: the Tauri CLI runs cargo from apps/desktop/src-tauri.
-  export CARGO_TARGET_DIR="$srcdir/whoosh-$_version/target"
+  export CARGO_TARGET_DIR="$srcdir/wdm-$_version/target"
   # Frontend + Rust binary, no Tauri bundles. Arch's nodejs has no corepack,
   # so call pnpm directly instead of the config's "corepack pnpm build".
   (
@@ -55,23 +55,23 @@ build() {
     pnpm tauri build --ci --no-bundle \
       --config '{"build":{"beforeBuildCommand":"pnpm build"}}' -- --frozen
   )
-  # The app starts whoosh-daemon from PATH when it is not next to it.
-  cargo build --release --frozen -p whoosh-daemon -p whoosh-cli -p whoosh-nmhost
+  # The app starts wdm-daemon from PATH when it is not next to it.
+  cargo build --release --frozen -p wdm-daemon -p wdm-cli -p wdm-nmhost
 }
 
 check() {
-  cd "whoosh-$_version"
+  cd "wdm-$_version"
   export RUSTUP_TOOLCHAIN=stable
-  cargo test --frozen -p whoosh-nmhost -p whoosh-core -p whoosh-proto
+  cargo test --frozen -p wdm-nmhost -p wdm-core -p wdm-proto
 }
 
 package() {
-  cd "whoosh-$_version"
+  cd "wdm-$_version"
 
-  install -Dm755 target/release/whoosh-desktop "$pkgdir/usr/bin/whoosh-desktop"
-  install -Dm755 target/release/whoosh-nmhost "$pkgdir/usr/bin/whoosh-nmhost"
-  install -Dm755 target/release/whoosh-daemon "$pkgdir/usr/bin/whoosh-daemon"
-  install -Dm755 target/release/whoosh "$pkgdir/usr/bin/whoosh"
+  install -Dm755 target/release/wdm-desktop "$pkgdir/usr/bin/wdm-desktop"
+  install -Dm755 target/release/wdm-nmhost "$pkgdir/usr/bin/wdm-nmhost"
+  install -Dm755 target/release/wdm-daemon "$pkgdir/usr/bin/wdm-daemon"
+  install -Dm755 target/release/wdm "$pkgdir/usr/bin/wdm"
 
   install -Dm644 "packaging/linux/$_appid.desktop" "$pkgdir/usr/share/applications/$_appid.desktop"
   install -Dm644 "packaging/linux/$_appid.metainfo.xml" "$pkgdir/usr/share/metainfo/$_appid.metainfo.xml"

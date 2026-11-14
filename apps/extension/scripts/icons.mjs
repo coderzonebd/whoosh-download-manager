@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Draws the toolbar icon, the Whoosh logo (apps/desktop/src-tauri/icons/whoosh.svg:
+// Draws the toolbar icon, the WDM logo (apps/desktop/src-tauri/icons/wdm.svg:
 // three gusts of wind on a blue-to-violet rounded square), as PNG, so the
 // repository carries no binary images. Keep the two in step.
 
 import { crc32, deflateSync } from "node:zlib";
 
-// whoosh.svg, in its 1024 x 1024 box.
+// wdm.svg, in its 1024 x 1024 box.
 const RECT = { lo: 64, hi: 960, radius: 208 };
 const FROM = [0x2f, 0x74, 0xec];
 const TO = [0x6a, 0x4b, 0xd8];

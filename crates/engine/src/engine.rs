@@ -14,9 +14,9 @@ use futures::future::{BoxFuture, join_all};
 use futures::stream::BoxStream;
 use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
-use whoosh_core::{DownloadRecord, Journal, SourceFactory, StateStore, StorageProvider};
-use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
-use whoosh_proto::{
+use wdm_core::{DownloadRecord, Journal, SourceFactory, StateStore, StorageProvider};
+use wdm_proto::service::{Notification, Service, ServiceError, ServiceResult};
+use wdm_proto::{
     AddParams, AddResult, ConfirmParams, DownloadDetail, DownloadId, DownloadState,
     DownloadSummary, Durability, ErrorInfo, IdParams, IdsParams, ListParams, PreconnectParams,
     ProbeParams, ProbeResult, ProgressEvent, ProgressItem, Queue, QueueConfig, QueueNameParams,
@@ -50,9 +50,9 @@ pub const QUEUES_KEY: &str = "queues";
 /// Bounds of `AddParams::connections` (PROTOCOL.md).
 const CONNECTIONS_RANGE: std::ops::RangeInclusive<u32> = 1..=64;
 
-/// What the engine is built on. Every part is a `whoosh-core` trait object,
-/// so the engine runs against `whoosh-net`/`whoosh-store` in the daemon and
-/// against `whoosh_core::testing` doubles in tests.
+/// What the engine is built on. Every part is a `wdm-core` trait object,
+/// so the engine runs against `wdm-net`/`wdm-store` in the daemon and
+/// against `wdm_core::testing` doubles in tests.
 #[derive(Clone)]
 pub struct EngineDeps {
     pub sources: Arc<dyn SourceFactory>,
@@ -169,7 +169,7 @@ fn is_active(s: DownloadState) -> bool {
 
 /// Forget what was captured for this download only: the cookie, auth-like
 /// headers, a POST body (CSRF tokens, credentials) and the referer.
-fn scrub(req: &mut whoosh_proto::RequestContext) {
+fn scrub(req: &mut wdm_proto::RequestContext) {
     req.cookie = None;
     req.body_base64 = None;
     req.referer = None;
@@ -857,7 +857,7 @@ impl Inner {
         };
         let queue = queues::normalize(p.queue.as_deref());
         if let Some(q) = &queue
-            && !whoosh_proto::queue::is_queue_name(q)
+            && !wdm_proto::queue::is_queue_name(q)
         {
             return Err(ServiceError::invalid_params(
                 "a queue name is 1–64 characters, without control characters",
@@ -899,7 +899,7 @@ impl Inner {
         };
         let (summary, created_queue) = {
             let mut st = lock(&self.st);
-            // Unknown queue names create the queue (as `whoosh get --queue`
+            // Unknown queue names create the queue (as `wdm get --queue`
             // always could); `download.setQueue` needs an existing one.
             let created_queue = match &record.queue {
                 Some(q) if !st.queues.contains_key(q) => {
@@ -1031,7 +1031,7 @@ impl Inner {
         }
         let queue = p.queue.as_deref().map(|q| queues::normalize(Some(q)));
         if let Some(Some(q)) = &queue
-            && !whoosh_proto::queue::is_queue_name(q)
+            && !wdm_proto::queue::is_queue_name(q)
         {
             return Err(ServiceError::invalid_params(
                 "a queue name is 1–64 characters, without control characters",

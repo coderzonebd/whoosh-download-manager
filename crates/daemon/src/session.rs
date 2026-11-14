@@ -15,8 +15,8 @@ use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
-use whoosh_proto::service::Notification;
-use whoosh_proto::{HelloParams, HelloResult, PROTOCOL_VERSION, auth, method};
+use wdm_proto::service::Notification;
+use wdm_proto::{HelloParams, HelloResult, PROTOCOL_VERSION, auth, method};
 
 use crate::limit::{Budget, is_over_budget};
 use crate::outbox::{Item, Outbox, Pushed};
@@ -33,13 +33,13 @@ pub mod close {
     pub const TOO_BIG: u16 = 1009;
     /// Something other than `session.hello` first, a wrong token, or a
     /// missing or malformed nonce.
-    pub const UNAUTHORIZED: u16 = whoosh_proto::close_code::UNAUTHORIZED;
+    pub const UNAUTHORIZED: u16 = wdm_proto::close_code::UNAUTHORIZED;
     /// No `session.hello` within the hello timeout.
-    pub const HELLO_TIMEOUT: u16 = whoosh_proto::close_code::HELLO_TIMEOUT;
+    pub const HELLO_TIMEOUT: u16 = wdm_proto::close_code::HELLO_TIMEOUT;
     /// `session.hello` with a protocol version this daemon does not speak.
-    pub const PROTOCOL: u16 = whoosh_proto::close_code::PROTOCOL_MISMATCH;
+    pub const PROTOCOL: u16 = wdm_proto::close_code::PROTOCOL_MISMATCH;
     /// The client fell too far behind on lossless notifications.
-    pub const TOO_SLOW: u16 = whoosh_proto::close_code::TOO_SLOW;
+    pub const TOO_SLOW: u16 = wdm_proto::close_code::TOO_SLOW;
 }
 
 /// Who is on the other end, as far as the daemon treats them differently.
@@ -47,7 +47,7 @@ pub mod close {
 enum ClientKind {
     /// The desktop window: it asks the user about downloads that wait.
     Desktop,
-    /// The browser extension, through `whoosh-nmhost`: its downloads may
+    /// The browser extension, through `wdm-nmhost`: its downloads may
     /// wait for confirmation (`AddParams::from_browser`).
     Browser,
     Other,

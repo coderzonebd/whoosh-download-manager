@@ -58,7 +58,7 @@ function renderToggles(state: PopupState): void {
   $("alt-hint").hidden = state.altClick === "off";
   const key = document.createElement("kbd");
   key.textContent = "Alt";
-  $("alt-hint").replaceChildren(...tNodes(state.altClick === "whoosh" ? "altHintWhoosh" : "altHintBrowser", [key]));
+  $("alt-hint").replaceChildren(...tNodes(state.altClick === "wdm" ? "altHintWdm" : "altHintBrowser", [key]));
   const capture = $("capture") as HTMLInputElement;
   capture.checked = state.captureEnabled;
 
@@ -96,7 +96,7 @@ function mediaItem(entry: MediaEntry): HTMLLIElement {
   button.textContent = t("popupDownload");
   button.addEventListener("click", () => {
     button.disabled = true;
-    const message: PopupMessage = { type: "whoosh/download-media", url: entry.url };
+    const message: PopupMessage = { type: "wdm/download-media", url: entry.url };
     if (tab?.url) message.pageUrl = tab.url;
     void ask<ActionReply>(message).then((reply) => {
       button.textContent = reply.ok ? t("popupSent") : t("popupFailed");
@@ -119,7 +119,7 @@ function healButton(question: HealQuestion, label: string, answer: HealAnswer): 
   button.textContent = label;
   button.addEventListener("click", () => {
     button.disabled = true;
-    void ask<ActionReply>({ type: "whoosh/heal-answer", id: question.id, answer }).then((reply) => {
+    void ask<ActionReply>({ type: "wdm/heal-answer", id: question.id, answer }).then((reply) => {
       if (!reply.ok) $("detail").textContent = reply.error;
       if (answer === "open-page") window.close();
       else void refresh();
@@ -166,7 +166,7 @@ function renderLast(state: PopupState): void {
 }
 
 async function refresh(): Promise<void> {
-  const message: PopupMessage = { type: "whoosh/popup-state" };
+  const message: PopupMessage = { type: "wdm/popup-state" };
   if (tab?.id !== undefined) message.tabId = tab.id;
   if (tab?.url) message.pageUrl = tab.url;
   const state = await ask<PopupState>(message);
@@ -183,7 +183,7 @@ async function main(): Promise<void> {
 
   ($("capture") as HTMLInputElement).addEventListener("change", (event) => {
     const enabled = (event.target as HTMLInputElement).checked;
-    void ask<ActionReply>({ type: "whoosh/set-capture", enabled }).then(refresh);
+    void ask<ActionReply>({ type: "wdm/set-capture", enabled }).then(refresh);
   });
   $("open-options").addEventListener("click", () => {
     void api.runtime.openOptionsPage().then(() => window.close());
@@ -191,7 +191,7 @@ async function main(): Promise<void> {
   ($("site") as HTMLInputElement).addEventListener("change", (event) => {
     const host = siteHost;
     const excluded = !(event.target as HTMLInputElement).checked;
-    void ask<ActionReply>({ type: "whoosh/set-site-excluded", host, excluded }).then(refresh);
+    void ask<ActionReply>({ type: "wdm/set-site-excluded", host, excluded }).then(refresh);
   });
 
   await refresh();

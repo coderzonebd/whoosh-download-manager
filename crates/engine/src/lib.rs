@@ -1,10 +1,10 @@
-//! `whoosh-engine`: the download engine.
+//! `wdm-engine`: the download engine.
 //!
-//! [`Engine`] implements [`whoosh_proto::service::Service`] on top of the
-//! `whoosh-core` seams: bytes come from a [`whoosh_core::SourceFactory`], go to a
-//! [`whoosh_core::StorageProvider`], progress is made crash-safe by a
-//! [`whoosh_core::Journal`], and everything else lives in a
-//! [`whoosh_core::StateStore`]. The engine owns all policy (ADR 0005):
+//! [`Engine`] implements [`wdm_proto::service::Service`] on top of the
+//! `wdm-core` seams: bytes come from a [`wdm_core::SourceFactory`], go to a
+//! [`wdm_core::StorageProvider`], progress is made crash-safe by a
+//! [`wdm_core::Journal`], and everything else lives in a
+//! [`wdm_core::StateStore`]. The engine owns all policy (ADR 0005):
 //!
 //! - **Start in one request** (ADR 0005 amendment 3): a fresh download's
 //!   first connection is the response of `RangeSource::start`; it runs
@@ -59,5 +59,5 @@ pub use config::{EngineConfig, Tuning};
 pub use engine::{CONNECTIONS_KEY, Engine, EngineDeps, QUEUES_KEY, SETTINGS_KEY};
 pub use power::{PowerControl, SystemPower};
 
-/// Suffix of in-progress files: `<final name>.whoosh-part`.
+/// Suffix of in-progress files: `<final name>.wdm-part`.
 pub const PART_SUFFIX: &str = names::PART_SUFFIX;

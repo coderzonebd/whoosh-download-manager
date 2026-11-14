@@ -19,11 +19,11 @@ pub fn first_run<R: Runtime>(app: &AppHandle<R>) {
     }
     match app.autolaunch().enable() {
         Ok(()) => JUST_ENABLED.store(true, Ordering::SeqCst),
-        Err(err) => eprintln!("whoosh-desktop: could not turn on launch at login: {err}"),
+        Err(err) => eprintln!("wdm-desktop: could not turn on launch at login: {err}"),
     }
     // Recorded either way: a failure is not retried at every start.
     if let Err(err) = prefs::update(app, |p| p.login_item_set = true) {
-        eprintln!("whoosh-desktop: could not save desktop.json: {err}");
+        eprintln!("wdm-desktop: could not save desktop.json: {err}");
     }
 }
 

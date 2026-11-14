@@ -24,7 +24,7 @@ use std::io;
 use std::process::Command;
 
 use futures::future::BoxFuture;
-use whoosh_proto::AfterDone;
+use wdm_proto::AfterDone;
 
 /// Carries out an after-done action.
 pub trait PowerControl: Send + Sync + fmt::Debug {

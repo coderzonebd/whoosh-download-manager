@@ -14,6 +14,8 @@ use sha2::Sha256;
 
 /// Domain separation for the proof, so the token's HMAC is never reused for
 /// anything else.
+/// A protocol constant: it keeps its `whoosh` name from before the internal
+/// rename to `wdm`, since changing it is a new protocol version.
 pub const PROOF_CONTEXT: &str = "whoosh-hello-proof-v1\n";
 
 /// Random bytes in a nonce made by [`new_nonce`] (hex-encoded: 32 characters).

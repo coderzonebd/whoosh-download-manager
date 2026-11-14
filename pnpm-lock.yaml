@@ -196,13 +196,13 @@ importers:
       '@tauri-apps/plugin-notification':
         specifier: ^2.8.1
         version: 2.8.1
-      '@whoosh/api-client':
+      '@wdm/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
-      '@whoosh/design-tokens':
+      '@wdm/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
-      '@whoosh/ui':
+      '@wdm/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       svelte:
@@ -227,7 +227,7 @@ importers:
 
   apps/extension:
     dependencies:
-      '@whoosh/api-client':
+      '@wdm/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
     devDependencies:
@@ -276,10 +276,10 @@ importers:
 
   packages/ui:
     dependencies:
-      '@whoosh/api-client':
+      '@wdm/api-client':
         specifier: workspace:*
         version: link:../api-client
-      '@whoosh/design-tokens':
+      '@wdm/design-tokens':
         specifier: workspace:*
         version: link:../design-tokens
     devDependencies:

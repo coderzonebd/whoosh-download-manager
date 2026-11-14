@@ -3,18 +3,18 @@
 //! load cleanly, and hold exactly the last acknowledged checkpoint or the
 //! one that was in flight: never a torn mix, never anything older.
 //!
-//! `WHOOSH_KILL_ITERS` sets the number of kills (default 100).
+//! `WDM_KILL_ITERS` sets the number of kills (default 100).
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use whoosh_core::source::RemoteMeta;
-use whoosh_core::{ByteRange, Checkpoint, Journal, RangeSet};
-use whoosh_store::FileJournal;
+use wdm_core::source::RemoteMeta;
+use wdm_core::{ByteRange, Checkpoint, Journal, RangeSet};
+use wdm_store::FileJournal;
 
-const CHILD_DIR: &str = "WHOOSH_JOURNAL_KILL_CHILD_DIR";
+const CHILD_DIR: &str = "WDM_JOURNAL_KILL_CHILD_DIR";
 const ID: &str = "kill-test";
 
 /// Checkpoint number `n`; every 7th is large enough to move its slot past
@@ -64,7 +64,7 @@ fn kill_child() {
 
 #[test]
 fn survives_sigkill_at_random_moments() {
-    let iters: u32 = std::env::var("WHOOSH_KILL_ITERS")
+    let iters: u32 = std::env::var("WDM_KILL_ITERS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(100);

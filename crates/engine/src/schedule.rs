@@ -27,8 +27,8 @@
 
 use std::collections::HashSet;
 
-use whoosh_proto::queue::is_clock_time;
-use whoosh_proto::{ClockTime, Schedule, SpeedWindow};
+use wdm_proto::queue::is_clock_time;
+use wdm_proto::{ClockTime, Schedule, SpeedWindow};
 
 use crate::clock::{LocalTime, weekday};
 

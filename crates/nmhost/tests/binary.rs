@@ -4,13 +4,13 @@
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
-const EXE: &str = env!("CARGO_BIN_EXE_whoosh-nmhost");
+const EXE: &str = env!("CARGO_BIN_EXE_wdm-nmhost");
 
 /// An absolute host path on every OS (on Windows one needs a drive).
 const HOST: &str = if cfg!(windows) {
-    r"C:\Program Files\Whoosh\whoosh-nmhost.exe"
+    r"C:\Program Files\WDM\wdm-nmhost.exe"
 } else {
-    "/opt/whoosh/whoosh-nmhost"
+    "/opt/wdm/wdm-nmhost"
 };
 
 fn frame(payload: &[u8]) -> Vec<u8> {
@@ -21,13 +21,13 @@ fn frame(payload: &[u8]) -> Vec<u8> {
 
 #[test]
 fn answers_nm_status_over_stdio_and_exits_on_eof() {
-    let data_dir = std::env::temp_dir().join(format!("whoosh-nmhost-bin-{}", std::process::id()));
+    let data_dir = std::env::temp_dir().join(format!("wdm-nmhost-bin-{}", std::process::id()));
     std::fs::create_dir_all(&data_dir).unwrap();
 
     // Started the way Chrome starts it.
     let mut child = Command::new(EXE)
         .arg("chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/")
-        .env("WHOOSH_DATA_DIR", &data_dir)
+        .env("WDM_DATA_DIR", &data_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

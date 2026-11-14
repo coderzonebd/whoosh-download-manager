@@ -82,7 +82,7 @@ describe("fileTypeOf", () => {
   });
 });
 
-describe("Alt+click with \"send to Whoosh\" (force)", () => {
+describe("Alt+click with \"send to WDM\" (force)", () => {
   const force: RuleContext = { bypass: false, nonGetRequest: false, force: true };
 
   it("overrides capture off, excluded sites, file types and the minimum size", () => {

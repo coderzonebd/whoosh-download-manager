@@ -15,7 +15,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-pub use whoosh_proto::runtime::{RUNTIME_FILE, RuntimeError, RuntimeInfo};
+pub use wdm_proto::runtime::{RUNTIME_FILE, RuntimeError, RuntimeInfo};
 
 pub const LOCK_FILE: &str = "daemon.lock";
 
@@ -29,7 +29,7 @@ pub fn runtime_file(data_dir: &Path) -> PathBuf {
 pub fn create_data_dir(dir: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
-        whoosh_proto::winacl::create_private_dir(dir)
+        wdm_proto::winacl::create_private_dir(dir)
     }
     #[cfg(not(windows))]
     {
@@ -72,7 +72,7 @@ pub fn secure_dir(dir: &Path) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        use whoosh_proto::winacl;
+        use wdm_proto::winacl;
         let access = winacl::access(dir).map_err(|e| e.to_string())?;
         if access.is_link || !access.is_dir {
             return Err("not a directory (a symlink or junction is not accepted)".into());
@@ -89,7 +89,7 @@ pub fn secure_dir(dir: &Path) -> Result<(), String> {
                 .map_err(|e| format!("cannot make it private (owner-only ACL): {e}"))?;
         }
     }
-    whoosh_proto::runtime::check_private_dir(dir).map_err(|e| e.to_string())
+    wdm_proto::runtime::check_private_dir(dir).map_err(|e| e.to_string())
 }
 
 /// Creates a new, empty file that only the owner can read or write. The
@@ -99,7 +99,7 @@ pub fn secure_dir(dir: &Path) -> Result<(), String> {
 pub fn create_private_file(path: &Path) -> io::Result<File> {
     #[cfg(windows)]
     {
-        whoosh_proto::winacl::create_private_file(path)
+        wdm_proto::winacl::create_private_file(path)
     }
     #[cfg(not(windows))]
     {
@@ -147,10 +147,10 @@ fn unique_suffix() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Reads `<dir>/runtime.json` with [`whoosh_proto::runtime::read_runtime`]'s
+/// Reads `<dir>/runtime.json` with [`wdm_proto::runtime::read_runtime`]'s
 /// checks. `Ok(None)` when there is none.
 pub fn read(dir: &Path) -> Result<Option<RuntimeInfo>, RuntimeError> {
-    match whoosh_proto::runtime::read_runtime(&runtime_file(dir)) {
+    match wdm_proto::runtime::read_runtime(&runtime_file(dir)) {
         Ok(info) => Ok(Some(info)),
         Err(RuntimeError::Missing(_)) => Ok(None),
         Err(e) => Err(e),
@@ -217,7 +217,7 @@ mod tests {
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "whoosh-daemon-rt-{name}-{}-{}",
+            "wdm-daemon-rt-{name}-{}-{}",
             std::process::id(),
             unique_suffix()
         ));
@@ -318,7 +318,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn private_files_are_owner_only_from_creation() {
-        use whoosh_proto::runtime::check_private_file;
+        use wdm_proto::runtime::check_private_file;
         let dir = temp_dir("perm");
         // Even where everything created would inherit "Everyone may
         // modify", the file is owner-only while still empty.
@@ -341,7 +341,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn secure_dir_tightens_ours_and_refuses_junctions() {
-        use whoosh_proto::runtime::check_private_dir;
+        use wdm_proto::runtime::check_private_dir;
         let dir = temp_dir("secure");
         let open = dir.join("open");
         std::fs::create_dir(&open).unwrap();

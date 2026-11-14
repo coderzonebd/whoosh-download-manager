@@ -5,7 +5,7 @@
   of the settings draft). Shown only when the daemon has media support.
 -->
 <script lang="ts">
-  import type { MediaTool } from "@whoosh/api-client";
+  import type { MediaTool } from "@wdm/api-client";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Icon from "./Icon.svelte";
 

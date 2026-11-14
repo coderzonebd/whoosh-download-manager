@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "交给浏览器下载"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "发送到 Whoosh Download Manager，无论上面的规则如何"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "单击链接时按住 $KEY$，可无视规则发送到 Whoosh Download Manager。",
     "placeholders": {
       "key": {

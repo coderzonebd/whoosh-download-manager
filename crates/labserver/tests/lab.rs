@@ -6,8 +6,8 @@ use http::{Method, StatusCode, Version};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use support::{Client, eventually, get, is_reset, lab, pct_decode};
-use whoosh_labserver::content::hex;
-use whoosh_labserver::{ByteRange, LabConfig, LabServer};
+use wdm_labserver::content::hex;
+use wdm_labserver::{ByteRange, LabConfig, LabServer};
 
 const MIB: u64 = 1 << 20;
 
@@ -93,7 +93,7 @@ async fn full_body_and_single_ranges_are_byte_exact() {
     );
 
     // Same name, same bytes, in any scenario; and the library agrees.
-    assert_eq!(f, whoosh_labserver::VirtualFile::named("1m.bin", MIB));
+    assert_eq!(f, wdm_labserver::VirtualFile::named("1m.bin", MIB));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -966,7 +966,7 @@ async fn control_api_lists_reports_and_resets() {
     );
 
     get(addr, "/s/clean/1m.bin", &[("range", "bytes=0-9")]).await;
-    let st: whoosh_labserver::ScenarioStats =
+    let st: wdm_labserver::ScenarioStats =
         serde_json::from_slice(&get(addr, "/_lab/stats/clean", &[]).await.body).unwrap();
     assert_eq!(st.requests, 1);
     assert_eq!(st.bytes_sent, 10);

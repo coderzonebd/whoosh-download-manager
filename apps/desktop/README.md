@@ -1,17 +1,17 @@
 # Whoosh Download Manager desktop (`apps/desktop`)
 
-The Tauri 2 desktop app: [`@whoosh/ui`](../../packages/ui) as a client of
-`whoosh-daemon` over its WebSocket API ([ADR 0007](../../docs/adr/0007-phase2-plan.md)).
+The Tauri 2 desktop app: [`@wdm/ui`](../../packages/ui) as a client of
+`wdm-daemon` over its WebSocket API ([ADR 0007](../../docs/adr/0007-phase2-plan.md)).
 GPL-3.0-or-later.
 
 - **The daemon.** Before every (re)connection the UI calls the
   `daemon_connection` command, which reads the daemon's `runtime.json` and
-  starts the daemon if none answers (`whoosh_client::daemon::ensure`, shared
+  starts the daemon if none answers (`wdm_client::daemon::ensure`, shared
   with the CLI). A daemon that crashed or was stopped is back on the next
   attempt. The daemon is found next to the app (installers put it there, see
-  *Release* below), else at `$WHOOSH_DAEMON_BIN`, else on `PATH`; a
-  development build finds `target/debug/whoosh-daemon` once
-  `cargo build -p whoosh-daemon` has run. `WHOOSH_DATA_DIR` picks another
+  *Release* below), else at `$WDM_DAEMON_BIN`, else on `PATH`; a
+  development build finds `target/debug/wdm-daemon` once
+  `cargo build -p wdm-daemon` has run. `WDM_DATA_DIR` picks another
   data directory, as for the CLI.
 - **Video and audio sites.** The bundled daemon is built with its `media`
   feature (the default), so the add dialog offers a format picker on video
@@ -36,7 +36,7 @@ GPL-3.0-or-later.
 - **`whoosh://` links.** `whoosh://add?url=<percent-encoded address>` brings
   the window forward and opens the add dialog with the address filled in;
   nothing is downloaded until the user confirms. Only http, https and ftp
-  addresses are accepted (`parseDeepLink` in `@whoosh/ui`). A link that
+  addresses are accepted (`parseDeepLink` in `@wdm/ui`). A link that
   launches the app, one passed to a second launch (through the
   single-instance plugin's `deep-link` feature) and one sent by macOS to the
   running app all go through `src-tauri/src/deep_links.rs`, which keeps them
@@ -46,20 +46,20 @@ GPL-3.0-or-later.
   AppImage and a debug build register it at run time. On macOS links only
   work in a bundled app, not under `tauri dev`.
 - **What the UI gets from the shell** is in `src/host.ts` (the `Host`
-  interface of `@whoosh/ui`); in a plain browser none of it is passed, so
+  interface of `@wdm/ui`); in a plain browser none of it is passed, so
   those controls are hidden.
 - **Crash reports (on by default, can be turned off).** Settings → Privacy
-  → *Send crash reports*, shown only in builds made with `WHOOSH_CRASH_DSN`;
+  → *Send crash reports*, shown only in builds made with `WDM_CRASH_DSN`;
   a one-time first-run notice links to it (`dismiss_crash_notice`).
   The shell's own panics and uncaught errors in the web view (forwarded over
   IPC by `src/crash.ts`; the CSP keeps the web view off the network) are
   sent, scrubbed, by `src-tauri/src/crash.rs` through
-  [`whoosh-crash`](../../crates/crash/README.md). The choice is saved in the
+  [`wdm-crash`](../../crates/crash/README.md). The choice is saved in the
   daemon's data directory so the daemon follows it too. See
   [docs/privacy.md](../../docs/privacy.md).
 - **Notifications.** A download that finishes or fails while the window is
   not in front raises a system notification, in the UI's language.
-- In a plain browser (`pnpm --filter @whoosh/desktop dev`) there is no shell,
+- In a plain browser (`pnpm --filter @wdm/desktop dev`) there is no shell,
   so the UI runs on the mock daemon, labelled "Demo data".
 
 - Window size, position and maximised state are remembered, from Rust (no
@@ -90,7 +90,7 @@ GPL-3.0-or-later.
 ```bash
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 corepack pnpm install
-corepack pnpm --filter @whoosh/desktop dev            # UI only, in a browser: http://localhost:1420
+corepack pnpm --filter @wdm/desktop dev            # UI only, in a browser: http://localhost:1420
 cd apps/desktop && corepack pnpm tauri dev          # the real window
 cd apps/desktop && corepack pnpm tauri build --debug --no-bundle   # debug binary in target/debug/
 ```
@@ -101,7 +101,7 @@ On a memory-constrained machine: `export CARGO_BUILD_JOBS=2`.
 
 ## Release
 
-Installers ship `whoosh-daemon` and `whoosh-nmhost` next to the app through
+Installers ship `wdm-daemon` and `wdm-nmhost` next to the app through
 Tauri's `externalBin`, kept out of `tauri.conf.json` so that development
 builds and CI do not need them:
 
@@ -119,7 +119,7 @@ except `installer/windows/hooks.nsh`, which is written by hand).
 ## Connecting the browsers and updates
 
 - **Connect your browser** opens on the first run and from Settings →
-  Browsers: per browser in use, whether `whoosh-nmhost` is registered and the
+  Browsers: per browser in use, whether `wdm-nmhost` is registered and the
   extension installed, with *Link to WDM* or a store link (`browsers.rs`).
   At every start the app registers the host for this user in browsers that
   lack it (macOS and AppImage have no installer to do it).
@@ -131,7 +131,7 @@ except `installer/windows/hooks.nsh`, which is written by hand).
 ## Check
 
 ```bash
-corepack pnpm --filter @whoosh/desktop typecheck
-cargo clippy -p whoosh-desktop --all-targets -- -D warnings
-cargo test -p whoosh-desktop
+corepack pnpm --filter @wdm/desktop typecheck
+cargo clippy -p wdm-desktop --all-targets -- -D warnings
+cargo test -p wdm-desktop
 ```

@@ -13,13 +13,13 @@ use std::time::{Duration, Instant};
 use futures::StreamExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use whoosh_core::{
+use wdm_core::{
     ByteRange, ByteStream, OpenRequest, Protocol, RangeSource, SourceError, SourceFactory,
     Validators,
 };
-use whoosh_labserver::{LabConfig, LabServer, Scenario};
-use whoosh_net::{HttpSourceFactory, NetConfig};
-use whoosh_proto::RequestContext;
+use wdm_labserver::{LabConfig, LabServer, Scenario};
+use wdm_net::{HttpSourceFactory, NetConfig};
+use wdm_proto::RequestContext;
 
 pub const MIB: u64 = 1 << 20;
 

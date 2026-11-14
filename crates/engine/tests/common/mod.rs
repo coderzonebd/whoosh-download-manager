@@ -16,14 +16,14 @@ use bytes::Bytes;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use tokio::time::Instant;
-use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
-use whoosh_core::{
+use wdm_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
+use wdm_core::{
     ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, Storage,
     StorageProvider, Validators,
 };
-use whoosh_engine::{Engine, EngineConfig, EngineDeps};
-use whoosh_proto::service::Service;
-use whoosh_proto::{AddParams, DownloadDetail, DownloadState, IdParams};
+use wdm_engine::{Engine, EngineConfig, EngineDeps};
+use wdm_proto::service::Service;
+use wdm_proto::{AddParams, DownloadDetail, DownloadState, IdParams};
 
 pub const KIB: u64 = 1024;
 pub const MIB: u64 = 1024 * 1024;
@@ -963,7 +963,7 @@ pub fn assert_same(got: &[u8], want: &[u8]) {
     }
 }
 
-/// Log to the test output (`RUST_LOG=whoosh_engine=debug`).
+/// Log to the test output (`RUST_LOG=wdm_engine=debug`).
 pub fn trace() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -997,13 +997,13 @@ impl SlowState {
     }
 }
 
-impl whoosh_core::StateStore for SlowState {
-    fn load_downloads(&self) -> BoxFuture<'_, io::Result<Vec<whoosh_core::DownloadRecord>>> {
+impl wdm_core::StateStore for SlowState {
+    fn load_downloads(&self) -> BoxFuture<'_, io::Result<Vec<wdm_core::DownloadRecord>>> {
         self.inner.load_downloads()
     }
     fn save_download<'a>(
         &'a self,
-        record: &'a whoosh_core::DownloadRecord,
+        record: &'a wdm_core::DownloadRecord,
     ) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let d = *lock(&self.save_delay);
@@ -1025,7 +1025,7 @@ impl whoosh_core::StateStore for SlowState {
     fn host_profile<'a>(
         &'a self,
         host: &'a str,
-    ) -> BoxFuture<'a, io::Result<Option<whoosh_core::HostProfile>>> {
+    ) -> BoxFuture<'a, io::Result<Option<wdm_core::HostProfile>>> {
         self.inner.host_profile(host)
     }
     fn sync(&self) -> BoxFuture<'_, io::Result<()>> {
@@ -1037,7 +1037,7 @@ impl whoosh_core::StateStore for SlowState {
                 .load_downloads()
                 .await?
                 .iter()
-                .any(|r| r.state == whoosh_proto::DownloadState::Completed);
+                .any(|r| r.state == wdm_proto::DownloadState::Completed);
             if completed {
                 self.syncs_after_completed.fetch_add(1, Relaxed);
             }
@@ -1049,7 +1049,7 @@ impl whoosh_core::StateStore for SlowState {
     }
     fn save_host_profile<'a>(
         &'a self,
-        profile: &'a whoosh_core::HostProfile,
+        profile: &'a wdm_core::HostProfile,
     ) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let d = *lock(&self.profile_delay);
@@ -1121,7 +1121,7 @@ pub struct FakeClock {
 }
 
 impl FakeClock {
-    pub fn at(start: whoosh_engine::LocalTime) -> Arc<Self> {
+    pub fn at(start: wdm_engine::LocalTime) -> Arc<Self> {
         Arc::new(Self {
             origin: Instant::now(),
             start_ms: start.minutes() * 60_000,
@@ -1141,31 +1141,31 @@ impl FakeClock {
     }
 }
 
-impl whoosh_engine::Clock for FakeClock {
+impl wdm_engine::Clock for FakeClock {
     fn now_ms(&self) -> i64 {
         self.start_ms + self.origin.elapsed().as_millis() as i64 + *lock(&self.skew_ms)
     }
 
-    fn local(&self) -> whoosh_engine::LocalTime {
+    fn local(&self) -> wdm_engine::LocalTime {
         let utc_min = self.now_ms().div_euclid(60_000);
-        whoosh_engine::LocalTime::from_minutes(utc_min + *lock(&self.offset_min))
+        wdm_engine::LocalTime::from_minutes(utc_min + *lock(&self.offset_min))
     }
 }
 
 /// Records after-done actions instead of running them.
 #[derive(Debug, Default)]
 pub struct FakePower {
-    pub ran: Mutex<Vec<(whoosh_proto::AfterDone, Instant)>>,
+    pub ran: Mutex<Vec<(wdm_proto::AfterDone, Instant)>>,
 }
 
 impl FakePower {
-    pub fn actions(&self) -> Vec<whoosh_proto::AfterDone> {
+    pub fn actions(&self) -> Vec<wdm_proto::AfterDone> {
         lock(&self.ran).iter().map(|(a, _)| *a).collect()
     }
 }
 
-impl whoosh_engine::PowerControl for FakePower {
-    fn run(&self, action: whoosh_proto::AfterDone) -> BoxFuture<'static, io::Result<()>> {
+impl wdm_engine::PowerControl for FakePower {
+    fn run(&self, action: wdm_proto::AfterDone) -> BoxFuture<'static, io::Result<()>> {
         lock(&self.ran).push((action, Instant::now()));
         Box::pin(async { Ok(()) })
     }

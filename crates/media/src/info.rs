@@ -1,7 +1,7 @@
 //! Reading yt-dlp's info JSON.
 
 use serde_json::Value;
-use whoosh_proto::{
+use wdm_proto::{
     AudioConvert, Header, MediaChoice, MediaFormat, MediaFormatKind, MediaProbeResult,
     MediaSubtitle, RequestContext,
 };

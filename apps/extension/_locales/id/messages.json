@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "Biarkan browser mengunduhnya"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "Kirim ke Whoosh Download Manager, apa pun aturan di atas"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "Tahan $KEY$ sambil mengeklik tautan untuk mengirimnya ke Whoosh Download Manager, apa pun aturannya.",
     "placeholders": {
       "key": {

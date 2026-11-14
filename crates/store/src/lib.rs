@@ -1,10 +1,10 @@
-//! `whoosh-store`: where the engine's bytes and state go.
+//! `wdm-store`: where the engine's bytes and state go.
 //!
 //! | Type | Implements | What it is |
 //! |---|---|---|
-//! | [`FileStorageProvider`] / [`FileStorage`] | [`whoosh_core::StorageProvider`] / [`whoosh_core::Storage`] | preallocated in-progress files, positional writes through a bounded, coalescing per-file buffer, no-replace final move |
-//! | [`FileJournal`] | [`whoosh_core::Journal`] | one two-slot, CRC32C-checksummed file per download |
-//! | [`SqliteStateStore`] | [`whoosh_core::StateStore`] | SQLite (WAL) on a dedicated thread, batched writes, owner-only files |
+//! | [`FileStorageProvider`] / [`FileStorage`] | [`wdm_core::StorageProvider`] / [`wdm_core::Storage`] | preallocated in-progress files, positional writes through a bounded, coalescing per-file buffer, no-replace final move |
+//! | [`FileJournal`] | [`wdm_core::Journal`] | one two-slot, CRC32C-checksummed file per download |
+//! | [`SqliteStateStore`] | [`wdm_core::StateStore`] | SQLite (WAL) on a dedicated thread, batched writes, owner-only files |
 //!
 //! [`motw::mark_of_the_web`] marks a file as downloaded from the internet
 //! (Windows `Zone.Identifier`, macOS quarantine); [`FileStorage`] does it
@@ -14,11 +14,11 @@
 //!
 //! ```no_run
 //! # async fn demo() -> std::io::Result<()> {
-//! use whoosh_store::{FileJournal, FileStorageProvider, SqliteStateStore, StorageOptions};
+//! use wdm_store::{FileJournal, FileStorageProvider, SqliteStateStore, StorageOptions};
 //!
 //! let files = FileStorageProvider::new(StorageOptions::default());
-//! let journal = FileJournal::open("/home/me/.local/share/whoosh/journal")?;
-//! let state = SqliteStateStore::open("/home/me/.local/share/whoosh/state.db").await?;
+//! let journal = FileJournal::open("/home/me/.local/share/wdm/journal")?;
+//! let state = SqliteStateStore::open("/home/me/.local/share/wdm/state.db").await?;
 //! # Ok(()) }
 //! ```
 

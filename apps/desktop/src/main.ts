@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Desktop entry. In the app, the shared UI talks to the whoosh daemon: before
+// Desktop entry. In the app, the shared UI talks to the wdm daemon: before
 // every (re)connection it asks the shell for the daemon's address and token
 // (`daemon_connection`, which starts the bundled daemon if none is running),
 // so a daemon that restarts on another port, or was stopped, is found again.
@@ -13,11 +13,11 @@
 import "@fontsource-variable/baloo-da-2";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/noto-sans-bengali";
-import "@whoosh/ui/styles.css";
-import type { WhooshClient } from "@whoosh/api-client";
-import { createMockClient } from "@whoosh/api-client/mock";
-import { connectWs } from "@whoosh/api-client/ws";
-import { App, type AppState } from "@whoosh/ui";
+import "@wdm/ui/styles.css";
+import type { WdmClient } from "@wdm/api-client";
+import { createMockClient } from "@wdm/api-client/mock";
+import { connectWs } from "@wdm/api-client/ws";
+import { App, type AppState } from "@wdm/ui";
 import { mount } from "svelte";
 import { startCrashReports } from "./crash.ts";
 import { startDeepLinks } from "./deeplinks.ts";
@@ -39,7 +39,7 @@ function inTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
 
-function liveClient(): WhooshClient {
+function liveClient(): WdmClient {
   // One lookup per attempt: `url` asks the shell, `token` reuses its answer
   // (the client resolves them in that order).
   let last: Connection | undefined;
@@ -55,7 +55,7 @@ function liveClient(): WhooshClient {
   });
 }
 
-function mockClient(): WhooshClient {
+function mockClient(): WdmClient {
   const q = new URLSearchParams(location.search);
   return createMockClient({
     latencyMs: 30,

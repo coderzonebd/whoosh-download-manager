@@ -7,15 +7,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use whoosh_engine::Engine;
-use whoosh_proto::service::Service;
-use whoosh_proto::{
+use wdm_engine::Engine;
+use wdm_proto::service::Service;
+use wdm_proto::{
     ConfirmParams, DownloadState, IdsParams, QueueConfig, QueueNameParams, RemoveParams,
 };
 
 const LONG: Duration = Duration::from_secs(600);
 
-fn from_browser(url: &str) -> whoosh_proto::AddParams {
+fn from_browser(url: &str) -> wdm_proto::AddParams {
     let mut p = add_params(url);
     p.from_browser = true;
     p
@@ -80,7 +80,7 @@ async fn a_browser_download_waits_learns_its_size_and_starts_when_confirmed() {
 
     // Answered once is answered.
     let e = lab.engine.confirm(answer(&r.id, true)).await.unwrap_err();
-    assert_eq!(e.code, whoosh_proto::error_code::INVALID_STATE);
+    assert_eq!(e.code, wdm_proto::error_code::INVALID_STATE);
 }
 
 #[tokio::test(start_paused = true)]

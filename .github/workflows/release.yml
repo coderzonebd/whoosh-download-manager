@@ -145,7 +145,7 @@ jobs:
       # cargo/tauri build of this job, only for a v* tag (dry runs build
       # without it, so reporting is inert). Empty means "no DSN". Secrets are
       # masked in logs; never echo it.
-      WHOOSH_CRASH_DSN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WHOOSH_CRASH_DSN || '' }}
+      WDM_CRASH_DSN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WHOOSH_CRASH_DSN || '' }}
       UPDATER_KEY_PRESENT: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
       - name: Keep line endings as committed
@@ -190,7 +190,7 @@ jobs:
           fi
           rustc --version
           # Strip build-machine paths from the binaries (reproducibility).
-          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/whoosh --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wdm --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -226,12 +226,12 @@ jobs:
       - name: Fetch yt-dlp and ffmpeg for the installers
         run: |
           set -euo pipefail
-          cargo build --release --locked -p whoosh-media --bin whoosh-media-bundle
+          cargo build --release --locked -p wdm-media --bin wdm-media-bundle
           exe=; [ "$RUNNER_OS" = Windows ] && exe=.exe
-          echo "MEDIA_BUNDLER=$PWD/target/release/whoosh-media-bundle$exe" >> "$GITHUB_ENV"
+          echo "MEDIA_BUNDLER=$PWD/target/release/wdm-media-bundle$exe" >> "$GITHUB_ENV"
           dir=apps/desktop/src-tauri/media-tools
           rm -rf "$dir"
-          "target/release/whoosh-media-bundle$exe" fetch --target "$TARGET" --out "$dir" > media-tools.md
+          "target/release/wdm-media-bundle$exe" fetch --target "$TARGET" --out "$dir" > media-tools.md
           cp packaging/media-tools/NOTICE.txt packaging/media-tools/LGPL-2.1.txt \
              packaging/media-tools/Unlicense.txt "$dir/"
           cp LICENSE-GPL "$dir/GPL-3.0.txt"
@@ -331,9 +331,9 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           mkdir -p staging/exe
-          cp "target/$TARGET/release/whoosh-desktop.exe" staging/exe/
+          cp "target/$TARGET/release/wdm-desktop.exe" staging/exe/
           # The sidecars go into the installers too; SignPath signs every .exe.
-          for b in whoosh-daemon whoosh-nmhost; do
+          for b in wdm-daemon wdm-nmhost; do
             cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" staging/exe/
           done
       - name: Upload the unsigned executable
@@ -359,8 +359,8 @@ jobs:
       - name: Use the signed executable
         if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
         run: |
-          cp signed/exe/whoosh-desktop.exe "target/$TARGET/release/whoosh-desktop.exe"
-          for b in whoosh-daemon whoosh-nmhost; do
+          cp signed/exe/wdm-desktop.exe "target/$TARGET/release/wdm-desktop.exe"
+          for b in wdm-daemon wdm-nmhost; do
             cp "signed/exe/$b-$TARGET.exe" "apps/desktop/src-tauri/binaries/$b-$TARGET.exe"
           done
       - name: Bundle the installers
@@ -437,8 +437,8 @@ jobs:
               # put them (the app's resource directory is its own folder on
               # Windows); needs the WebView2 runtime.
               mkdir -p portable
-              cp "target/$TARGET/release/whoosh-desktop.exe" portable/
-              for b in whoosh-daemon whoosh-nmhost; do
+              cp "target/$TARGET/release/wdm-desktop.exe" portable/
+              for b in wdm-daemon wdm-nmhost; do
                 cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" "portable/$b.exe"
               done
               cp -R apps/desktop/src-tauri/media-tools portable/media-tools
@@ -499,17 +499,17 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
       TARGETS: ${{ matrix.targets }}
       PLATFORM: ${{ matrix.platform }}
-      # The command line (whoosh + whoosh-daemon, and on Windows the
+      # The command line (wdm + wdm-daemon, and on Windows the
       # console-less autostart helper) and the native messaging host.
-      # whoosh-labserver is a test server and is not released.
-      BINARIES: whoosh whoosh-daemon whoosh-autostart whoosh-nmhost
+      # wdm-labserver is a test server and is not released.
+      BINARIES: wdm wdm-daemon wdm-autostart wdm-nmhost
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
       APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
       # Opt-in crash reports (crates/crash): the DSN is compiled in by every
       # cargo/tauri build of this job, only for a v* tag (dry runs build
       # without it, so reporting is inert). Empty means "no DSN". Secrets are
       # masked in logs; never echo it.
-      WHOOSH_CRASH_DSN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WHOOSH_CRASH_DSN || '' }}
+      WDM_CRASH_DSN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WHOOSH_CRASH_DSN || '' }}
     steps:
       - name: Keep line endings as committed
         run: git config --global core.autocrlf false
@@ -529,11 +529,11 @@ jobs:
           rustup toolchain install
           # shellcheck disable=SC2086 # TARGETS is a list
           rustup target add $TARGETS
-          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/whoosh --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wdm --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
       - name: Build
         run: |
           for t in $TARGETS; do
-            cargo build --release --locked --target "$t" -p whoosh-cli -p whoosh-daemon -p whoosh-nmhost
+            cargo build --release --locked --target "$t" -p wdm-cli -p wdm-daemon -p wdm-nmhost
           done
       - name: Stage the binaries
         run: |
@@ -541,7 +541,7 @@ jobs:
           mkdir -p staging/bin
           for b in $BINARIES; do
             # The autostart helper exists for Windows only (no console window).
-            if [ "$b" = whoosh-autostart ] && [ "$RUNNER_OS" != Windows ]; then continue; fi
+            if [ "$b" = wdm-autostart ] && [ "$RUNNER_OS" != Windows ]; then continue; fi
             case "$PLATFORM" in
               macos-universal)
                 lipo -create -output "staging/bin/$b" \
@@ -602,19 +602,19 @@ jobs:
           mkdir -p out
           # GNU tar for --sort/--owner/--mtime (macOS runners ship it as gtar).
           tar=tar; if command -v gtar > /dev/null; then tar=gtar; fi
-          # Two archives: whoosh-<v>-<platform> (the CLI and the daemon) and
-          # whoosh-nmhost-<v>-<platform>.
-          for name in whoosh whoosh-nmhost; do
+          # Two archives: wdm-<v>-<platform> (the CLI and the daemon) and
+          # wdm-nmhost-<v>-<platform>.
+          for name in wdm wdm-nmhost; do
             dir="$name-$VERSION-$PLATFORM"
             mkdir -p "pkg/$dir"
             case "$name" in
-              whoosh)
+              wdm)
                 for f in staging/bin/*; do
-                  case "$(basename "$f")" in whoosh-nmhost*) ;; *) cp "$f" "pkg/$dir/" ;; esac
+                  case "$(basename "$f")" in wdm-nmhost*) ;; *) cp "$f" "pkg/$dir/" ;; esac
                 done
                 cp crates/cli/README.md "pkg/$dir/README.md" ;;
-              whoosh-nmhost)
-                cp staging/bin/whoosh-nmhost* "pkg/$dir/"
+              wdm-nmhost)
+                cp staging/bin/wdm-nmhost* "pkg/$dir/"
                 cp crates/nmhost/README.md "pkg/$dir/README.md" ;;
             esac
             cp LICENSE-APACHE "pkg/$dir/"
@@ -665,7 +665,7 @@ jobs:
               || { echo "::error::dist/$t/manifest.json still has a key"; exit 1; }
           done
           mkdir -p out
-          cp apps/extension/dist/*-store.zip apps/extension/dist-github/whoosh-chromium-*.zip out/
+          cp apps/extension/dist/*-store.zip apps/extension/dist-github/wdm-chromium-*.zip out/
           ls -l out
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -705,7 +705,7 @@ jobs:
           done
       - name: npm SBOMs (shipped apps, production dependencies)
         run: |
-          pnpm --filter @whoosh/desktop --filter @whoosh/extension sbom \
+          pnpm --filter @wdm/desktop --filter @wdm/extension sbom \
             --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --prod \
             --split --out "out/%s-%v.npm.cdx.json"
           ls -l out
@@ -737,15 +737,15 @@ jobs:
       - name: Source archive
         run: |
           mkdir -p out
-          git archive --format=tar --prefix="whoosh-$VERSION/" "$GITHUB_SHA" \
-            | gzip -n -9 > "out/whoosh-$VERSION-source.tar.gz"
-          cp "out/whoosh-$VERSION-source.tar.gz" assets/
+          git archive --format=tar --prefix="wdm-$VERSION/" "$GITHUB_SHA" \
+            | gzip -n -9 > "out/wdm-$VERSION-source.tar.gz"
+          cp "out/wdm-$VERSION-source.tar.gz" assets/
       - name: Fill in the winget, Scoop, Homebrew, Flathub and AUR manifests
         # Real version, URLs and SHA-256s; attached to the release, submitted
         # by hand (packaging/<channel>/README.md). Nothing is submitted here.
         run: |
           set -euo pipefail
-          dir="whoosh-$VERSION-package-manifests"
+          dir="wdm-$VERSION-package-manifests"
           node .github/scripts/package-manifests.mjs assets "$VERSION" "$RUNNER_TEMP/$dir"
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
             -C "$RUNNER_TEMP" -cf - "$dir" | gzip -n -9 > "out/$dir.tar.gz"
@@ -820,7 +820,7 @@ jobs:
               echo "Details: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/release.md#verifying-a-download"
               echo
             } > "$notes"
-            flags=(--draft --verify-tag --title "whoosh $VERSION" --generate-notes --notes-file "$notes")
+            flags=(--draft --verify-tag --title "Whoosh Download Manager $VERSION" --generate-notes --notes-file "$notes")
             if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
             gh release create "$TAG" "${flags[@]}" dist/*
           fi

@@ -1,3 +1,3 @@
-//! Where to find the daemon; see [`whoosh_client::runtime`].
+//! Where to find the daemon; see [`wdm_client::runtime`].
 
-pub use whoosh_client::runtime::*;
+pub use wdm_client::runtime::*;

@@ -1,8 +1,8 @@
-//! `whoosh-nmhost`: the native messaging host that lets the browser extension
-//! (Pro mode) talk to the whoosh daemon without ever seeing its token.
+//! `wdm-nmhost`: the native messaging host that lets the browser extension
+//! (Pro mode) talk to the wdm daemon without ever seeing its token.
 //!
 //! ```text
-//! extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket + token──▶ daemon
+//! extension ──native messaging (stdio)──▶ wdm-nmhost ──WebSocket + token──▶ daemon
 //! ```
 //!
 //! See `docs/api/PROTOCOL.md` §1 and ADR 0003.

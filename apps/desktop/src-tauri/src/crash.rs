@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Crash reports for the shell and its web view ([`whoosh_crash`]), on by
+//! Crash reports for the shell and its web view ([`wdm_crash`]), on by
 //! default and easy to turn off.
 //!
 //! The choice ("Send crash reports" in Settings, on unless the user turned
@@ -8,7 +8,7 @@
 //! next time it starts. The web view never talks to the crash-report
 //! service itself (its CSP allows only the local API): uncaught errors come
 //! here through [`report_ui_error`] and leave scrubbed, like the shell's own
-//! panics. A build without `WHOOSH_CRASH_DSN` reports `available: false`,
+//! panics. A build without `WDM_CRASH_DSN` reports `available: false`,
 //! the UI hides the switch, and nothing is ever sent.
 
 use std::sync::{Mutex, MutexGuard};
@@ -17,13 +17,13 @@ use serde::Serialize;
 
 use crate::daemon;
 
-static REPORTER: Mutex<Option<whoosh_crash::Reporter>> = Mutex::new(None);
+static REPORTER: Mutex<Option<wdm_crash::Reporter>> = Mutex::new(None);
 
 /// Longest message and stack we accept from the web view.
 const MAX_MESSAGE: usize = 2_000;
 const MAX_STACK: usize = 16_000;
 
-fn reporter() -> MutexGuard<'static, Option<whoosh_crash::Reporter>> {
+fn reporter() -> MutexGuard<'static, Option<wdm_crash::Reporter>> {
     REPORTER.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -31,7 +31,7 @@ fn reporter() -> MutexGuard<'static, Option<whoosh_crash::Reporter>> {
 /// turned it off.
 pub fn init() {
     if let Ok(dir) = daemon::data_dir() {
-        *reporter() = whoosh_crash::init("desktop", env!("CARGO_PKG_VERSION"), &dir);
+        *reporter() = wdm_crash::init("desktop", env!("CARGO_PKG_VERSION"), &dir);
     }
 }
 
@@ -48,9 +48,9 @@ pub struct CrashReports {
 fn state() -> Result<CrashReports, String> {
     let dir = daemon::data_dir()?;
     Ok(CrashReports {
-        available: whoosh_crash::available(),
-        enabled: whoosh_crash::consent(&dir),
-        notice_shown: whoosh_crash::notice_shown(&dir),
+        available: wdm_crash::available(),
+        enabled: wdm_crash::consent(&dir),
+        notice_shown: wdm_crash::notice_shown(&dir),
     })
 }
 
@@ -65,11 +65,11 @@ pub fn crash_reports() -> Result<CrashReports, String> {
 #[tauri::command]
 pub fn set_crash_reports(enabled: bool) -> Result<CrashReports, String> {
     let dir = daemon::data_dir()?;
-    whoosh_crash::set_consent(&dir, enabled)
+    wdm_crash::set_consent(&dir, enabled)
         .map_err(|e| format!("could not save the setting: {e}"))?;
     let mut current = reporter();
     if enabled && current.is_none() {
-        *current = whoosh_crash::init("desktop", env!("CARGO_PKG_VERSION"), &dir);
+        *current = wdm_crash::init("desktop", env!("CARGO_PKG_VERSION"), &dir);
     } else if !enabled {
         current.take();
     }
@@ -81,8 +81,7 @@ pub fn set_crash_reports(enabled: bool) -> Result<CrashReports, String> {
 #[tauri::command]
 pub fn dismiss_crash_notice() -> Result<CrashReports, String> {
     let dir = daemon::data_dir()?;
-    whoosh_crash::mark_notice_shown(&dir)
-        .map_err(|e| format!("could not save the setting: {e}"))?;
+    wdm_crash::mark_notice_shown(&dir).map_err(|e| format!("could not save the setting: {e}"))?;
     state()
 }
 
@@ -97,7 +96,7 @@ fn clip(s: &str, max: usize) -> &str {
 /// reporting runs; the message and stack are scrubbed before they leave.
 #[tauri::command]
 pub fn report_ui_error(kind: String, message: String, stack: String) {
-    whoosh_crash::report_ui_error(&kind, clip(&message, MAX_MESSAGE), clip(&stack, MAX_STACK));
+    wdm_crash::report_ui_error(&kind, clip(&message, MAX_MESSAGE), clip(&stack, MAX_STACK));
 }
 
 #[cfg(test)]

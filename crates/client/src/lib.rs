@@ -1,4 +1,4 @@
-//! The Rust client of the whoosh daemon, shared by the `whoosh` CLI and the
+//! The Rust client of the wdm daemon, shared by the `wdm` CLI and the
 //! desktop app: read `runtime.json` ([`runtime`]), connect and prove the
 //! daemon's identity ([`client`]), start the daemon when none is running
 //! ([`daemon`]), and start it at logon ([`autostart`]).

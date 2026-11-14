@@ -6,7 +6,7 @@
   immediately because they never reach the daemon.
 -->
 <script lang="ts">
-  import type { Settings, SpeedWindow } from "@whoosh/api-client";
+  import type { Settings, SpeedWindow } from "@wdm/api-client";
   import type { DesktopPrefs } from "../lib/host.ts";
   import { dirOf } from "../lib/i18n/i18n.svelte.ts";
   import { translateUrl } from "../lib/i18n/languages.ts";

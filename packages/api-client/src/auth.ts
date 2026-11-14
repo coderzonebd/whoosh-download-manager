@@ -5,6 +5,8 @@
 // A process squatting the port of a stale runtime file cannot compute it, so
 // the client sends nothing else to it.
 
+// A protocol constant: it keeps its `whoosh` name from before the internal
+// rename to `wdm`, since changing it is a new protocol version.
 export const PROOF_CONTEXT = "whoosh-hello-proof-v1\n";
 export const NONCE_BYTES = 16;
 

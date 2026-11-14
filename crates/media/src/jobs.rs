@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use whoosh_proto::{ErrorInfo, MediaChoice, MediaFormatKind, MediaVia, UnixMillis};
+use wdm_proto::{ErrorInfo, MediaChoice, MediaFormatKind, MediaVia, UnixMillis};
 
 use crate::info::Finish;
 use crate::util::write_atomic;

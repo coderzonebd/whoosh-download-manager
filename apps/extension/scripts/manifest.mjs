@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 /**
  * Public half of the development signing key. It pins the unpacked Chromium
- * extension to ID clhjgofaikdmabdnebgcmdffdjenagfl, which `whoosh-nmhost
+ * extension to ID clhjgofaikdmabdnebgcmdffdjenagfl, which `wdm-nmhost
  * --register` allows. The private key is not in the repository (it is not
  * needed to load an unpacked extension). Store builds omit the key; the
  * stores assign their own IDs.
@@ -92,7 +92,7 @@ export function manifestFor(target, { version, store }) {
         id: GECKO_ID,
         strict_min_version: "140.0",
         // Nothing is sent to us or to third parties; data goes only to the
-        // user's own whoosh app through native messaging.
+        // user's own wdm app through native messaging.
         data_collection_permissions: { required: ["none"] },
       },
       // Firefox for Android reads data_collection_permissions from 142 on.

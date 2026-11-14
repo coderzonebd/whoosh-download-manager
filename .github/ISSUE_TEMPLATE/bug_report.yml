@@ -30,7 +30,7 @@ body:
       options:
         - Desktop app
         - Browser extension
-        - Native messaging host (whoosh-nmhost)
+        - Native messaging host (wdm-nmhost)
         - Engine / daemon
         - Installer or package
         - labserver / benchmark harness

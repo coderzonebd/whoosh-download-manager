@@ -1,14 +1,14 @@
-# whoosh-media
+# wdm-media
 
 Video and audio sites for desktop and GitHub builds: yt-dlp finds the media on a page, Whoosh Download Manager's engine downloads it, ffmpeg joins video and audio. Store builds never include it (MASTER-PLAN §6). License: Apache-2.0. Protocol: [PROTOCOL.md, "Media"](../../docs/api/PROTOCOL.md#media-video-and-audio-sites).
 
 ```rust
-let engine: Arc<dyn Service> = whoosh_engine::Engine::start(deps, config).await?;
-let service = whoosh_media::MediaService::start(engine, MediaConfig::new(data_dir.join("media"))).await?;
+let engine: Arc<dyn Service> = wdm_engine::Engine::start(deps, config).await?;
+let service = wdm_media::MediaService::start(engine, MediaConfig::new(data_dir.join("media"))).await?;
 // serve `service`: everything the engine does, plus media.* and the `media` capability
 ```
 
-`whoosh-daemon` does exactly this when built with its `media` feature (the default) and not started with `--no-media`.
+`wdm-daemon` does exactly this when built with its `media` feature (the default) and not started with `--no-media`.
 
 ## The tools
 
@@ -27,9 +27,9 @@ Managed copies live in `<data dir>/media/bin`, their versions and checksums in `
 
 ### Shipped with the desktop app
 
-So that video and audio sites work right after installation, every desktop installer (NSIS, MSI, portable zip, dmg, AppImage, deb, rpm; x64 and ARM64) carries both tools, fetched at release time by `whoosh-media-bundle` (`src/bin`, module `bundle`) from the same upstreams with the same checksum checks as above:
+So that video and audio sites work right after installation, every desktop installer (NSIS, MSI, portable zip, dmg, AppImage, deb, rpm; x64 and ARM64) carries both tools, fetched at release time by `wdm-media-bundle` (`src/bin`, module `bundle`) from the same upstreams with the same checksum checks as above:
 
-- `whoosh-media-bundle fetch --target <triple> --out <dir>` takes the newest builds for the target, checks each download against upstream's checksum, unpacks it and writes the programs (ffmpeg with ffprobe where the archive has it) and `manifest.json`: versions, upstream URLs and checksums, and the SHA-256 of every shipped file. For `universal-apple-darwin` it fetches the arm64 and x86_64 ffmpeg and joins them with `lipo` (`yt-dlp_macos` is universal already); different versions for the two fail the build. For Linux targets each program is shipped in an uncompressed `<name>.tar` instead: the AppImage bundler (linuxdeploy) rewrites every ELF program it finds in the image (rpath, stripping), but leaves a tar alone; the manifest records the SHA-256 of both the tar and the program in it. `rehash <dir>` records the checksums again after signing (macOS); `verify <dir>` checks a built bundle's copy (for a tar, the tar and the program in it).
+- `wdm-media-bundle fetch --target <triple> --out <dir>` takes the newest builds for the target, checks each download against upstream's checksum, unpacks it and writes the programs (ffmpeg with ffprobe where the archive has it) and `manifest.json`: versions, upstream URLs and checksums, and the SHA-256 of every shipped file. For `universal-apple-darwin` it fetches the arm64 and x86_64 ffmpeg and joins them with `lipo` (`yt-dlp_macos` is universal already); different versions for the two fail the build. For Linux targets each program is shipped in an uncompressed `<name>.tar` instead: the AppImage bundler (linuxdeploy) rewrites every ELF program it finds in the image (rpath, stripping), but leaves a tar alone; the manifest records the SHA-256 of both the tar and the program in it. `rehash <dir>` records the checksums again after signing (macOS); `verify <dir>` checks a built bundle's copy (for a tar, the tar and the program in it).
 - The release workflow puts the directory into the app's resources as `media-tools/` ([packaging/media-tools](../../packaging/media-tools) lists where that is in each bundle). The desktop app starts the daemon with `--media-tools-dir <resources>/media-tools` when it has a manifest.
 - At start, `Tools` shows each tool the bundle has as ready (source `managed`, the bundle's version) and copies it into `bin` in the background, each file (on Linux first unpacked from its tar with the system's `tar` into a work directory under `bin`) checked against the manifest's SHA-256 while it is copied (a plain byte copy: no quarantine attribute comes along). They are never run from the bundle: `get` returns nothing until the copy is in place and `ensure` copies first. From then on it is an ordinary managed copy, updated from upstream by `media.updateTools` or the daily check. An app update that ships a newer version replaces an older managed copy; an older one never replaces a newer one.
 - A file that does not match the manifest is not used; the tool is downloaded on first use as without a bundle. The command line, the CLI archives and source builds (AUR) ship no tools and keep the first-use download.
@@ -46,12 +46,12 @@ So that video and audio sites work right after installation, every desktop insta
 
 Subtitles are written next to the file by `yt-dlp --skip-download --write-subs --write-auto-subs`. Jobs are saved in `<data dir>/media/jobs.json` (never cookies: those stay in memory), so a restart picks up where it was, including an interrupted merge.
 
-**Safety.** No shell; `--ignore-config` (a user's yt-dlp config could add `--exec` or browser cookies); the page URL after `--`; format ids and subtitle languages are checked against tight character sets before they reach `-f` / `--sub-langs`; `%` in names is escaped in output templates; file names go through `whoosh_net::sanitize_filename` with path separators turned into dashes. A cookie reaches yt-dlp only when the client passed one for the page (the extension), as an owner-only temporary cookie file scoped to the page's host and deleted after the run; `--cookies-from-browser` is never used. No DRM circumvention, no site-specific workarounds.
+**Safety.** No shell; `--ignore-config` (a user's yt-dlp config could add `--exec` or browser cookies); the page URL after `--`; format ids and subtitle languages are checked against tight character sets before they reach `-f` / `--sub-langs`; `%` in names is escaped in output templates; file names go through `wdm_net::sanitize_filename` with path separators turned into dashes. A cookie reaches yt-dlp only when the client passed one for the page (the extension), as an owner-only temporary cookie file scoped to the page's host and deleted after the run; `--cookies-from-browser` is never used. No DRM circumvention, no site-specific workarounds.
 
 ## Tests
 
 ```bash
-scripts/cargo-slot.sh cargo test -p whoosh-media
+scripts/cargo-slot.sh cargo test -p wdm-media
 ```
 
-`tests/media.rs` has its own `main`: run with `WHOOSH_FAKE_TOOL=yt-dlp|ffmpeg` it *is* a fake yt-dlp or ffmpeg that prints canned JSON from `tests/fixtures/info.json` (with the labserver's address filled in), writes subtitles, simulates a yt-dlp download, or concatenates its inputs. The tests then run the real engine, whoosh-net and whoosh-store against the labserver: the merge path (the audio part only passes the labserver's Referer check if yt-dlp's `http_headers` reach the engine), audio only without ffmpeg, the yt-dlp fallback, bad input and cookies, removal, the installer's checksum check with a fake upstream, including a mismatch, and the bundled tools: shown as ready and copied without the network, a manifest mismatch falling back to the download, and newer bundled versions replacing older copies (but not the reverse). Nothing touches the network.
+`tests/media.rs` has its own `main`: run with `WDM_FAKE_TOOL=yt-dlp|ffmpeg` it *is* a fake yt-dlp or ffmpeg that prints canned JSON from `tests/fixtures/info.json` (with the labserver's address filled in), writes subtitles, simulates a yt-dlp download, or concatenates its inputs. The tests then run the real engine, wdm-net and wdm-store against the labserver: the merge path (the audio part only passes the labserver's Referer check if yt-dlp's `http_headers` reach the engine), audio only without ffmpeg, the yt-dlp fallback, bad input and cookies, removal, the installer's checksum check with a fake upstream, including a mismatch, and the bundled tools: shown as ready and copied without the network, a manifest mismatch falling back to the download, and newer bundled versions replacing older copies (but not the reverse). Nothing touches the network.

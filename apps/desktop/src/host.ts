@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// What the desktop shell adds to the shared UI (`Host` in @whoosh/ui): the
+// What the desktop shell adds to the shared UI (`Host` in @wdm/ui): the
 // native folder picker, the app's own settings (`desktop.json`, through the
 // `desktop_prefs` / `set_desktop_prefs` commands), launch at login, the
 // "Send crash reports" switch (`crash.rs`), opening the translation site
 // from the language picker, "Connect your browser" (`browsers.rs`), signed
 // updates (`updates.rs`) and bringing the window to the front for a browser
 // download that waits for confirmation.
-import type { BrowserState, CrashReportsState, DesktopPrefs, Host, UpdateInfo } from "@whoosh/ui";
+import type { BrowserState, CrashReportsState, DesktopPrefs, Host, UpdateInfo } from "@wdm/ui";
 
 /** The full `desktop.json` as the shell sends it (`prefs.rs`). */
 interface ShellPrefs extends DesktopPrefs {

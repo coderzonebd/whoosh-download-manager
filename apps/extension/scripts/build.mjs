@@ -5,7 +5,7 @@
 //
 // --store  the Chrome Web Store / AMO build: no development `key`, and the
 //          video-site blocklist applied (src/shared/policy.ts, MASTER-PLAN §6)
-// --zip    also write <out>/whoosh-<target>-<version>[-store].zip
+// --zip    also write <out>/wdm-<target>-<version>[-store].zip
 // --out    output directory (default: dist)
 
 import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -42,9 +42,9 @@ function shown(path) {
   return rel && !rel.startsWith("..") ? rel : path;
 }
 
-/** Compile-time constants: `__WHOOSH_STORE__` switches the store policy on. */
+/** Compile-time constants: `__WDM_STORE__` switches the store policy on. */
 export function defineFor(store) {
-  return { __WHOOSH_STORE__: store ? "true" : "false" };
+  return { __WDM_STORE__: store ? "true" : "false" };
 }
 
 /**
@@ -85,7 +85,7 @@ export async function buildExtension({ targets = ["chromium", "firefox"], store 
 
     let line = `built ${shown(out)}${store ? " (store)" : ""}`;
     if (zip) {
-      const zipName = `whoosh-${target}-${version}${store ? "-store" : ""}.zip`;
+      const zipName = `wdm-${target}-${version}${store ? "-store" : ""}.zip`;
       const count = zipDirectory(out, join(dist, zipName));
       line += ` → ${shown(join(dist, zipName))} (${count} files)`;
     }

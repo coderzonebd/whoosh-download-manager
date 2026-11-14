@@ -1,6 +1,6 @@
 [package]
-name = "whoosh-desktop"
-description = "Whoosh desktop app: the shared Svelte UI over the whoosh daemon"
+name = "wdm-desktop"
+description = "WDM desktop app: the shared Svelte UI over the wdm daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,11 +9,11 @@ publish.workspace = true
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "whoosh_desktop_lib"
+name = "wdm_desktop_lib"
 path = "src/lib.rs"
 
 [[bin]]
-name = "whoosh-desktop"
+name = "wdm-desktop"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -34,12 +34,12 @@ tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 serde.workspace = true
 serde_json.workspace = true
-whoosh-client.workspace = true
+wdm-client.workspace = true
 # Host registration and browser detection for "Connect your browser".
-whoosh-nmhost = { path = "../../../crates/nmhost" }
-# Crash reports (on by default, can be turned off; inert without WHOOSH_CRASH_DSN).
-whoosh-crash.workspace = true
-whoosh-proto.workspace = true
+wdm-nmhost = { path = "../../../crates/nmhost" }
+# Crash reports (on by default, can be turned off; inert without WDM_CRASH_DSN).
+wdm-crash.workspace = true
+wdm-proto.workspace = true
 
 [lints]
 workspace = true

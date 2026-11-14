@@ -1,5 +1,5 @@
 # TEMPLATE cask: see README.md. Version, sha256 and every URL are placeholders.
-cask "whoosh" do
+cask "wdm" do
   version "0.0.1"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 

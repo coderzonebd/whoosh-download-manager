@@ -21,12 +21,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use tokio::sync::{Notify, OwnedSemaphorePermit};
-use whoosh_proto::service::Notification;
-use whoosh_proto::{ProgressEvent, ProgressItem, Stats};
+use wdm_proto::service::Notification;
+use wdm_proto::{ProgressEvent, ProgressItem, Stats};
 
 /// Close code for a client that fell too far behind on lossless
 /// notifications (PROTOCOL.md §1).
-pub const CLOSE_TOO_SLOW: u16 = whoosh_proto::close_code::TOO_SLOW;
+pub const CLOSE_TOO_SLOW: u16 = wdm_proto::close_code::TOO_SLOW;
 
 #[derive(Debug)]
 pub enum Item {
@@ -281,7 +281,7 @@ impl Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use whoosh_proto::{DownloadState, RemovedEvent, StateEvent};
+    use wdm_proto::{DownloadState, RemovedEvent, StateEvent};
 
     fn progress(id: &str, bytes: u64) -> Notification {
         Notification::DownloadProgress(ProgressEvent {

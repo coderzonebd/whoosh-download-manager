@@ -1,10 +1,10 @@
 //! Media downloads end to end, without the network: a fake yt-dlp and a
-//! fake ffmpeg (this test binary run again with `WHOOSH_FAKE_TOOL` set,
-//! printing canned JSON from `fixtures/`), the real engine with whoosh-net
-//! and whoosh-store, and the labserver serving the "direct" formats.
+//! fake ffmpeg (this test binary run again with `WDM_FAKE_TOOL` set,
+//! printing canned JSON from `fixtures/`), the real engine with wdm-net
+//! and wdm-store, and the labserver serving the "direct" formats.
 //!
 //! The binary has its own `main` (`harness = false`): without
-//! `WHOOSH_FAKE_TOOL` it runs the tests below one after another.
+//! `WDM_FAKE_TOOL` it runs the tests below one after another.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -16,16 +16,16 @@ use std::time::Duration;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use serde_json::Value;
-use whoosh_labserver::{ByteRange, LabConfig, LabServer};
-use whoosh_media::fetch::{Fetcher, Progress, sha256_hex};
-use whoosh_media::{Kind, MediaConfig, MediaService, Tool, Tools, ToolsConfig, Upstreams};
-use whoosh_proto::service::{Notification, Service};
-use whoosh_proto::{
+use wdm_labserver::{ByteRange, LabConfig, LabServer};
+use wdm_media::fetch::{Fetcher, Progress, sha256_hex};
+use wdm_media::{Kind, MediaConfig, MediaService, Tool, Tools, ToolsConfig, Upstreams};
+use wdm_proto::service::{Notification, Service};
+use wdm_proto::{
     AudioConvert, DownloadState, DownloadSummary, ListParams, MediaAddParams, MediaChoice,
     MediaProbeParams, MediaToolSource, MediaToolState, MediaVia, RemoveParams, error_code,
 };
 
-const FAKE_ENV: &str = "WHOOSH_FAKE_TOOL";
+const FAKE_ENV: &str = "WDM_FAKE_TOOL";
 
 type TestFn = fn() -> BoxFuture<'static, ()>;
 
@@ -127,7 +127,7 @@ fn arg_after<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
 }
 
 fn log_args(args: &[String]) {
-    if let Ok(path) = std::env::var("WHOOSH_FAKE_LOG")
+    if let Ok(path) = std::env::var("WDM_FAKE_LOG")
         && let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -145,12 +145,12 @@ fn fixture() -> Value {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/info.json"),
     )
     .unwrap();
-    let base = std::env::var("WHOOSH_FAKE_BASE").unwrap_or_default();
-    let page = std::env::var("WHOOSH_FAKE_PAGE").unwrap_or_default();
+    let base = std::env::var("WDM_FAKE_BASE").unwrap_or_default();
+    let page = std::env::var("WDM_FAKE_PAGE").unwrap_or_default();
     serde_json::from_str(&text.replace("{BASE}", &base).replace("{PAGE}", &page)).unwrap()
 }
 
-/// yt-dlp's `-f`, for the few selectors whoosh builds.
+/// yt-dlp's `-f`, for the few selectors wdm builds.
 fn pick(info: &Value, selector: &str) -> Vec<Value> {
     let formats = info["formats"].as_array().cloned().unwrap_or_default();
     let audio = |f: &Value| f["vcodec"] == "none";
@@ -251,15 +251,15 @@ fn fake_yt_dlp() -> i32 {
             }
             // A download of its own (streaming formats).
             let out = path_for("mp4");
-            let delay = std::env::var("WHOOSH_FAKE_SLOW").is_ok();
+            let delay = std::env::var("WDM_FAKE_SLOW").is_ok();
             for done in [250u64, 500, 750, 1000] {
-                eprintln!("WHOOSHP {done} 1000 NA 125.5");
+                eprintln!("WDMP {done} 1000 NA 125.5");
                 if delay {
                     std::thread::sleep(Duration::from_millis(400));
                 }
             }
             std::fs::write(&out, vec![b'h'; 1000]).unwrap();
-            println!("WHOOSHF {}", out.display());
+            println!("WDMF {}", out.display());
             0
         }
         (None, false) => {
@@ -313,23 +313,23 @@ struct Rig {
 
 async fn engine(dir: &Path) -> Arc<dyn Service> {
     let journal_dir = dir.join("journal");
-    let journal = tokio::task::spawn_blocking(move || whoosh_store::FileJournal::open(journal_dir))
+    let journal = tokio::task::spawn_blocking(move || wdm_store::FileJournal::open(journal_dir))
         .await
         .unwrap()
         .unwrap();
-    let state = whoosh_store::SqliteStateStore::open(dir.join("state.db"))
+    let state = wdm_store::SqliteStateStore::open(dir.join("state.db"))
         .await
         .unwrap();
-    whoosh_engine::Engine::start(
-        whoosh_engine::EngineDeps {
-            sources: whoosh_net::HttpSourceFactory::new(whoosh_net::NetConfig::default()),
-            storage: Arc::new(whoosh_store::FileStorageProvider::new(
-                whoosh_store::StorageOptions::default(),
+    wdm_engine::Engine::start(
+        wdm_engine::EngineDeps {
+            sources: wdm_net::HttpSourceFactory::new(wdm_net::NetConfig::default()),
+            storage: Arc::new(wdm_store::FileStorageProvider::new(
+                wdm_store::StorageOptions::default(),
             )),
             journal: Arc::new(journal),
             state: Arc::new(state),
         },
-        whoosh_engine::EngineConfig::new(dir.join("downloads").display().to_string()),
+        wdm_engine::EngineConfig::new(dir.join("downloads").display().to_string()),
     )
     .await
     .unwrap()
@@ -344,9 +344,9 @@ async fn rig(with_ffmpeg: bool, extra: &[(&str, String)]) -> Rig {
     let page = format!("{base}/watch?v=abc123");
     let log = root.join("tool-args.log");
     let mut env = vec![
-        ("WHOOSH_FAKE_BASE", base),
-        ("WHOOSH_FAKE_PAGE", page.clone()),
-        ("WHOOSH_FAKE_LOG", log.display().to_string()),
+        ("WDM_FAKE_BASE", base),
+        ("WDM_FAKE_PAGE", page.clone()),
+        ("WDM_FAKE_LOG", log.display().to_string()),
     ];
     env.extend(extra.iter().cloned());
     let mut cfg = MediaConfig::new(root.join("media"));
@@ -461,7 +461,7 @@ async fn engine_path_merges_video_and_audio() {
     let media = done.media.clone().unwrap();
     assert_eq!(media.via, MediaVia::Engine);
     assert_eq!(media.format, "1080p mp4");
-    let stem = whoosh_media::names::stem("Lab clip: AC/DC 100%").unwrap();
+    let stem = wdm_media::names::stem("Lab clip: AC/DC 100%").unwrap();
     assert!(stem.contains("AC-DC 100%"), "{stem}");
     assert_eq!(done.filename, format!("{stem}.mp4"));
     assert_eq!(done.category.as_deref(), Some("video"));
@@ -488,7 +488,7 @@ async fn engine_path_merges_video_and_audio() {
         .unwrap()
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.contains(".f1") || n.contains("whoosh"))
+        .filter(|n| n.contains(".f1") || n.contains("wdm"))
         .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 
@@ -640,7 +640,7 @@ async fn probe_errors_and_bad_input() {
     r.media
         .media_probe(MediaProbeParams {
             url: r.page.clone(),
-            request: Some(whoosh_proto::RequestContext {
+            request: Some(wdm_proto::RequestContext {
                 cookie: Some("sid=secret".into()),
                 ..Default::default()
             }),
@@ -664,7 +664,7 @@ async fn probe_errors_and_bad_input() {
 }
 
 async fn remove_deletes_parts_and_partials() {
-    let r = rig(true, &[("WHOOSH_FAKE_SLOW", "1".into())]).await;
+    let r = rig(true, &[("WDM_FAKE_SLOW", "1".into())]).await;
     let id = r
         .media
         .media_add(add_params(
@@ -678,7 +678,7 @@ async fn remove_deletes_parts_and_partials() {
         .id;
     wait_for(&r.media, &id, DownloadState::Downloading).await;
     r.media
-        .pause(whoosh_proto::IdsParams {
+        .pause(wdm_proto::IdsParams {
             ids: vec![id.clone()],
         })
         .await
@@ -744,7 +744,7 @@ impl Fetcher for FakeUpstream {
 }
 
 fn upstream(published_sha: Option<&str>) -> (Arc<FakeUpstream>, Vec<u8>) {
-    let asset = whoosh_media::upstream::yt_dlp_asset_name().expect("platform has a build");
+    let asset = wdm_media::upstream::yt_dlp_asset_name().expect("platform has a build");
     let base = "https://up.example.test/yt-dlp/releases";
     let body = b"#!/bin/sh\necho fake yt-dlp\n".to_vec();
     let sha = published_sha.map_or_else(|| sha256_hex(&body), str::to_owned);
@@ -921,7 +921,7 @@ fn bundle_dir_as(dir: &Path, yt_dlp_version: &str, bad: Option<&str>, tar: bool)
         "target": "test", "fetchedAt": 1, "tools": tools,
     });
     std::fs::write(
-        b.join(whoosh_media::bundle::MANIFEST),
+        b.join(wdm_media::bundle::MANIFEST),
         serde_json::to_vec_pretty(&manifest).unwrap(),
     )
     .unwrap();
@@ -1027,7 +1027,7 @@ async fn bundled_mismatch_falls_back_to_download() {
             .lock()
             .unwrap()
             .iter()
-            .any(|u| u.ends_with(whoosh_media::upstream::yt_dlp_asset_name().unwrap())),
+            .any(|u| u.ends_with(wdm_media::upstream::yt_dlp_asset_name().unwrap())),
         "downloaded from upstream"
     );
     assert_eq!(
@@ -1060,7 +1060,7 @@ async fn tar_bundled_tools_are_unpacked_and_checked() {
     let bundle = bundle_dir_as(tmp.path(), "2026.10.26", None, true);
     assert!(!bundle.join(exe("ffmpeg")).exists());
     assert!(bundle.join(format!("{}.tar", exe("ffmpeg"))).is_file());
-    let m = whoosh_media::bundle::verify(&bundle).await.unwrap();
+    let m = wdm_media::bundle::verify(&bundle).await.unwrap();
     assert_eq!(m.tools["ffmpeg"].tars.len(), 2);
     let data = tmp.path().join("media");
     let up = offline();
@@ -1088,7 +1088,7 @@ async fn tar_bundled_tools_are_unpacked_and_checked() {
     // The program in the tar does not match the manifest.
     let tmp = tempfile::tempdir().unwrap();
     let bundle = bundle_dir_as(tmp.path(), "2026.01.01", Some("yt-dlp"), true);
-    let e = whoosh_media::bundle::verify(&bundle).await.unwrap_err();
+    let e = wdm_media::bundle::verify(&bundle).await.unwrap_err();
     assert!(e.contains("yt-dlp"), "{e}");
     // A tampered tar fails its own checksum.
     let tmp2 = tempfile::tempdir().unwrap();
@@ -1097,7 +1097,7 @@ async fn tar_bundled_tools_are_unpacked_and_checked() {
     let mut bytes = std::fs::read(&packed).unwrap();
     bytes.extend_from_slice(&[0u8; 512]);
     std::fs::write(&packed, bytes).unwrap();
-    assert!(whoosh_media::bundle::verify(&other).await.is_err());
+    assert!(wdm_media::bundle::verify(&other).await.is_err());
 
     let data = tmp.path().join("media");
     let (up, body) = upstream(None);

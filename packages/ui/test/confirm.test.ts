@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // "Ask before downloading from the browser": the confirmation dialog for
 // downloads that wait, and "Time taken" in the details of finished ones.
-import type { WhooshClient } from "@whoosh/api-client";
-import { createMockClient, type MockWhooshClient } from "@whoosh/api-client/mock";
+import type { WdmClient } from "@wdm/api-client";
+import { createMockClient, type MockWdmClient } from "@wdm/api-client/mock";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ afterEach(() => {
   closeClient = undefined;
 });
 
-function spy<C extends WhooshClient>(client: C): C & { log: { method: string; params: unknown }[] } {
+function spy<C extends WdmClient>(client: C): C & { log: { method: string; params: unknown }[] } {
   const log: { method: string; params: unknown }[] = [];
   const call = client.call.bind(client) as (m: string, p: unknown) => Promise<unknown>;
   return Object.assign(Object.create(client) as C, {
@@ -32,7 +32,7 @@ function spy<C extends WhooshClient>(client: C): C & { log: { method: string; pa
   });
 }
 
-async function setup(opts: { host?: Host; locale?: string; mock?: MockWhooshClient } = {}) {
+async function setup(opts: { host?: Host; locale?: string; mock?: MockWdmClient } = {}) {
   const mock = opts.mock ?? createMockClient({ autoTick: false });
   const client = spy(mock);
   closeClient = () => client.close();
@@ -47,7 +47,7 @@ async function setup(opts: { host?: Host; locale?: string; mock?: MockWhooshClie
 }
 
 /** What the browser extension does (through the native host, which sets `fromBrowser`). */
-async function fromBrowser(mock: MockWhooshClient, url: string): Promise<string> {
+async function fromBrowser(mock: MockWdmClient, url: string): Promise<string> {
   let id = "";
   await act(async () => {
     const r = await mock.call("download.add", { url, fromBrowser: true });

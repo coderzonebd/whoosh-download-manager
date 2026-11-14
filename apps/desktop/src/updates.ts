@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The shell's quiet daily update check (`updates.rs`) only announces a new
 // version; this shows it as a toast whose button installs it and restarts.
-import type { AppState } from "@whoosh/ui";
+import type { AppState } from "@wdm/ui";
 import { installUpdate } from "./host.ts";
 
 const EVENT_UPDATE_AVAILABLE = "desktop://update-available";

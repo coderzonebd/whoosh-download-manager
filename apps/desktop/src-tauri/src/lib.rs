@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Whoosh desktop app: `packages/ui` over the whoosh daemon (ADR 0007).
+//! WDM desktop app: `packages/ui` over the wdm daemon (ADR 0007).
 //!
 //! The UI talks to the daemon over its WebSocket API and asks this side for
 //! the address and token ([`daemon::daemon_connection`]), which starts the
@@ -49,7 +49,7 @@ static QUITTING: AtomicBool = AtomicBool::new(false);
 pub const AUTOSTART_ARG: &str = "--autostart";
 
 /// Tray icon id, so commands can find it again.
-pub const TRAY_ID: &str = "whoosh-tray";
+pub const TRAY_ID: &str = "wdm-tray";
 const MAIN_WINDOW: &str = "main";
 
 /// Longest tooltip we pass on; Windows truncates at 127 UTF-16 units anyway.
@@ -127,7 +127,7 @@ fn save_window_state<R: Runtime>(app: &AppHandle<R>) {
         window_size::save(&window);
     }
     if let Err(err) = app.save_window_state(window_state_flags()) {
-        eprintln!("whoosh-desktop: could not save window state: {err}");
+        eprintln!("wdm-desktop: could not save window state: {err}");
     }
 }
 
@@ -155,7 +155,7 @@ fn quit_app<R: Runtime>(app: &AppHandle<R>) {
             Err(e) => Err(e),
         };
         if let Err(err) = stopped {
-            eprintln!("whoosh-desktop: could not stop the daemon: {err}");
+            eprintln!("wdm-desktop: could not stop the daemon: {err}");
         }
         app.exit(0);
     });
@@ -181,7 +181,7 @@ fn hide_to_tray<R: Runtime>(app: &AppHandle<R>) {
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     let first = !app.state::<prefs::PrefsState>().get().tray_notice_shown;
     if first && let Err(err) = prefs::update(app, |p| p.tray_notice_shown = true) {
-        eprintln!("whoosh-desktop: could not save desktop.json: {err}");
+        eprintln!("wdm-desktop: could not save desktop.json: {err}");
     }
     let _ = app.emit(EVENT_HIDDEN_TO_TRAY, serde_json::json!({ "first": first }));
 }
@@ -306,7 +306,7 @@ pub fn run() {
             }
             // No tray is not fatal: closing the window then quits.
             if let Err(err) = build_tray(app) {
-                eprintln!("whoosh-desktop: no tray icon: {err}");
+                eprintln!("wdm-desktop: no tray icon: {err}");
             }
             deep_links::setup(app);
             // Started at login: stay in the tray (when there is one).
@@ -340,7 +340,7 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|err| {
-            eprintln!("whoosh-desktop: failed to start: {err}");
+            eprintln!("wdm-desktop: failed to start: {err}");
             std::process::exit(1);
         });
     app.run(|app, event| {

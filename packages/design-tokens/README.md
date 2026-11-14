@@ -1,6 +1,6 @@
-# @whoosh/design-tokens
+# @wdm/design-tokens
 
-Colours, type, spacing, radii, shadows and motion for every Whoosh surface
+Colours, type, spacing, radii, shadows and motion for every WDM surface
 (desktop, extension popup, mobile shell, web remote). Apache-2.0.
 
 - **Source of truth:** [`src/tokens.ts`](src/tokens.ts). `src/tokens.css` is
@@ -21,19 +21,19 @@ Colours, type, spacing, radii, shadows and motion for every Whoosh surface
   should use logical properties too.
 
 ```css
-@import "@whoosh/design-tokens/tokens.css";
+@import "@wdm/design-tokens/tokens.css";
 .card { background: var(--vy-color-surface); padding-inline: var(--vy-space-4); }
 ```
 
 ```ts
-import { tokens, vars, contrastRatio } from "@whoosh/design-tokens";
+import { tokens, vars, contrastRatio } from "@wdm/design-tokens";
 vars.color.textMuted; // "var(--vy-color-text-muted)"
 ```
 
 ## Commands
 
 ```bash
-corepack pnpm --filter @whoosh/design-tokens build      # regenerate src/tokens.css
-corepack pnpm --filter @whoosh/design-tokens test       # contrast + drift checks
-corepack pnpm --filter @whoosh/design-tokens typecheck
+corepack pnpm --filter @wdm/design-tokens build      # regenerate src/tokens.css
+corepack pnpm --filter @wdm/design-tokens test       # contrast + drift checks
+corepack pnpm --filter @wdm/design-tokens typecheck
 ```

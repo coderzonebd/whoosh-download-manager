@@ -4,7 +4,7 @@
 // contrast themes, on the mock daemon. Any violation fails the test, with
 // the rule, the elements and axe's advice in the message.
 //
-// Run: pnpm --filter @whoosh/ui test:a11y
+// Run: pnpm --filter @wdm/ui test:a11y
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { Browser, Page } from "playwright-core";
@@ -25,7 +25,7 @@ interface Screen {
 
 /** Runs `fn` in the page with the AppState. */
 function withApp(page: Page, fn: string): Promise<unknown> {
-  return page.evaluate(`(async (app) => { ${fn} })(window.__whooshApp)`);
+  return page.evaluate(`(async (app) => { ${fn} })(window.__wdmApp)`);
 }
 
 const SCREENS: Screen[] = [
@@ -100,7 +100,7 @@ const SCREENS: Screen[] = [
       // What the extension sends through the native host (which sets fromBrowser).
       await withApp(
         page,
-        `await app.client.call("download.add", { url: "https://cdn.example.com/releases/whoosh-handbook-2026.pdf", fromBrowser: true });
+        `await app.client.call("download.add", { url: "https://cdn.example.com/releases/wdm-handbook-2026.pdf", fromBrowser: true });
          await app.client.call("download.add", { url: "https://mirror.example.org/iso/debian-13.1.0-amd64-netinst.iso", fromBrowser: true });`,
       );
       await page.locator("#vy-confirm-start").waitFor();
@@ -208,7 +208,7 @@ describe.skipIf(!chrome)("accessibility (axe-core)", () => {
               url.searchParams.set("lang", lang);
               url.searchParams.set("theme", theme === "dark" ? "dark" : "light");
               await page.goto(url.toString());
-              await page.waitForFunction(() => window.__whooshApp !== undefined);
+              await page.waitForFunction(() => window.__wdmApp !== undefined);
               await page.waitForFunction((l) => document.documentElement.lang === l, lang);
               if (theme === "high-contrast") await withApp(page, `app.prefs.highContrast = true;`);
               await page.waitForFunction((t) => document.documentElement.dataset["theme"] === t, theme);

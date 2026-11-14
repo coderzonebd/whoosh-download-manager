@@ -2,7 +2,7 @@
 
 The desktop installers ship yt-dlp and ffmpeg so video and audio sites work
 right after installation. The release workflow fetches them for each target
-with `whoosh-media-bundle` (crates/media, `bundle` module: the same upstreams
+with `wdm-media-bundle` (crates/media, `bundle` module: the same upstreams
 and checksum checks as the first-use download) into
 `apps/desktop/src-tauri/media-tools/`, and `tauri.media.conf.json` puts that
 directory into the app's resources.
@@ -16,7 +16,7 @@ This directory holds what is copied next to the programs:
 | `Unlicense.txt` | `Unlicense.txt` | yt-dlp ([its LICENSE](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE)) |
 | `../../LICENSE-GPL` | `GPL-3.0.txt` | ffmpeg on macOS (Martin Riedl's GPL build) |
 
-`whoosh-media-bundle` adds `manifest.json` (versions, upstream files and
+`wdm-media-bundle` adds `manifest.json` (versions, upstream files and
 checksums, the SHA-256 of every shipped file) and, for BtbN builds,
 `LICENSES/ffmpeg-build-LICENSE.txt` from the archive.
 

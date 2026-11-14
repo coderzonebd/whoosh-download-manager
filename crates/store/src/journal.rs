@@ -41,8 +41,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use futures::future::BoxFuture;
-use whoosh_core::{Checkpoint, Journal};
-use whoosh_proto::DownloadId;
+use wdm_core::{Checkpoint, Journal};
+use wdm_proto::DownloadId;
 
 use crate::{blocking, sys};
 
@@ -240,7 +240,7 @@ fn sync_in_background(pending: &Arc<Mutex<Vec<PathBuf>>>) {
     }
     let pending = pending.clone();
     let spawned = std::thread::Builder::new()
-        .name("whoosh-journal-dirs".into())
+        .name("wdm-journal-dirs".into())
         .spawn(move || {
             let mut dirs = lock(&pending);
             if sys::sync_dirs(&dirs).is_ok() {
@@ -391,7 +391,7 @@ fn is_windows_device(stem: &str) -> bool {
 
 /// The on-disk format, as pure functions over the file's bytes.
 pub(crate) mod format {
-    use whoosh_core::Checkpoint;
+    use wdm_core::Checkpoint;
 
     pub(crate) const MAGIC: [u8; 8] = *b"WHSHJRNL";
     pub(crate) const VERSION: u32 = 1;
@@ -509,8 +509,8 @@ mod tests {
     use super::format::{HEADER, latest, plan, slot_at};
     use super::*;
     use proptest::prelude::*;
-    use whoosh_core::source::RemoteMeta;
-    use whoosh_core::{ByteRange, Finishing, RangeSet};
+    use wdm_core::source::RemoteMeta;
+    use wdm_core::{ByteRange, Finishing, RangeSet};
 
     /// A checkpoint whose JSON grows with `ranges`; 200 ranges ≈ 6 KiB,
     /// enough to force a slot past 4 KiB.
@@ -750,7 +750,7 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test]
     async fn files_are_owner_only() {
-        use whoosh_proto::runtime::{check_private_dir, check_private_file};
+        use wdm_proto::runtime::{check_private_dir, check_private_file};
         let d = tempfile::tempdir().unwrap();
         let out = std::process::Command::new("icacls")
             .arg(d.path())

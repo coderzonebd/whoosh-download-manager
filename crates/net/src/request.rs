@@ -5,8 +5,8 @@ use bytes::Bytes;
 use http::Method;
 use http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use url::Url;
-use whoosh_core::SourceError;
-use whoosh_proto::RequestContext;
+use wdm_core::SourceError;
+use wdm_proto::RequestContext;
 
 /// Headers a caller may not set: hop-by-hop (RFC 9110 §7.6.1), framing and
 /// routing (`Host`, `Content-Length`), and everything the source itself
@@ -213,7 +213,7 @@ pub(crate) fn referrer_for(referer: &str, to: &Url) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use whoosh_proto::Header;
+    use wdm_proto::Header;
 
     fn url(s: &str) -> Url {
         Url::parse(s).unwrap()

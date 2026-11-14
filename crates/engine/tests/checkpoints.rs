@@ -13,11 +13,11 @@ use bytes::Bytes;
 use common::*;
 use futures::future::BoxFuture;
 use sha2::{Digest, Sha256};
-use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
-use whoosh_core::{Storage, StorageProvider};
-use whoosh_engine::{Engine, EngineDeps, Tuning};
-use whoosh_proto::service::Service;
-use whoosh_proto::{AddParams, Checksum};
+use wdm_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
+use wdm_core::{Storage, StorageProvider};
+use wdm_engine::{Engine, EngineDeps, Tuning};
+use wdm_proto::service::Service;
+use wdm_proto::{AddParams, Checksum};
 
 const LONG: Duration = Duration::from_secs(600);
 

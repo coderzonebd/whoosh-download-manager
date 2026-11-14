@@ -15,7 +15,7 @@
 //!   allows user attributes.
 //!
 //! The marks move with a rename on the same filesystem, so the engine marks
-//! the in-progress file before its final move ([`whoosh_core::Storage::
+//! the in-progress file before its final move ([`wdm_core::Storage::
 //! mark_origin`]) and the finished file is never seen without one.
 //!
 //! **What is recorded of the URLs:** scheme, host, port and path. User
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn the_mark_moves_with_a_rename() {
         let d = tempfile::tempdir().unwrap();
-        let part = d.path().join("f.bin.whoosh-part");
+        let part = d.path().join("f.bin.wdm-part");
         std::fs::write(&part, b"data").unwrap();
         let o = Origin::new(
             "https://cdn.example.com/f.bin?t=1",

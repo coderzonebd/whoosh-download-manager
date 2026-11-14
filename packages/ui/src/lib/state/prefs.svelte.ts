@@ -30,7 +30,7 @@ export interface PrefsData {
   detailOpen: boolean;
 }
 
-const KEY = "whoosh.ui.prefs.v1";
+const KEY = "wdm.ui.prefs.v1";
 const SORT_KEYS: readonly SortKey[] = ["name", "size", "progress", "status", "speed", "eta", "connections", "added"];
 
 function clampWidth(w: unknown, fallback: number): number {

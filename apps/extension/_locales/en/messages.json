@@ -101,7 +101,7 @@
   "altClickBrowser": {
     "message": "Let the browser download it"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "Send it to Whoosh Download Manager, whatever the rules above say"
   },
   "altClickOff": {
@@ -249,7 +249,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "Hold $KEY$ while clicking a link to send it to Whoosh Download Manager whatever the rules say.",
     "description": "$KEY$ is the Alt key, shown as a keyboard key.",
     "placeholders": {

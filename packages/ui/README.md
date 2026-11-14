@@ -1,15 +1,15 @@
-# @whoosh/ui
+# @wdm/ui
 
 The download manager interface shared by the desktop app, the extension
 popup/side panel, the mobile shell and the web remote. Svelte 5 (runes) +
 TypeScript. Apache-2.0.
 
 ```ts
-import "@whoosh/ui/styles.css";             // tokens + base styles, once per host
-import { App } from "@whoosh/ui";
+import "@wdm/ui/styles.css";             // tokens + base styles, once per host
+import { App } from "@wdm/ui";
 import { mount } from "svelte";
 
-mount(App, { target, props: { client, mode: "live" } }); // any WhooshClient: ws, mock, native messaging
+mount(App, { target, props: { client, mode: "live" } }); // any WdmClient: ws, mock, native messaging
 ```
 
 Props: `client`, `mode` (`"mock"` shows "Demo data"), `storage` (where device
@@ -135,20 +135,20 @@ renders the app in both and refuses physical `left`/`right` styles).
 ## Commands
 
 ```bash
-corepack pnpm --filter @whoosh/ui dev         # playground on the mock: http://localhost:5174 (?bulk=10000, ?lang=bn)
-corepack pnpm --filter @whoosh/ui test        # vitest + @testing-library (jsdom)
-corepack pnpm --filter @whoosh/ui typecheck   # svelte-check --fail-on-warnings (includes a11y rules)
-corepack pnpm --filter @whoosh/ui test:a11y    # axe-core in Chrome for Testing, on the mock
-cargo build -p whoosh-daemon -p whoosh-labserver
-corepack pnpm --filter @whoosh/ui test:e2e     # the UI against a real daemon + labserver
+corepack pnpm --filter @wdm/ui dev         # playground on the mock: http://localhost:5174 (?bulk=10000, ?lang=bn)
+corepack pnpm --filter @wdm/ui test        # vitest + @testing-library (jsdom)
+corepack pnpm --filter @wdm/ui typecheck   # svelte-check --fail-on-warnings (includes a11y rules)
+corepack pnpm --filter @wdm/ui test:a11y    # axe-core in Chrome for Testing, on the mock
+cargo build -p wdm-daemon -p wdm-labserver
+corepack pnpm --filter @wdm/ui test:e2e     # the UI against a real daemon + labserver
 ```
 
 The browser suites (`vitest.e2e.config.ts`) build `e2e/harness.html`, a
 test-only page that is never part of an app or package export, and run it in
-Chrome for Testing (`WHOOSH_E2E_CHROME`, or the newest build in Playwright's
-cache; `WHOOSH_E2E_REQUIRE=1` fails instead of skipping when it is missing).
-`test:e2e` starts `whoosh-labserver` and `whoosh-daemon` (`target/debug`, or
-`WHOOSH_E2E_LABSERVER` / `WHOOSH_E2E_DAEMON`) on a temporary data directory,
+Chrome for Testing (`WDM_E2E_CHROME`, or the newest build in Playwright's
+cache; `WDM_E2E_REQUIRE=1` fails instead of skipping when it is missing).
+`test:e2e` starts `wdm-labserver` and `wdm-daemon` (`target/debug`, or
+`WDM_E2E_LABSERVER` / `WDM_E2E_DAEMON`) on a temporary data directory,
 with a fake yt-dlp (`e2e/fake-yt-dlp.mjs`, answering from
 `crates/media/tests/fixtures/info.json`) as the daemon's managed copy. The
 daemon only accepts the desktop webview's `Origin`, so the page connects

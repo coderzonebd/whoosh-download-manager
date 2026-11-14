@@ -5,8 +5,8 @@ use std::io;
 use md5::Md5;
 use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha512};
-use whoosh_core::Storage;
-use whoosh_proto::Checksum;
+use wdm_core::Storage;
+use wdm_proto::Checksum;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Algo {
@@ -115,7 +115,7 @@ pub(crate) async fn digest(
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use whoosh_core::testing::MemStorage;
+    use wdm_core::testing::MemStorage;
 
     fn ck(a: &str, v: &str) -> Checksum {
         Checksum {

@@ -1,9 +1,9 @@
 //! `--register` / `--unregister`: install the host manifest for the current
-//! user so browsers can launch `whoosh-nmhost`.
+//! user so browsers can launch `wdm-nmhost`.
 //!
 //! * Linux and macOS: one JSON manifest per browser in that browser's
 //!   user-level `NativeMessagingHosts` directory.
-//! * Windows: the manifests live under `%LOCALAPPDATA%\whoosh\nmhost\` and a
+//! * Windows: the manifests live under `%LOCALAPPDATA%\wdm\nmhost\` and a
 //!   per-browser key under `HKEY_CURRENT_USER` points at them.
 //!
 //! Brave reads the user-level host from **Google Chrome's** location, not
@@ -218,7 +218,7 @@ pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, Regis
                 .local_app_data
                 .clone()
                 .ok_or(RegisterError::NoBaseDir("LOCALAPPDATA"))?;
-            let manifest_dir = local.join("whoosh").join("nmhost");
+            let manifest_dir = local.join("wdm").join("nmhost");
             let manifest = manifest_dir.join(match browser.family() {
                 Family::Chromium => format!("{HOST_NAME}.chromium.json"),
                 Family::Firefox => format!("{HOST_NAME}.firefox.json"),
@@ -472,7 +472,7 @@ mod tests {
     impl TempHome {
         fn new(tag: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "whoosh-nmhost-{tag}-{}-{:?}",
+                "wdm-nmhost-{tag}-{}-{:?}",
                 std::process::id(),
                 std::thread::current().id()
             ));
@@ -497,9 +497,9 @@ mod tests {
 
     /// An absolute host path on every OS (on Windows one needs a drive).
     const HOST: &str = if cfg!(windows) {
-        r"C:\Program Files\Whoosh\whoosh-nmhost.exe"
+        r"C:\Program Files\WDM\wdm-nmhost.exe"
     } else {
-        "/opt/whoosh/whoosh-nmhost"
+        "/opt/wdm/wdm-nmhost"
     };
 
     fn opts(browsers: Option<Vec<Browser>>) -> Options {
@@ -842,7 +842,7 @@ mod tests {
             Err(RegisterError::BadChromiumId(_))
         ));
         let mut o = opts(Some(vec![Browser::Chrome]));
-        o.host_path = "relative/whoosh-nmhost".into();
+        o.host_path = "relative/wdm-nmhost".into();
         assert!(matches!(
             register(Os::Linux, &home.env(), &o),
             Err(RegisterError::RelativeHostPath(_))

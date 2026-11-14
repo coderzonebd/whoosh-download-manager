@@ -3,8 +3,8 @@
 // daemon: the add dialog's format picker, the media tools in Settings, and
 // a daemon without media support (the store build's), which must show none
 // of it.
-import { createMockClient, type MockWhooshClient } from "@whoosh/api-client/mock";
-import type { MediaAddParams, WhooshClient } from "@whoosh/api-client";
+import { createMockClient, type MockWdmClient } from "@wdm/api-client/mock";
+import type { MediaAddParams, WdmClient } from "@wdm/api-client";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
@@ -20,7 +20,7 @@ afterEach(() => {
   closeClient = undefined;
 });
 
-function spy<C extends WhooshClient>(client: C): C & { log: { method: string; params: unknown }[] } {
+function spy<C extends WdmClient>(client: C): C & { log: { method: string; params: unknown }[] } {
   const log: { method: string; params: unknown }[] = [];
   const call = client.call.bind(client) as (m: string, p: unknown) => Promise<unknown>;
   return Object.assign(Object.create(client) as C, {
@@ -35,7 +35,7 @@ function spy<C extends WhooshClient>(client: C): C & { log: { method: string; pa
 }
 
 async function setup(opts: { media?: boolean; language?: string; scenario?: "demo" | "empty" } = {}) {
-  const mock: MockWhooshClient = createMockClient({
+  const mock: MockWdmClient = createMockClient({
     autoTick: false,
     media: opts.media ?? true,
     scenario: opts.scenario ?? "demo",

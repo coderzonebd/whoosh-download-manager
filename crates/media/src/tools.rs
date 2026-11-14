@@ -18,8 +18,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use whoosh_proto::media::{TOOL_FFMPEG, TOOL_YT_DLP};
-use whoosh_proto::{MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus, UnixMillis};
+use wdm_proto::media::{TOOL_FFMPEG, TOOL_YT_DLP};
+use wdm_proto::{MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus, UnixMillis};
 
 use crate::bundle::{self, Manifest};
 use crate::fetch::{Fetcher, Progress};

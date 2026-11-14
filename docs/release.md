@@ -14,25 +14,25 @@ laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 |---|---|---|
 | `Whoosh-Download-Manager_<v>_x64-setup.exe`, `Whoosh-Download-Manager_<v>_arm64-setup.exe` (NSIS, per-user) | windows-2025, windows-11-arm | SignPath (exe inside and installer) |
 | `Whoosh-Download-Manager_<v>_x64_en-US.msi` (WiX, per-machine; x64 only, not for pre-releases) | windows-2025 | SignPath |
-| `Whoosh-Download-Manager_<v>_{x64,arm64}_portable.zip` (the exe with `whoosh-daemon.exe`, `whoosh-nmhost.exe` and `media-tools\` with yt-dlp and ffmpeg) | windows-2025, windows-11-arm | SignPath (all three) |
+| `Whoosh-Download-Manager_<v>_{x64,arm64}_portable.zip` (the exe with `wdm-daemon.exe`, `wdm-nmhost.exe` and `media-tools\` with yt-dlp and ffmpeg) | windows-2025, windows-11-arm | SignPath (all three) |
 | `Whoosh-Download-Manager_<v>_universal.dmg` (Apple silicon + Intel) | macos-15 | Developer ID + notarization, stapled |
 | `Whoosh-Download-Manager_<v>_universal.app.tar.gz` (updater archive) | macos-15 | updater key (below) |
 | `Whoosh-Download-Manager_<v>_amd64.AppImage`, `Whoosh-Download-Manager_<v>_amd64.deb`, `Whoosh-Download-Manager-<v>-1.x86_64.rpm` | ubuntu-22.04 (glibc 2.35) | — (see *Not automated yet*) |
 | `Whoosh-Download-Manager_<v>_aarch64.AppImage`, `Whoosh-Download-Manager_<v>_arm64.deb`, `Whoosh-Download-Manager-<v>-1.aarch64.rpm` | ubuntu-22.04-arm (glibc 2.35) | — |
-| `whoosh-<v>-<platform>.{tar.gz,zip}`: the command line `whoosh` and `whoosh-daemon` (Windows: also `whoosh-autostart.exe`) | linux-x64, linux-arm64, macos-universal, windows-x64, windows-arm64 | SignPath / Developer ID + notarization |
-| `whoosh-nmhost-<v>-<platform>.{tar.gz,zip}` (native messaging host, for packagers) | same | same |
-| `whoosh-chromium-<v>-store.zip`, `whoosh-firefox-<v>-store.zip` | ubuntu-24.04 | stores sign on upload |
-| `whoosh-chromium-<v>.zip` (GitHub build for Chrome, Brave, Vivaldi: load unpacked; keeps the public key, so the native host accepts it) | ubuntu-24.04 | — |
-| `whoosh-<v>-package-manifests.tar.gz` (winget, Scoop, Homebrew cask, Flathub, AUR, filled in with this release's URLs and hashes) | ubuntu-24.04 | covered by the attestation |
-| `*.cargo.cdx.json` (one per crate), `whoosh-desktop-<v>.npm.cdx.json`, `whoosh-extension-<v>.npm.cdx.json` | ubuntu-24.04 | covered by the attestation |
-| `whoosh-<v>-source.tar.gz` (`git archive` of the tag) | ubuntu-24.04 | covered by the attestation |
+| `wdm-<v>-<platform>.{tar.gz,zip}`: the command line `wdm` and `wdm-daemon` (Windows: also `wdm-autostart.exe`) | linux-x64, linux-arm64, macos-universal, windows-x64, windows-arm64 | SignPath / Developer ID + notarization |
+| `wdm-nmhost-<v>-<platform>.{tar.gz,zip}` (native messaging host, for packagers) | same | same |
+| `wdm-chromium-<v>-store.zip`, `wdm-firefox-<v>-store.zip` | ubuntu-24.04 | stores sign on upload |
+| `wdm-chromium-<v>.zip` (GitHub build for Chrome, Brave, Vivaldi: load unpacked; keeps the public key, so the native host accepts it) | ubuntu-24.04 | — |
+| `wdm-<v>-package-manifests.tar.gz` (winget, Scoop, Homebrew cask, Flathub, AUR, filled in with this release's URLs and hashes) | ubuntu-24.04 | covered by the attestation |
+| `*.cargo.cdx.json` (one per crate), `wdm-desktop-<v>.npm.cdx.json`, `wdm-extension-<v>.npm.cdx.json` | ubuntu-24.04 | covered by the attestation |
+| `wdm-<v>-source.tar.gz` (`git archive` of the tag) | ubuntu-24.04 | covered by the attestation |
 | `*.sig`, `latest.json` (Tauri updater) | — | updater key (below) |
 | `SHA256SUMS` | ubuntu-24.04 | covered by the attestation |
 
 Every desktop installer and the portable zip also carry **yt-dlp and ffmpeg**
 (with ffprobe on Windows and Linux) in the app's resources, `media-tools/`, so
 video and audio sites work right after installation. The *Fetch yt-dlp and
-ffmpeg for the installers* step runs `whoosh-media-bundle` (crates/media): the
+ffmpeg for the installers* step runs `wdm-media-bundle` (crates/media): the
 newest yt-dlp release and the newest ffmpeg build for the target from the same
 upstreams, with the same checksum checks, as the first-use download (yt-dlp
 releases; BtbN LGPL builds for Windows and Linux, x64 and ARM64; Martin
@@ -49,7 +49,7 @@ covers the tar and the program in it.
 They add roughly 100–200 MB to each installed app (less to the compressed
 installers); the command-line archives do not include them.
 
-`whoosh-labserver` (the engine's fault-injecting test server) is not released;
+`wdm-labserver` (the engine's fault-injecting test server) is not released;
 it is built in CI and as the `packaging/docker` image only.
 
 ARM64 desktop builds run on GitHub's free arm64 runners (`ubuntu-22.04-arm`,
@@ -90,7 +90,7 @@ without the development `key` (the job fails if a key is left in).
    [Verifying a download](#verifying-a-download), edit the notes, then
    **Publish**. Mark it "latest" only for stable versions.
 6. Afterwards: upload the store zips, and submit the package-manager
-   manifests from `whoosh-<v>-package-manifests.tar.gz` (the *Package
+   manifests from `wdm-<v>-package-manifests.tar.gz` (the *Package
    manifests* job filled in the version, URLs and SHA-256s with
    `.github/scripts/package-manifests.mjs`; `packaging/*/README.md` says how
    to submit each). Nothing is submitted automatically.
@@ -116,11 +116,11 @@ run log.
 
 | What | How | Where in `release.yml` |
 |---|---|---|
-| Windows exe, NSIS, MSI, `whoosh.exe`, `whoosh-daemon.exe`, `whoosh-autostart.exe`, `whoosh-nmhost.exe` | [SignPath](https://signpath.io) (free for OSS through the [SignPath Foundation](https://signpath.org)); the unsigned files are uploaded as a short-lived artifact, SignPath signs them and the signed files replace them | `desktop` (Windows): build `--no-bundle` → sign the app exe and the sidecars (`whoosh-daemon.exe`, `whoosh-nmhost.exe`) in one request → `tauri bundle --no-binary-patching` → sign installers; `binaries` (Windows) |
+| Windows exe, NSIS, MSI, `wdm.exe`, `wdm-daemon.exe`, `wdm-autostart.exe`, `wdm-nmhost.exe` | [SignPath](https://signpath.io) (free for OSS through the [SignPath Foundation](https://signpath.org)); the unsigned files are uploaded as a short-lived artifact, SignPath signs them and the signed files replace them | `desktop` (Windows): build `--no-bundle` → sign the app exe and the sidecars (`wdm-daemon.exe`, `wdm-nmhost.exe`) in one request → `tauri bundle --no-binary-patching` → sign installers; `binaries` (Windows) |
 | macOS `.app` | Tauri CLI with `APPLE_*` variables: Developer ID, hardened runtime, notarization, stapling | `desktop` (macOS) |
-| macOS yt-dlp and ffmpeg inside the `.app` | `codesign` before bundling: Developer ID (hardened runtime; yt-dlp with `packaging/media-tools/yt-dlp.entitlements`) when configured, else ad hoc like the app; then `whoosh-media-bundle rehash` | *Sign yt-dlp and ffmpeg (macOS)* |
+| macOS yt-dlp and ffmpeg inside the `.app` | `codesign` before bundling: Developer ID (hardened runtime; yt-dlp with `packaging/media-tools/yt-dlp.entitlements`) when configured, else ad hoc like the app; then `wdm-media-bundle rehash` | *Sign yt-dlp and ffmpeg (macOS)* |
 | macOS `.dmg` | `codesign` + `notarytool` + `stapler` | `.github/scripts/macos-sign.sh`, `macos-notarize.sh` |
-| macOS `whoosh`, `whoosh-daemon`, `whoosh-nmhost` | `codesign` (hardened runtime), zipped and notarized (bare binaries cannot be stapled; Gatekeeper checks online) | `binaries` (macOS) |
+| macOS `wdm`, `wdm-daemon`, `wdm-nmhost` | `codesign` (hardened runtime), zipped and notarized (bare binaries cannot be stapled; Gatekeeper checks online) | `binaries` (macOS) |
 | Updater artifacts | minisign key via `TAURI_SIGNING_PRIVATE_KEY`: `createUpdaterArtifacts` on macOS/Linux, `tauri signer sign` after SignPath on Windows; `latest.json` is generated from the `.sig` files | `desktop`, `release` |
 | Everything | Sigstore build provenance attestation | `release` |
 
@@ -157,7 +157,7 @@ optionally add required reviewers.
 | `APPLE_ID` | secret | notarization (alternative): Apple ID e-mail | — |
 | `APPLE_APP_SPECIFIC_PASSWORD` | secret | app-specific password for that Apple ID | appleid.apple.com → *Sign-In and Security* |
 | `APPLE_TEAM_ID` | secret | 10-character team id (needed with `APPLE_ID`) | developer.apple.com → *Membership* |
-| `WHOOSH_CRASH_DSN` | secret | GlitchTip DSN for opt-in crash reports, compiled into the daemon and the desktop app (`crates/crash`); without it a build cannot send reports. Passed to the `desktop` and `binaries` jobs on `v*` tag runs only, so dry runs build without it | GlitchTip → project → *Client Keys (DSN)* |
+| `WHOOSH_CRASH_DSN` | secret | GlitchTip DSN for opt-in crash reports, compiled into the daemon and the desktop app (`crates/crash`, which reads it as `WDM_CRASH_DSN` at build time); without it a build cannot send reports. Passed to the `desktop` and `binaries` jobs on `v*` tag runs only, so dry runs build without it | GlitchTip → project → *Client Keys (DSN)* |
 | `TAURI_SIGNING_PRIVATE_KEY` | secret | updater signing key (minisign); its public half is pinned in `tauri.conf.json` | the key file generated for this repository (see *Updater key*); store the file's contents; keep an offline backup |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | secret | its password | the current key has none: leave the secret unset or empty |
 
@@ -243,14 +243,14 @@ Everything below is free. Until each item exists, the matching path in
    asks a maintainer to approve each release-signing request.
 3. **Firefox Add-ons (AMO)**. Create an account at
    <https://addons.mozilla.org/developers/>, submit
-   `whoosh-firefox-<v>-store.zip` from a release (AMO also asks for the
-   source: `whoosh-<v>-source.tar.gz` and `apps/extension/store/amo.md`).
+   `wdm-firefox-<v>-store.zip` from a release (AMO also asks for the
+   source: `wdm-<v>-source.tar.gz` and `apps/extension/store/amo.md`).
    The add-on ID is already fixed (`whoosh@coderzonebd.com`). When it is
    listed, put its slug in `packaging/browsers/extension-ids.json`
    (`firefox.amoSlug`) so the app links to it.
 4. **Microsoft Edge Add-ons**. Register in Microsoft Partner Center
    (<https://partner.microsoft.com/dashboard/microsoftedge/>; free), submit
-   `whoosh-chromium-<v>-store.zip`. Once it has an ID, put it in
+   `wdm-chromium-<v>-store.zip`. Once it has an ID, put it in
    `packaging/browsers/extension-ids.json` (`edge.id`), run
    `node packaging/browsers/generate.mjs`, and merge that change: from the
    next release the native host accepts the Edge build and the installers
@@ -266,9 +266,10 @@ How the IDs reach the installers and the app:
 ### Crash reports
 
 `WHOOSH_CRASH_DSN` (secret, in the `release` environment) is the hosted
-GlitchTip project's DSN. It is read when the app and the daemon are
+GlitchTip project's DSN. `release.yml` passes it to the builds as
+`WDM_CRASH_DSN`, which is read when the app and the daemon are
 **compiled** (`option_env!` in `crates/crash`), so it must be in the
-environment of the build steps that compile `whoosh-daemon` and the desktop
+environment of the build steps that compile `wdm-daemon` and the desktop
 app. Builds with it send crash reports **by default**; users can turn them off
 in *Settings → Privacy*, and the app tells them once on first run. Builds
 without it (pull requests, local builds, dry runs without the secret) contain
@@ -343,7 +344,7 @@ Phase 4).
 - Store uploads (Chrome Web Store, AMO, Edge Add-ons, Microsoft Store) and
   package-manager submissions (winget, Homebrew, Scoop, Flathub, AUR, Snap,
   Nix, Chocolatey). The manifests are filled in per release
-  (`whoosh-<v>-package-manifests.tar.gz`); submitting them is by hand.
+  (`wdm-<v>-package-manifests.tar.gz`); submitting them is by hand.
 - Linux package signing and apt/dnf repositories; Snap and Nix packaging;
   MSIX; an MSI for Windows ARM64.
 - Publishing the Docker image (it is only built in CI).

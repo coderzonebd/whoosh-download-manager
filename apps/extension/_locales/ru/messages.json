@@ -86,7 +86,7 @@
   "altClickBrowser": {
     "message": "Скачать средствами браузера"
   },
-  "altClickWhoosh": {
+  "altClickWdm": {
     "message": "Отправить в Whoosh Download Manager независимо от правил выше"
   },
   "altClickOff": {
@@ -213,7 +213,7 @@
       }
     }
   },
-  "altHintWhoosh": {
+  "altHintWdm": {
     "message": "Удерживайте $KEY$ при щелчке по ссылке, чтобы отправить её в Whoosh Download Manager независимо от правил.",
     "placeholders": {
       "key": {

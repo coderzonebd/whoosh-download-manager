@@ -1,5 +1,5 @@
 {
-  "//": "The browser extension's IDs, read by whoosh-nmhost (compiled in), the desktop app and packaging/browsers/generate.mjs. Fill in a store ID when the store assigns it, run `node packaging/browsers/generate.mjs` and commit; see packaging/browsers/README.md.",
+  "//": "The browser extension's IDs, read by wdm-nmhost (compiled in), the desktop app and packaging/browsers/generate.mjs. Fill in a store ID when the store assigns it, run `node packaging/browsers/generate.mjs` and commit; see packaging/browsers/README.md.",
   "firefox": {
     "id": "whoosh@coderzonebd.com",
     "amoSlug": null

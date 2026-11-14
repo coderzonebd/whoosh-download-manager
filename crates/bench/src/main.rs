@@ -1,4 +1,4 @@
-//! `whoosh-bench` command line. See crates/bench/README.md.
+//! `wdm-bench` command line. See crates/bench/README.md.
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
@@ -8,14 +8,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use whoosh_bench::adapter::{self, Adapter, Conn, Mode};
-use whoosh_bench::{fetch, measure, report, runner};
+use wdm_bench::adapter::{self, Adapter, Conn, Mode};
+use wdm_bench::{fetch, measure, report, runner};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "whoosh-bench",
+    name = "wdm-bench",
     version,
-    about = "Benchmarks download managers against whoosh-labserver: speed, politeness, correctness"
+    about = "Benchmarks download managers against wdm-labserver: speed, politeness, correctness"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -36,7 +36,7 @@ enum Cmd {
         /// Evaluate the Phase 1 gate (MASTER-PLAN §8, rules 1, 3, 4, 5) for
         /// this client; `none` to leave the section out. Skipped when the
         /// client is not in the run set.
-        #[arg(long, default_value = "whoosh")]
+        #[arg(long, default_value = "wdm")]
         gate: String,
     },
     /// Download pinned competitor builds from their official GitHub releases
@@ -59,7 +59,7 @@ enum Cmd {
     /// Manual mode for GUI-only clients: serve a file, a person downloads it,
     /// measure from labserver's side.
     Manual(ManualArgs),
-    /// Crash test (Phase 1 gate): SIGKILL the real whoosh daemon at random
+    /// Crash test (Phase 1 gate): SIGKILL the real wdm daemon at random
     /// moments while it downloads from labserver, restart it, and verify
     /// every finished file byte for byte. Exits 1 on any corrupt, duplicate
     /// or unfinished download.
@@ -124,7 +124,7 @@ struct RunArgs {
     #[arg(long)]
     resume: Option<PathBuf>,
     /// Scratch space for downloads; use a real disk (default
-    /// ~/.cache/whoosh-bench/work).
+    /// ~/.cache/wdm-bench/work).
     #[arg(long)]
     work_dir: Option<PathBuf>,
     /// Download public test files over the real internet instead of from
@@ -171,9 +171,9 @@ struct HardkillArgs {
     /// Seed of the kill schedule and download mix (default: from the clock).
     #[arg(long)]
     seed: Option<u64>,
-    /// The `whoosh` CLI to test; `whoosh-daemon` must be next to it.
-    #[arg(long, default_value = "target/release/whoosh")]
-    whoosh: PathBuf,
+    /// The `wdm` CLI to test; `wdm-daemon` must be next to it.
+    #[arg(long, default_value = "target/release/wdm")]
+    wdm: PathBuf,
     /// Downloads running at once in each round.
     #[arg(long, default_value_t = 3)]
     concurrent: usize,
@@ -184,7 +184,7 @@ struct HardkillArgs {
     /// Kills per round at most; then the round finishes undisturbed.
     #[arg(long, default_value_t = 4)]
     max_kills_per_round: u32,
-    /// Scratch space; use a real disk (default ~/.cache/whoosh-bench/work).
+    /// Scratch space; use a real disk (default ~/.cache/wdm-bench/work).
     #[arg(long)]
     work_dir: Option<PathBuf>,
     #[arg(long)]
@@ -225,8 +225,8 @@ struct ManualArgs {
 
 fn cmd_hardkill(a: HardkillArgs) -> Result<()> {
     let lab = match &a.lab_url {
-        Some(url) => whoosh_bench::lab::Lab::connect(url)?,
-        None => whoosh_bench::lab::Lab::start(a.cache_mb)?,
+        Some(url) => wdm_bench::lab::Lab::connect(url)?,
+        None => wdm_bench::lab::Lab::start(a.cache_mb)?,
     };
     let seed = a.seed.unwrap_or_else(|| {
         std::time::SystemTime::now()
@@ -234,10 +234,10 @@ fn cmd_hardkill(a: HardkillArgs) -> Result<()> {
             .map(|d| d.as_secs())
             .unwrap_or(0)
     });
-    let opts = whoosh_bench::hardkill::Options {
+    let opts = wdm_bench::hardkill::Options {
         kills: a.kills,
         seed,
-        whoosh: std::path::absolute(&a.whoosh)?,
+        wdm: std::path::absolute(&a.wdm)?,
         work_dir: a
             .work_dir
             .unwrap_or_else(|| fetch::cache_dir().join("work")),
@@ -247,7 +247,7 @@ fn cmd_hardkill(a: HardkillArgs) -> Result<()> {
         round_timeout: std::time::Duration::from_secs(600),
         quiet: a.quiet,
     };
-    let summary = whoosh_bench::hardkill::run(&lab, &opts)?;
+    let summary = wdm_bench::hardkill::run(&lab, &opts)?;
     let json = serde_json::to_string_pretty(&summary)?;
     println!("{json}");
     if let Some(p) = &a.output {
@@ -418,7 +418,7 @@ fn cmd_run(a: RunArgs, raw: &[OsString]) -> Result<()> {
             .iter()
             .map(|id| {
                 adapter::by_id(id)
-                    .with_context(|| format!("unknown client {id:?} (see `whoosh-bench list`)"))
+                    .with_context(|| format!("unknown client {id:?} (see `wdm-bench list`)"))
             })
             .collect::<Result<_>>()?
     };
@@ -524,6 +524,6 @@ fn cmd_run(a: RunArgs, raw: &[OsString]) -> Result<()> {
         }),
     })?;
     eprintln!("wrote {}", dir.display());
-    eprintln!("report: whoosh-bench report {}", dir.display());
+    eprintln!("report: wdm-bench report {}", dir.display());
     Ok(())
 }

@@ -55,8 +55,8 @@ export interface RuleContext {
   /** The download came from a non-GET request we cannot replay faithfully. */
   nonGetRequest: boolean;
   /**
-   * The user asked for this one to go to Whoosh (Alt+click with the
-   * "send to Whoosh" setting): capture on/off, site, type and size rules are
+   * The user asked for this one to go to WDM (Alt+click with the
+   * "send to WDM" setting): capture on/off, site, type and size rules are
    * skipped; the safety rules still apply.
    */
   force?: boolean;
@@ -89,7 +89,7 @@ export function matchesFileTypes(c: Pick<CandidateDownload, "filename" | "url" |
 }
 
 /**
- * The rules no user choice overrides: what Whoosh cannot repeat faithfully,
+ * The rules no user choice overrides: what WDM cannot repeat faithfully,
  * what the browser must keep showing a warning for, and the store policy.
  * Also used before a browser download is taken over to refresh an expired one.
  */

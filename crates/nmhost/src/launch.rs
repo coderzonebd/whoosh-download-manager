@@ -7,11 +7,11 @@
 //! every [`MIN_GAP`]), which starts the app that shipped with this host:
 //!
 //! * **macOS**: the `.app` bundle this host is inside
-//!   (`<bundle>/Contents/MacOS/whoosh-nmhost`) with `open`, which also
+//!   (`<bundle>/Contents/MacOS/wdm-nmhost`) with `open`, which also
 //!   brings an app that is already running to the front; a host outside a
 //!   bundle asks Launch Services for the bundle id instead (`open -b`), which
 //!   fails quietly when the app is not installed.
-//! * **Windows and Linux**: `whoosh-desktop` next to this host (the
+//! * **Windows and Linux**: `wdm-desktop` next to this host (the
 //!   installers, `.deb`/`.rpm`, AUR and Scoop put both in one directory).
 //!   A second start of the app hands over to the running one
 //!   (single-instance), which shows its window. On Windows it is started
@@ -34,9 +34,9 @@ pub const BUNDLE_ID: &str = crate::HOST_NAME;
 /// the Cargo binary of `apps/desktop` (what every installer ships), then
 /// the product name, in case a bundler renames it.
 pub const APP_EXES: [&str; 2] = if cfg!(windows) {
-    ["whoosh-desktop.exe", "Whoosh Download Manager.exe"]
+    ["wdm-desktop.exe", "Whoosh Download Manager.exe"]
 } else {
-    ["whoosh-desktop", "Whoosh Download Manager"]
+    ["wdm-desktop", "Whoosh Download Manager"]
 };
 
 /// The relay starts the app at most this often.
@@ -137,19 +137,18 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn macos_opens_the_bundle_the_host_is_in() {
-        let host =
-            Path::new("/Applications/Whoosh Download Manager.app/Contents/MacOS/whoosh-nmhost");
+        let host = Path::new("/Applications/Whoosh Download Manager.app/Contents/MacOS/wdm-nmhost");
         let (program, args) = plan(host, |_| false).unwrap();
         assert_eq!(program, Path::new("/usr/bin/open"));
         assert_eq!(args, ["/Applications/Whoosh Download Manager.app"]);
-        let (_, args) = plan(Path::new("/opt/homebrew/bin/whoosh-nmhost"), |_| false).unwrap();
+        let (_, args) = plan(Path::new("/opt/homebrew/bin/wdm-nmhost"), |_| false).unwrap();
         assert_eq!(args, ["-b", BUNDLE_ID]);
     }
 
     #[test]
     #[cfg(not(target_os = "macos"))]
     fn starts_the_app_next_to_the_host_only_when_it_is_there() {
-        let host = Path::new("/usr/bin/whoosh-nmhost");
+        let host = Path::new("/usr/bin/wdm-nmhost");
         let app = Path::new("/usr/bin").join(APP_EXES[0]);
         let (program, args) = plan(host, |p| p == app).unwrap();
         assert_eq!(program, app);

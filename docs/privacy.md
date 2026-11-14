@@ -1,10 +1,10 @@
 # Privacy
 
-What the Whoosh Download Manager desktop app, its background service (`whoosh-daemon`), the command line (`whoosh`) and the browser extension send anywhere. The short version: **apart from anonymous crash reports, which you can turn off, nothing is sent anywhere.** The extension has its own policy in [`apps/extension/PRIVACY.md`](../apps/extension/PRIVACY.md); it collects no data.
+What the Whoosh Download Manager desktop app, its background service (`wdm-daemon`), the command line (`wdm`) and the browser extension send anywhere. The short version: **apart from anonymous crash reports, which you can turn off, nothing is sent anywhere.** The extension has its own policy in [`apps/extension/PRIVACY.md`](../apps/extension/PRIVACY.md); it collects no data.
 
 ## The app
 
-Whoosh Download Manager downloads what you ask it to and keeps its settings, download list and history on your computer, in its data directory (Linux `~/.local/share/whoosh`, macOS `~/Library/Application Support/whoosh`, Windows `%LOCALAPPDATA%\whoosh`). It does not send usage data, analytics or identifiers anywhere. It talks to the network only to download what you asked for, and to fetch yt-dlp and ffmpeg from their official releases where the installer did not include them (the desktop installers do; the command line fetches them the first time you download from a video site) or when you ask for an update (see [`crates/media/README.md`](../crates/media/README.md)).
+Whoosh Download Manager downloads what you ask it to and keeps its settings, download list and history on your computer, in its data directory (Linux `~/.local/share/wdm`, macOS `~/Library/Application Support/wdm`, Windows `%LOCALAPPDATA%\wdm`). It does not send usage data, analytics or identifiers anywhere. It talks to the network only to download what you asked for, and to fetch yt-dlp and ffmpeg from their official releases where the installer did not include them (the desktop installers do; the command line fetches them the first time you download from a video site) or when you ask for an update (see [`crates/media/README.md`](../crates/media/README.md)).
 
 ## The local API
 
@@ -25,7 +25,7 @@ The background service listens only on your own computer (`127.0.0.1`) and accep
   - your user name and the computer's name, e-mail addresses and IP addresses other than `127.0.0.1`;
   - in stack traces: absolute paths (only `crate/src/file.rs` and the line remain), local variables and source lines;
   - free-form parts of a report (extra data, request, user, device name), which are dropped entirely. The crash-report library is configured not to collect personal data (`send_default_pii` off, no server name).
-- **Builds without a crash-report address send nothing.** The address (DSN) is set only when release builds are made (`WHOOSH_CRASH_DSN`, a build secret). A build from source without it contains the switch's code but never starts the reporter, and hides the switch and the notice.
+- **Builds without a crash-report address send nothing.** The address (DSN) is set only when release builds are made (`WDM_CRASH_DSN`, a build secret). A build from source without it contains the switch's code but never starts the reporter, and hides the switch and the notice.
 
 The rules err on the side of removing too much: a report that says "could not open \<file>" is still useful; one that names the file would be a bug. If you find a report detail that should not be there, report it privately as described in [`SECURITY.md`](../SECURITY.md).
 

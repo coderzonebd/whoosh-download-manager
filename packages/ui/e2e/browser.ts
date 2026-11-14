@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Finds and starts Chrome for Testing for the browser suites: the path in
-// WHOOSH_E2E_CHROME, else the newest build in Playwright's cache. A temporary
+// WDM_E2E_CHROME, else the newest build in Playwright's cache. A temporary
 // profile every time; the mock keychain keeps macOS from prompting.
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { chromium, type Browser } from "playwright-core";
 
 export function findChrome(): string | undefined {
-  const fromEnv = process.env["WHOOSH_E2E_CHROME"];
+  const fromEnv = process.env["WDM_E2E_CHROME"];
   if (fromEnv) return fromEnv;
   const cache =
     process.platform === "darwin"
@@ -36,13 +36,13 @@ export function findChrome(): string | undefined {
   return undefined;
 }
 
-/** CI sets WHOOSH_E2E_REQUIRE=1 so a missing browser fails instead of skipping. */
+/** CI sets WDM_E2E_REQUIRE=1 so a missing browser fails instead of skipping. */
 export function chromeOrSkip(): string | undefined {
   const exe = findChrome();
-  if (!exe && process.env["WHOOSH_E2E_REQUIRE"] === "1") {
-    throw new Error("no Chrome for Testing found (set WHOOSH_E2E_CHROME)");
+  if (!exe && process.env["WDM_E2E_REQUIRE"] === "1") {
+    throw new Error("no Chrome for Testing found (set WDM_E2E_CHROME)");
   }
-  if (!exe) console.warn("e2e: no Chrome for Testing found (set WHOOSH_E2E_CHROME); skipping");
+  if (!exe) console.warn("e2e: no Chrome for Testing found (set WDM_E2E_CHROME); skipping");
   return exe;
 }
 

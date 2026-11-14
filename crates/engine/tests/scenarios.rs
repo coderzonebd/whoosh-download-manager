@@ -6,10 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use whoosh_core::{Journal, SourceError, StateStore};
-use whoosh_engine::Tuning;
-use whoosh_proto::service::Service;
-use whoosh_proto::{DownloadState, IdsParams, RefreshUrlParams};
+use wdm_core::{Journal, SourceError, StateStore};
+use wdm_engine::Tuning;
+use wdm_proto::service::Service;
+use wdm_proto::{DownloadState, IdsParams, RefreshUrlParams};
 
 const LONG: Duration = Duration::from_secs(600);
 

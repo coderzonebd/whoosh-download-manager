@@ -4,14 +4,14 @@
 // media method answers -32006, `supported` is false, and the UI shows
 // nothing about media at all.
 
-import { JsonRpcErrorCode, isWhooshRpcError } from "@whoosh/api-client/errors";
-import { ErrorCode, MEDIA_CAPABILITY, type MediaToolsStatus } from "@whoosh/api-client";
+import { JsonRpcErrorCode, isWdmRpcError } from "@wdm/api-client/errors";
+import { ErrorCode, MEDIA_CAPABILITY, type MediaToolsStatus } from "@wdm/api-client";
 
 export { MEDIA_CAPABILITY };
 
 /** -32006 (no media in this build) or -32601 (a daemon from before media). */
 export function isMediaUnsupported(err: unknown): boolean {
-  return isWhooshRpcError(err) && (err.code === ErrorCode.Unsupported || err.code === JsonRpcErrorCode.MethodNotFound);
+  return isWdmRpcError(err) && (err.code === ErrorCode.Unsupported || err.code === JsonRpcErrorCode.MethodNotFound);
 }
 
 export class MediaStore {

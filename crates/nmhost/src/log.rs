@@ -3,11 +3,11 @@
 //! its own log when started with `--enable-logging`; Firefox shows it in the
 //! Browser Console.
 //!
-//! `WHOOSH_NMHOST_LOG=debug` enables debug lines; warnings are always shown.
+//! `WDM_NMHOST_LOG=debug` enables debug lines; warnings are always shown.
 
 use std::sync::OnceLock;
 
-pub const LOG_ENV: &str = "WHOOSH_NMHOST_LOG";
+pub const LOG_ENV: &str = "WDM_NMHOST_LOG";
 
 fn debug_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -15,11 +15,11 @@ fn debug_enabled() -> bool {
 }
 
 pub fn warn(message: &str) {
-    eprintln!("whoosh-nmhost: {message}");
+    eprintln!("wdm-nmhost: {message}");
 }
 
 pub fn debug(message: &str) {
     if debug_enabled() {
-        eprintln!("whoosh-nmhost: debug: {message}");
+        eprintln!("wdm-nmhost: debug: {message}");
     }
 }

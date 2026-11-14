@@ -1,7 +1,7 @@
 //! Running a client and measuring it.
 //!
 //! The harness never spawns a client directly. It spawns itself as a small
-//! wrapper (`whoosh-bench __measure`), which spawns the client, waits for it
+//! wrapper (`wdm-bench __measure`), which spawns the client, waits for it
 //! and then reads `getrusage(RUSAGE_CHILDREN)`. Because the wrapper is a
 //! fresh process with exactly one child, that is the client's own CPU time
 //! (user + system, including any helper processes the client waited for)
@@ -62,7 +62,7 @@ pub struct ShimArgs {
     pub args: Vec<OsString>,
 }
 
-/// Body of `whoosh-bench __measure`: run the client, print a [`Measured`]
+/// Body of `wdm-bench __measure`: run the client, print a [`Measured`]
 /// line on stdout. Always exits 0 itself unless it cannot report.
 pub fn shim_main(a: ShimArgs) -> Result<()> {
     let out = std::fs::File::create(&a.stdout)
@@ -697,7 +697,7 @@ mod tests {
     #[test]
     fn proc_stat_and_status_parsing() {
         // A command name with spaces and a parenthesis, as the kernel shows it.
-        let stat = "4242 (whoosh (x) d) S 1 4242 4242 0 -1 4194560 900 0 0 0 \
+        let stat = "4242 (wdm (x) d) S 1 4242 4242 0 -1 4194560 900 0 0 0 \
                     250 75 0 0 20 0 3 0 12345 100000 2000 18446744073709551615";
         let c = parse_proc_stat(stat, 100).unwrap();
         assert_eq!(c.user_us, 2_500_000, "250 ticks at 100 Hz");
@@ -710,7 +710,7 @@ mod tests {
         );
 
         let status =
-            "Name:\twhoosh-daemon\nVmPeak:\t  999 kB\nVmHWM:\t   20480 kB\nVmRSS:\t   10240 kB\n";
+            "Name:\twdm-daemon\nVmPeak:\t  999 kB\nVmHWM:\t   20480 kB\nVmRSS:\t   10240 kB\n";
         assert_eq!(parse_status_kib(status, "VmHWM"), Some(20_480));
         assert_eq!(parse_status_kib(status, "VmRSS"), Some(10_240));
         assert_eq!(parse_status_kib(status, "VmSwap"), None);
@@ -738,12 +738,11 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn resident_helper_lifecycle() {
-        let dir =
-            std::env::temp_dir().join(format!("whoosh-bench-resident-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("wdm-bench-resident-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // A fake daemon: announces its pid in the ready file, then idles
-        // (exec keeps the pid), the way whoosh-daemon writes runtime.json.
+        // (exec keeps the pid), the way wdm-daemon writes runtime.json.
         let spec = crate::adapter::Resident {
             program: PathBuf::from("/bin/sh"),
             args: vec![

@@ -15,7 +15,7 @@ test("SemVer order, pre-releases included", () => {
 });
 
 test("the feed only moves forward", () => {
-  const dir = mkdtempSync(join(tmpdir(), "whoosh-feed-"));
+  const dir = mkdtempSync(join(tmpdir(), "wdm-feed-"));
   try {
     const file = join(dir, "latest.json");
     const m = (version) => ({ version, platforms: {} });

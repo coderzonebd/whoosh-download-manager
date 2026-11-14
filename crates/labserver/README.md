@@ -1,4 +1,4 @@
-# whoosh-labserver
+# wdm-labserver
 
 A deterministic, fault-injecting HTTP test server. The Phase 1 engine tests
 and the `bench` harness run against it (MASTER-PLAN §1 item 10, §8 Phase 0).
@@ -26,11 +26,11 @@ It must never be the bottleneck, and every byte it sends can be verified.
 ## Running it
 
 ```bash
-cargo run --release -p whoosh-labserver
+cargo run --release -p wdm-labserver
 ```
 
 ```text
-whoosh-labserver listening
+wdm-labserver listening
   http   http://127.0.0.1:18080  (HTTP/1.1, h2c prior knowledge)
   https  https://localhost:18443  (ALPN h2, http/1.1; cert at /_lab/cert.pem)
   h3     https://localhost:18443  (HTTP/3 over QUIC, UDP; Alt-Svc on the TCP listeners)   # with --h3-port
@@ -51,7 +51,7 @@ scenarios:
 | `--cache-mb <n>` | `256` | Memory for cached 64 KiB content blocks |
 | `--write-cert <path>` | | Write the self-signed certificate (PEM) to a file |
 
-Logging: `RUST_LOG=whoosh_labserver=debug`.
+Logging: `RUST_LOG=wdm_labserver=debug`.
 
 ```bash
 curl -o /dev/null http://127.0.0.1:18080/s/clean/1g.bin
@@ -199,7 +199,7 @@ The TTFB delay applies to every response of the scenario except `.sha256`.
 
 Signature: `sig = hex(HMAC-SHA256(secret, "<path>\n<expires>"))` where
 `<path>` is the canonical `/s/<scenario>/<file>` (so one signature is valid at
-every redirect hop). See `whoosh_labserver::sign`.
+every redirect hop). See `wdm_labserver::sign`.
 
 ### Fault semantics
 
@@ -267,7 +267,7 @@ every redirect hop). See `whoosh_labserver::sign`.
 | `no-validators` | No `ETag`, no `Last-Modified` |
 | `changing-file` | Content and `ETag` change once after 32 MiB served |
 | `expiring-url` | Signed URLs valid 60 s; 403 after; mint with `/_lab/mint` |
-| `cookie-required` | 403 unless `Cookie` has `whoosh_session=lab-ok` (`/_lab/login` sets it) |
+| `cookie-required` | 403 unless `Cookie` has `wdm_session=lab-ok` (`/_lab/login` sets it) |
 | `referer-required` | 403 unless `Referer` starts with `https://downloads.example.test/` |
 | `redirect-chain` | Three 302 hops before the file |
 | `bangla-filename` | `Content-Disposition`: RFC 5987 Bangla name, star-only, escaped ASCII, raw Latin-1 (not UTF-8), raw UTF-8, path traversal |
@@ -334,13 +334,13 @@ All under `/_lab/`; JSON unless noted.
   harness on the same host subtracts its own start time to get time to
   first/last byte (the bench harness's TTFB and speed metrics).
 
-The same types are `whoosh_labserver::ScenarioStats` / `ClientStats`
+The same types are `wdm_labserver::ScenarioStats` / `ClientStats`
 (`Serialize + Deserialize`).
 
 ## Library API (in-process tests)
 
 ```rust
-use whoosh_labserver::{ByteRange, LabConfig, LabServer, Scenario};
+use wdm_labserver::{ByteRange, LabConfig, LabServer, Scenario};
 
 #[tokio::test]
 async fn engine_survives_resets() {
@@ -373,7 +373,7 @@ Also: `mint_url` / `mint_path` (signed URLs), `current_version` and `etag`
 process, each fetching its own slice of a file in a loop:
 
 ```bash
-cargo run --release -p whoosh-labserver --example throughput -- --conns 4 --secs 5
+cargo run --release -p wdm-labserver --example throughput -- --conns 4 --secs 5
 ```
 
 Add `--raw` for a hand-written HTTP/1.1 client (measures the server rather
@@ -481,7 +481,7 @@ both offsets behave the same.
 ## Tests
 
 ```bash
-cargo test -p whoosh-labserver
+cargo test -p wdm-labserver
 ```
 
 Unit tests cover the generator, size/rate parsing, scenario validation, range

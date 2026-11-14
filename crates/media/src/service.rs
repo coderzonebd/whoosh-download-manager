@@ -24,8 +24,8 @@ use futures::stream::BoxStream;
 use serde_json::Value;
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::AbortHandle;
-use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
-use whoosh_proto::{
+use wdm_proto::service::{Notification, Service, ServiceError, ServiceResult};
+use wdm_proto::{
     AddParams, AddResult, DownloadDetail, DownloadState, DownloadSummary, ErrorInfo, IdParams,
     IdsParams, ListParams, MEDIA_CAPABILITY, MediaAddParams, MediaChoice, MediaConfigureParams,
     MediaDownloadInfo, MediaFormatKind, MediaProbeParams, MediaProbeResult, MediaStep,
@@ -71,7 +71,7 @@ pub struct MediaConfig {
     /// Fixed tools (tests): never found or fetched.
     pub yt_dlp: Option<Tool>,
     pub ffmpeg: Option<Tool>,
-    /// The network for fetching tools; whoosh-net by default.
+    /// The network for fetching tools; wdm-net by default.
     pub fetcher: Option<Arc<dyn Fetcher>>,
     /// Run the daily update check when the user enabled it.
     pub auto_update: bool,
@@ -173,8 +173,8 @@ impl MediaService {
     pub async fn start(inner: Arc<dyn Service>, cfg: MediaConfig) -> std::io::Result<Arc<Self>> {
         tokio::fs::create_dir_all(cfg.dir.join("jobs")).await?;
         let fetcher = cfg.fetcher.clone().unwrap_or_else(|| {
-            Arc::new(NetFetcher::new(whoosh_net::HttpSourceFactory::new(
-                whoosh_net::NetConfig::default(),
+            Arc::new(NetFetcher::new(wdm_net::HttpSourceFactory::new(
+                wdm_net::NetConfig::default(),
             )))
         });
         let tools = Tools::open(
@@ -814,9 +814,9 @@ impl Shared {
         let queue = p
             .queue
             .clone()
-            .filter(|q| q != whoosh_proto::MAIN_QUEUE && !q.is_empty());
+            .filter(|q| q != wdm_proto::MAIN_QUEUE && !q.is_empty());
         if let Some(q) = &queue
-            && !whoosh_proto::queue::is_queue_name(q)
+            && !wdm_proto::queue::is_queue_name(q)
         {
             return Err(ServiceError::invalid_params(
                 "a queue name is 1–64 characters, without control characters",
@@ -1293,7 +1293,7 @@ impl Shared {
         {
             let mut st = self.state.lock().await;
             let running_queue = |st: &State, q: &Option<String>| {
-                let name = q.as_deref().unwrap_or(whoosh_proto::MAIN_QUEUE);
+                let name = q.as_deref().unwrap_or(wdm_proto::MAIN_QUEUE);
                 st.queues_running.get(name).copied().unwrap_or(true)
             };
             let ids: Vec<String> = st
@@ -1707,7 +1707,7 @@ impl Shared {
         let queue = p
             .queue
             .clone()
-            .filter(|q| q != whoosh_proto::MAIN_QUEUE && !q.is_empty());
+            .filter(|q| q != wdm_proto::MAIN_QUEUE && !q.is_empty());
         let mut parts = Vec::new();
         {
             let mut st = self.state.lock().await;

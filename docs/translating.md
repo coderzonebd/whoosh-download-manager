@@ -101,7 +101,7 @@ Known questions for reviewers: Arabic "tray" (علبة النظام vs. منطق
 
 1. Add it to `packages/ui/src/lib/i18n/locales/en.json` (or the extension's `_locales/en/messages.json`, with a `description` for translators and `placeholders` for every `$NAME$`).
 2. Add the Bangla text to `bn.json` / `_locales/bn/messages.json` in the same PR if you can; otherwise leave it for a Bangla reviewer.
-3. Run `pnpm --filter @whoosh/ui i18n:sync`. It adds the new keys to every other UI locale as empty strings (untranslated), in English's key order, with each language's plural forms. `pnpm --filter @whoosh/ui i18n:check` only reports.
+3. Run `pnpm --filter @wdm/ui i18n:sync`. It adds the new keys to every other UI locale as empty strings (untranslated), in English's key order, with each language's plural forms. `pnpm --filter @wdm/ui i18n:check` only reports.
 4. `pnpm -r test` checks key and placeholder parity, plural forms, Bangla completeness and the extension's locales.
 
 In code, `t("group.key", { count, name })` in the UI (keys are type-checked against `en.json`; a `count` number picks the plural form), and `t("messageName", [subs])` in the extension (`src/shared/i18n.ts`).

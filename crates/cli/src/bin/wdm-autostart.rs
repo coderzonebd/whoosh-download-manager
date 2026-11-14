@@ -1,12 +1,12 @@
-//! `whoosh-autostart [--data-dir DIR]`: starts the whoosh daemon in the
-//! background and exits. `whoosh daemon autostart on` registers it to run
-//! at logon (see `whoosh_client::autostart`).
+//! `wdm-autostart [--data-dir DIR]`: starts the wdm daemon in the
+//! background and exits. `wdm daemon autostart on` registers it to run
+//! at logon (see `wdm_client::autostart`).
 //!
 //! On Windows it is a GUI-subsystem program: started from the Run key it
 //! gets no console window, and the daemon it starts is detached, so nothing
 //! appears on screen. It does not wait for the daemon; if one is already
 //! running for the data directory, the new one sees that and exits. Errors
-//! go to `<data dir>/logs/daemon-start.log`, as when `whoosh` starts the
+//! go to `<data dir>/logs/daemon-start.log`, as when `wdm` starts the
 //! daemon.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -27,13 +27,13 @@ fn main() -> ExitCode {
     }
     let data_dir = match data_dir {
         Some(dir) => dir,
-        None => match whoosh_proto::runtime::default_data_dir() {
+        None => match wdm_proto::runtime::default_data_dir() {
             Ok(dir) => dir,
             Err(_) => return ExitCode::from(1),
         },
     };
-    let exe = whoosh_client::daemon::daemon_exe();
-    match whoosh_client::daemon::spawn_detached(&data_dir, &exe, &[]) {
+    let exe = wdm_client::daemon::daemon_exe();
+    match wdm_client::daemon::spawn_detached(&data_dir, &exe, &[]) {
         Ok(_child) => ExitCode::SUCCESS,
         Err(_) => ExitCode::from(1),
     }

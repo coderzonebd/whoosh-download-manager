@@ -3,7 +3,7 @@
 // no layout, so this checks what decides the layout: `dir` and `lang` on the
 // document and the app root, translated text, and styles written only with
 // logical properties (anything physical must have an RTL counterpart).
-import { createMockClient, type MockWhooshClient } from "@whoosh/api-client/mock";
+import { createMockClient, type MockWdmClient } from "@wdm/api-client/mock";
 import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ import App from "../src/components/App.svelte";
 import { flattenMessages } from "../src/lib/i18n/i18n.svelte.ts";
 import type { AppState } from "../src/lib/state/app.svelte.ts";
 
-let client: MockWhooshClient | undefined;
+let client: MockWdmClient | undefined;
 
 afterEach(() => {
   cleanup();

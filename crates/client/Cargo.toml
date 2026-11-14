@@ -1,6 +1,6 @@
 [package]
-name = "whoosh-client"
-description = "Rust client of the whoosh daemon: find it, start it, talk to it"
+name = "wdm-client"
+description = "Rust client of the wdm daemon: find it, start it, talk to it"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,7 +15,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
-whoosh-proto.workspace = true
+wdm-proto.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

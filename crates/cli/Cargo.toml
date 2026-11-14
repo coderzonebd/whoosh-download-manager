@@ -1,6 +1,6 @@
 [package]
-name = "whoosh-cli"
-description = "whoosh: the command-line client of the whoosh download daemon"
+name = "wdm-cli"
+description = "wdm: the command-line client of the wdm download daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,14 +9,14 @@ authors.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "whoosh"
+name = "wdm"
 path = "src/main.rs"
 
 # Starts the daemon at logon without a console window (see
-# whoosh_client::autostart); ships next to `whoosh`.
+# wdm_client::autostart); ships next to `wdm`.
 [[bin]]
-name = "whoosh-autostart"
-path = "src/bin/whoosh-autostart.rs"
+name = "wdm-autostart"
+path = "src/bin/wdm-autostart.rs"
 
 [dependencies]
 clap = { workspace = true, features = ["env"] }
@@ -25,8 +25,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-whoosh-client.workspace = true
-whoosh-proto.workspace = true
+wdm-client.workspace = true
+wdm-proto.workspace = true
 
 [dev-dependencies]
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }

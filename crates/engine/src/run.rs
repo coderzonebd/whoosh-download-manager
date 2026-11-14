@@ -20,11 +20,11 @@ use tokio::sync::watch;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
-use whoosh_core::{
+use wdm_core::{
     ByteRange, ByteStream, Checkpoint, DownloadRecord, Finishing, HostProfile, OpenRequest,
     RangeSet, RangeSource, RemoteMeta, SourceError, Storage, Validators,
 };
-use whoosh_proto::{
+use wdm_proto::{
     Checksum, DownloadId, DownloadState, Durability, ErrorInfo, RequestContext, SegmentInfo,
 };
 
@@ -817,7 +817,7 @@ impl Driver {
             done = verified;
         }
         if done.is_empty() && !pristine {
-            // Nothing journalled: whatever a `<name>.whoosh-part` already holds
+            // Nothing journalled: whatever a `<name>.wdm-part` already holds
             // (a removed download that kept its files, a crash before the
             // first commit, an older version) is not ours. Start from an
             // empty file, so `finish` can never move stale bytes along.

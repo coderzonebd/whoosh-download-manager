@@ -60,7 +60,7 @@ pub const YT_DLP_LICENSE: &str = "Unlicense";
 
 /// An operating system and processor the tools are fetched for: this
 /// machine at run time, any release target when bundling them into an
-/// installer (`whoosh-media-bundle`).
+/// installer (`wdm-media-bundle`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Platform {
     /// `std::env::consts::OS` values: `linux`, `macos`, `windows`.

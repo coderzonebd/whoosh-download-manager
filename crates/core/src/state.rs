@@ -5,7 +5,7 @@ use std::io;
 
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use whoosh_proto::{Checksum, DownloadId, DownloadState, ErrorInfo, RequestContext, UnixMillis};
+use wdm_proto::{Checksum, DownloadId, DownloadState, ErrorInfo, RequestContext, UnixMillis};
 
 use crate::source::Protocol;
 

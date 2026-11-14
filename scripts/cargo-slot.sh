@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Run a command (usually cargo) while holding one of the machine-wide build
 # slots from ADR 0004, so parallel sessions never compile Rust more than
-# WHOOSH_BUILD_SLOTS (default 2) at a time.
+# WDM_BUILD_SLOTS (default 2) at a time.
 #
-#   scripts/cargo-slot.sh cargo test -p whoosh-net
+#   scripts/cargo-slot.sh cargo test -p wdm-net
 #
 # Linux/macOS development machines only. Uses `flock` when it is installed
 # (util-linux); otherwise an atomic `mkdir` lock with the holder's pid, so
 # it also runs on a stock macOS (bash 3.2, no flock).
 set -euo pipefail
-slots=${WHOOSH_BUILD_SLOTS:-2}
-dir=${XDG_RUNTIME_DIR:-/tmp}/whoosh-build-slots
+slots=${WDM_BUILD_SLOTS:-2}
+dir=${XDG_RUNTIME_DIR:-/tmp}/wdm-build-slots
 mkdir -p "$dir"
 
 # Tries slot $1; on success runs the command and exits with its status.

@@ -19,8 +19,8 @@
 // The extension only proposes; the daemon checks that the new address serves
 // the same file before it continues. Nothing here leaves the machine.
 
-import type { DownloadId, DownloadState, DownloadSummary, RefreshUrlParams, RequestContext, StateEvent } from "@whoosh/api-client";
-import { ErrorCode } from "@whoosh/api-client";
+import type { DownloadId, DownloadState, DownloadSummary, RefreshUrlParams, RequestContext, StateEvent } from "@wdm/api-client";
+import { ErrorCode } from "@wdm/api-client";
 
 import type { LinkInfo } from "../shared/messages";
 import type { KeyValueStore, Settings } from "../shared/settings";
