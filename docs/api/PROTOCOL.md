@@ -67,7 +67,7 @@ extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket 
 | Method | Params | Result |
 |---|---|---|
 | `session.hello` | `HelloParams { token, nonce, protocol, client: { name, version } }` | `HelloResult { daemonVersion, protocol, capabilities[], proof }` |
-| `daemon.shutdown` | — | `null`, then the daemon stops: it pauses transfers, saves state, closes every connection with `1001` and exits. Used by `whoosh daemon stop` and the desktop app's Quit |
+| `daemon.shutdown` | — | `null`, then the daemon stops: it pauses transfers, saves state, closes every connection with `1001` and exits. Used by `whoosh daemon stop`, and by the desktop app's Quit when the user chose to stop the daemon with the app |
 | `download.probe` | `ProbeParams { url, request? }` | `ProbeResult { totalBytes?, resumable, filename, contentType?, finalUrl }` |
 | `download.add` | `AddParams { url, request?, filename?, directory?, category?, start = true, mirrors[], checksum?, connections?, queue? }` | `AddResult { id }`. `connections` (1–64) fixes the connection count instead of learning it (still lowered if the server throttles); `queue` names the queue it joins (absent or `"main"`: the main queue; see "Queues and the scheduler") |
 | `download.list` | `ListParams { states[], category?, offset?, limit? }` | `DownloadSummary[]` (newest first) |

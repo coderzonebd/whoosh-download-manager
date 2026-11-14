@@ -95,6 +95,18 @@ impl CliError {
     }
 }
 
+impl From<whoosh_client::ClientError> for CliError {
+    fn from(e: whoosh_client::ClientError) -> Self {
+        use whoosh_client::ClientError as E;
+        match e {
+            E::DaemonUnavailable(m) => Self::DaemonUnavailable(m),
+            E::Rejected(m) => Self::Rejected(m),
+            E::Rpc { code, message } => Self::Rpc { code, message },
+            E::Other(m) => Self::Other(m),
+        }
+    }
+}
+
 pub type Result<T, E = CliError> = std::result::Result<T, E>;
 
 #[cfg(test)]

@@ -221,6 +221,8 @@ export const en = {
   "shortcuts.menu": "Open the actions menu",
   "shortcuts.escape": "Close the panel or clear the selection",
   "shortcuts.help": "Show this list",
+
+  "desktop.trayNotice": "Whoosh is still running in the tray, so downloads go on. Quit it from the tray menu.",
 } as const;
 
 export type Message = string | { readonly one?: string; readonly other: string };
