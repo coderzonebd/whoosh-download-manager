@@ -31,8 +31,12 @@ engine.shutdown().await;       // pauses everything, flushes, commits every jour
 ```
 
 `EngineConfig` holds the default settings (used until `settings.set` stores
-some under the `StateStore` key `"settings"`), the advertised capabilities,
-an optional RNG seed (tests), and `Tuning`, the scheduler's knobs (below).
+some under the `StateStore` key `"settings"`), the advertised capabilities
+(the engine adds `queues`), an optional RNG seed (tests), `Tuning`, the
+scheduler's knobs (below), and two seams of its own: the wall `clock` the
+queue scheduler reads (`SystemClock`) and `power`, which runs after-done
+actions (`SystemPower`). Tests replace both (see "Queues and the
+scheduler").
 
 ## Policies
 
@@ -439,10 +443,9 @@ exists for the download.
 **Categories, queues, limits (#12).** The built-in category comes from the
 extension (`category_for`); the user's `category` overrides it. The main
 queue runs up to `max_active_downloads`, oldest first; each named queue runs
-one download at a time, oldest first (`AddParams::queue`; an empty name is
-the main queue; `Engine::set_queue` moves an existing download).
-Lowering `max_active_downloads` does not stop running downloads. One global
-token bucket (`speed_limit_bps`; 50 ms burst) is shared by every connection;
+up to its own `maxActive`, oldest first (see "Queues and the scheduler").
+Lowering a limit does not stop running downloads. One global token bucket
+(the speed limit in force; 50 ms burst) is shared by every connection;
 unlimited costs one atomic load per chunk.
 
 **Events (#13, PROTOCOL.md §4).** `added`, `state`, `removed`, `settings`
@@ -455,9 +458,11 @@ dropped past 4096; order is never changed. Streams end on `shutdown`.
 
 **Settings (#14).** Persisted as JSON under `"settings"`; `settings.set`
 validates (absolute directory, 1–1000 active, 1–256 connections, theme
-`system|light|dark`; a speed limit of 0 means unlimited), stores, applies the
-speed limit and connection cap to running downloads, and broadcasts
-`event.settings`.
+`system|light|dark`; a speed limit of 0 means unlimited; speed windows with
+`HH:MM` times, days 0–6 and a limit of at least 1), stores, applies the
+speed limit in force and the connection cap to running downloads, and
+broadcasts `event.settings` (and `event.queues` when `maxActiveDownloads`,
+the main queue's `maxActive`, changed).
 
 **Security (#15).** When a download completes, the stored request loses its
 cookie, the POST body (`bodyBase64`: CSRF tokens, credentials), the referer
@@ -481,6 +486,84 @@ ends). A run that panics still ends: `failed` with code `internal`, its
 queue slot freed. `shutdown` stops every download,
 flushes, commits, saves records as `queued` (so the next start resumes them)
 and ends every subscription.
+
+### Queues and the scheduler
+
+PROTOCOL.md "Queues and the scheduler", implemented in `src/engine/queues.rs`
+(queue methods, the clock tick, after-done actions), `src/schedule.rs` (the
+time rules, as pure functions), `src/clock.rs` and `src/power.rs`.
+
+**Queues.** The main queue is implicit: `maxActive` is
+`Settings::max_active_downloads` (`queue.update` on `"main"` sets it through
+`settings.set`; a schedule there is refused), it is always running and
+cannot be renamed, removed or stopped. Named queues are stored as one JSON
+array under the `StateStore` key `"queues"` (`QUEUES_KEY`): name,
+`maxActive` (1–64, default 1), schedule and `running`, so all of it
+survives a restart. A download names its queue in `DownloadRecord::queue`;
+`rename` moves the downloads with it, `remove` moves them to the main
+queue, each with `event.download.updated`. Every change sends
+`event.queues`. Choices the contract leaves open:
+
+- `download.add` with an unknown queue name creates that queue with the
+  defaults (as `whoosh get --queue` did in Phase 1); `download.setQueue`
+  needs an existing queue (`-32002`, like the mock client). A stored download
+  whose queue was never stored (put there in Phase 1) gets its queue
+  recreated at start.
+- A queue created with a `start` time begins stopped (`running: false`): it
+  waits for its start. Without one it begins running.
+- `queue.stop` holds what the queue is running: those downloads stop
+  (flushed and committed, like a pause) and go back to `queued`, not
+  `paused`, so `queue.start` or the next scheduled start carries on with
+  them. `stop` answers once they have stopped. A download moved into a
+  stopped queue is held the same way. `resume` does not start a held
+  download; `pause` still pauses it.
+- Unknown queues answer `-32002`; the main queue where it does not apply,
+  bad names, duplicates and out-of-range values answer `-32602`.
+  `queue.start` and `queue.cancelAction` on `"main"` do nothing.
+
+**Clock.** The scheduler looks at the local wall clock (`Clock::local`, a
+date and minute) every `Tuning::clock_tick` (1 s) and acts on the scheduled
+events the clock *crossed* since the last look. `SystemClock` uses `jiff`
+for the local time: IANA rules with DST on every OS (on Windows it maps the
+Windows zone and bundles the database, which Windows lacks), it notices a
+changed system zone within five minutes, it is safe Rust (no `localtime_r`
+or Win32 calls of our own), and it was already in the workspace's lock file.
+
+- A queue's `start` and `stop` are edges, not a window the queue is forced
+  into: a manual start or stop holds until the next event.
+- Forward jumps (DST's skipped hour, a machine waking from sleep, a zone
+  further east) do not lose events: of the events a queue missed (up to 7
+  days back), only the latest applies, so a machine asleep through 01:00
+  (start) and 07:00 (stop) wakes with the queue stopped and never started
+  its downloads for an instant.
+- Backward jumps (DST's repeated hour, a zone further west) fire nothing
+  twice: an event fires at most once per local date.
+- Events while the daemon was not running are not replayed; `running` is
+  persisted.
+
+**Speed windows** (`Settings::speed_schedule`) are levels, evaluated on
+every tick and on `settings.set`: while a window is open its `limitBps`
+replaces `speedLimitBps` (even when higher), the lowest open limit wins,
+`[from, to)` on the days the window opens, `from` after `to` runs past
+midnight into the next day, and `from == to` is a whole day from `from`.
+
+**After-done.** When a download of a running named queue completes or
+fails and nothing in that queue is left queued or running, a queue whose
+schedule has `afterDone` `sleep` or `shutdown` sends
+`event.queue.finished { name, action, atMs }` (`none` sends nothing: the
+TypeScript client documents the event as "the action is about to run") and
+counts down `AFTER_DONE_GRACE_SECS` (60 s). `queue.cancelAction` cancels it,
+and so does the queue starting another download meanwhile (it had not
+finished after all; its next finish announces a new countdown). A paused,
+held or removed download is not finishing. Then the state store is synced
+and `PowerControl::run` runs the action; a restart forgets a countdown.
+`SystemPower` (`src/power.rs`) runs `systemctl suspend|poweroff` on Linux,
+`pmset sleepnow` and an AppleScript `shut down` on macOS, and
+`rundll32 powrprof.dll,SetSuspendState 0,1,0` / `shutdown /s /t 0` on
+Windows; none needs root for the user at the machine (polkit grants the
+active local session on Linux; macOS asks once for permission to control
+System Events; Windows' interactive user holds the shutdown privilege, and
+`SetSuspendState` hibernates instead when hibernation is on).
 
 ### State machine
 
@@ -549,6 +632,7 @@ and a test that "takes" 20 s of virtual time finishes in well under a second.
 | `tests/coalesce.rs` (5) | write gathering: 16 KiB chunks become ≤ 1 write per 256 KiB, off means one write per chunk, a 64 KiB/s connection still writes within the delay (≤ 48 KiB received but unwritten), a source that goes silent mid-buffer has its gathered bytes written by the timer, gathered bytes survive a hedge takeover and a pause |
 | `tests/service.rs` (20) | list/get/paging/filters, error codes, file-name priority and collisions, categories, checksums, queues (main and named), speed limit, event batching and independent subscribers, settings persistence and broadcast, secrets cleared, shutdown + resume in a new engine, remove (+ files), tail verification with and without validators, a part file lost between runs, a resume racing a pause, probe, preconnect |
 | `tests/regressions.rs` (12) | one test per defect found in review: stale part files (planted, kept by `remove`, under an empty download; run on a `CrashFs` whose `preallocate` only grows files, so they fail without the engine's own fix even though the contract now truncates), names under concurrent probes (multi-thread), `refreshUrl` while running, a resume while a pause finishes, huge `Retry-After` (probe and connection), a panicking run, POST bodies and referers, `remove` against the queue, a silent no-range stream. The name race and the remove race need real parallelism to show, so those two guard the behaviour without reproducing the old failure deterministically |
+| `tests/queues.rs` (12) | queues and the scheduler on a `FakeClock` (runs with tokio's paused clock; can change zone or jump) and a `FakePower` (records actions): create/update/rename/remove/setQueue with their errors and events, the main queue and `maxActiveDownloads`, per-queue `maxActive` (2, 1 and main 1 side by side), stop holds and start carries on (also a download moved into a stopped queue), persistence across a restart (also a queue only a download remembers), a scheduled start and stop at 01:00/01:05 and again the next day after a jump, a start skipped by DST, a machine asleep through a start and a stop, the clock set back over a stop, speed windows (base, window above the base, overlap, after) and one over midnight on the day it opens, the after-done action at exactly 60 s, cancelled, voided by new work, and not triggered by stop, pause or `afterDone: none` |
 | `tests/contract.rs` (5) | amendment 1: pinned connection counts (used instead of learning, above the settings cap, lowered by throttling, validated, persisted across a restart), a queue chosen at add time, `filename_locked` (also for a stored record that would have matched the old heuristic) |
 | `tests/finish.rs` (14) | in both durability modes (a power cut for `PowerSafe`, a killed process for `ProcessSafe`), the process killed exactly before or after the rename (a `CrashFs` hook freezes `finish` there, then the runtime is dropped), in every mode (ranged, no ranges, unknown size, empty ranged, empty stream): the next start completes with exactly one file, byte-exact (after the rename without downloading again; before it, fetching what the intent — committed alongside the flush — does not claim); also under a numbered name, with a checksum (adopted when it matches, downloaded again under the next name when the file was replaced), a final file replaced meanwhile, and a record that already says completed (with a leftover journal entry); the intent is the `Checkpoint::finishing` field, an interim-marker journal is still recognised, the completed record is synced before its journal entry goes, and a failed sync keeps the entry; `ProcessSafe` skips that sync. The kill tests fail on the code before 5a1c4dd (the no-range case reproduces the hardkill duplicate) ; the early intent's name taken by another file of the same length while the transfer runs (`AlreadyExists`, an intent for `name (1)` committed before that move, killed right after it: adopted, the other file untouched), an intent withdrawn by a later checkpoint and a name taken before the transfer started (part file gone, a file of the same length in place: never adopted, downloaded again; the first fails if checkpoints keep the intent) |
 | `tests/start.rs` (18) | amendment 3, with a source whose `start` is one request: a small fast file takes exactly one request (no probe, no second connection, the file served once); a slow first connection is joined at once and its response dropped where its range ends (≈ the file served once); 10 MiB at 500 ms TTFB finishes in one round trip (0.54 s; 1.04 s with the trait's two-request default); no ranges, ignored ranges (a 200 to `bytes=0-`) and unknown size stream from the first response; a resume probes first; a first response that resets while alone is replaced by one connection without the backoff (65 ms; 125 ms before), one that stalls late is released at 20 ms of silence and hedged (160 ms; 360 ms without); an expired link, a throttled start (Retry-After), a file that changes under the first response, a pinned count on a small file, an empty file; the per-conn-throttle and slow-drip models: careful 0.75 s / 0.50 s at 8, the fast climb 0.50 s / 0.38 s, the jump from the first connection's solo rate 0.40 s / 0.27 s (16 at once); a shared 20 MB/s limit does not jump; a link the first connection fills alone (64 MiB/s shared) drops back to one connection after the first window, never tries 16, and records 1 as the host's best count (peak 16 without the rule); a server capped at 2 refuses one wave of the jump, not all of it |

@@ -1075,3 +1075,69 @@ impl RangeSource for PanicSource {
         Box::pin(async { panic!("open exploded") })
     }
 }
+
+// ------------------------------------------------------- clock and power
+
+/// A wall clock that runs with tokio's (paused) clock from a chosen local
+/// time, and can be moved by hand: a DST change, a new time zone, a
+/// machine waking from sleep. Starts at UTC offset 0.
+#[derive(Debug)]
+pub struct FakeClock {
+    origin: Instant,
+    start_ms: i64,
+    /// Local minus UTC, in minutes.
+    offset_min: Mutex<i64>,
+    /// Wall-clock jumps on top of tokio's clock (sleep, a clock set).
+    skew_ms: Mutex<i64>,
+}
+
+impl FakeClock {
+    pub fn at(start: whoosh_engine::LocalTime) -> Arc<Self> {
+        Arc::new(Self {
+            origin: Instant::now(),
+            start_ms: start.minutes() * 60_000,
+            offset_min: Mutex::new(0),
+            skew_ms: Mutex::new(0),
+        })
+    }
+
+    /// The local time zone moves by `minutes` (DST, travel); UTC does not.
+    pub fn shift_zone(&self, minutes: i64) {
+        *lock(&self.offset_min) += minutes;
+    }
+
+    /// Wall time jumps by `ms` (the machine slept, the clock was set).
+    pub fn jump(&self, ms: i64) {
+        *lock(&self.skew_ms) += ms;
+    }
+}
+
+impl whoosh_engine::Clock for FakeClock {
+    fn now_ms(&self) -> i64 {
+        self.start_ms + self.origin.elapsed().as_millis() as i64 + *lock(&self.skew_ms)
+    }
+
+    fn local(&self) -> whoosh_engine::LocalTime {
+        let utc_min = self.now_ms().div_euclid(60_000);
+        whoosh_engine::LocalTime::from_minutes(utc_min + *lock(&self.offset_min))
+    }
+}
+
+/// Records after-done actions instead of running them.
+#[derive(Debug, Default)]
+pub struct FakePower {
+    pub ran: Mutex<Vec<(whoosh_proto::AfterDone, Instant)>>,
+}
+
+impl FakePower {
+    pub fn actions(&self) -> Vec<whoosh_proto::AfterDone> {
+        lock(&self.ran).iter().map(|(a, _)| *a).collect()
+    }
+}
+
+impl whoosh_engine::PowerControl for FakePower {
+    fn run(&self, action: whoosh_proto::AfterDone) -> BoxFuture<'static, io::Result<()>> {
+        lock(&self.ran).push((action, Instant::now()));
+        Box::pin(async { Ok(()) })
+    }
+}
