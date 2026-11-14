@@ -103,6 +103,19 @@ The owner's decisions:
 3. A public beta of at least two weeks, with a crash-free rate above 99.5 % among users who opted in to crash reports.
 4. The extension is approved on Firefox AMO and Microsoft Edge Add-ons. The Chrome Web Store follows when the owner pays its fee.
 
+### Connecting the browsers (wave 4, release engineering)
+
+The installers offer the extension to the browsers the way the browsers allow ("external extensions"). The browser then asks the user to enable it once; we use no enterprise policies, which would label the browser "managed by your organization".
+
+| Browser | How | Needs |
+|---|---|---|
+| Microsoft Edge (Windows) | The installer writes `Software\Microsoft\Edge\Extensions\<id>` with `update_url` = the Edge Add-ons update URL. Microsoft documents `HKLM`, so this needs the per-machine (admin) installer; check whether `HKCU` works for per-user installs. | The Edge Add-ons listing (free) |
+| Chrome, Chromium, Brave, Vivaldi (Linux) | The packages install `<id>.json` into the browsers' external-extensions folders, pointing to our own update URL or the packaged `.crx`. Chrome documents that Linux installs these without a prompt. | Nothing |
+| Chrome, Brave, Vivaldi (Windows, macOS) | Registry (Windows) or `External Extensions/<id>.json` (macOS) with the Chrome Web Store `update_url`. Chrome allows only Web Store-hosted extensions here; an unlisted listing is enough. | The Chrome Web Store account (one-time US$5); until then, no auto-install |
+| Firefox | Firefox no longer installs extensions dropped into folders. On first run the app opens the extension's AMO page, and the user clicks *Add* once. | The AMO listing (free) |
+
+On first run the desktop app also shows a "Connect your browser" page, listing each installed browser with the extension's state and a one-click way to finish (the store page, or the enable prompt). `whoosh-nmhost --register` must allow the store-assigned extension ids.
+
 ### Accounts for the owner (all free)
 
 SignPath Foundation, Firefox AMO, Microsoft Partner Center (Edge Add-ons), GlitchTip, Weblate (libre plan), AUR (SSH key), Flathub (through a pull request to `flathub/flathub`), and a `coderzonebd/homebrew-tap` repository.
