@@ -1,12 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core IPC, events from the shell, and notifications. Window state is saved from Rust, not JS.",
+  "description": "The main window: core IPC, events from the shell, notifications, the folder picker and launch at login. Window state is saved from Rust, not JS.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "notification:default"
+    "notification:default",
+    "dialog:allow-open",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }

@@ -10,6 +10,15 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - Closing the window hides it to the tray and downloads go on. Quit leaves the daemon running unless the user chose otherwise.
 - System notifications when a download finishes or fails while the window is in the background.
 - Installers ship `whoosh-daemon` and `whoosh-nmhost` next to the app.
+- Named queues in the sidebar: create, rename and delete them, move downloads between queues (context menu, or the queue picker in the add dialog), start and stop a queue.
+- A schedule per queue: start and stop times on chosen days, and what to do when the queue is done (nothing, sleep, shut down), with a one-minute countdown and a Cancel button.
+- Speed limits by time of day in Settings.
+- A history view of finished and failed downloads, with search and a filter; entries can be cleared one by one or all at once, and the files stay on disk.
+- A native folder picker for the default folder and in the add dialog.
+- `whoosh://add?url=…` links open the add dialog with the address filled in.
+- Launch at login (off by default; it starts in the tray), and settings for "close to tray" and "Quit also stops downloads".
+- Against a daemon without the `queues` capability, the queue and scheduler controls are hidden and no error is shown.
+- Saving Settings no longer drops fields the screen does not show (such as `durability`).
 
 ### Internal
 - New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.

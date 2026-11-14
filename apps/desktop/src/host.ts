@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// What the desktop shell adds to the shared UI (`Host` in @whoosh/ui): the
+// native folder picker, the app's own settings (`desktop.json`, through the
+// `desktop_prefs` / `set_desktop_prefs` commands) and launch at login.
+import type { DesktopPrefs, Host } from "@whoosh/ui";
+
+/** The full `desktop.json` as the shell sends it (`prefs.rs`). */
+interface ShellPrefs extends DesktopPrefs {
+  trayNoticeShown: boolean;
+}
+
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const core = await import("@tauri-apps/api/core");
+  return core.invoke<T>(cmd, args);
+}
+
+function pick({ closeToTray, stopDaemonOnQuit }: DesktopPrefs): DesktopPrefs {
+  return { closeToTray, stopDaemonOnQuit };
+}
+
+export function desktopHost(): Host {
+  return {
+    async pickFolder({ title, defaultPath }) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const opts: Parameters<typeof open>[0] = { directory: true, multiple: false, title };
+      if (defaultPath) opts.defaultPath = defaultPath;
+      const dir = await open(opts);
+      return typeof dir === "string" ? dir : undefined;
+    },
+    desktopPrefs: {
+      async get() {
+        return pick(await invoke<ShellPrefs>("desktop_prefs"));
+      },
+      async set(next) {
+        // The command replaces the whole file: keep what the UI doesn't edit.
+        const current = await invoke<ShellPrefs>("desktop_prefs");
+        const saved = await invoke<ShellPrefs>("set_desktop_prefs", { prefs: { ...current, ...pick(next) } });
+        return pick(saved);
+      },
+    },
+    launchAtLogin: {
+      async get() {
+        const { isEnabled } = await import("@tauri-apps/plugin-autostart");
+        return isEnabled();
+      },
+      async set(on) {
+        const autostart = await import("@tauri-apps/plugin-autostart");
+        await (on ? autostart.enable() : autostart.disable());
+      },
+    },
+  };
+}

@@ -20,7 +20,8 @@ export const STATE_GROUPS: readonly StateGroup[] = ["all", "active", "queued", "
 export type View =
   | { kind: "group"; group: StateGroup }
   | { kind: "category"; category: Category }
-  | { kind: "queue"; queue: "main" };
+  /** A queue's unfinished downloads ("main" or a named queue). */
+  | { kind: "queue"; queue: string };
 
 export const GROUP_STATES: Record<Exclude<StateGroup, "all">, readonly DownloadState[]> = {
   active: ["probing", "downloading", "verifying"],
@@ -29,7 +30,10 @@ export const GROUP_STATES: Record<Exclude<StateGroup, "all">, readonly DownloadS
   completed: ["completed"],
   attention: ["failed", "needs_refresh"],
 };
-const MAIN_QUEUE: readonly DownloadState[] = ["queued", "probing", "downloading", "verifying"];
+/** The queue a download belongs to; absent means the main queue. */
+export function queueOf(d: DownloadSummary): string {
+  return d.queue || "main";
+}
 
 export const ACTIVE_STATES: ReadonlySet<DownloadState> = new Set(GROUP_STATES.active);
 export const PAUSABLE: ReadonlySet<DownloadState> = new Set(["queued", "probing", "downloading"]);
@@ -92,7 +96,10 @@ export class Download {
 export interface Counts {
   groups: Record<StateGroup, number>;
   categories: Record<Category, number>;
+  /** Unfinished downloads in the main queue. */
   mainQueue: number;
+  /** Unfinished downloads per queue name (including "main"). */
+  queues: Record<string, number>;
 }
 
 function matches(d: Download, view: View): boolean {
@@ -103,7 +110,7 @@ function matches(d: Download, view: View): boolean {
     case "category":
       return d.category === view.category;
     case "queue":
-      return MAIN_QUEUE.includes(s);
+      return s !== "completed" && queueOf(d.data) === view.queue;
   }
 }
 
@@ -143,6 +150,12 @@ export class DownloadStore {
   get size(): number {
     void this.version;
     return this.#items.size;
+  }
+
+  /** Every download, in no particular order (reactive on structural changes). */
+  all(): Download[] {
+    void this.version;
+    return [...this.#items.values()];
   }
 
   get(id: string | undefined): Download | undefined {
@@ -335,7 +348,7 @@ export class DownloadStore {
   #count(): Counts {
     const groups: Record<StateGroup, number> = { all: 0, active: 0, queued: 0, paused: 0, completed: 0, attention: 0 };
     const categories = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<Category, number>;
-    let mainQueue = 0;
+    const queues: Record<string, number> = { main: 0 };
     for (const d of this.#items.values()) {
       const s = d.data.state;
       groups.all++;
@@ -343,8 +356,11 @@ export class DownloadStore {
         if (GROUP_STATES[g].includes(s)) groups[g]++;
       }
       categories[d.category]++;
-      if (MAIN_QUEUE.includes(s)) mainQueue++;
+      if (s !== "completed") {
+        const q = queueOf(d.data);
+        queues[q] = (queues[q] ?? 0) + 1;
+      }
     }
-    return { groups, categories, mainQueue };
+    return { groups, categories, mainQueue: queues.main ?? 0, queues };
   }
 }
