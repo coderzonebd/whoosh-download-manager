@@ -23,7 +23,9 @@ prefs persist; `null` disables), `locale`, `manageDocument` (set
 can't do. Every part is optional and its controls are hidden without it:
 `pickFolder` (Browse… buttons), `desktopPrefs` (close to tray, Quit also
 stops downloads) and `launchAtLogin` (both under Settings → *This
-computer*). `app.openAdd(url)` opens the add dialog prefilled; the desktop
+computer*), and `crashReports` (Settings → *Privacy* → "Send crash reports",
+off by default; hidden when `get()` resolves `undefined`, i.e. a build with
+no crash-report address). `app.openAdd(url)` opens the add dialog prefilled; the desktop
 app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 
 ## What is in it
@@ -90,6 +92,11 @@ app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 - Visible focus everywhere (`:focus-visible`), 4.5:1 text contrast in every
   theme (tested in design-tokens), `forced-colors` support, motion removed
   under `prefers-reduced-motion`, hover effects only for fine pointers.
+- Every view has one `h1` (hidden for the download list, the queue's name in
+  a queue view); progress bars are named.
+- Checked automatically: axe-core (WCAG 2.2 A/AA + best practices) on every
+  main screen in English and Bangla, light, dark and high contrast
+  (`test:a11y`, blocking in CI). By hand: [`docs/qa/screen-reader.md`](../../docs/qa/screen-reader.md).
 
 ## Internationalisation
 
@@ -130,7 +137,22 @@ renders the app in both and refuses physical `left`/`right` styles).
 corepack pnpm --filter @whoosh/ui dev         # playground on the mock: http://localhost:5174 (?bulk=10000, ?lang=bn)
 corepack pnpm --filter @whoosh/ui test        # vitest + @testing-library (jsdom)
 corepack pnpm --filter @whoosh/ui typecheck   # svelte-check --fail-on-warnings (includes a11y rules)
+corepack pnpm --filter @whoosh/ui test:a11y    # axe-core in Chrome for Testing, on the mock
+cargo build -p whoosh-daemon -p whoosh-labserver
+corepack pnpm --filter @whoosh/ui test:e2e     # the UI against a real daemon + labserver
 ```
+
+The browser suites (`vitest.e2e.config.ts`) build `e2e/harness.html`, a
+test-only page that is never part of an app or package export, and run it in
+Chrome for Testing (`WHOOSH_E2E_CHROME`, or the newest build in Playwright's
+cache; `WHOOSH_E2E_REQUIRE=1` fails instead of skipping when it is missing).
+`test:e2e` starts `whoosh-labserver` and `whoosh-daemon` (`target/debug`, or
+`WHOOSH_E2E_LABSERVER` / `WHOOSH_E2E_DAEMON`) on a temporary data directory,
+with a fake yt-dlp (`e2e/fake-yt-dlp.mjs`, answering from
+`crates/media/tests/fixtures/info.json`) as the daemon's managed copy. The
+daemon only accepts the desktop webview's `Origin`, so the page connects
+through a TCP relay in the test process that drops the browser's `Origin`
+header, the way a native client connects; the daemon is not loosened.
 
 svelte-check does not support TypeScript 7 yet, so this package pins
 TypeScript 6 locally; the root stays on 7.

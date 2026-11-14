@@ -18,6 +18,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
+mod crash;
 mod daemon;
 mod deep_links;
 mod prefs;
@@ -203,6 +204,8 @@ fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
 
 /// Entry point shared by the binary (and, later, the mobile targets).
 pub fn run() {
+    // Opt-in crash reports, before anything that could panic.
+    crash::init();
     let app = tauri::Builder::default()
         // First, so a second launch hands over before anything else starts.
         // With its `deep-link` feature, a second launch's whoosh:// link
@@ -257,6 +260,9 @@ pub fn run() {
             prefs::set_desktop_prefs,
             shell_i18n::set_shell_language,
             open_translation_page,
+            crash::crash_reports,
+            crash::set_crash_reports,
+            crash::report_ui_error,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|err| {

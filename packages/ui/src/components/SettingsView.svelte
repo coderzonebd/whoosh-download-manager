@@ -220,6 +220,29 @@
     }
   }
 
+  // ------------------------------------------------------------ privacy
+
+  /** undefined: unknown yet, or this build has no crash reports. */
+  let crash = $state<boolean | undefined>(undefined);
+  $effect(() => {
+    host.crashReports
+      ?.get()
+      .then((on) => (crash = on))
+      .catch(() => (crash = undefined));
+  });
+
+  async function setCrash(on: boolean): Promise<void> {
+    if (!host.crashReports) return;
+    const before = crash;
+    crash = on;
+    try {
+      await host.crashReports.set(on);
+    } catch (e) {
+      crash = before;
+      app.toasts.push({ tone: "error", message: t("settings.saveFailed", { message: app.describe(e) }) });
+    }
+  }
+
   async function setAtLogin(on: boolean): Promise<void> {
     if (!host.launchAtLogin) return;
     const before = atLogin;
@@ -491,6 +514,21 @@
             {/if}
           </div>
           <p class="vy-hint applies">{t("settings.desktopHint")}</p>
+        </section>
+      {/if}
+
+      {#if crash !== undefined}
+        <section aria-labelledby="vy-set-privacy">
+          <h2 id="vy-set-privacy">{t("settings.privacy")}</h2>
+          <div class="checks">
+            <div class="vy-field">
+              <label class="vy-check">
+                <input type="checkbox" checked={crash} onchange={(e) => setCrash(e.currentTarget.checked)} aria-describedby="vy-set-crash-hint" />
+                {t("settings.crashReports")}
+              </label>
+              <span id="vy-set-crash-hint" class="vy-hint">{t("settings.crashReportsHint")}</span>
+            </div>
+          </div>
         </section>
       {/if}
 

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // What the desktop shell adds to the shared UI (`Host` in @whoosh/ui): the
 // native folder picker, the app's own settings (`desktop.json`, through the
-// `desktop_prefs` / `set_desktop_prefs` commands), launch at login, and
-// opening the translation site from the language picker.
+// `desktop_prefs` / `set_desktop_prefs` commands), launch at login, the
+// "Send crash reports" switch (`crash.rs`), and opening the translation site
+// from the language picker.
 import type { DesktopPrefs, Host } from "@whoosh/ui";
 
 /** The full `desktop.json` as the shell sends it (`prefs.rs`). */
@@ -44,6 +45,15 @@ export function desktopHost(): Host {
     // Only translation pages: the shell refuses anything else.
     async openUrl(url) {
       await invoke("open_translation_page", { url });
+    },
+    crashReports: {
+      async get() {
+        const s = await invoke<{ available: boolean; enabled: boolean }>("crash_reports");
+        return s.available ? s.enabled : undefined;
+      },
+      async set(on) {
+        await invoke("set_crash_reports", { enabled: on });
+      },
     },
     launchAtLogin: {
       async get() {

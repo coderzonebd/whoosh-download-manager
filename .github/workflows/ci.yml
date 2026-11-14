@@ -149,6 +149,66 @@ jobs:
       - name: e2e tests
         run: pnpm --filter @whoosh/extension test:e2e
 
+  ui-a11y:
+    name: UI accessibility (axe-core, Chrome for Testing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Chrome for Testing (Playwright's chromium build)
+        working-directory: packages/ui
+        run: pnpm exec playwright-core install --with-deps --no-shell chromium
+      - name: Point the suite at it
+        run: |
+          chrome=$(find "$HOME/.cache/ms-playwright" -path '*/chromium-*/chrome-linux64/chrome' -type f | sort -V | tail -n 1)
+          test -x "$chrome" || { echo "::error::Chrome for Testing not found"; exit 1; }
+          "$chrome" --version
+          echo "WHOOSH_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
+      - name: axe-core on the main screens (en, bn × light, dark, high contrast)
+        env:
+          # Fail instead of skipping when the browser is missing.
+          WHOOSH_E2E_REQUIRE: "1"
+        run: pnpm --filter @whoosh/ui test:a11y
+
+  desktop-e2e:
+    name: Desktop e2e (UI against a real daemon)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Non-blocking until it has proven stable on hosted runners.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: desktop-e2e
+          save-if: ${{ github.event_name == 'push' }}
+      - name: Build whoosh-daemon and whoosh-labserver
+        run: cargo build --locked -p whoosh-daemon -p whoosh-labserver
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Chrome for Testing (Playwright's chromium build)
+        working-directory: packages/ui
+        run: pnpm exec playwright-core install --with-deps --no-shell chromium
+      - name: Point the suite at it
+        run: |
+          chrome=$(find "$HOME/.cache/ms-playwright" -path '*/chromium-*/chrome-linux64/chrome' -type f | sort -V | tail -n 1)
+          test -x "$chrome" || { echo "::error::Chrome for Testing not found"; exit 1; }
+          echo "WHOOSH_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
+      - name: Add, pause/resume, bulk remove, queue, media probe
+        env:
+          WHOOSH_E2E_REQUIRE: "1"
+        run: pnpm --filter @whoosh/ui test:e2e
+
   docker:
     name: Docker image (labserver stand-in for the daemon)
     runs-on: ubuntu-24.04
@@ -170,7 +230,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [workflows, rust, js]
+    needs: [workflows, rust, js, ui-a11y]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

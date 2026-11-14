@@ -25,6 +25,15 @@ export interface Host {
    * navigate away). Without it, links open the usual way.
    */
   openUrl?: (url: string) => Promise<void>;
+  /**
+   * "Send crash reports" (off by default). `get` resolves undefined when
+   * this build cannot send any (no crash-report address), and the switch is
+   * hidden.
+   */
+  crashReports?: {
+    get(): Promise<boolean | undefined>;
+    set(on: boolean): Promise<void>;
+  };
   /** Start the app when the user logs in. */
   launchAtLogin?: {
     get(): Promise<boolean>;

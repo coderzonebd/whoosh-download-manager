@@ -18,7 +18,9 @@
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "i18n:sync": "node scripts/i18n-import-ts.mjs",
-    "i18n:check": "node scripts/i18n-import-ts.mjs --check"
+    "i18n:check": "node scripts/i18n-import-ts.mjs --check",
+    "test:a11y": "vitest run --config vitest.e2e.config.ts e2e/a11y.e2e.test.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts e2e/live.e2e.test.ts"
   },
   "dependencies": {
     "@whoosh/api-client": "workspace:*",
@@ -32,7 +34,10 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/svelte": "^5.4.2",
     "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^26.6.6",
+    "axe-core": "^4.14.0",
     "jsdom": "^31.0.0",
+    "playwright-core": "^1.65.0",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
     "typescript": "^6.0.3",

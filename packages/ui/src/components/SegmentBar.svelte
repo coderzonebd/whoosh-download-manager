@@ -41,6 +41,7 @@
   class="bar {size} tone-{toneFor(d.state)}"
   class:indeterminate
   role={decorative ? undefined : "progressbar"}
+  aria-label={decorative ? undefined : i18n.t("col.progress")}
   aria-hidden={decorative ? "true" : undefined}
   aria-valuemin={decorative ? undefined : 0}
   aria-valuemax={decorative ? undefined : 100}

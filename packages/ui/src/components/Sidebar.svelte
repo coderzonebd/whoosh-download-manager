@@ -62,7 +62,7 @@
   </div>
 
   <div class="scroll">
-    <section aria-labelledby="vy-nav-downloads">
+    <div class="nav-group" role="group" aria-labelledby="vy-nav-downloads">
       <h2 id="vy-nav-downloads">{t("nav.downloads")}</h2>
       <ul>
         {#each GROUPS as g (g.group)}
@@ -79,9 +79,9 @@
           </li>
         {/each}
       </ul>
-    </section>
+    </div>
 
-    <section aria-labelledby="vy-nav-categories">
+    <div class="nav-group" role="group" aria-labelledby="vy-nav-categories">
       <h2 id="vy-nav-categories">{t("nav.categories")}</h2>
       <ul>
         {#each CATEGORIES as c (c)}
@@ -96,9 +96,9 @@
           </li>
         {/each}
       </ul>
-    </section>
+    </div>
 
-    <section aria-labelledby="vy-nav-queues">
+    <div class="nav-group" role="group" aria-labelledby="vy-nav-queues">
       <div class="section-head">
         <h2 id="vy-nav-queues">{t("nav.queues")}</h2>
         {#if queues.enabled}
@@ -126,7 +126,7 @@
           </li>
         {/each}
       </ul>
-    </section>
+    </div>
   </div>
 
   <div class="foot">
@@ -179,7 +179,7 @@
     overflow-y: auto;
     padding-block-end: var(--vy-space-4);
   }
-  section + section {
+  .nav-group + .nav-group {
     margin-block-start: var(--vy-space-4);
   }
   h2 {

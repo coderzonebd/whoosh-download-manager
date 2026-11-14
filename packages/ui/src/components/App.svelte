@@ -69,6 +69,13 @@
       app.moveIds !== undefined ||
       app.clearIds !== undefined,
   );
+  /** The downloads view's name, as its (visually hidden) page heading. */
+  const viewTitle = $derived.by(() => {
+    const v = store.view;
+    if (v.kind === "group") return i18n.t(`group.${v.group}`);
+    if (v.kind === "category") return i18n.t(`category.${v.category}`);
+    return app.queueLabel(v.queue);
+  });
   const queueView = $derived(app.view === "downloads" && store.view.kind === "queue" && app.queues.enabled ? store.view.queue : undefined);
 
   $effect(() => {
@@ -137,7 +144,8 @@
           <HistoryView />
         {:else}
           <div class="list-col">
-            {#if queueView !== undefined}<QueueBar name={queueView} />{/if}
+            <!-- The page heading: the queue bar's own title, or a hidden one. -->
+            {#if queueView !== undefined}<QueueBar name={queueView} />{:else}<h1 class="vy-sr-only" dir="auto">{viewTitle}</h1>{/if}
             <DownloadList />
           </div>
           {#if detail}

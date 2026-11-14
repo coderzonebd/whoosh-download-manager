@@ -318,6 +318,33 @@ describe("settings", () => {
     expect(host.pickFolder).toHaveBeenCalledWith({ title: "Choose the default download folder", defaultPath: "~/Downloads" });
   });
 
+  it("offers crash reports off by default, and only when the build can send them", async () => {
+    let on = false;
+    const host: Host = {
+      crashReports: {
+        get: async () => on,
+        set: vi.fn(async (v: boolean) => void (on = v)),
+      },
+    };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Privacy" })).toBeInTheDocument();
+    const box = await screen.findByRole("checkbox", { name: "Send crash reports" });
+    expect(box).not.toBeChecked();
+    expect(box).toHaveAccessibleDescription(/File names, links and your user name are removed/);
+    await user.click(box);
+    expect(host.crashReports?.set).toHaveBeenCalledWith(true);
+    expect(on).toBe(true);
+  });
+
+  it("hides crash reports in a build without a crash-report address", async () => {
+    const host: Host = { crashReports: { get: async () => undefined, set: vi.fn(async () => {}) } };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    await screen.findByRole("heading", { name: "Settings" });
+    expect(screen.queryByRole("checkbox", { name: "Send crash reports" })).not.toBeInTheDocument();
+  });
+
   it("offers the folder picker in the add dialog", async () => {
     const host: Host = { pickFolder: async () => "/data/iso" };
     const { user, client } = await setup({ host });

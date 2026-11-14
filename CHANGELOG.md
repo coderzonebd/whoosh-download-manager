@@ -4,6 +4,17 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## Unreleased: Phase 2
 
+### Accessibility and QA
+- Automated accessibility checks: axe-core (WCAG 2.2 A/AA and best practices) runs in Chrome for Testing on the download list (Classic and Modern), the add dialog, settings, a queue with its schedule and the queue dialog, history and the media format picker, in English and Bangla, in the light, dark and high-contrast themes (`pnpm --filter @whoosh/ui test:a11y`). It is a blocking CI job.
+- Fixed what it found: progress bars had no accessible name; the sidebar's three groups were landmarks with the same names as sections of Settings; the download list had no page heading (each view now has one, the queue's name in a queue).
+- End-to-end tests drive the UI against a real `whoosh-daemon` on a temporary data directory, downloading from the labserver: add, pause and resume, bulk remove with the row checkboxes, creating a queue, and a media probe through a fake yt-dlp (`pnpm --filter @whoosh/ui test:e2e`; a CI job, non-blocking for now). The page connects through a relay in the test process that drops the browser's `Origin`; the daemon's origin check is unchanged and nothing test-only ships.
+- A manual screen-reader checklist for NVDA, VoiceOver and Orca: [docs/qa/screen-reader.md](docs/qa/screen-reader.md). Not run yet.
+
+### Crash reports (opt-in)
+- Settings → Privacy → *Send crash reports*, **off by default**, in the desktop app. When on, panics in the app or the daemon and uncaught errors in the app's window are reported to the project's hosted GlitchTip (Sentry protocol), so the beta can measure its crash-free rate.
+- A scrubber runs on every report and breadcrumb before it is sent and removes links, query strings, file names and paths, cookies, headers, tokens, e-mail and IP addresses, and the user and computer names; stack frames keep only `crate/src/file.rs` and the line. No performance tracing, no sessions, no default PII. See [docs/privacy.md](docs/privacy.md).
+- The service's address comes from the build-time `WHOOSH_CRASH_DSN`. Builds without it contain no active reporter, hide the switch, and send nothing.
+
 ### Video and audio sites (yt-dlp, ffmpeg)
 - Desktop and GitHub builds download from video and audio sites. The add dialog notices a video page and offers a format picker: video at a chosen quality (or the best), audio only (as it is, or MP3), and subtitles. Store builds of the extension never offer it.
 - yt-dlp and ffmpeg are separate programs, fetched by the daemon the first time they are needed from their official releases (yt-dlp's GitHub releases; ffmpeg's LGPL builds from BtbN on Windows and Linux, and Martin Riedl's release build on macOS) and checked against the published SHA-256 before use. Linux uses the system's yt-dlp and ffmpeg when there is no managed copy; macOS uses a Homebrew ffmpeg if present.
