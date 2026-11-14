@@ -218,7 +218,7 @@ Public report.
 
 ### Phase 2 — Desktop + Extension Pro → **v1.0** (months 4–6)
 Tauri desktop (Win/mac/Linux), tray, Classic + Modern layouts, categories/queues/scheduler UI, history. Extension (Chromium + Firefox) Pro mode: capture, cookie/referer forwarding, context menus, media sniffer, predictive preconnect, self-healing links. yt-dlp/ffmpeg integration (desktop build). Signed installers on the v1.0 channels (amended 2026-11-14, [ADR 0007](docs/adr/0007-phase2-plan.md): GitHub Releases, winget, scoop, Homebrew cask, Flathub, AUR; MSIX/Microsoft Store, Snap, Nix, Chocolatey and apt/dnf repositories follow in v1.x). Bangla + English + ~10 machine-seeded languages via Weblate. Accessibility pass.
-**Gate:** 2 weeks public beta, crash-free rate > 99.5% (from opt-in crash reports), extension approved in both stores. Work streams and order: [ADR 0007](docs/adr/0007-phase2-plan.md).
+**Gate:** 2 weeks public beta, crash-free rate > 99.5% (from opt-in crash reports), extension approved in both stores. Work streams and order: [ADR 0007](docs/adr/0007-phase2-plan.md). The road to v1.0 at no cost (public pre-release beta, free signing and channels): [ADR 0007, Amendment 1](docs/adr/0007-phase2-plan.md#amendment-1-the-road-to-v10-at-no-cost-2026-11-14).
 
 ### Phase 3 — Protocol & power features → **v1.5** (months 7–9)
 BitTorrent (librqbit), ed2k, FTP/SFTP/WebDAV, HLS/DASH, Metalink + multi-source + LAN peers, archive extraction, batch/site grabber/link crawler, RSS, debrid, proxy/VPN bind/kill switch, polite mode, content verification, headless Docker, web remote, MCP, portable mode, BDIX/local-FTP mode.

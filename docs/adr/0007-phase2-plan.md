@@ -67,3 +67,42 @@ Branches are cut from `dev` and merged back by PR (ADR 0006). Contract files (`c
 - The desktop app, CLI and extension share one engine process and one tested API.
 - ADR 0001 and MASTER-PLAN §4.1 are amended once decision 1 is taken.
 - Waves 1 and 4 are serial; the speed of Phase 2 is set by wave 2, bounded by two Rust builds at a time on this laptop.
+
+## Amendment 1: the road to v1.0 at no cost (2026-11-14)
+
+The owner's decisions:
+- The beta is a **public pre-release**, published only after waves 3 and 4 are done (no release before the apps and UI are complete).
+- Distribution must **cost nothing** on every platform. Paid programmes (Apple Developer, the Chrome Web Store fee) are left out until the owner decides otherwise.
+- Crash reports go to **hosted GlitchTip**: opt-in, off by default, on its free plan.
+- The `v0.1.0` draft release was deleted; the `v0.1.0` tag stays as the engine milestone.
+
+### Steps
+
+1. **Finish building.** Wave 2 (the Windows port, #20), wave 3 (yt-dlp/ffmpeg, languages) and wave 4 (release engineering, accessibility and QA). Nothing is published meanwhile.
+2. **Private check.** Release builds from the workflow's dry run (`docs/release.md`, *Dry run*) are installed by the owner on macOS, Windows and Linux and run through a written checklist: install, first run, a download, the extension handing over, quit and relaunch, update.
+3. **Public beta.** Tag `v1.0.0-beta.1` on `pub`. `release.yml` makes it a GitHub pre-release (NSIS only on Windows, since MSI rejects pre-release versions). It runs for at least two weeks, with fixes shipped as `beta.2`, `beta.3`, and so on. The beta's crash-report DSN is a build secret, and reporting stays off unless the user turns it on. The extension is submitted to the stores during the beta.
+4. **v1.0.0.** When the gate below passes, tag `v1.0.0` on `pub`, publish it, and update the package-manager manifests from it.
+
+### Free signing and channels
+
+| Platform | v1.0 without paid accounts | What users see |
+|---|---|---|
+| Windows | Authenticode through the SignPath Foundation (free for open source; the application is reviewed, so apply now). Unsigned until approved. GitHub Releases, winget, Scoop. | Unsigned: SmartScreen "unknown publisher" → *More info → Run anyway*. Signed builds build SmartScreen reputation over time. |
+| macOS | Ad-hoc signed, not notarized (notarization needs the paid Apple Developer Program). GitHub Releases (`.dmg`); Homebrew through our own tap (`coderzonebd/homebrew-tap`). | First launch: *right-click → Open*, or *System Settings → Privacy & Security → Open Anyway*. The download page and README say so. |
+| Linux | AppImage, `.deb` and `.rpm` from GitHub Releases; Flathub; AUR. No package signing in v1.0. | Nothing extra. |
+| Every download | `SHA256SUMS` and Sigstore build-provenance attestations (free, already in `release.yml`). | `gh attestation verify` (see `docs/release.md`). |
+| In-app updates | Tauri updater with our own minisign key; `latest.json` on GitHub Releases. | Signed updates whether or not the installer was code-signed. |
+| Extension | Firefox AMO and Microsoft Edge Add-ons, both free. The Chrome Web Store needs a one-time US$5 fee and waits for the owner. Until then, Chrome, Brave and Vivaldi users can install the store zip from GitHub as an unpacked extension (developer mode). | Chromium users outside Edge get a manual install. |
+| Translations | Hosted Weblate, free for libre projects (reviewed). | — |
+| Crash reports | Hosted GlitchTip free plan (event limits apply). | An opt-in switch in settings. |
+
+### Gate (amends the one above)
+
+1. All of Phase 2 is merged. The Windows tests are blocking and green. No open P1 bugs.
+2. The checklist from step 2 passes on all three operating systems.
+3. A public beta of at least two weeks, with a crash-free rate above 99.5 % among users who opted in to crash reports.
+4. The extension is approved on Firefox AMO and Microsoft Edge Add-ons. The Chrome Web Store follows when the owner pays its fee.
+
+### Accounts for the owner (all free)
+
+SignPath Foundation, Firefox AMO, Microsoft Partner Center (Edge Add-ons), GlitchTip, Weblate (libre plan), AUR (SSH key), Flathub (through a pull request to `flathub/flathub`), and a `coderzonebd/homebrew-tap` repository.
