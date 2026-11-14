@@ -66,6 +66,25 @@ pub trait Storage: Send + Sync {
     fn finish_unsynced<'a>(&'a self, final_path: &'a Path) -> BoxFuture<'a, io::Result<()>> {
         self.finish(final_path)
     }
+
+    /// Record where the file came from, so the operating system treats it
+    /// as downloaded from the internet ("mark of the web": a
+    /// `Zone.Identifier` stream on Windows, the `com.apple.quarantine`
+    /// attribute on macOS). `url` is where the bytes came from (after
+    /// redirects), `referrer` the page that linked to it, if known.
+    ///
+    /// The engine calls it once, just before [`Storage::finish`], on the
+    /// in-progress file: the mark moves with the file, so the finished file
+    /// is never seen without it. Best effort: the engine logs an error and
+    /// finishes anyway. The default records nothing.
+    fn mark_origin<'a>(
+        &'a self,
+        url: &'a str,
+        referrer: Option<&'a str>,
+    ) -> BoxFuture<'a, io::Result<()>> {
+        let _ = (url, referrer);
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Opens in-progress files.

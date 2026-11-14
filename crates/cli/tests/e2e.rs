@@ -344,6 +344,48 @@ fn concurrent_commands_share_one_daemon() {
     assert!(pid_alive(pid));
 }
 
+/// `whoosh-autostart`, what the logon entry runs: it starts the daemon
+/// found next to it, detached, and exits without waiting.
+#[test]
+fn the_logon_launcher_starts_the_daemon_and_exits() {
+    let w = World::new("launcher");
+    let mut launcher = Command::new(env!("CARGO_BIN_EXE_whoosh-autostart"));
+    launcher
+        .args(["--data-dir".as_ref(), w.data().as_os_str()])
+        .env("WHOOSH_DAEMON_MOCK", "1")
+        .env("WHOOSH_DAEMON_MOCK_SCENARIO", "empty")
+        .env("WHOOSH_DAEMON_PORT", "0")
+        .env_remove("WHOOSH_DATA_DIR")
+        .env_remove("WHOOSH_DAEMON_BIN")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(path) = std::env::var_os("WHOOSH_DAEMON_BIN_FOR_TESTS") {
+        launcher.env("WHOOSH_DAEMON_BIN", path);
+    }
+    let status = launcher.status().unwrap();
+    assert!(status.success(), "{status}");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let pid = loop {
+        if let Some(rt) = w.runtime() {
+            break rt["pid"].as_u64().unwrap();
+        }
+        assert!(Instant::now() < deadline, "no runtime.json");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert!(pid_alive(pid));
+    assert_eq!(w.json(&["daemon", "status"])["pid"], pid);
+    // A second run while it is up starts nothing new.
+    assert!(launcher.status().unwrap().success());
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(w.runtime().unwrap()["pid"], pid);
+    let bad = Command::new(env!("CARGO_BIN_EXE_whoosh-autostart"))
+        .arg("--nope")
+        .status()
+        .unwrap();
+    assert_eq!(bad.code(), Some(2));
+}
+
 #[test]
 fn daemon_start_stop_status() {
     let w = World::new("start");

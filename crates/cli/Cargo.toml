@@ -12,6 +12,12 @@ publish.workspace = true
 name = "whoosh"
 path = "src/main.rs"
 
+# Starts the daemon at logon without a console window (see
+# whoosh_client::autostart); ships next to `whoosh`.
+[[bin]]
+name = "whoosh-autostart"
+path = "src/bin/whoosh-autostart.rs"
+
 [dependencies]
 clap = { workspace = true, features = ["env"] }
 futures.workspace = true

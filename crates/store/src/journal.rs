@@ -333,7 +333,8 @@ fn commit_blocking(
     // A commit is durable only once the file's directory entry is (and the
     // entries of directories `open` created). Sync the directory, after the
     // data, on this process's first commit of the id, whatever the file
-    // holds.
+    // holds. (On Windows the directory sync is a no-op and the data sync
+    // makes the entry durable; see `sys::sync_dir`.)
     let parents = std::mem::take(&mut *lock(pending));
     let mut dirs = Vec::new();
     if !state.dir_synced {

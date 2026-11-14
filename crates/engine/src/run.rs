@@ -1037,6 +1037,17 @@ impl Driver {
             .take()
             .filter(|(_, landed)| landed.load(Ordering::Acquire))
             .map(|(f, _)| f);
+        // Mark of the web, on the part file before it gets its final name:
+        // the mark moves with it, so the finished file is never seen
+        // without it. Best effort (FAT has no streams, tmpfs may lack user
+        // xattrs): a download is not failed for it.
+        let host_url = without_intent(self.meta.clone())
+            .final_url
+            .unwrap_or_else(|| self.url.clone());
+        let referrer = self.request.as_ref().and_then(|r| r.referer.clone());
+        if let Err(e) = storage.mark_origin(&host_url, referrer.as_deref()).await {
+            tracing::warn!(id = %self.id, error = %e, "could not mark the file as downloaded from the internet");
+        }
         let len = self.size.unwrap_or(0);
         let mut flushed = false;
         let mut chosen = None;

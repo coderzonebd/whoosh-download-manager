@@ -426,8 +426,8 @@ to the source.
 
 ## Not covered
 
-- **Windows and macOS**: written to be portable (no Unix-only code outside
-  the benchmark's CPU measurement), but built and tested on Linux only.
+- **Windows and macOS**: the test suite runs there in CI (loopback only,
+  like everywhere); the benchmark's CPU measurement is Linux-only.
 - **Real CDNs and real networks**: everything here is loopback against
   labserver (no RTT, loss or reordering; `tc netem` was not used).
 - **Proxies** (HTTP, SOCKS, system settings): out of scope until Phase 3.

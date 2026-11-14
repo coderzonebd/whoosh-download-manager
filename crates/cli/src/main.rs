@@ -207,6 +207,22 @@ pub enum DaemonCmd {
     Stop,
     /// Is the daemon running? Exit code 0 if so, 3 if not.
     Status,
+    /// Start the daemon when you log on (Windows: per user, no
+    /// administrator rights needed).
+    Autostart {
+        #[command(subcommand)]
+        action: AutostartCmd,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Subcommand)]
+pub enum AutostartCmd {
+    /// Start the daemon at every logon.
+    On,
+    /// Stop starting it at logon.
+    Off,
+    /// Is it set to start at logon?
+    Status,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -389,6 +405,15 @@ mod tests {
         };
         assert!(foreground);
         assert_eq!(args, ["--mock"]);
+        let cli = Cli::try_parse_from(["whoosh", "daemon", "autostart", "on"]).unwrap();
+        assert!(matches!(
+            cli.cmd,
+            Cmd::Daemon {
+                action: DaemonCmd::Autostart {
+                    action: AutostartCmd::On
+                }
+            }
+        ));
 
         assert!(Cli::try_parse_from(["whoosh", "get"]).is_err());
         assert!(Cli::try_parse_from(["whoosh", "get", "u", "-c", "8", "--queue", "q"]).is_ok());

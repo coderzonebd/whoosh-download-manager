@@ -11,8 +11,21 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - System notifications when a download finishes or fails while the window is in the background.
 - Installers ship `whoosh-daemon` and `whoosh-nmhost` next to the app.
 
+### Windows
+- The engine, daemon and CLI are ported: the whole Rust test suite runs on Windows in CI and blocks a merge, like Linux and macOS ([docs/windows.md](docs/windows.md)).
+- The data directory, `runtime.json`, logs, journal and state database are owner-only on Windows too: created with an owner-only access control list, checked by every client the way the Unix 0700/0600 modes are, and tightened when loose.
+- `whoosh daemon autostart on|off|status`: start the daemon at logon, per user and without administrator rights, through the new windowless `whoosh-autostart` launcher. It sees, and can undo, Task Manager's "disabled" switch.
+- `whoosh get` and `whoosh watch` treat Ctrl-Break like Ctrl-C.
+- The journal's crash safety without a directory fsync is explained in the store (NTFS's ordered metadata log, `MOVEFILE_WRITE_THROUGH`).
+- The state database tells WAL files apart on Windows too (volume serial and file index), so its once-per-file directory step runs once, as on Unix.
+
+### Downloads
+- Finished downloads carry the mark of the web, so the OS warns before running them: a `Zone.Identifier` stream on Windows (`ZoneId=3`, with the referrer and the download URL, minus user info, query and fragment), `com.apple.quarantine` on macOS, `user.xdg.origin.url` on Linux.
+
 ### Internal
 - New crate `whoosh-client`: finding, starting, stopping and talking to the daemon, shared by the CLI and the desktop app.
+- `Storage::mark_origin` in `whoosh-core` (default: does nothing): the engine calls it before a download's final move.
+- labserver: HTTP/3 tests no longer fail on Windows when the TLS port's number falls in a reserved UDP port range (`WSAEACCES`).
 
 ### Protocol
 - Queues and the scheduler ([PROTOCOL.md](docs/api/PROTOCOL.md#queues-and-the-scheduler)): `queue.list/create/update/rename/remove/start/stop/cancelAction`, `download.setQueue`, `event.queues`, `event.queue.finished`, and `Settings.speedSchedule`. The daemon answers "unsupported" until the engine implements them; the mock client supports them so the UI can be built.
