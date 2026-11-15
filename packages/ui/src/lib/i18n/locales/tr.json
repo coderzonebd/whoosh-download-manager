@@ -234,6 +234,15 @@
     "later": "Daha sonra indir",
     "failed": "Bu yapılamadı: {{message}}"
   },
+  "follow": {
+    "title": "İndiriliyor",
+    "complete": "İndirme tamamlandı",
+    "failed": "İndirme başarısız oldu",
+    "hide": "Gizle",
+    "hint": "Bu pencereyi gizlerseniz indirme arka planda sürer; bittiğinde pencere yeniden açılır.",
+    "open": "Aç",
+    "openFolder": "Klasörü aç"
+  },
   "prompt": {
     "empty": "Bekleyen bir şey yok."
   },

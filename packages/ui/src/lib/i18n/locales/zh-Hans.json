@@ -229,6 +229,15 @@
     "later": "稍后下载",
     "failed": "无法完成：{{message}}"
   },
+  "follow": {
+    "title": "正在下载",
+    "complete": "下载完成",
+    "failed": "下载失败",
+    "hide": "隐藏",
+    "hint": "隐藏此窗口后，下载会在后台继续，完成时窗口会再次出现。",
+    "open": "打开",
+    "openFolder": "打开文件夹"
+  },
   "prompt": {
     "empty": "没有等待处理的内容。"
   },

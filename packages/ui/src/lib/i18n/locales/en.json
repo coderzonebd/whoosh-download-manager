@@ -234,6 +234,15 @@
     "later": "Download later",
     "failed": "Couldn’t do that: {{message}}"
   },
+  "follow": {
+    "title": "Downloading",
+    "complete": "Download complete",
+    "failed": "Download failed",
+    "hide": "Hide",
+    "hint": "It goes on in the background if you hide this window, which comes back when the download ends.",
+    "open": "Open",
+    "openFolder": "Open folder"
+  },
   "prompt": {
     "empty": "Nothing is waiting."
   },

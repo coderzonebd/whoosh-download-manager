@@ -112,6 +112,14 @@ export function desktopHost(): Host {
     async closePrompt() {
       await invoke("close_prompt");
     },
+    // The shell looks the file up with the daemon; only a completed download's.
+    async openDownload(id, reveal) {
+      await invoke("open_download", { id, reveal });
+    },
+    // The shell's own watch (`watch.rs`) brings the prompt window back when one of these ends.
+    async setFollowed(ids) {
+      await invoke("set_followed", { ids });
+    },
     updates: {
       async check() {
         return (await invoke<UpdateInfo | null>("check_for_update")) ?? undefined;

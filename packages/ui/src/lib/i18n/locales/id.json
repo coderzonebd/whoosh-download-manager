@@ -229,6 +229,15 @@
     "later": "Unduh nanti",
     "failed": "Tidak dapat melakukannya: {{message}}"
   },
+  "follow": {
+    "title": "Mengunduh",
+    "complete": "Unduhan selesai",
+    "failed": "Unduhan gagal",
+    "hide": "Sembunyikan",
+    "hint": "Unduhan tetap berjalan di latar belakang jika jendela ini disembunyikan, dan jendela muncul lagi saat unduhan selesai.",
+    "open": "Buka",
+    "openFolder": "Buka folder"
+  },
   "prompt": {
     "empty": "Tidak ada yang menunggu."
   },

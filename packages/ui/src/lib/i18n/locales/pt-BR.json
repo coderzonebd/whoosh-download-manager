@@ -239,6 +239,15 @@
     "later": "Baixar mais tarde",
     "failed": "Não foi possível fazer isso: {{message}}"
   },
+  "follow": {
+    "title": "Baixando",
+    "complete": "Download concluído",
+    "failed": "O download falhou",
+    "hide": "Ocultar",
+    "hint": "Se você ocultar esta janela, o download continua em segundo plano e a janela volta quando ele terminar.",
+    "open": "Abrir",
+    "openFolder": "Abrir pasta"
+  },
   "prompt": {
     "empty": "Nada aguardando."
   },

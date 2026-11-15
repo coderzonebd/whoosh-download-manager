@@ -9,6 +9,7 @@ import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
 import type { Host } from "../host.ts";
 import { DownloadStore, PAUSABLE, RESUMABLE, type Download } from "./downloads.svelte.ts";
+import { readFollowed, writeFollowed, type Followed } from "./followed.ts";
 import { Prefs } from "./prefs.svelte.ts";
 import { SegmentCache } from "./segments.svelte.ts";
 import { QUEUES_CAPABILITY, QueueStore, isUnsupported } from "./queues.svelte.ts";
@@ -18,6 +19,9 @@ import { ToastStore } from "./toasts.svelte.ts";
 export type Connection = "demo" | "connecting" | "open" | "reconnecting" | "closed";
 export type MainView = "downloads" | "history" | "settings" | "browsers";
 export type Theme = "system" | "light" | "dark" | "high-contrast";
+
+/** How a followed download ended: the prompt window says so ("Download complete"). */
+export const ENDED: ReadonlySet<DownloadSummary["state"]> = new Set(["completed", "failed"]);
 
 export interface AppOptions {
   /** "mock" labels the status bar "Demo data". */
@@ -106,6 +110,21 @@ export class AppState {
    * window and a UI without one (no `Host.openPrompt`) take them.
    */
   offers = $state.raw<MediaOffer[]>([]);
+  /**
+   * Downloads started in the prompt window, which it follows: their progress while they run
+   * (unless hidden), then how they ended. Shared with the main window through storage.
+   */
+  followed = $state.raw<Followed[]>([]);
+  /**
+   * The followed download the prompt window shows: one that ended first (so "Download complete"
+   * is never kept waiting behind a running one), else the first running one not hidden.
+   */
+  readonly following: Download | undefined = $derived.by(() => {
+    if (!this.prompt) return undefined;
+    const known = this.followed.map((f) => ({ f, d: this.store.get(f.id) })).filter((x) => x.d !== undefined);
+    const ended = known.find((x) => ENDED.has(x.d!.data.state));
+    return (ended ?? known.find((x) => !x.f.hidden))?.d;
+  });
   /** The download list (and the offered pages) loaded at least once; the prompt window closes only then. */
   loaded = $state(false);
   readonly prompt: boolean;
@@ -118,6 +137,7 @@ export class AppState {
   #capabilities: string[] | undefined;
 
   readonly #off: (() => void)[] = [];
+  readonly #storage: Storage | null;
 
   constructor(client: WdmClient, opts: AppOptions = {}) {
     this.client = client;
@@ -130,7 +150,12 @@ export class AppState {
         .then((s) => (this.crashNotice = s !== undefined && !s.noticeShown))
         .catch(() => undefined);
     }
-    this.prefs = new Prefs(opts.storage === undefined ? defaultStorage() : opts.storage);
+    this.#storage = opts.storage === undefined ? defaultStorage() : opts.storage;
+    this.prefs = new Prefs(this.#storage);
+    if (this.prompt) {
+      this.followed = readFollowed(this.#storage);
+      this.#tellShell();
+    }
     this.i18n = new I18n(opts.locale ?? (typeof navigator === "undefined" ? "en" : navigator.language));
     this.store.sort = this.prefs.initialSort;
     this.store.setCollationLocale(this.i18n.intlLocale);
@@ -209,7 +234,11 @@ export class AppState {
       this.client.call("settings.get", undefined),
       this.client.call("stats.get", undefined),
     ]);
-    if (list.status === "fulfilled") this.store.replaceAll(list.value);
+    if (list.status === "fulfilled") {
+      this.store.replaceAll(list.value);
+      // Followed downloads removed while this window was away are forgotten.
+      if (this.prompt) this.#setFollowed(this.followed.filter((f) => list.value.some((d) => d.id === f.id)));
+    }
     else this.store.loadError = this.describe(list.reason);
     if (settings.status === "fulfilled") {
       this.settings = settings.value;
@@ -256,6 +285,37 @@ export class AppState {
     }
   }
 
+  #setFollowed(list: Followed[]): void {
+    this.followed = list;
+    writeFollowed(this.#storage, list);
+    this.#tellShell();
+  }
+
+  #tellShell(): void {
+    this.host.setFollowed?.(this.followed.map((f) => f.id)).catch(() => undefined);
+  }
+
+  /** The prompt window started a download: follow it (its progress, then how it ended). */
+  follow(id: string): void {
+    if (!this.prompt) return;
+    this.#setFollowed([...this.followed.filter((f) => f.id !== id), { id, hidden: false }]);
+  }
+
+  /** "Hide": its progress goes away; the prompt window comes back when it ends. */
+  hideFollowed(id: string): void {
+    this.#setFollowed(this.followed.map((f) => (f.id === id ? { ...f, hidden: true } : f)));
+  }
+
+  /** Done with a followed download ("Close" on how it ended). */
+  unfollow(id: string): void {
+    this.#setFollowed(this.followed.filter((f) => f.id !== id));
+  }
+
+  /** Open a completed download's file, or show it in its folder (desktop app). */
+  openFile(id: string, reveal: boolean): void {
+    this.host.openDownload?.(id, reveal).catch((e: unknown) => this.report(e));
+  }
+
   /** The add dialog for the first offered page closed (added, or not wanted). */
   doneWithOffer(id: string): void {
     this.offers = this.offers.filter((o) => o.id !== id);
@@ -298,6 +358,9 @@ export class AppState {
       c.on("event.download.progress", (e) => this.store.applyProgress(e.items)),
       c.on("event.download.removed", (e) => {
         this.store.remove(e.ids);
+        if (this.prompt && this.followed.some((f) => e.ids.includes(f.id))) {
+          this.#setFollowed(this.followed.filter((f) => !e.ids.includes(f.id)));
+        }
         this.segments.forget(e.ids);
       }),
       c.on("event.stats", (s) => (this.stats = s)),
@@ -320,6 +383,8 @@ export class AppState {
         const d = this.store.get(e.id);
         if (!d || prev === undefined || prev === e.state) return;
         if (e.state === "completed") this.segments.forget([e.id]);
+        // A download the prompt window follows ended: bring it back to say so.
+        if (this.delegates && ENDED.has(e.state) && readFollowed(this.#storage).some((f) => f.id === e.id)) this.#bringUp();
         this.#announce(d, e.state);
       }),
     );

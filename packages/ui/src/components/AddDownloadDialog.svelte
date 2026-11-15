@@ -179,6 +179,12 @@
     valid && !submitting && (picking ? stem.trim() !== "" : probe.status === "ok" && probe.url === trimmed),
   );
 
+  /** Added: the main window selects it; the prompt window follows it when it started. */
+  function shown(id: string): void {
+    if (!app.prompt) app.reveal(id);
+    else if (startNow) app.follow(id);
+  }
+
   async function submit(e: SubmitEvent): Promise<void> {
     e.preventDefault();
     touched = true;
@@ -195,7 +201,7 @@
         const id = await app.addMedia(params);
         app.toasts.push({ tone: "success", message: t("add.added", { name: mediaResult.title }) }, 3000);
         onclose();
-        app.reveal(id);
+        shown(id);
       } catch (err) {
         submitError = t("add.failed", { message: app.describe(err) });
       } finally {
@@ -211,7 +217,7 @@
       const id = await app.add(params);
       app.toasts.push({ tone: "success", message: t("add.added", { name: app.store.get(id)?.data.filename ?? filename }) }, 3000);
       onclose();
-      app.reveal(id);
+      shown(id);
     } catch (err) {
       submitError = t("add.failed", { message: app.describe(err) });
     } finally {

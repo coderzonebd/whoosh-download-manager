@@ -29,6 +29,7 @@ mod browsers;
 mod crash;
 mod daemon;
 mod deep_links;
+mod files;
 mod login_item;
 #[cfg(target_os = "macos")]
 mod macos_menu;
@@ -36,6 +37,7 @@ mod prefs;
 mod prompt;
 mod shell_i18n;
 mod updates;
+mod watch;
 mod window_size;
 
 /// Sent to the UI when closing the window hid it to the tray, so it can say
@@ -290,6 +292,7 @@ pub fn run() {
             let first_run = !loaded.browser_setup_shown;
             app.manage(prefs::PrefsState(std::sync::Mutex::new(loaded)));
             app.manage(updates::Pending::default());
+            app.manage(watch::Followed::default());
             std::thread::spawn(move || browsers::ensure_registered(first_run));
             updates::start_daily_check(app.handle().clone());
             // Installed builds start at login unless the user turned that off.
@@ -306,6 +309,7 @@ pub fn run() {
             }
             // A daemon that crashes comes back even while the window is in the tray.
             daemon::supervise(app.handle(), &QUITTING);
+            watch::start(app.handle(), &QUITTING);
             if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 window_size::restore(&window);
                 let w = window.clone();
@@ -344,6 +348,8 @@ pub fn run() {
             show_window,
             prompt::open_prompt,
             prompt::close_prompt,
+            files::open_download,
+            watch::set_followed,
             daemon::daemon_connection,
             deep_links::take_deep_links,
             prefs::desktop_prefs,
