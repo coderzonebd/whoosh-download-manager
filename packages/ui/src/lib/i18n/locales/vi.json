@@ -229,6 +229,15 @@
     "later": "Tải sau",
     "failed": "Không thực hiện được: {{message}}"
   },
+  "follow": {
+    "title": "Đang tải xuống",
+    "complete": "Đã tải xong",
+    "failed": "Tải xuống thất bại",
+    "hide": "Ẩn",
+    "hint": "Nếu bạn ẩn cửa sổ này, việc tải vẫn tiếp tục ở chế độ nền và cửa sổ sẽ hiện lại khi tải xong.",
+    "open": "Mở",
+    "openFolder": "Mở thư mục"
+  },
   "prompt": {
     "empty": "Không có gì đang chờ."
   },

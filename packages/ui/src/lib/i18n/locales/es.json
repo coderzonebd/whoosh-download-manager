@@ -239,6 +239,15 @@
     "later": "Descargar más tarde",
     "failed": "No se pudo hacer: {{message}}"
   },
+  "follow": {
+    "title": "Descargando",
+    "complete": "Descarga completada",
+    "failed": "La descarga falló",
+    "hide": "Ocultar",
+    "hint": "Si ocultas esta ventana, la descarga sigue en segundo plano y la ventana vuelve cuando termina.",
+    "open": "Abrir",
+    "openFolder": "Abrir carpeta"
+  },
   "prompt": {
     "empty": "No hay nada pendiente."
   },

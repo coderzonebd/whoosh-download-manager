@@ -73,6 +73,8 @@ const mockHost: Host = {
     check: async () => ({ version: "1.0.0-beta.2", currentVersion: "1.0.0-beta.1", notes: "Fixes and a faster start." }),
     install: async () => {},
   },
+  openDownload: async () => {},
+  setFollowed: async () => {},
   crashReports: {
     get: async () => ({ ...crash }),
     set: async (on) => void Object.assign(crash, { enabled: on, noticeShown: true }),

@@ -7,7 +7,10 @@
   * browser downloads that wait for confirmation (oldest first), with the
     same dialog the main window used to show;
   * pages offered by the extension's "Download with WDM" button, in the add
-    dialog, which probes the page and shows the video/audio format picker.
+    dialog, which probes the page and shows the video/audio format picker;
+  * then a download started here, like IDM's progress window: its progress
+    until the user hides it, and "Download complete" (or failed) when it ends,
+    the window coming back for that even after it was hidden.
 
   When nothing is left it asks the shell to close it (`Host.closePrompt`).
   Starting a download here never shows the main window.
@@ -19,6 +22,7 @@
   import type { Host } from "../lib/host.ts";
   import AddDownloadDialog from "./AddDownloadDialog.svelte";
   import ConfirmDownloadDialog from "./ConfirmDownloadDialog.svelte";
+  import FollowedDownloadDialog from "./FollowedDownloadDialog.svelte";
 
   interface Props {
     client: WdmClient;
@@ -48,7 +52,8 @@
 
   const confirming = $derived(app.waiting[0]);
   const offering = $derived(confirming ? undefined : app.offers[0]);
-  const empty = $derived(app.loaded && confirming === undefined && offering === undefined);
+  const following = $derived(confirming || offering ? undefined : app.following);
+  const empty = $derived(app.loaded && confirming === undefined && offering === undefined && following === undefined);
 
   // Nothing left to ask: close the window (after a moment, in case the next one is on its way).
   $effect(() => {
@@ -77,6 +82,10 @@
   {:else if offering}
     {#key offering.id}
       <AddDownloadDialog initialUrl={offering.url} onclose={() => app.doneWithOffer(offering.id)} />
+    {/key}
+  {:else if following}
+    {#key following.id}
+      <FollowedDownloadDialog download={following} />
     {/key}
   {:else if empty}
     <p class="empty" role="status">{i18n.t("prompt.empty")}</p>

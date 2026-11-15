@@ -106,8 +106,14 @@
     busy = kind;
     error = undefined;
     try {
-      if (kind === "cancel") await app.cancelWaiting(download.id);
-      else await app.confirmDownload(answer(kind === "start"));
+      // Taken first: the dialog goes away (and its props with it) once the answer is in.
+      const id = download.id;
+      if (kind === "cancel") await app.cancelWaiting(id);
+      else {
+        await app.confirmDownload(answer(kind === "start"));
+        // The prompt window stays with it: its progress, then "Download complete".
+        if (kind === "start") app.follow(id);
+      }
     } catch (e) {
       error = t("confirm.failed", { message: app.describe(e) });
     } finally {

@@ -11,6 +11,7 @@ import App from "../src/components/App.svelte";
 import PromptApp from "../src/components/PromptApp.svelte";
 import type { Host } from "../src/lib/host.ts";
 import type { AppState } from "../src/lib/state/app.svelte.ts";
+import { readFollowed, writeFollowed } from "../src/lib/state/followed.ts";
 
 let closeClient: (() => void) | undefined;
 
@@ -121,7 +122,17 @@ describe("the prompt window", { timeout: 30_000 }, () => {
     expect(closePrompt).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Download" }));
 
-    // Nothing left: the window closes, and the main window was never asked for.
+    // The window stays with what it started (IDM's progress window), the browser download first.
+    dialog = await screen.findByRole("dialog", { name: "Downloading" });
+    expect(within(dialog).getByText("report-2026.pdf")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(closePrompt).not.toHaveBeenCalled();
+    await user.click(hide(dialog));
+    await waitFor(() => expect(screen.queryByText("report-2026.pdf")).not.toBeInTheDocument());
+    dialog = await screen.findByRole("dialog", { name: "Downloading" });
+    await user.click(hide(dialog));
+
+    // Nothing left to show: the window closes, and the main window was never asked for.
     await waitFor(() => expect(closePrompt).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(showWindow).not.toHaveBeenCalled();
@@ -144,4 +155,76 @@ describe("the prompt window", { timeout: 30_000 }, () => {
     await user.keyboard("{Escape}");
     await waitFor(() => expect(closePrompt).toHaveBeenCalledTimes(2));
   });
+
+  it("says when a followed download is complete, also after it was hidden", async () => {
+    const m = mock();
+    const { id } = await m.call("download.add", { url: "https://cdn.example.com/files/report-2026.pdf", fromBrowser: true });
+    const storage = memoryStorage();
+    const closePrompt = vi.fn(() => Promise.resolve());
+    const openDownload = vi.fn((_id: string, _reveal: boolean) => Promise.resolve());
+    const user = userEvent.setup();
+    render(PromptApp, { props: { client: m, mode: "mock", storage, locale: "en", host: { closePrompt, openDownload }, closeDelayMs: 0 } });
+
+    let dialog = await screen.findByRole("dialog", { name: "New download from your browser" });
+    await user.click(within(dialog).getByRole("button", { name: "Start download" }));
+    dialog = await screen.findByRole("dialog", { name: "Downloading" });
+    await user.click(hide(dialog));
+    await waitFor(() => expect(closePrompt).toHaveBeenCalledTimes(1));
+    // The main window reads this to bring the prompt window back.
+    expect(readFollowed(storage)).toEqual([{ id, hidden: true }]);
+
+    await act(async () => {
+      for (let i = 0; i < 2000 && m.snapshot().find((d) => d.id === id)?.state !== "completed"; i++) m.advance(5_000);
+    });
+    dialog = await screen.findByRole("dialog", { name: "Download complete" });
+    expect(within(dialog).getByText("report-2026.pdf")).toBeInTheDocument();
+    expect(within(dialog).getByText("Time taken")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Open folder" }));
+    expect(openDownload).toHaveBeenCalledWith(id, true);
+    await waitFor(() => expect(closePrompt).toHaveBeenCalledTimes(2));
+    expect(readFollowed(storage)).toEqual([]);
+  });
 });
+
+describe("the main window, for a download the prompt window follows", () => {
+  it("brings the prompt window back when it ends", async () => {
+    const m = mock();
+    const { id } = await m.call("download.add", { url: "https://cdn.example.com/files/other.zip" });
+    const other = await m.call("download.add", { url: "https://cdn.example.com/files/not-followed.zip" });
+    const storage = memoryStorage();
+    writeFollowed(storage, [{ id, hidden: true }]);
+    const openPrompt = vi.fn(() => Promise.resolve());
+    render(App, { props: { client: m, mode: "mock", storage, locale: "en", host: { openPrompt } } });
+    await screen.findByRole("grid");
+    await act(async () => {
+      for (let i = 0; i < 2000 && m.snapshot().find((d) => d.id === id)?.state !== "completed"; i++) m.advance(5_000);
+    });
+    await waitFor(() => expect(openPrompt).toHaveBeenCalledTimes(1));
+    // Only the followed one: the other ending later does not.
+    await act(async () => {
+      for (let i = 0; i < 2000 && m.snapshot().find((d) => d.id === other.id)?.state !== "completed"; i++) m.advance(5_000);
+    });
+    expect(m.snapshot().find((d) => d.id === other.id)?.state).toBe("completed");
+    expect(openPrompt).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** The footer's Hide (the close button in the corner says Hide too). */
+function hide(dialog: HTMLElement): HTMLElement {
+  const all = within(dialog).getAllByRole("button", { name: "Hide" });
+  return all[all.length - 1]!;
+}
+
+function memoryStorage(): Storage {
+  const map = new Map<string, string>();
+  return {
+    get length() {
+      return map.size;
+    },
+    clear: () => map.clear(),
+    getItem: (k) => map.get(k) ?? null,
+    key: (i) => [...map.keys()][i] ?? null,
+    removeItem: (k) => void map.delete(k),
+    setItem: (k, v) => void map.set(k, String(v)),
+  };
+}

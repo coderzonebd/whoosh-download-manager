@@ -100,6 +100,16 @@ export interface Host {
    * download link found there. Undefined when there is none.
    */
   readClipboard?: () => Promise<string | undefined>;
+  /**
+   * Open a completed download's file, or (`reveal`) show it in its folder (desktop app). The
+   * shell asks the daemon where the file is: the UI names the download, never a path.
+   */
+  openDownload?: (id: string, reveal: boolean) => Promise<void>;
+  /**
+   * The downloads the prompt window follows, for the shell: it brings the prompt window back
+   * when one ends, also while the main window sleeps in the tray (desktop app).
+   */
+  setFollowed?: (ids: string[]) => Promise<void>;
   /** Signed in-app updates (desktop app). */
   updates?: {
     /** undefined when this is the newest version. */
