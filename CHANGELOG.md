@@ -53,6 +53,7 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - No shell, no config files, no browser cookies unless the extension passed one for the page, no DRM circumvention.
 
 ### Desktop app
+- Fixed: launch at login kept the path of the program it was set up with, so after the update that renamed `whoosh-desktop` to `wdm-desktop` it pointed at nothing. While it is on, every start now writes it again with the current path.
 - Fixed: *Start download* / *Download later* in the browser-download confirmation failed with "download.confirm is not supported by this daemon": the media layer the daemon serves the engine through did not pass `download.confirm` on. And a long host or file name no longer widens the confirmation and add dialogs past their edge (it truncates).
 - Fixed: the segment map of a large finished download showed only its first few blocks filled (float steps of the block size drifted and stopped the loop; each block now takes its own overlap). Seen on a 689 MB video.
 - Video and audio downloads (yt-dlp) also show *Time taken* and *Average speed*: the time each run spends preparing, downloading and finishing is added up, pauses excluded.
