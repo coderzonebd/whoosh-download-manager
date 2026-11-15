@@ -17,7 +17,7 @@ import {
 } from "../shared/messages";
 import { blockedByStorePolicy } from "../shared/policy";
 import { loadSettings, normalizeSettings, SETTINGS_KEY, updateSettings, type Settings } from "../shared/settings";
-import { hostMatches, hostOf, isHttpUrl, isSiteExcluded, normalizeSitePattern } from "../shared/url";
+import { frameUrl, hostMatches, hostOf, isHttpUrl, isSiteExcluded, normalizeSitePattern } from "../shared/url";
 import { NativeMessagingTransport, type NativePort } from "../transport/native";
 import { isUnavailable } from "../transport/rpc";
 import { canHoldDownloads, downloadControl, getApi, isFirefox, toCandidate } from "./browser";
@@ -438,9 +438,10 @@ api.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 
   const content = asContentMessage(message);
   if (content?.type === "wdm/offer-video") {
-    // The frame the button was clicked in, as the browser reports it, wins over what the page says.
+    // The frame the button was clicked in: its origin as the browser reports it, its current
+    // address (single-page sites change it without reloading) as the page says.
     const tabUrl = sender.tab?.url;
-    void offerPage(offerDeps, { url: sender.url ?? content.url, title: content.title, tabUrl, fromButton: true }).then(sendResponse);
+    void offerPage(offerDeps, { url: frameUrl(sender.url, content.url) ?? content.url, title: content.title, tabUrl, fromButton: true }).then(sendResponse);
     return true;
   }
   if (content) {
