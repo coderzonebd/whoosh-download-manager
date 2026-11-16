@@ -4,6 +4,11 @@
 // no app, extension or package export includes it.
 //
 //   ?client=mock (default)  the mock daemon. ?lang=bn  ?theme=light|dark
+//   ?data=worst|empty|one|bulk  the mock's downloads: the realistic worst case
+//                           for every value shown, none, exactly one, or 1 000
+//                           more rows (default: the demo set). With ?data or
+//                           ?toggle=on a Demo / Worst case switch at the bottom
+//                           flips it (test page only).
 //   ?view=prompt            the desktop app's prompt window (PromptApp), which
 //                           stays open when nothing is left (no shell to close it).
 //   ?client=live            a real wdm-daemon. The suite injects the
@@ -36,8 +41,11 @@ function client(): WdmClient {
     return connectWs({ url: conn.url, token: conn.token, client: { name: "e2e", version: "0.0.0" } });
   }
   const theme = q.get("theme");
+  const data = q.get("data");
   return createMockClient({
     autoTick: false,
+    scenario: data === "worst" || data === "empty" || data === "one" ? data : "demo",
+    ...(data === "bulk" ? { bulk: 1000 } : {}),
     settings: {
       language: q.get("lang") ?? "en",
       ...(theme === "light" || theme === "dark" ? { theme } : {}),
@@ -95,3 +103,36 @@ const props = {
 };
 if (q.get("view") === "prompt") mount(PromptApp, { target, props });
 else mount(App, { target, props });
+
+// The data switch: plain chrome, not part of the design under test.
+// Only when asked for (?data=… or ?toggle=on): the suites check the page as the app is, without it.
+if (!live && q.get("toggle") !== "off" && (q.has("data") || q.get("toggle") === "on")) {
+  const states = [
+    ["demo", "Demo data"],
+    ["worst", "Worst case"],
+    ["empty", "Empty"],
+    ["one", "One"],
+    ["bulk", "1,000 rows"],
+  ] as const;
+  const current = q.get("data") ?? "demo";
+  const bar = document.createElement("div");
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", "Test data");
+  bar.style.cssText =
+    "position:fixed;inset-block-end:12px;inset-inline-start:50%;translate:-50% 0;z-index:2147483647;display:flex;gap:2px;padding:3px;border-radius:999px;background:#d4d4d8;font:12px system-ui,sans-serif;box-shadow:0 1px 3px rgb(0 0 0/.25)";
+  for (const [value, label] of states) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.setAttribute("aria-pressed", String(value === current));
+    b.style.cssText = `border:0;border-radius:999px;padding:4px 10px;cursor:pointer;color:#18181b;background:${value === current ? "#fff" : "transparent"}`;
+    b.addEventListener("click", () => {
+      const next = new URLSearchParams(location.search);
+      if (value === "demo") next.delete("data");
+      else next.set("data", value);
+      location.search = next.toString();
+    });
+    bar.append(b);
+  }
+  document.body.append(bar);
+}

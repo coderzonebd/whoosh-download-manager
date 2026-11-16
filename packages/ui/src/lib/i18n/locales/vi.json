@@ -133,6 +133,7 @@
     "ms": "{{m}} phút {{s}} giây",
     "hm": "{{h}} giờ {{m}} phút",
     "dh": "{{d}} ngày {{h}} giờ",
+    "d": "{{d}} ngày",
     "left": "còn {{eta}}"
   },
   "progress": {
@@ -234,7 +235,9 @@
     "complete": "Đã tải xong",
     "failed": "Tải xuống thất bại",
     "hide": "Ẩn",
+    "cancelAgain": "Nhấn lần nữa để hủy",
     "hint": "Nếu bạn ẩn cửa sổ này, việc tải vẫn tiếp tục ở chế độ nền và cửa sổ sẽ hiện lại khi tải xong.",
+    "waiting": "Đang chờ máy chủ… WDM sẽ tự thử lại.",
     "open": "Mở",
     "openFolder": "Mở thư mục"
   },

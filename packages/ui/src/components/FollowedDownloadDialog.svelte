@@ -30,6 +30,9 @@
   const d = $derived(download.data);
   const ended = $derived(ENDED.has(d.state));
   const moving = $derived(d.state === "downloading");
+  // Downloading with no connection open: waiting out a retry or the server (a stall at 99%).
+  // Said plainly, instead of a "Downloading" that sits at 0 B/s.
+  const waiting = $derived(moving && d.connections === 0);
   const canOpen = $derived(d.state === "completed" && app.host.openDownload !== undefined);
   const title = $derived(d.state === "completed" ? t("follow.complete") : d.state === "failed" ? t("follow.failed") : t("follow.title"));
 
@@ -38,6 +41,33 @@
     if (ended) app.unfollow(download.id);
     else app.hideFollowed(download.id);
   }
+
+  // Cancel takes two clicks: the first only arms it, so a stray click never throws away a
+  // nearly finished download. It disarms after a few seconds.
+  let cancelArmed = $state(false);
+  let cancelling = $state(false);
+  let disarm: ReturnType<typeof setTimeout> | undefined;
+  async function cancel(): Promise<void> {
+    if (!cancelArmed) {
+      cancelArmed = true;
+      clearTimeout(disarm);
+      disarm = setTimeout(() => (cancelArmed = false), 4000);
+      return;
+    }
+    clearTimeout(disarm);
+    cancelling = true;
+    const id = download.id;
+    try {
+      // Removes the download and its partial file; the removed event forgets it here.
+      await app.cancelWaiting(id);
+      app.unfollow(id);
+    } catch (e) {
+      app.report(e);
+      cancelling = false;
+      cancelArmed = false;
+    }
+  }
+  $effect(() => () => clearTimeout(disarm));
 
   function open(reveal: boolean): void {
     app.openFile(download.id, reveal);
@@ -61,14 +91,18 @@
         <p class="vy-num">{i18n.progress(d.downloadedBytes, d.totalBytes)}</p>
       </section>
       <dl class="facts">
-        <div><dt>{t("detail.speed")}</dt><dd class="vy-num">{moving ? i18n.speed(d.speedBps) : "—"}</dd></div>
-        <div><dt>{t("detail.eta")}</dt><dd class="vy-num">{moving ? i18n.eta(d.etaSecs) : "—"}</dd></div>
+        <div><dt>{t("detail.speed")}</dt><dd class="vy-num">{moving && !waiting ? i18n.speed(d.speedBps) : "—"}</dd></div>
+        <div><dt>{t("detail.eta")}</dt><dd class="vy-num">{moving && !waiting ? i18n.eta(d.etaSecs) : "—"}</dd></div>
         <div><dt>{t("detail.connections")}</dt><dd class="vy-num">{moving ? i18n.number(d.connections) : "—"}</dd></div>
         <div><dt>{t("detail.size")}</dt><dd class="vy-num">{i18n.bytes(d.totalBytes)}</dd></div>
       </dl>
-      <p class="hint">{t("follow.hint")}</p>
+      {#if waiting}
+        <p class="hint waiting" role="status"><span class="vy-spinner" aria-hidden="true"></span>{t("follow.waiting")}</p>
+      {:else}
+        <p class="hint">{t("follow.hint")}</p>
+      {/if}
     {:else if d.state === "completed"}
-      <dl class="facts">
+      <dl class="facts outcome">
         <div><dt>{t("detail.size")}</dt><dd class="vy-num">{i18n.bytes(d.totalBytes ?? d.downloadedBytes)}</dd></div>
         {#if d.activeMs !== undefined}
           <div><dt>{t("detail.timeTaken")}</dt><dd class="vy-num">{i18n.eta(Math.max(1, Math.round(d.activeMs / 1000)))}</dd></div>
@@ -76,7 +110,7 @@
         <div class="wide"><dt>{t("detail.savedTo")}</dt><dd class="path" dir="auto">{d.directory}/{d.filename}</dd></div>
       </dl>
     {:else}
-      <div class="problem" role="alert">
+      <div class="problem outcome" role="alert">
         <Icon name="alert" size={16} />
         <p>{d.error?.message ?? t("follow.failed")}</p>
       </div>
@@ -85,6 +119,15 @@
 
   {#snippet footer()}
     {#if !ended}
+      <button
+        type="button"
+        class="vy-btn cancel {cancelArmed ? 'vy-btn--danger' : 'vy-btn--secondary'}"
+        disabled={cancelling}
+        aria-live="polite"
+        onclick={cancel}
+      >
+        {cancelArmed ? t("follow.cancelAgain") : t("action.cancel")}
+      </button>
       {#if PAUSABLE.has(d.state)}
         <button type="button" class="vy-btn vy-btn--secondary" onclick={() => app.pause([download.id])}><Icon name="pause" size={15} />{t("action.pause")}</button>
       {:else if RESUMABLE.has(d.state)}
@@ -164,6 +207,30 @@
   .path {
     overflow-wrap: anywhere;
   }
+  .waiting {
+    display: flex;
+    align-items: center;
+    gap: var(--vy-space-2);
+    color: var(--vy-color-warning-text);
+  }
+  /* How it ended arrives rather than appears: a short rise and fade from where the progress was. */
+  .outcome {
+    transition:
+      opacity 220ms var(--vy-ease-out),
+      translate 220ms var(--vy-ease-out);
+  }
+  @starting-style {
+    .outcome {
+      opacity: 0;
+      translate: 0 6px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .outcome {
+      transition: opacity 160ms ease;
+      translate: none;
+    }
+  }
   .hint {
     margin: 0;
     color: var(--vy-color-text-muted);
@@ -177,6 +244,9 @@
     border-radius: var(--vy-radius-md);
     background: var(--vy-color-danger-subtle);
     color: var(--vy-color-danger-text);
+  }
+  .cancel {
+    margin-inline-end: auto;
   }
   .problem p {
     margin: 0;

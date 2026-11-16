@@ -246,7 +246,13 @@
     color: var(--vy-color-text-muted);
     font-size: var(--vy-font-size-sm);
   }
+  /* Size and date stay whole ("412 MB" never splits); the folder takes what is left. */
+  .facts > .vy-num {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
   .dir {
+    flex: 1 1 auto;
     min-inline-size: 0;
     color: var(--vy-color-text-subtle);
   }

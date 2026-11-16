@@ -282,7 +282,7 @@
         <div class="folder-row">
           <div class="with-icon">
             <Icon name="folder" size={15} />
-            <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
+            <input id="vy-add-dir" class="vy-input" bind:value={directory} />
           </div>
           {#if app.host.pickFolder}
             <button type="button" class="vy-btn vy-btn--secondary" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
@@ -322,7 +322,7 @@
           <div class="folder-row">
             <div class="with-icon">
               <Icon name="folder" size={15} />
-              <input id="vy-add-dir" class="vy-input" dir="auto" bind:value={directory} />
+              <input id="vy-add-dir" class="vy-input" bind:value={directory} />
             </div>
             {#if app.host.pickFolder}
               <button type="button" class="vy-btn vy-btn--secondary" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
@@ -456,7 +456,11 @@
     inset-inline-start: var(--vy-space-2-5);
     pointer-events: none;
   }
+  /* The input keeps the page's direction, so the icon and the room for it sit on the same side
+     (a dir="auto" input showing a Latin path in an RTL page put the room on the other side);
+     the path itself still reads in its own direction. */
   .with-icon input {
+    unicode-bidi: plaintext;
     padding-inline-start: var(--vy-space-8);
     color: var(--vy-color-text);
   }

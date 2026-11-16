@@ -51,7 +51,7 @@
   <header class="head">
     <FileIcon category={download.category} size="lg" />
     <div class="title">
-      <h2 id="vy-detail-title" dir="auto">{d.filename}</h2>
+      <h2 id="vy-detail-title" dir="auto" title={d.filename}>{d.filename}</h2>
       <StatusBadge state={d.state} variant="pill" step={d.media?.step} />
     </div>
     <button class="vy-btn vy-btn--icon vy-btn--sm" aria-label={t("detail.close")} title={t("detail.close")} onclick={() => (prefs.detailOpen = false)}>
@@ -72,6 +72,10 @@
           <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.resume([download.id])}>
             <Icon name={d.state === "failed" ? "refresh" : "play"} size={14} />{t(d.state === "failed" ? "action.retry" : "action.resume")}
           </button>
+        {/if}
+        {#if d.state === "completed" && app.host.openDownload}
+          <button class="vy-btn vy-btn--primary vy-btn--sm" onclick={() => app.openFile(download.id, false)}>{t("follow.open")}</button>
+          <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.openFile(download.id, true)}><Icon name="folder" size={14} />{t("follow.openFolder")}</button>
         {/if}
         <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.requestRemove([download.id])}><Icon name="trash" size={14} />{t("action.remove")}</button>
       </div>
@@ -207,6 +211,12 @@
     font-weight: var(--vy-font-weight-semibold);
     line-height: var(--vy-line-height-tight);
     overflow-wrap: anywhere;
+    /* A 255-byte name would take the whole panel: three lines, the rest under "Saved to". */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .scroll {
     flex: 1;

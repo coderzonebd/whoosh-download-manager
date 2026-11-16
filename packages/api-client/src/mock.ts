@@ -46,8 +46,11 @@ export interface MockClientOptions {
   tickMs?: number;
   /** Run the simulation on a timer (default true). Set false and call `advance()` in tests. */
   autoTick?: boolean;
-  /** Initial downloads: a realistic demo set, or nothing. Default "demo". */
-  scenario?: "demo" | "empty";
+  /**
+   * Initial downloads: a realistic demo set, nothing, exactly one, or the realistic worst case
+   * for every value the UI shows (`WORST`: longest names, scripts, sizes, errors). Default "demo".
+   */
+  scenario?: "demo" | "empty" | "one" | "worst";
   /** Extra synthetic downloads appended to the scenario (for 10 000-row stress tests). */
   bulk?: number;
   /** Simulated round-trip latency for every call, in ms (default 0). Probes take 6× longer. */
@@ -73,6 +76,7 @@ export const MOCK_DAEMON_VERSION = "0.0.0-mock";
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
+const TB = 1024 * GB;
 const PROGRESS_MIN_INTERVAL_MS = 250; // ≤ 4 Hz
 const STATS_INTERVAL_MS = 1000;
 const PROBE_MS = 700;
@@ -234,6 +238,10 @@ interface Seed {
   failAt?: number;
   expireAt?: number;
   error?: { code: string; message: string };
+  /** Saved somewhere else than the default folder. */
+  directory?: string;
+  /** Caught in a browser and waiting for the user (paused, `awaitingConfirmation`). */
+  awaiting?: boolean;
 }
 
 const DEMO: Seed[] = [
@@ -257,6 +265,60 @@ const DEMO: Seed[] = [
     url: "https://mirror.example.net/old/fedora-workstation-41.iso", size: 2.2 * GB, state: "failed", fraction: 0.48, ageMin: 60 * 30,
     error: { code: "http_404", message: "The server says this file no longer exists (HTTP 404)." },
   },
+];
+
+/**
+ * The realistic worst case for every value the UI shows: what real downloads produce, or the
+ * limit the system allows (a file name is at most 255 bytes on Linux, macOS and Windows).
+ * Different failures sit in different rows, as real data does, the first rows on screen first.
+ */
+const WORST_DIR = "/home/aleksandra.wisniewska-kowalczyk/Documents/Projekty 2026/Northwind Industries Holdings/Q4 Raporty i Analizy/Surowe dane z ankiet";
+const WORST: Seed[] = [
+  {
+    // 230 bytes: a conference paper exactly as the site names it.
+    url: "https://proceedings.example.org/2026/Proceedings-of-the-2026-International-Conference-on-Distributed-Computing-and-Networking-ICDCN-Volume-2-Full-Papers-Camera-Ready-Version-Final-Revised-Edition-With-Supplementary-Materials-and-Appendix-Part-03-of-07-Author-Copy.pdf",
+    size: 48.6 * MB, state: "downloading", fraction: 0.53, bps: 3.1 * MB, connections: 16, ageMin: 4, directory: WORST_DIR,
+  },
+  {
+    url: "https://archive.example.org/bn/%E0%A6%B0%E0%A6%AC%E0%A7%80%E0%A6%A8%E0%A7%8D%E0%A6%A6%E0%A7%8D%E0%A6%B0%E0%A6%B8%E0%A6%99%E0%A7%8D%E0%A6%97%E0%A7%80%E0%A6%A4.zip",
+    filename: "রবীন্দ্রসঙ্গীত-সংকলন-গীতবিতান-সম্পূর্ণ-খণ্ড-১-থেকে-৪-উচ্চমানের-রেকর্ডিং-২০২৬.zip",
+    size: 3.4 * GB, state: "downloading", fraction: 0.08, bps: 37, connections: 1, ageMin: 7,
+  },
+  {
+    // A content hash: no break opportunity anywhere.
+    url: "https://ci.example.dev/artifacts/a3f5c9e2b7d1408f9e6c2a5b8d3f7e1c4a9b6d2e8f5c1a7b3d9e4f6c2a8b5d1e7f3c9a6b2d8e4f1.tar.zst",
+    size: 1.2 * TB, state: "downloading", fraction: 0.004, bps: 1.1 * GB, connections: 32, ageMin: 1,
+  },
+  { url: "https://x.example.com/a", state: "downloading", bps: 2.2 * MB, connections: 1, resumable: false, ageMin: 2 },
+  {
+    url: "https://media.example.sa/lectures/%D8%AA%D8%B3%D8%AC%D9%8A%D9%84.mp4",
+    filename: "تسجيل-محاضرة-الذكاء-الاصطناعي-الجزء-الثالث-Lecture-03-AI.mp4",
+    size: 1.8 * GB, state: "paused", fraction: 0.71, ageMin: 180,
+  },
+  {
+    url: "https://software.download.example.com/dbazure/Windows11_Client_x64_en-us_26300_9457.iso?t=2b1c6a1e-8f2d-4d7c-9e3a-5b6f7a8c9d0e&P1=1794913767&P2=601&P3=2&P4=Xk9vW2qL7mN3pR8sT1uV4wY6zA0bC5dE7fG9hJ2kL4mN6pQ8rS0tU3vW5xY7zA9bC1dE3fG5hJ7kL9mN1pQ3rS5tU7vW9xY%3d",
+    size: 8.43 * GB, state: "needs_refresh", fraction: 0.994, ageMin: 30,
+    error: { code: "link_expired", message: "The link has expired or the server refused it (HTTP 403 Forbidden). Open the page in your browser again to get a fresh link." },
+  },
+  {
+    url: "https://mirror.example.net/linux/fedora/releases/45/Workstation/x86_64/iso/Fedora-Workstation-Live-x86_64-45-1.6.iso",
+    size: 2.4 * GB, state: "failed", fraction: 0.48, ageMin: 60 * 3,
+    error: {
+      code: "network",
+      message: "The server closed the connection before sending the whole file (TLS: received fatal alert: decode_error). WDM tried again 10 times over 5 minutes without getting any more data.",
+    },
+  },
+  { url: "https://example.com/README", size: 1, state: "completed", ageMin: 60 * 2, activeMs: 3 },
+  { url: "https://example.com/empty.txt", size: 0, state: "completed", ageMin: 60 * 4, activeMs: 0 },
+  {
+    url: "https://cdn.example.com/files/Northwind-Industries-Holdings-Annual-Report-2025-Consolidated-Financial-Statements.pdf",
+    size: 412 * MB, state: "completed", ageMin: 60 * 24 * 400, activeMs: 9 * 3600 * 1000 + 41 * 60 * 1000, directory: WORST_DIR,
+  },
+  {
+    url: "https://cdn.example.com/files/setup-very-long-product-name-enterprise-edition-x64-installer.exe",
+    size: 96 * MB, state: "paused", fraction: 0.3, ageMin: 2, awaiting: true, directory: WORST_DIR,
+  },
+  { url: "https://downloads.example.org/q.iso", size: 700 * MB, state: "queued", ageMin: 1 },
 ];
 
 const BULK_NAMES = [
@@ -393,7 +455,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
       id,
       url: seed.url,
       filename,
-      directory: settings.defaultDirectory,
+      directory: seed.directory ?? settings.defaultDirectory,
       state: seed.state,
       downloadedBytes: 0,
       speedBps: 0,
@@ -420,6 +482,7 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
       else d.activeMs = 0;
     }
     if (seed.error) d.error = seed.error;
+    if (seed.awaiting) d.awaitingConfirmation = true;
     const sim: Sim = {
       d,
       baseBps: seed.bps ?? (1.5 + rng() * 12) * MB,
@@ -1103,8 +1166,14 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
   // ---------------------------------------------------------------- seed data
 
   const t0 = wallNow();
-  if ((options.scenario ?? "demo") === "demo") {
+  const scenario = options.scenario ?? "demo";
+  if (scenario === "demo") {
     for (const seed of DEMO) addSim(seed, t0 - seed.ageMin * 60_000);
+  } else if (scenario === "one") {
+    const only = DEMO[0];
+    if (only) addSim(only, t0 - only.ageMin * 60_000);
+  } else if (scenario === "worst") {
+    for (const seed of WORST) addSim(seed, t0 - seed.ageMin * 60_000);
   }
   for (let i = 0; i < (options.bulk ?? 0); i++) {
     const [stem, ext] = BULK_NAMES[i % BULK_NAMES.length] ?? ["file", "bin"];

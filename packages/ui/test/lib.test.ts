@@ -33,6 +33,8 @@ describe("format", () => {
     expect(etaTemplate(1800)).toBe("eta.m");
     expect(etaTemplate(7200)).toBe("eta.hm");
     expect(etaTemplate(200_000)).toBe("eta.dh");
+    expect(etaTemplate(10 * 86_400)).toBe("eta.d");
+    expect(etaTemplate(92_620_000)).toBe("eta.d");
   });
 
   it("interpolates placeholders and leaves unknown ones", () => {

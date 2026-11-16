@@ -186,6 +186,27 @@ describe("the prompt window", { timeout: 30_000 }, () => {
   });
 });
 
+describe("cancelling from the prompt window", { timeout: 30_000 }, () => {
+  it("takes two clicks, then removes the download and closes", async () => {
+    const m = mock();
+    const { id } = await m.call("download.add", { url: "https://cdn.example.com/files/report-2026.pdf", fromBrowser: true });
+    const closePrompt = vi.fn(() => Promise.resolve());
+    const user = userEvent.setup();
+    render(PromptApp, { props: { client: m, mode: "mock", storage: memoryStorage(), locale: "en", host: { closePrompt }, closeDelayMs: 0 } });
+    let dialog = await screen.findByRole("dialog", { name: "New download from your browser" });
+    await user.click(within(dialog).getByRole("button", { name: "Start download" }));
+    dialog = await screen.findByRole("dialog", { name: "Downloading" });
+
+    // The first click only arms it.
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(m.snapshot().some((d) => d.id === id)).toBe(true);
+    await user.click(within(dialog).getByRole("button", { name: "Click again to cancel" }));
+
+    await waitFor(() => expect(m.snapshot().some((d) => d.id === id)).toBe(false));
+    await waitFor(() => expect(closePrompt).toHaveBeenCalled());
+  });
+});
+
 describe("the main window, for a download the prompt window follows", () => {
   it("brings the prompt window back when it ends", async () => {
     const m = mock();

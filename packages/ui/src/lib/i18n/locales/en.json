@@ -137,6 +137,7 @@
     "ms": "{{m}}m {{s}}s",
     "hm": "{{h}}h {{m}}m",
     "dh": "{{d}}d {{h}}h",
+    "d": "{{d}}d",
     "left": "{{eta}} left"
   },
   "progress": {
@@ -239,7 +240,9 @@
     "complete": "Download complete",
     "failed": "Download failed",
     "hide": "Hide",
+    "cancelAgain": "Click again to cancel",
     "hint": "It goes on in the background if you hide this window, which comes back when the download ends.",
+    "waiting": "Waiting for the server… WDM tries again by itself.",
     "open": "Open",
     "openFolder": "Open folder"
   },

@@ -137,6 +137,7 @@
     "ms": "{{m}} dk {{s}} sn",
     "hm": "{{h}} sa {{m}} dk",
     "dh": "{{d}} g {{h}} sa",
+    "d": "{{d}} g",
     "left": "{{eta}} kaldı"
   },
   "progress": {
@@ -239,7 +240,9 @@
     "complete": "İndirme tamamlandı",
     "failed": "İndirme başarısız oldu",
     "hide": "Gizle",
+    "cancelAgain": "İptal için tekrar tıklayın",
     "hint": "Bu pencereyi gizlerseniz indirme arka planda sürer; bittiğinde pencere yeniden açılır.",
+    "waiting": "Sunucu bekleniyor… WDM kendisi yeniden deneyecek.",
     "open": "Aç",
     "openFolder": "Klasörü aç"
   },
