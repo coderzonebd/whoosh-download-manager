@@ -184,6 +184,7 @@ impl MediaService {
                 system: cfg.system_tools,
                 yt_dlp: cfg.yt_dlp.clone(),
                 ffmpeg: cfg.ffmpeg.clone(),
+                quickjs: None,
                 bundled: cfg.bundled_tools.clone(),
             },
             fetcher,
@@ -206,12 +207,24 @@ impl MediaService {
             st.live.insert(job.id.clone(), JobLive::default());
         }
         st.jobs = jobs;
+        let js = tokio::task::spawn_blocking(crate::js::find)
+            .await
+            .unwrap_or(None);
+        match &js {
+            Some(r) => {
+                tracing::info!(runtime = r.kind, path = %r.path.display(), "JavaScript runtime for yt-dlp")
+            }
+            None => tracing::info!(
+                "no JavaScript runtime on this computer: yt-dlp uses the managed QuickJS"
+            ),
+        }
         let shared = Arc::new(Shared {
             inner,
             tools,
             dirs: Dirs {
                 cache: cfg.dir.join("cache"),
                 tmp: cfg.dir.join("tmp"),
+                js,
             },
             dir: cfg.dir.clone(),
             state: Mutex::new(st),
@@ -647,6 +660,35 @@ fn failed(code: &'static str, message: impl Into<String>) -> Fail {
 }
 
 impl Shared {
+    /// yt-dlp's directories and JavaScript runtime for a run on `url`: the
+    /// computer's own runtime (found at start), else the managed QuickJS,
+    /// fetched (or copied from the installer) on the first YouTube page that
+    /// needs it. A failure only means fewer YouTube formats, never a failed run.
+    async fn run_dirs(&self, url: Option<&str>) -> Dirs {
+        let mut dirs = self.dirs.clone();
+        if dirs.js.is_some() {
+            return dirs;
+        }
+        let tool = match self.tools.get(Kind::QuickJs) {
+            Some(t) => Some(t),
+            None if url.is_some_and(crate::js::wants_runtime) => {
+                match self.tools.ensure(Kind::QuickJs).await {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "QuickJS unavailable: YouTube offers fewer formats");
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+        dirs.js = tool.map(|t| crate::js::JsRuntime {
+            kind: "quickjs",
+            path: t.program,
+        });
+        dirs
+    }
+
     fn emit(&self, n: Notification) {
         lock(&self.subs).retain(|tx| tx.unbounded_send(n.clone()).is_ok());
     }
@@ -752,7 +794,7 @@ impl Shared {
             return Ok(v.clone());
         }
         let v = Arc::new(
-            ytdlp::probe(tool, &self.dirs, url, request)
+            ytdlp::probe(tool, &self.run_dirs(Some(url)).await, url, request)
                 .await
                 .map_err(|e| failed("media_unavailable", e))?,
         );
@@ -905,9 +947,14 @@ impl Shared {
         let info = self.info(&yt, &job.url, request.as_ref(), false).await?;
         let info_path = self.write_info(id, &info).await?;
         let selector = info::selector(&job.choice).map_err(|e| failed("invalid", e))?;
-        let resolved = ytdlp::resolve(&yt, &self.dirs, &info_path, &selector)
-            .await
-            .map_err(|e| failed("format_unavailable", e))?;
+        let resolved = ytdlp::resolve(
+            &yt,
+            &self.run_dirs(Some(&job.url)).await,
+            &info_path,
+            &selector,
+        )
+        .await
+        .map_err(|e| failed("format_unavailable", e))?;
         let mut parts = info::parts_of(&resolved).map_err(|e| failed("format_unavailable", e))?;
         // Video first: ffmpeg maps video from the first input.
         parts.sort_by_key(|p| p.kind == MediaFormatKind::AudioOnly);
@@ -1063,7 +1110,8 @@ impl Shared {
         };
         let Some(stem) = job.stem.clone() else { return };
         let dir = PathBuf::from(&job.directory);
-        if let Err(e) = ytdlp::subtitles(yt, &self.dirs, info, &job.subtitles, &dir, &stem).await {
+        let dirs = self.run_dirs(Some(&job.url)).await;
+        if let Err(e) = ytdlp::subtitles(yt, &dirs, info, &job.subtitles, &dir, &stem).await {
             tracing::warn!(id, error = %e, "subtitles failed");
             return;
         }
@@ -1260,9 +1308,14 @@ impl Shared {
         let request = self.request(id);
         let info = self.info(&yt, &job.url, request.as_ref(), true).await?;
         let info_path = self.write_info(id, &info).await?;
-        let resolved = ytdlp::resolve(&yt, &self.dirs, &info_path, &job.selector)
-            .await
-            .map_err(|e| failed("format_unavailable", e))?;
+        let resolved = ytdlp::resolve(
+            &yt,
+            &self.run_dirs(Some(&job.url)).await,
+            &info_path,
+            &job.selector,
+        )
+        .await
+        .map_err(|e| failed("format_unavailable", e))?;
         let fresh = info::parts_of(&resolved).map_err(|e| failed("format_unavailable", e))?;
         for part in &job.parts {
             let Some(f) = fresh.iter().find(|f| f.format_id == part.format_id) else {
@@ -1456,7 +1509,8 @@ impl Shared {
             }
         };
         let req = request.as_ref().map(|r| (job.url.as_str(), r));
-        Ok(ytdlp::download(&yt, &self.dirs, &run, req, cancel, progress_sink).await)
+        let dirs = self.run_dirs(Some(&job.url)).await;
+        Ok(ytdlp::download(&yt, &dirs, &run, req, cancel, progress_sink).await)
     }
 
     fn fallback_progress(self: &Arc<Self>, id: &str, p: ytdlp::FallbackProgress) {

@@ -566,6 +566,11 @@ export interface MediaOfferParams {
   url: string;
   /** The page's title, a hint until the probe answers. */
   title?: string;
+  /**
+   * What the browser sends to the page (its cookies for the site, the user agent), for a video only
+   * a signed-in browser can see. Kept in the daemon's memory, never shown to the app's windows.
+   */
+  request?: RequestContext;
 }
 
 export interface MediaOfferResult {

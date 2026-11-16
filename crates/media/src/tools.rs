@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use wdm_proto::media::{TOOL_FFMPEG, TOOL_YT_DLP};
+use wdm_proto::media::{TOOL_FFMPEG, TOOL_QUICKJS, TOOL_YT_DLP};
 use wdm_proto::{MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus, UnixMillis};
 
 use crate::bundle::{self, Manifest};
@@ -41,15 +41,27 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 pub enum Kind {
     YtDlp,
     Ffmpeg,
+    /// The JavaScript runtime for YouTube ([`crate::js`]); used only when
+    /// the computer has none of its own.
+    QuickJs,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 2] = [Kind::YtDlp, Kind::Ffmpeg];
+    pub const ALL: [Kind; 3] = [Kind::YtDlp, Kind::Ffmpeg, Kind::QuickJs];
 
     pub fn name(self) -> &'static str {
         match self {
             Kind::YtDlp => TOOL_YT_DLP,
             Kind::Ffmpeg => TOOL_FFMPEG,
+            Kind::QuickJs => TOOL_QUICKJS,
+        }
+    }
+
+    /// The program's name without `.exe` (`qjs` for QuickJS).
+    pub fn program(self) -> &'static str {
+        match self {
+            Kind::QuickJs => "qjs",
+            other => other.name(),
         }
     }
 
@@ -58,13 +70,14 @@ impl Kind {
     }
 
     fn file_name(self) -> String {
-        format!("{}{}", self.name(), std::env::consts::EXE_SUFFIX)
+        format!("{}{}", self.program(), std::env::consts::EXE_SUFFIX)
     }
 
     fn upstream(self) -> &'static str {
         match self {
             Kind::YtDlp => upstream::YT_DLP_UPSTREAM,
             Kind::Ffmpeg => upstream::ffmpeg_upstream(),
+            Kind::QuickJs => upstream::QUICKJS_UPSTREAM,
         }
     }
 
@@ -72,6 +85,7 @@ impl Kind {
         match self {
             Kind::YtDlp => upstream::YT_DLP_LICENSE,
             Kind::Ffmpeg => upstream::ffmpeg_license(),
+            Kind::QuickJs => upstream::QUICKJS_LICENSE,
         }
     }
 }
@@ -130,6 +144,7 @@ pub struct ToolsConfig {
     /// Use these instead of finding or fetching anything (tests).
     pub yt_dlp: Option<Tool>,
     pub ffmpeg: Option<Tool>,
+    pub quickjs: Option<Tool>,
     /// The tools shipped with the desktop app (a directory with
     /// [`bundle::MANIFEST`]), if any.
     pub bundled: Option<PathBuf>,
@@ -262,6 +277,7 @@ impl Tools {
         let fixed = match kind {
             Kind::YtDlp => &self.cfg.yt_dlp,
             Kind::Ffmpeg => &self.cfg.ffmpeg,
+            Kind::QuickJs => &self.cfg.quickjs,
         };
         if let Some(tool) = fixed {
             return Some(Found {
@@ -485,6 +501,7 @@ impl Tools {
         match kind {
             Kind::YtDlp => self.cfg.yt_dlp.is_some(),
             Kind::Ffmpeg => self.cfg.ffmpeg.is_some(),
+            Kind::QuickJs => self.cfg.quickjs.is_some(),
         }
     }
 
@@ -495,6 +512,9 @@ impl Tools {
             }
             Kind::Ffmpeg => {
                 upstream::latest_ffmpeg(self.fetcher.as_ref(), &self.cfg.upstreams).await
+            }
+            Kind::QuickJs => {
+                upstream::latest_quickjs(self.fetcher.as_ref(), &self.cfg.upstreams).await
             }
         }
     }
@@ -784,6 +804,9 @@ fn system_allowed(kind: Kind) -> bool {
     match kind {
         Kind::YtDlp => cfg!(target_os = "linux"),
         Kind::Ffmpeg => cfg!(any(target_os = "linux", target_os = "macos")),
+        // A runtime installed on the computer (Deno, Node.js) is found by
+        // crate::js instead; a system `qjs` may be another QuickJS.
+        Kind::QuickJs => false,
     }
 }
 
@@ -807,7 +830,7 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
 /// "ffmpeg version 9.0.2 Copyright …".
 async fn version_of(kind: Kind, tool: &Tool) -> Option<String> {
     let arg = match kind {
-        Kind::YtDlp => "--version",
+        Kind::YtDlp | Kind::QuickJs => "--version",
         Kind::Ffmpeg => "-version",
     };
     let out = process::run(
@@ -824,7 +847,8 @@ async fn version_of(kind: Kind, tool: &Tool) -> Option<String> {
     let text = String::from_utf8_lossy(&out.stdout);
     let first = text.lines().next()?.trim();
     let v = match kind {
-        Kind::YtDlp => first.to_owned(),
+        // `qjs --version` → `0.18.0`
+        Kind::YtDlp | Kind::QuickJs => first.to_owned(),
         Kind::Ffmpeg => first
             .strip_prefix("ffmpeg version ")?
             .split_whitespace()

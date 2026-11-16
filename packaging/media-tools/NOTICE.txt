@@ -1,7 +1,7 @@
 Third-party programs shipped with Whoosh Download Manager
 ========================================
 
-The Whoosh Download Manager desktop installers include two separate programs that WDM
+The Whoosh Download Manager desktop installers include three separate programs that WDM
 runs for video and audio sites. They are not part of Whoosh Download Manager, are not
 linked with it, and keep their own licences. Their versions, download
 addresses and checksums are listed in manifest.json next to them.
@@ -34,6 +34,18 @@ Licence:  GNU General Public License 3.0 or later, GPL-3.0.txt (the build
           includes GPL components such as x264)
 Source:   https://git.ffmpeg.org/ffmpeg.git at the version in manifest.json,
           built with the scripts at https://git.martin-riedl.de/ffmpeg/build-script
+
+QuickJS (qjs)
+-------------
+From:     https://github.com/quickjs-ng/quickjs/releases (the project's own
+          static builds; one per processor, joined into one universal
+          program on macOS), checked against the SHA-256 GitHub lists for
+          each release file
+Licence:  MIT, QuickJS-MIT.txt
+Source:   https://github.com/quickjs-ng/quickjs at the release tag named in
+          manifest.json
+Used:     only when the computer has no JavaScript runtime of its own (Deno,
+          Node.js, Bun), for yt-dlp to solve YouTube's challenges
 
 Written offer
 -------------

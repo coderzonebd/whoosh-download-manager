@@ -5,6 +5,7 @@
 //! | yt-dlp | all | `github.com/yt-dlp/yt-dlp` releases (the project's own standalone builds) | `SHA2-256SUMS` of the same release |
 //! | ffmpeg | Windows, Linux | `github.com/BtbN/FFmpeg-Builds` (linked from ffmpeg.org's download page), the **LGPL** static build of the newest release branch (`nX.Y`), else master | `checksums.sha256` of the same release |
 //! | ffmpeg | macOS | `ffmpeg.martin-riedl.de` release build (no LGPL macOS build exists upstream; this one is GPL, run as a separate program and never linked) | the `.sha256` file published next to it |
+//! | QuickJS (`qjs`) | all | `github.com/quickjs-ng/quickjs` releases (the project's own static builds; Windows on ARM runs the x86_64 one) | the asset's SHA-256 digest from GitHub's release API |
 //!
 //! Every file is checked against the upstream checksum before it is
 //! unpacked or made executable; a mismatch deletes it.
@@ -24,6 +25,8 @@ pub struct Upstreams {
     pub ffmpeg: String,
     /// `https://ffmpeg.martin-riedl.de/redirect/latest/macos`
     pub ffmpeg_macos: String,
+    /// `https://api.github.com/repos/quickjs-ng/quickjs/releases/latest`
+    pub quickjs: String,
 }
 
 impl Default for Upstreams {
@@ -32,6 +35,7 @@ impl Default for Upstreams {
             yt_dlp: "https://github.com/yt-dlp/yt-dlp/releases".into(),
             ffmpeg: "https://github.com/BtbN/FFmpeg-Builds/releases".into(),
             ffmpeg_macos: "https://ffmpeg.martin-riedl.de/redirect/latest/macos".into(),
+            quickjs: "https://api.github.com/repos/quickjs-ng/quickjs/releases/latest".into(),
         }
     }
 }
@@ -57,6 +61,8 @@ pub struct Asset {
 
 pub const YT_DLP_UPSTREAM: &str = "github.com/yt-dlp/yt-dlp";
 pub const YT_DLP_LICENSE: &str = "Unlicense";
+pub const QUICKJS_UPSTREAM: &str = "github.com/quickjs-ng/quickjs";
+pub const QUICKJS_LICENSE: &str = "MIT";
 
 /// An operating system and processor the tools are fetched for: this
 /// machine at run time, any release target when bundling them into an
@@ -308,6 +314,68 @@ pub async fn latest_ffmpeg_for(
     })
 }
 
+/// QuickJS-ng's static build for `p`. Windows on ARM runs the x86_64 one.
+pub fn quickjs_asset_name_for(p: Platform) -> Option<&'static str> {
+    Some(match (p.os, p.arch) {
+        ("linux", "x86_64") => "qjs-linux-x86_64",
+        ("linux", "aarch64") => "qjs-linux-aarch64",
+        ("macos", "x86_64") => "qjs-darwin-x86_64",
+        ("macos", "aarch64") => "qjs-darwin-arm64",
+        ("windows", "x86_64" | "aarch64") => "qjs-windows-x86_64.exe",
+        _ => return None,
+    })
+}
+
+/// From GitHub's "latest release" JSON: the version (tag without `v`), and
+/// the URL and SHA-256 of asset `name`.
+pub fn pick_github_asset(json: &str, name: &str) -> Result<(String, String, String), String> {
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("unreadable release information: {e}"))?;
+    let tag = v["tag_name"].as_str().unwrap_or_default();
+    let version = tag.strip_prefix('v').unwrap_or(tag);
+    if version.is_empty()
+        || version.len() > 32
+        || !version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+    {
+        return Err(format!("cannot tell the version from the tag {tag:?}"));
+    }
+    let asset = v["assets"]
+        .as_array()
+        .and_then(|a| a.iter().find(|x| x["name"].as_str() == Some(name)))
+        .ok_or_else(|| format!("{name} is not in release {tag}"))?;
+    let url = asset["browser_download_url"]
+        .as_str()
+        .filter(|u| u.starts_with("https://github.com/"))
+        .ok_or_else(|| format!("{name}: no download address"))?;
+    let sha = asset["digest"]
+        .as_str()
+        .and_then(|d| d.strip_prefix("sha256:"))
+        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| format!("{name}: GitHub lists no SHA-256 for it"))?;
+    Ok((version.to_owned(), url.to_owned(), sha.to_ascii_lowercase()))
+}
+
+/// The newest QuickJS for this platform.
+pub async fn latest_quickjs(fetcher: &dyn Fetcher, up: &Upstreams) -> Result<Asset, String> {
+    latest_quickjs_for(fetcher, up, Platform::current()).await
+}
+
+/// The newest QuickJS for `p`.
+pub async fn latest_quickjs_for(
+    fetcher: &dyn Fetcher,
+    up: &Upstreams,
+    p: Platform,
+) -> Result<Asset, String> {
+    let name = quickjs_asset_name_for(p).ok_or("QuickJS publishes no build for this platform")?;
+    let (version, url, sha256) = pick_github_asset(&fetcher.text(&up.quickjs).await?, name)?;
+    Ok(Asset {
+        url,
+        sha256,
+        version,
+        archive: Archive::Raw,
+    })
+}
+
 /// Whether `latest` is newer than `current`. yt-dlp versions are dates
 /// (`2026.10.26`, nightlies add a fourth number); ffmpeg's are
 /// `major.minor[.patch]`, possibly behind an `n` and with a suffix
@@ -455,5 +523,47 @@ mod tests {
         assert!(is_newer("9.0.3", "9.0.2"));
         assert!(!is_newer("master", "9.0"));
         assert!(is_newer("9.0", "N-128889-g88c46fce27"));
+    }
+
+    #[test]
+    fn quickjs_comes_from_githubs_release_digest() {
+        let json = r#"{"tag_name":"v0.18.0","assets":[
+            {"name":"qjs-linux-x86_64","browser_download_url":"https://github.com/quickjs-ng/quickjs/releases/download/v0.18.0/qjs-linux-x86_64",
+             "digest":"sha256:85DED23B9FABE8C1644FC40A8D2BBDD71157AFFCBD807359C618CC717EE24D7D"},
+            {"name":"qjs-darwin-arm64","browser_download_url":"https://github.com/x","digest":null}]}"#;
+        let (v, url, sha) = pick_github_asset(json, "qjs-linux-x86_64").unwrap();
+        assert_eq!(v, "0.18.0");
+        assert!(url.ends_with("/v0.18.0/qjs-linux-x86_64"));
+        assert_eq!(
+            sha,
+            "85ded23b9fabe8c1644fc40a8d2bbdd71157affcbd807359c618cc717ee24d7d"
+        );
+        // No digest: never installed unchecked.
+        assert!(pick_github_asset(json, "qjs-darwin-arm64").is_err());
+        assert!(pick_github_asset(json, "qjs-nope").is_err());
+        assert!(
+            pick_github_asset(r#"{"tag_name":"latest","assets":[]}"#, "qjs-linux-x86_64").is_err()
+        );
+    }
+
+    #[test]
+    fn quickjs_builds_per_platform() {
+        let p = |t| Platform::from_triple(t).unwrap();
+        assert_eq!(
+            quickjs_asset_name_for(p("x86_64-unknown-linux-gnu")),
+            Some("qjs-linux-x86_64")
+        );
+        assert_eq!(
+            quickjs_asset_name_for(p("aarch64-unknown-linux-gnu")),
+            Some("qjs-linux-aarch64")
+        );
+        assert_eq!(
+            quickjs_asset_name_for(p("aarch64-apple-darwin")),
+            Some("qjs-darwin-arm64")
+        );
+        assert_eq!(
+            quickjs_asset_name_for(p("aarch64-pc-windows-msvc")),
+            Some("qjs-windows-x86_64.exe")
+        );
     }
 }

@@ -63,6 +63,33 @@ describe("offering a page to the app", () => {
     expect((await offerPage(store.d, { url: "https://vimeo.com/1", fromButton: true })).ok).toBe(true);
   });
 
+  it("sends what the browser would send to the page, from the tab's cookie store", async () => {
+    const { d, calls } = deps();
+    const asked: (string | undefined)[][] = [];
+    d.request = async (url, referrer, store) => {
+      asked.push([url, referrer, store]);
+      return { cookie: "sessionid=abc", userAgent: "UA" };
+    };
+    await offerPage(d, {
+      url: "https://www.instagram.com/reel/xyz/",
+      title: "A reel",
+      tabUrl: "https://www.instagram.com/someone/",
+      fromButton: true,
+      cookieStoreId: "firefox-container-2",
+    });
+    expect(asked).toEqual([["https://www.instagram.com/reel/xyz/", "https://www.instagram.com/someone/", "firefox-container-2"]]);
+    expect(calls[0]?.request).toEqual({ cookie: "sessionid=abc", userAgent: "UA" });
+  });
+
+  it("still offers the page when the cookies cannot be read", async () => {
+    const { d, calls } = deps();
+    d.request = async () => {
+      throw new Error("no access");
+    };
+    expect(await offerPage(d, { url: "https://vimeo.com/1", fromButton: false })).toEqual({ ok: true });
+    expect(calls).toEqual([{ url: "https://vimeo.com/1" }]);
+  });
+
   it("reports the daemon's error", async () => {
     const { d } = deps({ fail: "the wdm daemon is not running" });
     expect(await offerPage(d, { url: "https://vimeo.com/1", fromButton: true })).toEqual({ ok: false, error: "the wdm daemon is not running" });

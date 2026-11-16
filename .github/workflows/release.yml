@@ -233,11 +233,11 @@ jobs:
           rm -rf "$dir"
           "target/release/wdm-media-bundle$exe" fetch --target "$TARGET" --out "$dir" > media-tools.md
           cp packaging/media-tools/NOTICE.txt packaging/media-tools/LGPL-2.1.txt \
-             packaging/media-tools/Unlicense.txt "$dir/"
+             packaging/media-tools/Unlicense.txt packaging/media-tools/QuickJS-MIT.txt "$dir/"
           cp LICENSE-GPL "$dir/GPL-3.0.txt"
           { echo "#### yt-dlp and ffmpeg in the $TARGET installers"; echo; cat media-tools.md; } >> "$GITHUB_STEP_SUMMARY"
           ls -l "$dir"
-      - name: Sign yt-dlp and ffmpeg (macOS)
+      - name: Sign yt-dlp, ffmpeg and QuickJS (macOS)
         # Inside the .app they must be signed like the app: Developer ID when
         # configured, else ad hoc. lipo's universal ffmpeg is unsigned. Signing
         # changes the files, so the manifest's checksums are taken again.
@@ -246,7 +246,7 @@ jobs:
           set -euo pipefail
           dir=apps/desktop/src-tauri/media-tools
           files=()
-          for f in yt-dlp ffmpeg ffprobe; do [ -e "$dir/$f" ] && files+=("$dir/$f"); done
+          for f in yt-dlp ffmpeg ffprobe qjs; do [ -e "$dir/$f" ] && files+=("$dir/$f"); done
           if [ "$APPLE_SIGNING_ENABLED" = true ]; then
             # yt-dlp is a PyInstaller program: under the hardened runtime it
             # loads the Python libraries it unpacks, signed by its authors.

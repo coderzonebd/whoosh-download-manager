@@ -14,6 +14,9 @@ pub const MEDIA_CAPABILITY: &str = "media";
 /// The two helper programs, by their `MediaTool::name`.
 pub const TOOL_YT_DLP: &str = "yt-dlp";
 pub const TOOL_FFMPEG: &str = "ffmpeg";
+/// QuickJS, the JavaScript runtime yt-dlp uses for YouTube when the computer
+/// has none of its own (Deno, Node.js, Bun). Its program is `qjs`.
+pub const TOOL_QUICKJS: &str = "quickjs";
 
 fn is_false(b: &bool) -> bool {
     !*b
@@ -218,7 +221,7 @@ pub enum MediaStep {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaToolsStatus {
-    /// yt-dlp first, then ffmpeg.
+    /// yt-dlp first, then ffmpeg, then QuickJS.
     pub tools: Vec<MediaTool>,
     /// Check for updates (and install them) at most once a day.
     pub auto_update: bool,
@@ -229,7 +232,7 @@ pub struct MediaToolsStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaTool {
-    /// [`TOOL_YT_DLP`] or [`TOOL_FFMPEG`].
+    /// [`TOOL_YT_DLP`], [`TOOL_FFMPEG`] or [`TOOL_QUICKJS`].
     pub name: String,
     pub state: MediaToolState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -308,6 +311,14 @@ pub struct MediaOfferParams {
     /// The page's title, as a hint until the probe answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// What the browser sends to the page (its cookies for the site, the
+    /// user agent): sites that only show a video to a signed-in browser
+    /// (Instagram, Facebook, a members-only or age-restricted video) need
+    /// them. The daemon keeps it in memory only, never shows it to the
+    /// app's windows, and uses it for that page's `media.probe` and
+    /// `media.add` when they come without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<RequestContext>,
 }
 
 /// `media.offer`'s answer.

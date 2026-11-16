@@ -1,7 +1,8 @@
 # Media tools in the installers
 
-The desktop installers ship yt-dlp and ffmpeg so video and audio sites work
-right after installation. The release workflow fetches them for each target
+The desktop installers ship yt-dlp, ffmpeg and QuickJS (`qjs`, yt-dlp's
+JavaScript runtime for YouTube when the computer has none) so video and audio
+sites work right after installation. The release workflow fetches them for each target
 with `wdm-media-bundle` (crates/media, `bundle` module: the same upstreams
 and checksum checks as the first-use download) into
 `apps/desktop/src-tauri/media-tools/`, and `tauri.media.conf.json` puts that
@@ -14,6 +15,7 @@ This directory holds what is copied next to the programs:
 | `NOTICE.txt` | `NOTICE.txt` | what is shipped, where from, licences, source and written offer |
 | `LGPL-2.1.txt` | `LGPL-2.1.txt` | ffmpeg on Windows and Linux (BtbN LGPL builds) |
 | `Unlicense.txt` | `Unlicense.txt` | yt-dlp ([its LICENSE](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE)) |
+| `QuickJS-MIT.txt` | `QuickJS-MIT.txt` | QuickJS ([its LICENSE](https://github.com/quickjs-ng/quickjs/blob/master/LICENSE)) |
 | `../../LICENSE-GPL` | `GPL-3.0.txt` | ffmpeg on macOS (Martin Riedl's GPL build) |
 
 `wdm-media-bundle` adds `manifest.json` (versions, upstream files and
@@ -21,7 +23,7 @@ checksums, the SHA-256 of every shipped file) and, for BtbN builds,
 `LICENSES/ffmpeg-build-LICENSE.txt` from the archive.
 
 On Linux the programs are shipped as uncompressed tars (`yt-dlp.tar`,
-`ffmpeg.tar`, `ffprobe.tar`): the AppImage bundler (linuxdeploy) rewrites
+`ffmpeg.tar`, `ffprobe.tar`, `qjs.tar`): the AppImage bundler (linuxdeploy) rewrites
 every ELF program in the image, a tar it leaves alone. The manifest has the
 SHA-256 of each tar and of the program inside it; the daemon unpacks them
 with the system's `tar`. macOS and Windows ship the programs as they are.

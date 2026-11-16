@@ -815,10 +815,12 @@ fn tools_config(dir: &Path) -> ToolsConfig {
             yt_dlp: "https://up.example.test/yt-dlp/releases".into(),
             ffmpeg: "https://up.example.test/ffmpeg/releases".into(),
             ffmpeg_macos: "https://up.example.test/ffmpeg-macos".into(),
+            quickjs: "https://up.example.test/quickjs/latest".into(),
         },
         system: false,
         yt_dlp: None,
         ffmpeg: None,
+        quickjs: None,
         bundled: None,
     }
 }
@@ -916,6 +918,7 @@ fn bundle_dir_as(dir: &Path, yt_dlp_version: &str, bad: Option<&str>, tar: bool)
     for (tool, version, files) in [
         ("yt-dlp", yt_dlp_version, vec![exe("yt-dlp")]),
         ("ffmpeg", "9.0", vec![exe("ffmpeg"), exe("ffprobe")]),
+        ("quickjs", "0.18.0", vec![exe("qjs")]),
     ] {
         let mut sums = serde_json::Map::new();
         let mut tars = serde_json::Map::new();
@@ -1007,6 +1010,8 @@ async fn bundled_tools_are_copied_and_checked() {
     }
     assert_eq!(status.tools[0].version.as_deref(), Some("2026.10.26"));
     assert_eq!(status.tools[1].version.as_deref(), Some("9.0"));
+    assert_eq!(status.tools[2].name, "quickjs");
+    assert_eq!(status.tools[2].version.as_deref(), Some("0.18.0"));
 
     let yt = tools.ensure(Kind::YtDlp).await.unwrap();
     assert_eq!(yt.program, data.join("bin").join(exe("yt-dlp")));
@@ -1017,6 +1022,8 @@ async fn bundled_tools_are_copied_and_checked() {
     let ff = tools.ensure(Kind::Ffmpeg).await.unwrap();
     assert!(ff.program.starts_with(data.join("bin")));
     assert!(data.join("bin").join(exe("ffprobe")).is_file());
+    let qjs = tools.ensure(Kind::QuickJs).await.unwrap();
+    assert_eq!(qjs.program, data.join("bin").join(exe("qjs")));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -1118,6 +1125,8 @@ async fn tar_bundled_tools_are_unpacked_and_checked() {
     );
     assert!(data.join("bin").join(exe("ffprobe")).is_file());
     tools.ensure(Kind::YtDlp).await.unwrap();
+    // Every bundled tool is copied in the background at start; wait for the last one too.
+    tools.ensure(Kind::QuickJs).await.unwrap();
     assert!(up.fetched.lock().unwrap().is_empty(), "no network");
     let left: Vec<_> = std::fs::read_dir(data.join("bin"))
         .unwrap()

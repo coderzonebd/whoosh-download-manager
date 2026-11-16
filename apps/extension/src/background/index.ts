@@ -21,7 +21,7 @@ import { frameUrl, hostMatches, hostOf, isHttpUrl, isSiteExcluded, normalizeSite
 import { NativeMessagingTransport, type NativePort } from "../transport/native";
 import { isUnavailable } from "../transport/rpc";
 import { canHoldDownloads, downloadControl, getApi, isFirefox, toCandidate } from "./browser";
-import { buildAddParams, cookiesFor, privateCookieStore } from "./capture/context";
+import { buildAddParams, buildRequestContext, cookiesFor, privateCookieStore } from "./capture/context";
 import { CaptureController, type CaptureResult } from "./capture/controller";
 import type { CandidateDownload } from "./capture/rules";
 import { BypassTracker, RecentClicks, RequestMethodTracker } from "./capture/trackers";
@@ -342,7 +342,17 @@ api.tabs.onRemoved.addListener((tabId) => media.clear(tabId));
 // ------------------------------------------------------------------ messages
 
 const preconnect = new PreconnectThrottle();
-const offerDeps = { daemon: transport, settings, blocked: blockedByStorePolicy };
+const offerDeps = {
+  daemon: transport,
+  settings,
+  blocked: blockedByStorePolicy,
+  request: async (url: string, referrer: string | undefined, storeId: string | undefined) =>
+    buildRequestContext({ cookies: await cookiesFor(cookieSource, url, storeId), referrer, userAgent: navigator.userAgent }),
+};
+/** A tab's cookie store: its container, or the private one in a private window. */
+function storeOf(tab: chrome.tabs.Tab | undefined): string | undefined {
+  return (tab as { cookieStoreId?: string } | undefined)?.cookieStoreId ?? (tab?.incognito ? privateCookieStore(firefox) : undefined);
+}
 
 async function onContentMessage(message: ContentMessage): Promise<void> {
   const now = Date.now();
@@ -387,7 +397,7 @@ async function onPopupMessage(message: PopupMessage): Promise<PopupState | Actio
     case "wdm/offer-page": {
       // The tab's own address and title when we can read them, else what the popup saw.
       const tab = message.tabId === undefined ? undefined : await api.tabs.get(message.tabId).catch(() => undefined);
-      return offerPage(offerDeps, { url: tab?.url ?? message.url, title: tab?.title ?? message.title, fromButton: false });
+      return offerPage(offerDeps, { url: tab?.url ?? message.url, title: tab?.title ?? message.title, fromButton: false, cookieStoreId: storeOf(tab) });
     }
     case "wdm/heal-answer": {
       const outcome = await healer.act(message.id, message.answer);
@@ -441,7 +451,13 @@ api.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     // The frame the button was clicked in: its origin as the browser reports it, its current
     // address (single-page sites change it without reloading) as the page says.
     const tabUrl = sender.tab?.url;
-    void offerPage(offerDeps, { url: frameUrl(sender.url, content.url) ?? content.url, title: content.title, tabUrl, fromButton: true }).then(sendResponse);
+    void offerPage(offerDeps, {
+      url: frameUrl(sender.url, content.url) ?? content.url,
+      title: content.title,
+      tabUrl,
+      fromButton: true,
+      cookieStoreId: storeOf(sender.tab),
+    }).then(sendResponse);
     return true;
   }
   if (content) {

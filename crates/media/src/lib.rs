@@ -27,6 +27,7 @@ pub mod fetch;
 pub mod ffmpeg;
 pub mod info;
 mod jobs;
+pub mod js;
 pub mod names;
 pub mod process;
 mod service;
