@@ -46,6 +46,11 @@ export interface CrashReportsState {
 }
 
 export interface Host {
+  /**
+   * "android": the phone app. Settings leave out what makes no sense there
+   * (the list layout, typing a download folder path).
+   */
+  platform?: "android";
   /** Ask the user for a folder; undefined when they cancel. */
   pickFolder?: (opts: { title: string; defaultPath?: string | undefined }) => Promise<string | undefined>;
   /** Desktop-only settings, shown in Settings → This computer. */

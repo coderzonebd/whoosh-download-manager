@@ -9,6 +9,7 @@
 //                           more rows (default: the demo set). With ?data or
 //                           ?toggle=on a Demo / Worst case switch at the bottom
 //                           flips it (test page only).
+//   ?view=mobile            the Android app's phone layout (MobileApp)
 //   ?view=prompt            the desktop app's prompt window (PromptApp), which
 //                           stays open when nothing is left (no shell to close it).
 //   ?client=live            a real wdm-daemon. The suite injects the
@@ -21,7 +22,7 @@ import type { WdmClient } from "@wdm/api-client";
 import { createMockClient } from "@wdm/api-client/mock";
 import { connectWs } from "@wdm/api-client/ws";
 import { mount } from "svelte";
-import { App, PromptApp, type AppState, type Host } from "../src/index.ts";
+import { App, MobileApp, PromptApp, type AppState, type Host } from "../src/index.ts";
 import "../src/styles/global.css";
 
 declare global {
@@ -102,6 +103,8 @@ const props = {
   },
 };
 if (q.get("view") === "prompt") mount(PromptApp, { target, props });
+// The phone app's host: what apps/mobile passes (no desktop-only settings).
+else if (q.get("view") === "mobile") mount(MobileApp, { target, props: { ...props, host: { platform: "android" as const, readClipboard: async () => "" } } });
 else mount(App, { target, props });
 
 // The data switch: plain chrome, not part of the design under test.

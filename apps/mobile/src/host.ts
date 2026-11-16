@@ -5,6 +5,7 @@ import type { Host } from "@wdm/ui";
 
 export function mobileHost(): Host {
   return {
+    platform: "android",
     async readClipboard() {
       const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
       return readText();

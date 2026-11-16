@@ -48,13 +48,15 @@ export const ICONS = {
   stop: "M7.5 6.5h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z",
   edit: "M4.5 19.5h4l10.2-10.2a1.5 1.5 0 0 0 0-2.1l-1.9-1.9a1.5 1.5 0 0 0-2.1 0L4.5 15.5zM13.5 6.5l4 4",
   power: "M12 3.5v8M7.2 6.4a7.5 7.5 0 1 0 9.6 0",
+  back: "M19 12H5.5M11 5.5 4.5 12l6.5 6.5",
+  clipboard: "M9 4.5h6a1 1 0 0 1 1 1V6a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-.5a1 1 0 0 1 1-1zM8 5.5H6.5A1.5 1.5 0 0 0 5 7v12a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V7a1.5 1.5 0 0 0-1.5-1.5H16",
   image: "M5 4.5h14A1.5 1.5 0 0 1 20.5 6v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5zM3.5 16l5-5 4.5 4.5 2.5-2.5 5 5M15.5 9h.01",
 } as const;
 
 export type IconName = keyof typeof ICONS;
 
 /** Icons that point along the reading direction and must mirror in RTL. */
-export const DIRECTIONAL: ReadonlySet<IconName> = new Set(["chevronEnd"]);
+export const DIRECTIONAL: ReadonlySet<IconName> = new Set(["chevronEnd", "back"]);
 
 /** Icons drawn as dots that need a heavier stroke to be seen. */
 export const DOTTED: ReadonlySet<IconName> = new Set(["more"]);

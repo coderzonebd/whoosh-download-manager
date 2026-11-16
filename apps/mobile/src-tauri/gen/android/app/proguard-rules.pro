@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# The web UI calls these through `WdmAndroid` (MainActivity.Bridge); keep them in release builds.
+-keepclassmembers class com.coderzonebd.whoosh.MainActivity$Bridge {
+    @android.webkit.JavascriptInterface <methods>;
+}

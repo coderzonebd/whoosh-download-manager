@@ -534,5 +534,15 @@
     "recheck": "Periksa lagi",
     "done": "Selesai",
     "later": "Anda dapat kembali ke halaman ini dari Pengaturan → Peramban."
+  },
+  "mobile": {
+    "all": "Semua",
+    "add": "Tambah",
+    "back": "Kembali",
+    "menu": "Opsi lainnya",
+    "filters": "Tampilkan",
+    "waiting": "Menunggu server",
+    "emptyGroup": "Tidak ada apa pun di sini",
+    "emptyBody": "Ketuk Tambah dan tempel tautan untuk mulai mengunduh."
   }
 }

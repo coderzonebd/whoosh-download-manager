@@ -549,5 +549,15 @@
     "recheck": "Check again",
     "done": "Done",
     "later": "You can come back to this page from Settings → Browsers."
+  },
+  "mobile": {
+    "all": "All",
+    "add": "Add",
+    "back": "Back",
+    "menu": "More options",
+    "filters": "Show",
+    "waiting": "Waiting for the server",
+    "emptyGroup": "Nothing here",
+    "emptyBody": "Tap Add and paste a link to start a download."
   }
 }
