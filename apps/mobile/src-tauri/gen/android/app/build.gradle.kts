@@ -14,6 +14,11 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing: the release workflow passes the upload keystore through these variables
+// (docs/release.md, "Android"). Without them a release build is signed with the debug key,
+// which installs for testing but can never be updated by a properly signed build.
+val releaseKeystore: String? = System.getenv("WDM_ANDROID_KEYSTORE")
+
 android {
     compileSdk = 37
     namespace = "com.coderzonebd.whoosh"
@@ -24,6 +29,16 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("WDM_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("WDM_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("WDM_ANDROID_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -39,6 +54,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             optimization {
                enable = true
             }
