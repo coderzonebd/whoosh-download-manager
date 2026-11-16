@@ -6463,6 +6463,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "wdm-mobile"
+version = "0.1.2"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "wdm-daemon",
+ "wdm-net",
+ "wdm-proto",
+ "webpki-root-certs",
+]
+
+[[package]]
 name = "wdm-net"
 version = "0.1.2"
 dependencies = [

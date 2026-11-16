@@ -30,6 +30,7 @@
 
 pub mod client;
 pub mod config;
+pub mod engine;
 mod limit;
 pub mod logging;
 pub mod migrate;

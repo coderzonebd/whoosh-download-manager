@@ -536,5 +536,15 @@
     "recheck": "Kiểm tra lại",
     "done": "Xong",
     "later": "Bạn có thể quay lại trang này từ Cài đặt → Trình duyệt."
+  },
+  "mobile": {
+    "all": "Tất cả",
+    "add": "Thêm",
+    "back": "Quay lại",
+    "menu": "Tùy chọn khác",
+    "filters": "Hiển thị",
+    "waiting": "Đang chờ máy chủ",
+    "emptyGroup": "Không có gì ở đây",
+    "emptyBody": "Nhấn Thêm và dán liên kết để bắt đầu tải xuống."
   }
 }

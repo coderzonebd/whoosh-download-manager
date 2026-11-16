@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "The main window: core IPC and reading a link from the clipboard.",
+  "windows": ["main"],
+  "permissions": ["core:default", "clipboard-manager:allow-read-text"]
+}

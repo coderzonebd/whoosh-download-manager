@@ -566,5 +566,15 @@
     "recheck": "Comprobar de nuevo",
     "done": "Listo",
     "later": "Puedes volver a esta página desde Ajustes → Navegadores."
+  },
+  "mobile": {
+    "all": "Todas",
+    "add": "Añadir",
+    "back": "Atrás",
+    "menu": "Más opciones",
+    "filters": "Mostrar",
+    "waiting": "Esperando al servidor",
+    "emptyGroup": "No hay nada aquí",
+    "emptyBody": "Toca Añadir y pega un enlace para empezar una descarga."
   }
 }

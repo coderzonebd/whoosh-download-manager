@@ -551,5 +551,15 @@
     "recheck": "Yeniden denetle",
     "done": "Tamam",
     "later": "Bu sayfaya Ayarlar → Tarayıcılar'dan yeniden gelebilirsiniz."
+  },
+  "mobile": {
+    "all": "Tümü",
+    "add": "Ekle",
+    "back": "Geri",
+    "menu": "Diğer seçenekler",
+    "filters": "Göster",
+    "waiting": "Sunucu bekleniyor",
+    "emptyGroup": "Burada bir şey yok",
+    "emptyBody": "İndirmeye başlamak için Ekle'ye dokunup bir bağlantı yapıştırın."
   }
 }

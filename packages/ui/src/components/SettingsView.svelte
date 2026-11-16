@@ -358,6 +358,7 @@
               {/each}
             </div>
           </fieldset>
+          {#if host.platform !== "android"}
           <fieldset class="vy-field">
             <legend class="vy-label">{t("settings.layout")}</legend>
             <div class="choice">
@@ -371,6 +372,7 @@
               </label>
             </div>
           </fieldset>
+          {/if}
           <div class="vy-field">
             <label class="vy-check">
               <input type="checkbox" bind:checked={prefs.highContrast} aria-describedby="vy-set-hc-hint" />
@@ -384,6 +386,7 @@
       <section aria-labelledby="vy-set-downloads">
         <h2 id="vy-set-downloads">{t("settings.downloads")}</h2>
         <div class="grid">
+          {#if host.platform !== "android"}
           <div class="vy-field wide">
             <label class="vy-label" for="vy-set-dir">{t("settings.defaultDirectory")}</label>
             <div class="folder-row">
@@ -403,6 +406,7 @@
             </div>
             {#if errors.defaultDirectory}<span id="vy-set-dir-err" class="vy-error">{errors.defaultDirectory}</span>{/if}
           </div>
+          {/if}
           <div class="vy-field">
             <label class="vy-label" for="vy-set-active">{t("settings.maxActive")}</label>
             <input
