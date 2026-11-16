@@ -314,7 +314,9 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     if (!box) throw new Error("no video box");
     await page.mouse.click(box.x + box.width - 8 - 16, box.y + 8 + 16);
     const call = await waitFor("media.offer", () => hostCalls("media.offer").find((e) => e.msg?.params?.["url"] === `${origin}/video`));
-    expect(call.msg?.params).toEqual({ url: `${origin}/video`, title: "A talk about downloads" });
+    // With what the browser sends to the page (its user agent; cookies when the site set any).
+    expect(call.msg?.params).toMatchObject({ url: `${origin}/video`, title: "A talk about downloads" });
+    expect((call.msg?.params?.["request"] as { userAgent?: string } | undefined)?.userAgent).toMatch(/Chrome/);
     // Nothing was downloaded by itself.
     expect(hostCalls("download.add").some((e) => String(e.msg?.params?.["url"]).includes("talk.mp4"))).toBe(false);
     await page.close();
