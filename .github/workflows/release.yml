@@ -227,6 +227,10 @@ jobs:
       # first-use download. The versions go into media-tools/manifest.json
       # and the job summary.
       - name: Fetch yt-dlp and ffmpeg for the installers
+        env:
+          # GitHub's API (QuickJS's release digests) limits anonymous requests per address, which
+          # shared runners use up; wdm-media-bundle sends this token to api.github.com only.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cargo build --release --locked -p wdm-media --bin wdm-media-bundle
