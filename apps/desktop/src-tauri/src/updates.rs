@@ -158,7 +158,11 @@ async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<Option<UpdateInfo>, Str
     if let Err(err) = prefs::update(app, |p| p.last_update_check = now()) {
         eprintln!("wdm-desktop: could not save desktop.json: {err}");
     }
-    let found = found?;
+    // No published release yet (the feed is not there): nothing newer than this copy.
+    let found = match found {
+        Err(e) if e.contains("valid release JSON") => None,
+        other => other?,
+    };
     let info = found.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),
         current_version: u.current_version.clone(),

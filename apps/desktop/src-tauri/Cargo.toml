@@ -25,7 +25,10 @@ tauri-plugin-autostart = "2"
 # The add dialog fills in a download link from the clipboard.
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-deep-link = "2"
-tauri-plugin-dialog = "2"
+# The folder picker. On Linux through the desktop portal (the system's own dialog, outside our
+# process): GTK's in-process file chooser loads themed icons through the system image loader,
+# whose sandbox can fail inside the app (Ubuntu 26.10 + Papirus) and abort it.
+tauri-plugin-dialog = { version = "2", default-features = false, features = ["xdg-portal"] }
 tauri-plugin-notification = "2"
 # `deep-link`: a second launch with a whoosh:// URL hands it to the first.
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

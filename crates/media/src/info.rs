@@ -2,8 +2,8 @@
 
 use serde_json::Value;
 use wdm_proto::{
-    AudioConvert, Header, MediaChoice, MediaFormat, MediaFormatKind, MediaProbeResult,
-    MediaSubtitle, RequestContext,
+    AudioConvert, Header, MAX_PLAYLIST_ENTRIES, MediaChoice, MediaFormat, MediaFormatKind,
+    MediaPlaylist, MediaPlaylistEntry, MediaProbeResult, MediaSubtitle, RequestContext,
 };
 
 fn str_of(v: &Value, key: &str) -> Option<String> {
@@ -110,7 +110,23 @@ fn format_of(f: &Value) -> Option<MediaFormat> {
 /// `media.probe`'s answer from `yt-dlp -J`.
 pub fn probe_result(info: &Value, page_url: &str) -> Result<MediaProbeResult, String> {
     if info.get("_type").and_then(Value::as_str) == Some("playlist") {
-        return Err("this page is a playlist; open a single video".into());
+        // A playlist page (with --flat-playlist: its entries, not opened): only the playlist.
+        let playlist = playlist_of(info).ok_or("this playlist has no videos")?;
+        return Ok(MediaProbeResult {
+            url: str_of(info, "webpage_url").unwrap_or_else(|| page_url.to_owned()),
+            title: playlist.title.clone(),
+            extractor: str_of(info, "extractor_key")
+                .or_else(|| str_of(info, "extractor"))
+                .unwrap_or_else(|| "generic".into())
+                .to_ascii_lowercase(),
+            thumbnail: None,
+            duration_secs: None,
+            uploader: str_of(info, "uploader").or_else(|| str_of(info, "channel")),
+            live: false,
+            formats: Vec::new(),
+            subtitles: Vec::new(),
+            playlist: Some(playlist),
+        });
     }
     let mut formats: Vec<MediaFormat> = match info.get("formats").and_then(Value::as_array) {
         Some(list) => list.iter().filter_map(format_of).collect(),
@@ -159,6 +175,7 @@ pub fn probe_result(info: &Value, page_url: &str) -> Result<MediaProbeResult, St
             .unwrap_or(false),
         formats,
         subtitles,
+        playlist: None,
     })
 }
 
@@ -369,6 +386,52 @@ pub fn label(parts: &[Part], finish: &Finish) -> String {
     }
 }
 
+/// The entries of a flat playlist (`yt-dlp --flat-playlist -J`): each video's own page and title,
+/// in order; entries without an http(s) page are left out.
+pub fn playlist_of(info: &Value) -> Option<MediaPlaylist> {
+    if info.get("_type").and_then(Value::as_str) != Some("playlist") {
+        return None;
+    }
+    let entries: Vec<MediaPlaylistEntry> = info
+        .get("entries")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|e| {
+            let url = str_of(e, "url")
+                .or_else(|| str_of(e, "webpage_url"))
+                .filter(|u| u.starts_with("https://") || u.starts_with("http://"))?;
+            Some(MediaPlaylistEntry {
+                title: str_of(e, "title").unwrap_or_else(|| url.clone()),
+                duration_secs: u64_of(e, "duration"),
+                url,
+            })
+        })
+        .take(MAX_PLAYLIST_ENTRIES)
+        .collect();
+    if entries.is_empty() {
+        return None;
+    }
+    Some(MediaPlaylist {
+        title: title_of(info),
+        entries,
+    })
+}
+
+/// Videos listed of the playlist `url` names. A YouTube mix (`list=RD…`) never ends: YouTube
+/// keeps suggesting, so it stops at 100; any other playlist at `MAX_PLAYLIST_ENTRIES`.
+pub fn playlist_limit(url: &str) -> usize {
+    let mix = url::Url::parse(url).is_ok_and(|u| {
+        u.query_pairs()
+            .any(|(k, v)| k == "list" && v.starts_with("RD"))
+    });
+    if mix { 100 } else { MAX_PLAYLIST_ENTRIES }
+}
+
+/// Whether a page address names a playlist next to (or instead of) a video: YouTube's `list=`.
+pub fn names_playlist(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|u| u.query_pairs().any(|(k, v)| k == "list" && !v.is_empty()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -528,6 +591,45 @@ mod tests {
         assert_eq!(
             label(&one, &Finish::Rename { ext: "m4a".into() }),
             "audio m4a"
+        );
+    }
+
+    #[test]
+    fn flat_playlists_list_their_videos() {
+        let v = json!({
+            "_type": "playlist", "title": "Mix - Heat Waves", "webpage_url": "https://www.youtube.com/watch?v=a&list=RDa",
+            "extractor_key": "YoutubeTab",
+            "entries": [
+                {"url": "https://www.youtube.com/watch?v=a", "title": "Heat Waves", "duration": 239},
+                {"id": "no-page"},
+                {"url": "https://www.youtube.com/watch?v=b"}
+            ]
+        });
+        let r = probe_result(&v, "https://www.youtube.com/playlist?list=RDa").unwrap();
+        assert!(r.formats.is_empty());
+        let p = r.playlist.unwrap();
+        assert_eq!(p.title, "Mix - Heat Waves");
+        assert_eq!(p.entries.len(), 2, "an entry without a page is left out");
+        assert_eq!(p.entries[0].duration_secs, Some(239));
+        assert_eq!(p.entries[1].title, "https://www.youtube.com/watch?v=b");
+        assert!(playlist_of(&json!({"_type": "playlist", "entries": []})).is_none());
+    }
+
+    #[test]
+    fn only_list_pages_name_a_playlist() {
+        assert!(names_playlist(
+            "https://www.youtube.com/watch?v=a&list=RDa&start_radio=1"
+        ));
+        assert!(names_playlist("https://www.youtube.com/playlist?list=PL1"));
+        assert!(!names_playlist("https://www.youtube.com/watch?v=a"));
+        assert!(!names_playlist("https://www.youtube.com/watch?v=a&list="));
+        assert_eq!(
+            playlist_limit("https://www.youtube.com/watch?v=a&list=RDa"),
+            100
+        );
+        assert_eq!(
+            playlist_limit("https://www.youtube.com/playlist?list=PL1"),
+            MAX_PLAYLIST_ENTRIES
         );
     }
 }

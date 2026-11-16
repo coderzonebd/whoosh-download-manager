@@ -16,16 +16,21 @@
     quality: Quality;
     convert: AudioConvert;
     subtitles: string[];
+    /** The video alone, or every video of `result.playlist`. */
+    scope: "video" | "playlist";
   }
-  let { result, mode = $bindable(), quality = $bindable(), convert = $bindable(), subtitles = $bindable() }: Props = $props();
+  let { result, mode = $bindable(), quality = $bindable(), convert = $bindable(), subtitles = $bindable(), scope = $bindable() }: Props = $props();
 
   const { i18n } = getApp();
   const { t } = i18n;
 
-  const heights = $derived(videoHeights(result.formats));
+  /** A playlist's videos are not opened yet, so the usual heights stand in for theirs. */
+  const COMMON_HEIGHTS = [2160, 1440, 1080, 720, 480, 360];
+  const listing = $derived(scope === "playlist" && result.playlist !== undefined);
+  const heights = $derived(listing ? COMMON_HEIGHTS : videoHeights(result.formats));
   /** 1080, not "1,080" (in the user's digits). */
   const plain = (n: number) => n.toLocaleString(i18n.intlLocale, { useGrouping: false });
-  const audioOk = $derived(hasAudio(result.formats));
+  const audioOk = $derived(listing || hasAudio(result.formats));
   const est = $derived(estimate(result.formats, choiceFor(mode, quality, convert)));
 
   function toggleSub(lang: string, on: boolean): void {
@@ -37,7 +42,7 @@
   <div class="head">
     <Icon name="video" size={18} />
     <div class="meta">
-      <h3 id="vy-media-title" class="vy-truncate" dir="auto" title={result.title}>{result.title}</h3>
+      <h3 id="vy-media-title" dir="auto" title={result.title}>{result.title}</h3>
       <p class="sub">
         <span class="vy-sr-only">{t("media.found")}:</span>
         {#if result.durationSecs !== undefined}<span>{t("media.length", { time: i18n.eta(result.durationSecs) })}</span>{/if}
@@ -46,6 +51,22 @@
       </p>
     </div>
   </div>
+
+  {#if result.playlist}
+    <fieldset class="kind">
+      <legend class="vy-label">{t("media.scope")}</legend>
+      <div class="choice" role="radiogroup">
+        <label class:on={scope === "video"}>
+          <input type="radio" name="vy-media-scope" value="video" bind:group={scope} disabled={result.formats.length === 0} />
+          <Icon name="video" size={14} />{t("media.thisVideo")}
+        </label>
+        <label class:on={scope === "playlist"}>
+          <input type="radio" name="vy-media-scope" value="playlist" bind:group={scope} />
+          <Icon name="layers" size={14} /><span class="vy-num">{t("media.wholePlaylist", { count: i18n.number(result.playlist.entries.length) })}</span>
+        </label>
+      </div>
+    </fieldset>
+  {/if}
 
   <fieldset class="kind">
     <legend class="vy-label">{t("media.kind")}</legend>
@@ -67,7 +88,7 @@
       <select id="vy-media-quality" class="vy-select" bind:value={quality}>
         <option value="best">{t("media.qualityBest")}</option>
         {#each heights as h (h)}
-          {@const size = sizeAt(result.formats, h)}
+          {@const size = listing ? undefined : sizeAt(result.formats, h)}
           <option value={String(h)}>
             {size === undefined ? t("media.qualityHeight", { height: plain(h) }) : t("media.qualityHeightSize", { height: plain(h), size: i18n.bytes(size) })}
           </option>
@@ -84,7 +105,7 @@
     </div>
   {/if}
 
-  {#if result.subtitles.length > 0}
+  {#if !listing && result.subtitles.length > 0}
     <fieldset class="subs" aria-describedby="vy-media-subs-hint">
       <legend class="vy-label">{t("media.subtitles")}</legend>
       <div class="langs">
@@ -100,6 +121,9 @@
     </fieldset>
   {/if}
 
+  {#if listing}
+    <p class="estimate">{t("media.playlistNote")}</p>
+  {:else}
   <p class="estimate" aria-live="polite">
     <span class="vy-num size">{est.bytes === undefined ? t("media.sizeUnknown") : t("media.size", { size: i18n.bytes(est.bytes) })}</span>
     <span class="via" class:stream={!est.direct}>
@@ -107,11 +131,14 @@
       {est.direct ? t("media.viaEngine") : t("media.viaYtDlp")}
     </span>
   </p>
+  {/if}
 </section>
 
 <style>
   .media {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-inline-size: 0;
     gap: var(--vy-space-3);
     padding: var(--vy-space-3);
     border-radius: var(--vy-radius-md);
@@ -125,9 +152,18 @@
     color: var(--vy-color-text-muted);
   }
   .meta {
+    flex: 1 1 auto;
     min-inline-size: 0;
   }
+  /* A post's caption as the title (Facebook, Instagram, TikTok) can be long: two lines, then an
+     ellipsis; it never widens the dialog. */
   h3 {
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
     color: var(--vy-color-text);
     font-size: var(--vy-font-size-md);
     font-weight: var(--vy-font-weight-semibold);

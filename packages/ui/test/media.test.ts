@@ -108,6 +108,25 @@ describe("format picker", { timeout: 30_000 }, () => {
     expect(add.filename).toBe("lecture 42");
   });
 
+  it("adds every video of the page's playlist, one download each, at the chosen quality", async () => {
+    const { user, client } = await setup();
+    const dialog = await openAdd(user, "https://video.example.com/watch?v=intro&list=PL42");
+    const picker = await within(dialog).findByRole("region", { name: "Demo video intro" }, { timeout: 3000 });
+    expect(within(picker).getByRole("radio", { name: "This video" })).toBeChecked();
+    await user.click(within(picker).getByRole("radio", { name: "Whole playlist (3)" }));
+    // Not opened yet: the usual heights, no file name, no subtitles.
+    await user.selectOptions(within(picker).getByRole("combobox", { name: "Quality" }), "720");
+    expect(within(dialog).queryByRole("textbox", { name: "File name" })).not.toBeInTheDocument();
+    expect(within(picker).queryByRole("checkbox", { name: "English" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a download" })).not.toBeInTheDocument());
+    const adds = client.log.filter((c) => c.method === "media.add").map((c) => c.params as MediaAddParams);
+    expect(adds.map((a) => a.url)).toEqual([1, 2, 3].map((i) => `https://video.example.com/watch?v=PL42-${i}`));
+    expect(adds.every((a) => a.choice.kind === "best" && a.choice.maxHeight === 720)).toBe(true);
+    expect(adds.map((a) => a.filename)).toEqual(["Demo playlist video 1", "Demo playlist video 2", "Demo playlist video 3"]);
+    expect((await screen.findAllByText("Added “Demo playlist PL42”: 3 downloads")).length).toBeGreaterThan(0);
+  });
+
   it("can still download the page itself", async () => {
     const { user, client } = await setup();
     const dialog = await openAdd(user, PAGE);

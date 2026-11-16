@@ -242,9 +242,12 @@
     "chooseFolder": "اختر مكان حفظ الملف",
     "queue": "قائمة الانتظار",
     "lookingForMedia": "جارٍ البحث عن فيديو في هذه الصفحة…",
+    "lookingForMediaSlow": "ما زال البحث جاريًا… قد تستغرق بعض المواقع، ومنها YouTube، حتى نصف دقيقة.",
     "mediaFailed": "لم يُعثر على فيديو في هذه الصفحة: {{message}}",
     "asFile": "نزّل الصفحة نفسها بدلًا من ذلك",
-    "asMedia": "اختر صيغة فيديو بدلًا من ذلك"
+    "asMedia": "اختر صيغة فيديو بدلًا من ذلك",
+    "addingPlaylist": "جارٍ الإضافة {{done}} / {{total}}…",
+    "addedPlaylist": "أُضيفت «{{name}}»: {{count}} تنزيلات"
   },
   "confirm": {
     "title": "تنزيل جديد من متصفحك",
@@ -553,7 +556,11 @@
     "viaEngine": "ينزّله Whoosh Download Manager بعدة اتصالات؛ يمكن إيقافه مؤقتًا واستئنافه.",
     "viaYtDlp": "صيغة بث: تنزّلها yt-dlp باتصال واحد.",
     "filenameHint": "دون الامتداد؛ يضيفه Whoosh Download Manager.",
-    "live": "هذا بث مباشر."
+    "live": "هذا بث مباشر.",
+    "scope": "التنزيل",
+    "thisVideo": "هذا الفيديو",
+    "wholePlaylist": "قائمة التشغيل كاملة ({{count}})",
+    "playlistNote": "يُنزَّل كل فيديو على حدة، بهذه الجودة أو بأقرب جودة أدنى منها."
   },
   "mediaStep": {
     "preparingTools": "جارٍ جلب الأدوات",

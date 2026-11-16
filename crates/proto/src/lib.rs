@@ -21,10 +21,11 @@ pub mod service;
 pub mod winacl;
 
 pub use media::{
-    AudioConvert, MEDIA_CAPABILITY, MediaAddParams, MediaChoice, MediaConfigureParams,
-    MediaDownloadInfo, MediaFormat, MediaFormatKind, MediaOffer, MediaOfferParams,
-    MediaOfferResult, MediaProbeParams, MediaProbeResult, MediaStep, MediaSubtitle, MediaTool,
-    MediaToolSource, MediaToolState, MediaToolsStatus, MediaUpdateParams, MediaVia,
+    AudioConvert, MAX_PLAYLIST_ENTRIES, MEDIA_CAPABILITY, MediaAddParams, MediaChoice,
+    MediaConfigureParams, MediaDownloadInfo, MediaFormat, MediaFormatKind, MediaOffer,
+    MediaOfferParams, MediaOfferResult, MediaPlaylist, MediaPlaylistEntry, MediaProbeParams,
+    MediaProbeResult, MediaStep, MediaSubtitle, MediaTool, MediaToolSource, MediaToolState,
+    MediaToolsStatus, MediaUpdateParams, MediaVia,
 };
 pub use queue::{
     AfterDone, ClockTime, MAIN_QUEUE, Queue, QueueConfig, QueueFinishedEvent, QueueNameParams,

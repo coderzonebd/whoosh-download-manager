@@ -149,8 +149,14 @@ struct Shared {
     /// The page request (cookie, referer, user agent) per job, in memory
     /// only: secrets are never written down.
     requests: StdMutex<HashMap<String, RequestContext>>,
+    /// Media downloads being prepared (yt-dlp asked for the formats) at once: a playlist adds
+    /// dozens together, which would otherwise start as many yt-dlp (and JavaScript) processes.
+    preparing: tokio::sync::Semaphore,
     closed: AtomicBool,
 }
+
+/// See [`Shared::preparing`].
+const PREPARING_AT_ONCE: usize = 2;
 
 /// The engine (or any [`Service`]) with media downloads on top.
 pub struct MediaService {
@@ -232,6 +238,7 @@ impl MediaService {
             subs: StdMutex::new(Vec::new()),
             probes: StdMutex::new(HashMap::new()),
             requests: StdMutex::new(HashMap::new()),
+            preparing: tokio::sync::Semaphore::new(PREPARING_AT_ONCE),
             closed: AtomicBool::new(false),
         });
         let _ = tokio::fs::remove_dir_all(&shared.dirs.tmp).await;
@@ -927,6 +934,10 @@ impl Shared {
         let me = self.clone();
         let job_id = id.to_owned();
         let handle = tokio::spawn(async move {
+            // Waits its turn (a pause or removal aborts the task, and with it the wait).
+            let Ok(_turn) = me.preparing.acquire().await else {
+                return;
+            };
             if let Err(e) = me.prepare(&job_id).await {
                 me.fail(&job_id, e).await;
             }
@@ -1868,11 +1879,28 @@ impl Shared {
             .ensure(Kind::YtDlp)
             .await
             .map_err(|e| ServiceError::network(format!("yt-dlp is not available: {e}")))?;
-        let info = self
-            .info(&yt, &url, p.request.as_ref(), true)
-            .await
-            .map_err(|(_, e)| ServiceError::network(e))?;
-        let r = info::probe_result(&info, &url).map_err(ServiceError::invalid_params)?;
+        // A video opened from a playlist (YouTube's `list=`): the playlist is listed alongside,
+        // at the same time; if that fails, the video alone is offered.
+        let listing = async {
+            if !info::names_playlist(&url) {
+                return None;
+            }
+            let dirs = self.run_dirs(Some(&url)).await;
+            match ytdlp::playlist(&yt, &dirs, &url, p.request.as_ref()).await {
+                Ok(v) => info::playlist_of(&v),
+                Err(e) => {
+                    tracing::info!(error = %e, "listing the page's playlist failed");
+                    None
+                }
+            }
+        };
+        let (info, playlist) =
+            tokio::join!(self.info(&yt, &url, p.request.as_ref(), true), listing);
+        let info = info.map_err(|(_, e)| ServiceError::network(e))?;
+        let mut r = info::probe_result(&info, &url).map_err(ServiceError::invalid_params)?;
+        if r.playlist.is_none() {
+            r.playlist = playlist;
+        }
         if r.url != url {
             lock(&self.probes).insert(r.url.clone(), (Instant::now(), info.clone()));
         }

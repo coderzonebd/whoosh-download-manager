@@ -57,6 +57,33 @@ pub struct MediaProbeResult {
     /// Worst first, best last (yt-dlp's order).
     pub formats: Vec<MediaFormat>,
     pub subtitles: Vec<MediaSubtitle>,
+    /// The playlist the page belongs to (a YouTube video opened from a
+    /// playlist or mix), or is: then `formats` is empty and only the
+    /// playlist can be downloaded, one `media.add` per entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist: Option<MediaPlaylist>,
+}
+
+/// A playlist's videos, as yt-dlp lists them without opening each.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaPlaylist {
+    pub title: String,
+    /// In playlist order, at most [`MAX_PLAYLIST_ENTRIES`].
+    pub entries: Vec<MediaPlaylistEntry>,
+}
+
+/// Longest playlist listed (an endless mix stops here).
+pub const MAX_PLAYLIST_ENTRIES: usize = 1000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaPlaylistEntry {
+    /// The video's own page, for `media.add`.
+    pub url: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<u64>,
 }
 
 /// What a format carries.

@@ -217,9 +217,12 @@
     "chooseFolder": "Pilih lokasi penyimpanan file",
     "queue": "Antrean",
     "lookingForMedia": "Mencari video di halaman ini…",
+    "lookingForMediaSlow": "Masih mencari… beberapa situs, termasuk YouTube, bisa memakan waktu hingga setengah menit.",
     "mediaFailed": "Tidak ada video di halaman ini: {{message}}",
     "asFile": "Unduh halamannya saja",
-    "asMedia": "Pilih format video"
+    "asMedia": "Pilih format video",
+    "addingPlaylist": "Menambahkan {{done}} / {{total}}…",
+    "addedPlaylist": "“{{name}}” ditambahkan: {{count}} unduhan"
   },
   "confirm": {
     "title": "Unduhan baru dari browser Anda",
@@ -478,7 +481,11 @@
     "viaEngine": "Whoosh Download Manager mengunduhnya dengan beberapa koneksi; bisa dijeda dan dilanjutkan.",
     "viaYtDlp": "Format streaming: yt-dlp mengunduhnya dengan satu koneksi.",
     "filenameHint": "Tanpa ekstensi; Whoosh Download Manager menambahkannya.",
-    "live": "Ini siaran langsung."
+    "live": "Ini siaran langsung.",
+    "scope": "Unduh",
+    "thisVideo": "Video ini",
+    "wholePlaylist": "Seluruh playlist ({{count}})",
+    "playlistNote": "Setiap video menjadi unduhan sendiri, pada kualitas ini atau yang terdekat di bawahnya."
   },
   "mediaStep": {
     "preparingTools": "Mengambil alat",

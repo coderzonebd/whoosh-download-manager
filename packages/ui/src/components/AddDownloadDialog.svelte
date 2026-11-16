@@ -61,6 +61,10 @@
   let quality = $state<Quality>("best");
   let convert = $state<AudioConvert>("original");
   let subtitles = $state<string[]>([]);
+  /** The video alone, or its whole playlist (a page that is only a playlist: always the playlist). */
+  let scope = $state<"video" | "playlist">("video");
+  /** While a playlist is added: how many of its videos are in. */
+  let adding = $state<{ done: number; total: number } | undefined>(undefined);
   let stem = $state("");
   let stemEdited = $state(false);
   let mediaSeq = 0;
@@ -117,6 +121,17 @@
     }
   }
 
+  /** The page has been looked at for a while: say that some sites take longer. */
+  let mediaSlow = $state(false);
+  $effect(() => {
+    if (media.status !== "checking") {
+      mediaSlow = false;
+      return;
+    }
+    const timer = setTimeout(() => (mediaSlow = true), 8000);
+    return () => clearTimeout(timer);
+  });
+
   async function runMediaProbe(target: string): Promise<void> {
     if (!app.media.enabled || !/^https?:/i.test(target)) return;
     const mine = ++mediaSeq;
@@ -128,6 +143,7 @@
       if (!stemEdited) stem = result.title;
       subtitles = [];
       quality = "best";
+      scope = result.formats.length === 0 && result.playlist ? "playlist" : "video";
     } catch (e) {
       if (mine !== mediaSeq) return;
       media = { status: "error", url: target, message: app.describe(e) };
@@ -176,7 +192,7 @@
   /** The video picker is showing (instead of the file). */
   const picking = $derived(mediaResult !== undefined && !asFile);
   const ready = $derived(
-    valid && !submitting && (picking ? stem.trim() !== "" : probe.status === "ok" && probe.url === trimmed),
+    valid && !submitting && (picking ? stem.trim() !== "" || scope === "playlist" : probe.status === "ok" && probe.url === trimmed),
   );
 
   /** Added: the main window selects it; the prompt window follows it when it started. */
@@ -191,6 +207,32 @@
     if (!ready) return;
     submitting = true;
     submitError = undefined;
+    if (picking && mediaResult?.playlist && scope === "playlist") {
+      // One media download per video, each named after its title; the daemon prepares two at a time.
+      const list = mediaResult.playlist;
+      const choice = choiceFor(mediaMode, quality, convert);
+      let added = 0;
+      try {
+        adding = { done: 0, total: list.entries.length };
+        for (const entry of list.entries) {
+          const params: MediaAddParams = { url: entry.url, start: startNow, choice, filename: entry.title };
+          if (directory.trim()) params.directory = directory.trim();
+          if (queue !== MAIN_QUEUE && app.queues.has(queue)) params.queue = queue;
+          await app.addMedia(params);
+          added += 1;
+          adding = { done: added, total: list.entries.length };
+        }
+        app.toasts.push({ tone: "success", message: t("add.addedPlaylist", { name: list.title, count: i18n.number(added) }) }, 4000);
+        onclose();
+      } catch (err) {
+        submitError = t("add.failed", { message: app.describe(err) });
+        if (added > 0) app.toasts.push({ tone: "info", message: t("add.addedPlaylist", { name: list.title, count: i18n.number(added) }) }, 4000);
+      } finally {
+        adding = undefined;
+        submitting = false;
+      }
+      return;
+    }
     if (picking && mediaResult) {
       try {
         const params: MediaAddParams = { url: trimmed, start: startNow, choice: choiceFor(mediaMode, quality, convert) };
@@ -254,7 +296,7 @@
         {:else if probe.status === "checking"}
           <span class="checking"><span class="vy-spinner" aria-hidden="true"></span>{t("add.checking")}</span>
         {:else if media.status === "checking"}
-          <span class="checking"><span class="vy-spinner" aria-hidden="true"></span>{t("add.lookingForMedia")}</span>
+          <span class="checking"><span class="vy-spinner" aria-hidden="true"></span>{mediaSlow ? t("add.lookingForMediaSlow") : t("add.lookingForMedia")}</span>
         {:else if mediaResult}
           <button type="button" class="vy-btn vy-btn--sm" onclick={() => (asFile = !asFile)} disabled={asFile && probe.status !== "ok"}>
             <Icon name={asFile ? "video" : "file"} size={13} />{asFile ? t("add.asMedia") : t("add.asFile")}
@@ -271,12 +313,14 @@
     </div>
 
     {#if picking && mediaResult}
-      <MediaPicker result={mediaResult} bind:mode={mediaMode} bind:quality bind:convert bind:subtitles />
+      <MediaPicker result={mediaResult} bind:mode={mediaMode} bind:quality bind:convert bind:subtitles bind:scope />
+      {#if !(scope === "playlist" && mediaResult.playlist)}
       <div class="vy-field">
         <label class="vy-label" for="vy-add-stem">{t("add.filename")}</label>
         <input id="vy-add-stem" class="vy-input" dir="auto" bind:value={stem} oninput={() => (stemEdited = true)} aria-describedby="vy-add-stem-hint" />
         <span id="vy-add-stem-hint" class="vy-hint">{t("media.filenameHint")}</span>
       </div>
+      {/if}
       <div class="vy-field">
         <label class="vy-label" for="vy-add-dir">{t("add.folder")}</label>
         <div class="folder-row">
@@ -361,7 +405,7 @@
     <button type="button" class="vy-btn vy-btn--secondary" onclick={onclose}>{t("action.cancel")}</button>
     <button type="submit" form="vy-add-form" class="vy-btn vy-btn--primary" disabled={!ready}>
       {#if submitting}<span class="vy-spinner" aria-hidden="true"></span>{:else}<Icon name="download" size={15} />{/if}
-      {startNow ? t("add.submit") : t("add.submitPaused")}
+      {#if adding}<span class="vy-num">{t("add.addingPlaylist", { done: i18n.number(adding.done), total: i18n.number(adding.total) })}</span>{:else}{startNow ? t("add.submit") : t("add.submitPaused")}{/if}
     </button>
   {/snippet}
 </Dialog>

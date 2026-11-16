@@ -32,6 +32,9 @@ export class ToastStore {
   #held = false;
 
   push(t: Omit<Toast, "id">, durationMs?: number): number {
+    // The same message already showing (a button clicked twice): no second copy.
+    const same = this.items.find((x) => x.tone === t.tone && x.message === t.message && !x.action && !t.action);
+    if (same) return same.id;
     const id = this.#next++;
     const next = [...this.items, { ...t, id }];
     // Over the limit: drop the oldest routine toast first, so a warning or

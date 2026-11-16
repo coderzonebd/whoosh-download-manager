@@ -196,7 +196,43 @@ pub async fn probe(
         .await
         .map_err(|e| e.to_string())?;
     let mut args = base_args(dirs);
-    args.push(os("-J"));
+    // A playlist page lists its videos without opening each (a single video is unaffected).
+    args.extend([os("--flat-playlist"), os("-J")]);
+    args.extend(req_args);
+    args.extend([os("--"), os(url)]);
+    let out = process::run(tool, args, PROBE_TIMEOUT, MAX_JSON)
+        .await
+        .map_err(|e| format!("yt-dlp: {e}"))?;
+    parse_json(&out)
+}
+
+/// `yt-dlp --yes-playlist --flat-playlist -J <url>`: the playlist a video page names (YouTube's
+/// `list=`), its videos listed without opening each, at most `MAX_PLAYLIST_ENTRIES`.
+pub async fn playlist(
+    tool: &Tool,
+    dirs: &Dirs,
+    url: &str,
+    request: Option<&RequestContext>,
+) -> Result<Value, String> {
+    let (req_args, _cookies) = request_args(dirs, url, request)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut args: Vec<OsString> = base_args(dirs)
+        .into_iter()
+        .map(|a| {
+            if a == "--no-playlist" {
+                os("--yes-playlist")
+            } else {
+                a
+            }
+        })
+        .collect();
+    args.extend([
+        os("--flat-playlist"),
+        os("--playlist-end"),
+        os(crate::info::playlist_limit(url).to_string()),
+        os("-J"),
+    ]);
     args.extend(req_args);
     args.extend([os("--"), os(url)]);
     let out = process::run(tool, args, PROBE_TIMEOUT, MAX_JSON)
