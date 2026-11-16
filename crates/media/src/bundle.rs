@@ -1,4 +1,4 @@
-//! yt-dlp and ffmpeg shipped inside the desktop installers, so video and
+//! yt-dlp, ffmpeg and QuickJS shipped inside the desktop installers, so video and
 //! audio sites work right after installation.
 //!
 //! **At build time** (`wdm-media-bundle`, run by the release workflow)
@@ -318,6 +318,47 @@ async fn fetch_into(
                 sha256: asset.sha256,
             }],
             files: BTreeMap::from([(name, String::new())]),
+            tars: BTreeMap::new(),
+        },
+    );
+
+    // QuickJS (yt-dlp's JavaScript runtime for YouTube when the computer has
+    // none): one static program per architecture, joined for a universal
+    // target.
+    let qjs = format!("{}{exe}", Kind::QuickJs.program());
+    let mut parts = Vec::new();
+    let mut sources = Vec::new();
+    let mut qjs_version: Option<String> = None;
+    for (i, p) in platforms.iter().enumerate() {
+        let asset = upstream::latest_quickjs_for(fetcher, up, *p).await?;
+        log(&format!(
+            "QuickJS {} ({} {}): {}",
+            asset.version, p.os, p.arch, asset.url
+        ));
+        if qjs_version.as_ref().is_some_and(|v| *v != asset.version) {
+            return Err("QuickJS versions differ between architectures; try again later".into());
+        }
+        qjs_version = Some(asset.version.clone());
+        let download = fetch_asset(fetcher, &asset, &work.join(format!("quickjs-{i}"))).await?;
+        parts.push(download);
+        sources.push(Source {
+            url: asset.url,
+            sha256: asset.sha256,
+        });
+    }
+    let to = out.join(&qjs);
+    match parts.as_slice() {
+        [one] => place(one, &to).await?,
+        many => lipo(&many.iter().collect::<Vec<_>>(), &to).await?,
+    }
+    manifest.tools.insert(
+        Kind::QuickJs.name().to_owned(),
+        BundledTool {
+            version: qjs_version.unwrap_or_default(),
+            upstream: upstream::QUICKJS_UPSTREAM.to_owned(),
+            license: upstream::QUICKJS_LICENSE.to_owned(),
+            sources,
+            files: BTreeMap::from([(qjs, String::new())]),
             tars: BTreeMap::new(),
         },
     );

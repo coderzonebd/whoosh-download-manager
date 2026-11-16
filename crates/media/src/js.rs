@@ -4,10 +4,12 @@
 //! been deprecated") and may lose more as YouTube changes.
 //!
 //! yt-dlp enables only Deno by default, so the runtime is always named with
-//! `--js-runtimes <kind>:<path>`. The first found wins, in yt-dlp's own order
-//! of preference: Deno (sandboxed), Node.js 20 or newer (run with its
-//! permission model), Bun, then a QuickJS copy kept with the other managed
-//! tools (`<media dir>/bin/qjs`). Found once, when the media service starts.
+//! `--js-runtimes <kind>:<path>`. The computer's own runtime wins, in
+//! yt-dlp's order of preference: Deno (sandboxed), Node.js 20 or newer (run
+//! with its permission model), Bun; found once, when the media service
+//! starts ([`find`]). Without one, the service uses the managed QuickJS
+//! (`Kind::QuickJs`), fetched on the first page that needs it
+//! ([`wants_runtime`]).
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -73,17 +75,27 @@ fn node_is_recent(node: &Path) -> bool {
         .is_some_and(|m| m >= MIN_NODE_MAJOR)
 }
 
-/// The runtime to hand yt-dlp: one installed on this computer (`PATH`), else
-/// the managed QuickJS in `bin_dir`. Blocking (it may run `node --version`).
-pub fn find(bin_dir: &Path) -> Option<JsRuntime> {
-    find_in(std::env::var_os("PATH").as_deref(), bin_dir, node_is_recent)
+/// A runtime installed on this computer (`PATH`). Blocking (it may run
+/// `node --version`).
+pub fn find() -> Option<JsRuntime> {
+    find_in(std::env::var_os("PATH").as_deref(), node_is_recent)
 }
 
-fn find_in(
-    path: Option<&OsStr>,
-    bin_dir: &Path,
-    node_ok: impl Fn(&Path) -> bool,
-) -> Option<JsRuntime> {
+/// Pages whose extraction needs a JavaScript runtime (YouTube's
+/// challenges), worth fetching QuickJS for.
+pub fn wants_runtime(url: &str) -> bool {
+    let Some(host) = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+    else {
+        return false;
+    };
+    ["youtube.com", "youtu.be", "youtube-nocookie.com"]
+        .iter()
+        .any(|d| host == *d || host.ends_with(&format!(".{d}")))
+}
+
+fn find_in(path: Option<&OsStr>, node_ok: impl Fn(&Path) -> bool) -> Option<JsRuntime> {
     if let Some(p) = on_path(path, "deno") {
         return Some(JsRuntime {
             kind: "deno",
@@ -96,16 +108,9 @@ fn find_in(
             path: p,
         });
     }
-    if let Some(p) = on_path(path, "bun") {
-        return Some(JsRuntime {
-            kind: "bun",
-            path: p,
-        });
-    }
-    let qjs = bin_dir.join(exe("qjs"));
-    qjs.is_file().then_some(JsRuntime {
-        kind: "quickjs",
-        path: qjs,
+    on_path(path, "bun").map(|p| JsRuntime {
+        kind: "bun",
+        path: p,
     })
 }
 
@@ -118,22 +123,16 @@ mod tests {
     }
 
     #[test]
-    fn prefers_deno_then_a_recent_node_then_bun_then_quickjs() {
+    fn prefers_deno_then_a_recent_node_then_bun() {
         let tmp = tempfile::tempdir().unwrap();
-        let (a, b, bin) = (
-            tmp.path().join("a"),
-            tmp.path().join("b"),
-            tmp.path().join("bin"),
-        );
-        for d in [&a, &b, &bin] {
+        let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
+        for d in [&a, &b] {
             std::fs::create_dir_all(d).unwrap();
         }
         let path = std::env::join_paths([&a, &b]).unwrap();
-        let find = |node_ok: bool| find_in(Some(&path), &bin, |_| node_ok);
+        let find = |node_ok: bool| find_in(Some(&path), |_| node_ok);
 
         assert_eq!(find(true), None);
-        touch(&bin, "qjs");
-        assert_eq!(find(true).unwrap().kind, "quickjs");
         touch(&b, "bun");
         assert_eq!(find(true).unwrap().kind, "bun");
         touch(&a, "node");
@@ -158,9 +157,18 @@ mod tests {
 
     #[test]
     fn relative_path_entries_are_ignored() {
-        let tmp = tempfile::tempdir().unwrap();
         let path = std::env::join_paths([Path::new("relative/dir")]).unwrap();
-        assert_eq!(find_in(Some(&path), tmp.path(), |_| true), None);
+        assert_eq!(find_in(Some(&path), |_| true), None);
+    }
+
+    #[test]
+    fn only_youtube_pages_want_quickjs() {
+        assert!(wants_runtime("https://www.youtube.com/watch?v=x"));
+        assert!(wants_runtime("https://youtu.be/x"));
+        assert!(wants_runtime("https://m.youtube.com/shorts/x"));
+        assert!(!wants_runtime("https://notyoutube.com/watch"));
+        assert!(!wants_runtime("https://vimeo.com/1"));
+        assert!(!wants_runtime("not a url"));
     }
 
     #[test]
