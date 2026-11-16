@@ -487,9 +487,17 @@ export interface MediaProbeResult {
   durationSecs?: number;
   uploader?: string;
   live?: boolean;
-  /** Worst first, best last. */
+  /** Worst first, best last. Empty when the page is only a playlist. */
   formats: MediaFormat[];
   subtitles: MediaSubtitle[];
+  /** The playlist the page belongs to (YouTube's `list=`) or is: one `media.add` per entry. */
+  playlist?: MediaPlaylist;
+}
+
+export interface MediaPlaylist {
+  title: string;
+  /** In playlist order; at most 1000. */
+  entries: { url: string; title: string; durationSecs?: number }[];
 }
 
 export type MediaChoice =

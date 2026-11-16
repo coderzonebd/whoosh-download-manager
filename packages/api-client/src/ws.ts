@@ -27,6 +27,17 @@ import {
 } from "./types";
 
 /** The subset of the WHATWG WebSocket API this client needs (browser, Node ≥ 22, Tauri webview). */
+
+/**
+ * Methods that run yt-dlp and may take longer than the usual request timeout: a YouTube page
+ * with the managed QuickJS takes 20–30 s, a slow site more. The daemon gives up on its own after
+ * 180 s (crates/media, PROBE_TIMEOUT), so the client waits a little longer than that.
+ */
+const SLOW_METHODS: Partial<Record<string, number>> = {
+  "media.probe": 200_000,
+  "media.add": 200_000,
+};
+
 export interface WebSocketLike {
   readonly readyState: number;
   send(data: string): void;
@@ -158,7 +169,7 @@ export class WsWdmClient implements WdmClient {
       const msg: Record<string, unknown> = { jsonrpc: "2.0", id, method };
       if (params !== undefined) msg.params = params;
       const p: Pending = { id, method, frame: JSON.stringify(msg), resolve: resolve as (v: unknown) => void, reject, timer: undefined };
-      const timeout = this.#opts.requestTimeoutMs ?? 30_000;
+      const timeout = SLOW_METHODS[method] ?? this.#opts.requestTimeoutMs ?? 30_000;
       if (timeout > 0) {
         p.timer = setTimeout(() => {
           this.#inflight.delete(id);

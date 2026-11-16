@@ -217,9 +217,12 @@
     "chooseFolder": "选择文件的保存位置",
     "queue": "队列",
     "lookingForMedia": "正在此页面上查找视频…",
+    "lookingForMediaSlow": "仍在查找…某些网站（例如 YouTube）可能需要半分钟。",
     "mediaFailed": "此页面上没有找到视频：{{message}}",
     "asFile": "改为下载页面本身",
-    "asMedia": "改为选择视频格式"
+    "asMedia": "改为选择视频格式",
+    "addingPlaylist": "正在添加 {{done}} / {{total}}…",
+    "addedPlaylist": "已添加“{{name}}”：{{count}} 个下载"
   },
   "confirm": {
     "title": "来自浏览器的新下载",
@@ -478,7 +481,11 @@
     "viaEngine": "Whoosh Download Manager 使用多个连接下载，可以暂停和继续。",
     "viaYtDlp": "流媒体格式：yt-dlp 使用单个连接下载。",
     "filenameHint": "不带扩展名，Whoosh Download Manager 会自动添加。",
-    "live": "这是直播。"
+    "live": "这是直播。",
+    "scope": "下载",
+    "thisVideo": "仅此视频",
+    "wholePlaylist": "整个播放列表（{{count}}）",
+    "playlistNote": "每个视频单独下载，使用此画质或最接近的较低画质。"
   },
   "mediaStep": {
     "preparingTools": "正在获取工具",

@@ -217,9 +217,12 @@
     "chooseFolder": "Chọn nơi lưu tệp",
     "queue": "Hàng đợi",
     "lookingForMedia": "Đang tìm video trên trang này…",
+    "lookingForMediaSlow": "Vẫn đang tìm… một số trang, như YouTube, có thể mất tới nửa phút.",
     "mediaFailed": "Không tìm thấy video trên trang này: {{message}}",
     "asFile": "Tải chính trang này xuống",
-    "asMedia": "Chọn định dạng video"
+    "asMedia": "Chọn định dạng video",
+    "addingPlaylist": "Đang thêm {{done}} / {{total}}…",
+    "addedPlaylist": "Đã thêm “{{name}}”: {{count}} lượt tải"
   },
   "confirm": {
     "title": "Lượt tải mới từ trình duyệt",
@@ -478,7 +481,11 @@
     "viaEngine": "Whoosh Download Manager tải bằng nhiều kết nối; có thể tạm dừng và tiếp tục.",
     "viaYtDlp": "Định dạng phát trực tuyến: yt-dlp tải bằng một kết nối.",
     "filenameHint": "Không cần phần mở rộng; Whoosh Download Manager tự thêm.",
-    "live": "Đây là buổi phát trực tiếp."
+    "live": "Đây là buổi phát trực tiếp.",
+    "scope": "Tải xuống",
+    "thisVideo": "Chỉ video này",
+    "wholePlaylist": "Toàn bộ danh sách phát ({{count}})",
+    "playlistNote": "Mỗi video là một lượt tải riêng, ở chất lượng này hoặc mức gần nhất bên dưới."
   },
   "mediaStep": {
     "preparingTools": "Đang lấy công cụ",

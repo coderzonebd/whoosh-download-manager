@@ -222,9 +222,12 @@
     "chooseFolder": "Dosyanın kaydedileceği yeri seçin",
     "queue": "Kuyruk",
     "lookingForMedia": "Bu sayfada video aranıyor…",
+    "lookingForMediaSlow": "Hâlâ aranıyor… YouTube gibi bazı sitelerde bu yarım dakikayı bulabilir.",
     "mediaFailed": "Bu sayfada video bulunamadı: {{message}}",
     "asFile": "Bunun yerine sayfanın kendisini indir",
-    "asMedia": "Bunun yerine bir video biçimi seç"
+    "asMedia": "Bunun yerine bir video biçimi seç",
+    "addingPlaylist": "Ekleniyor {{done}} / {{total}}…",
+    "addedPlaylist": "“{{name}}” eklendi: {{count}} indirme"
   },
   "confirm": {
     "title": "Tarayıcınızdan yeni indirme",
@@ -493,7 +496,11 @@
     "viaEngine": "Whoosh Download Manager birden çok bağlantıyla indirir; duraklatılıp sürdürülebilir.",
     "viaYtDlp": "Bir akış biçimi: yt-dlp tek bağlantıyla indirir.",
     "filenameHint": "Uzantı olmadan; Whoosh Download Manager ekler.",
-    "live": "Bu bir canlı yayın."
+    "live": "Bu bir canlı yayın.",
+    "scope": "İndir",
+    "thisVideo": "Yalnızca bu video",
+    "wholePlaylist": "Tüm oynatma listesi ({{count}})",
+    "playlistNote": "Her video ayrı bir indirme olur; bu kalitede ya da hemen altındakinde."
   },
   "mediaStep": {
     "preparingTools": "Araçlar alınıyor",

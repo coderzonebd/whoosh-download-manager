@@ -227,9 +227,12 @@
     "chooseFolder": "Elige dónde guardar el archivo",
     "queue": "Cola",
     "lookingForMedia": "Buscando un vídeo en esta página…",
+    "lookingForMediaSlow": "Seguimos buscando… algunos sitios, como YouTube, pueden tardar hasta medio minuto.",
     "mediaFailed": "No se encontró ningún vídeo en esta página: {{message}}",
     "asFile": "Descargar la página en su lugar",
-    "asMedia": "Elegir un formato de vídeo en su lugar"
+    "asMedia": "Elegir un formato de vídeo en su lugar",
+    "addingPlaylist": "Añadiendo {{done}} / {{total}}…",
+    "addedPlaylist": "Añadida «{{name}}»: {{count}} descargas"
   },
   "confirm": {
     "title": "Nueva descarga desde tu navegador",
@@ -508,7 +511,11 @@
     "viaEngine": "Whoosh Download Manager lo descarga con varias conexiones; se puede pausar y reanudar.",
     "viaYtDlp": "Un formato de streaming: yt-dlp lo descarga con una sola conexión.",
     "filenameHint": "Sin la extensión; Whoosh Download Manager la añade.",
-    "live": "Es una transmisión en directo."
+    "live": "Es una transmisión en directo.",
+    "scope": "Descargar",
+    "thisVideo": "Este vídeo",
+    "wholePlaylist": "Toda la lista ({{count}})",
+    "playlistNote": "Cada vídeo es una descarga aparte, con esta calidad o la más cercana por debajo."
   },
   "mediaStep": {
     "preparingTools": "Obteniendo herramientas",

@@ -822,6 +822,18 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
         { lang: "bn", name: "Bangla", automatic: true },
       ],
     };
+    // A video opened from a playlist (YouTube's `list=`): its playlist, listed alongside.
+    const list = u.searchParams.get("list");
+    if (list) {
+      result.playlist = {
+        title: `Demo playlist ${list}`,
+        entries: Array.from({ length: 3 }, (_, i) => ({
+          url: `https://${u.hostname}/watch?v=${list}-${i + 1}`,
+          title: `Demo playlist video ${i + 1}`,
+          durationSecs: 120 + i,
+        })),
+      };
+    }
     mediaProbes.set(href, result);
     return result;
   }
