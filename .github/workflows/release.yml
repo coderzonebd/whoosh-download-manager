@@ -68,13 +68,16 @@ jobs:
           tauri_v=$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)
           desktop_v=$(jq -r .version apps/desktop/package.json)
           extension_v=$(jq -r .version apps/extension/package.json)
+          mobile_v=$(jq -r .version apps/mobile/src-tauri/tauri.conf.json)
+          mobile_pkg_v=$(jq -r .version apps/mobile/package.json)
           if [ "$GITHUB_REF_TYPE" = tag ]; then version=${GITHUB_REF_NAME#v}; else version=$tauri_v; fi
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             echo "::error::'$version' is not a release version (x.y.z or x.y.z-pre)"; exit 1
           fi
           bad=0
           for pair in "Cargo.toml=$cargo_v" "apps/desktop/src-tauri/tauri.conf.json=$tauri_v" \
-                      "apps/desktop/package.json=$desktop_v" "apps/extension/package.json=$extension_v"; do
+                      "apps/desktop/package.json=$desktop_v" "apps/extension/package.json=$extension_v" \
+                      "apps/mobile/src-tauri/tauri.conf.json=$mobile_v" "apps/mobile/package.json=$mobile_pkg_v"; do
             if [ "${pair#*=}" != "$version" ]; then
               echo "::error file=${pair%%=*}::version is ${pair#*=}, the tag says $version"; bad=1
             fi
@@ -465,6 +468,74 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  android:
+    name: Android (APK and AAB)
+    needs: meta
+    # The upload keystore only for a v* tag (as the desktop signing keys); a dry run signs with a
+    # throwaway debug key, good for testing on a phone and nothing else.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "false" # release builds start clean
+      - name: Android SDK and NDK
+        # The runner image has the SDK and an NDK; the app compiles against Android 37.
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
+          {
+            echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME"
+            echo "JAVA_HOME=$JAVA_HOME_21_X64"
+          } >> "$GITHUB_ENV"
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+      - name: Upload keystore
+        if: env.KEYSTORE_PRESENT == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "WDM_ANDROID_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+      - name: Build
+        working-directory: apps/mobile
+        env:
+          WDM_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          WDM_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          WDM_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: pnpm tauri android build --ci --apk --aab --target aarch64 armv7 x86_64
+      - name: Collect
+        run: |
+          set -euo pipefail
+          if [ "$IS_TAG" = true ] && [ "$KEYSTORE_PRESENT" != true ]; then
+            # A debug-signed APK in a release would lock its users out of every real update.
+            echo "::warning::no ANDROID_KEYSTORE_BASE64: this release ships no Android app (docs/release.md, Android)"
+            exit 0
+          fi
+          out="apps/mobile/src-tauri/gen/android/app/build/outputs"
+          mkdir -p dist
+          cp "$out/apk/universal/release/app-universal-release.apk" "dist/Whoosh-Download-Manager_${VERSION}_android.apk"
+          cp "$out/bundle/universalRelease/app-universal-release.aab" "dist/Whoosh-Download-Manager_${VERSION}_android.aab"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "dist/Whoosh-Download-Manager_${VERSION}_android.apk" | head -n 3
+          ls -l dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-android
+          path: dist/
+          if-no-files-found: ignore
+          retention-days: 7
+
   binaries:
     name: CLI and native host (${{ matrix.platform }})
     needs: meta
@@ -759,7 +830,7 @@ jobs:
 
   release:
     name: Draft GitHub release
-    needs: [meta, desktop, binaries, extension, sbom, manifests]
+    needs: [meta, desktop, binaries, extension, sbom, manifests, android]
     # Never on a dry run: only a v* tag creates (or refreshes) a draft release.
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04

@@ -68,11 +68,13 @@ without the development `key` (the job fails if a key is left in).
 
 1. Pick the version `X.Y.Z` (or `X.Y.Z-beta.N`; pre-releases skip the MSI
    because WiX only accepts numeric versions).
-2. Set it in all four places, which the release job checks against the tag:
+2. Set it in all six places, which the release job checks against the tag:
    - `Cargo.toml` → `[workspace.package] version`
    - `apps/desktop/src-tauri/tauri.conf.json` → `version`
    - `apps/desktop/package.json` → `version`
    - `apps/extension/package.json` → `version`
+   - `apps/mobile/src-tauri/tauri.conf.json` → `version`
+   - `apps/mobile/package.json` → `version`
 
    Run `cargo check` so `Cargo.lock` follows, and commit on `dev` (via a PR).
    Then open the **release PR `dev → pub`** and merge it with a merge commit
@@ -275,6 +277,27 @@ in *Settings → Privacy*, and the app tells them once on first run. Builds
 without it (pull requests, local builds, dry runs without the secret) contain
 no active reporter, hide the switch and send nothing. What a report holds:
 [docs/privacy.md](privacy.md).
+
+## Android
+
+The *Android* job builds the app (`apps/mobile`) for 64-bit and 32-bit ARM phones and x86_64
+(emulators, Chromebooks): `Whoosh-Download-Manager_<v>_android.apk` for the GitHub release and
+`Whoosh-Download-Manager_<v>_android.aab` for Google Play, both in `SHA256SUMS`.
+
+Every update of an Android app must be signed with the same key as the first version a user
+installed, so the key is made once and kept for good:
+
+1. Make the upload keystore (on your own computer; keep two offline backups):
+   ```bash
+   keytool -genkeypair -v -keystore wdm-upload.jks -alias wdm -keyalg RSA -keysize 4096 -validity 10000
+   ```
+2. In the `release` environment, add the secrets `ANDROID_KEYSTORE_BASE64`
+   (`base64 -w0 wdm-upload.jks`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`wdm`) and
+   `ANDROID_KEY_PASSWORD`.
+3. On Google Play, enrol in Play App Signing with this key as the upload key.
+
+Without the keystore a dry run signs with a throwaway debug key (installs for testing), and a
+tagged release ships no Android app rather than one users could never update.
 
 ## Package channels
 
