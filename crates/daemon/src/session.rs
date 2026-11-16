@@ -116,6 +116,27 @@ fn mark_needs_app(method_name: &str, result: &mut Value, shared: &Shared) {
     }
 }
 
+/// A window's `media.probe` or `media.add` for a page the extension offered,
+/// sent without a browser request: the one the offer carried (its cookies
+/// for a site that shows the video only when signed in). Returns the page
+/// URL when a probe was filled in, so its canonical address can share it.
+fn fill_page_request(req: &mut rpc::Request, kind: ClientKind, shared: &Shared) -> Option<String> {
+    let name = req.method.as_str();
+    if kind == ClientKind::Browser || (name != method::MEDIA_PROBE && name != method::MEDIA_ADD) {
+        return None;
+    }
+    let Some(Value::Object(params)) = req.params.as_mut() else {
+        return None;
+    };
+    if params.get("request").is_some_and(|r| !r.is_null()) {
+        return None;
+    }
+    let url = params.get("url").and_then(Value::as_str)?.to_owned();
+    let request = shared.offers.request_for(&url, crate::offers::now_ms())?;
+    params.insert("request".into(), serde_json::to_value(request).ok()?);
+    (name == method::MEDIA_PROBE).then_some(url)
+}
+
 /// The daemon's own `media.offer`, `media.offers` and `media.takeOffer`
 /// (crate::offers); `None` for every other method.
 fn offer_method(
@@ -512,6 +533,7 @@ fn on_text(
         return;
     }
     mark_origin(&mut req, kind);
+    let page_request = fill_page_request(&mut req, kind, shared);
     let shared = shared.clone();
     let outbox = outbox.clone();
     tasks.spawn(async move {
@@ -519,6 +541,14 @@ fn on_text(
         let method = req.method.clone();
         let result = rpc::dispatch(&shared.service, req).await.map(|mut v| {
             mark_needs_app(&method, &mut v, &shared);
+            // The probe names the page's canonical address; its media.add uses that one.
+            if let Some(from) = &page_request
+                && let Some(to) = v.get("url").and_then(Value::as_str)
+            {
+                shared
+                    .offers
+                    .alias_request(from, to, crate::offers::now_ms());
+            }
             v
         });
         let Some(id) = id else {

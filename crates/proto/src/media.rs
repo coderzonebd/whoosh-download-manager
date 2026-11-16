@@ -308,6 +308,14 @@ pub struct MediaOfferParams {
     /// The page's title, as a hint until the probe answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// What the browser sends to the page (its cookies for the site, the
+    /// user agent): sites that only show a video to a signed-in browser
+    /// (Instagram, Facebook, a members-only or age-restricted video) need
+    /// them. The daemon keeps it in memory only, never shows it to the
+    /// app's windows, and uses it for that page's `media.probe` and
+    /// `media.add` when they come without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<RequestContext>,
 }
 
 /// `media.offer`'s answer.

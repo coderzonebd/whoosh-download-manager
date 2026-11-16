@@ -21,6 +21,8 @@ pub struct Dirs {
     pub cache: PathBuf,
     /// Short-lived files (cookie files).
     pub tmp: PathBuf,
+    /// The JavaScript runtime for YouTube's challenges ([`crate::js`]).
+    pub js: Option<crate::js::JsRuntime>,
 }
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(180);
@@ -33,13 +35,17 @@ fn os(s: impl Into<OsString>) -> OsString {
 }
 
 pub fn base_args(dirs: &Dirs) -> Vec<OsString> {
-    vec![
+    let mut args = vec![
         os("--ignore-config"),
         os("--no-playlist"),
         os("--no-color"),
         os("--cache-dir"),
         dirs.cache.as_os_str().to_owned(),
-    ]
+    ];
+    if let Some(js) = &dirs.js {
+        args.extend(js.args());
+    }
+    args
 }
 
 /// yt-dlp's output templates treat `%` specially; a directory or name
@@ -73,7 +79,10 @@ impl Drop for CookieFile {
     }
 }
 
-/// Netscape cookie file for `url`'s host from a `Cookie` header value.
+/// Netscape cookie file for `url`'s host from a `Cookie` header value. A
+/// `www.` host shares its cookies with the site's other hosts (Instagram's
+/// API is `i.instagram.com`, a page `www.instagram.com`), as the site's own
+/// domain cookies do in the browser.
 pub fn netscape_cookies(url: &str, cookie: &str) -> Option<String> {
     let host = url::Url::parse(url).ok()?.host_str()?.to_owned();
     if host.contains(['\t', '\n', '\r']) {
@@ -83,7 +92,10 @@ pub fn netscape_cookies(url: &str, cookie: &str) -> Option<String> {
     let (domain, subdomains) = if is_ip {
         (host.clone(), "FALSE")
     } else {
-        (format!(".{host}"), "TRUE")
+        (
+            format!(".{}", host.strip_prefix("www.").unwrap_or(&host)),
+            "TRUE",
+        )
     };
     let expires = crate::util::now_ms() / 1000 + 24 * 3600;
     let mut out = String::from("# Netscape HTTP Cookie File\n");
@@ -505,13 +517,21 @@ mod tests {
     }
 
     #[test]
-    fn cookie_files_are_scoped_to_the_host() {
+    fn cookie_files_are_scoped_to_the_site() {
         let c = netscape_cookies("https://www.example.com/watch?v=1", "a=1; b = 2;bad").unwrap();
         let lines: Vec<_> = c.lines().skip(1).collect();
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].starts_with(".www.example.com\tTRUE\t/\tFALSE\t"));
+        // `www.` shares with the site's other hosts (its API, its CDN for signed-in media).
+        assert!(lines[0].starts_with(".example.com\tTRUE\t/\tFALSE\t"));
         assert!(lines[0].ends_with("\ta\t1"));
         assert!(lines[1].ends_with("\tb\t2"));
+        let sub = netscape_cookies("https://m.example.com/x", "a=1").unwrap();
+        assert!(
+            sub.lines()
+                .nth(1)
+                .unwrap()
+                .starts_with(".m.example.com\tTRUE")
+        );
         let ip = netscape_cookies("http://127.0.0.1:8080/x", "a=1").unwrap();
         assert!(ip.lines().nth(1).unwrap().starts_with("127.0.0.1\tFALSE"));
         assert!(netscape_cookies("not a url", "a=1").is_none());
@@ -522,6 +542,7 @@ mod tests {
         let dirs = Dirs {
             cache: "/c".into(),
             tmp: "/t".into(),
+            js: None,
         };
         let run = FallbackRun {
             info: Path::new("/j/i.json"),

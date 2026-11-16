@@ -206,12 +206,25 @@ impl MediaService {
             st.live.insert(job.id.clone(), JobLive::default());
         }
         st.jobs = jobs;
+        let bin = cfg.dir.join("bin");
+        let js = tokio::task::spawn_blocking(move || crate::js::find(&bin))
+            .await
+            .unwrap_or(None);
+        match &js {
+            Some(r) => {
+                tracing::info!(runtime = r.kind, path = %r.path.display(), "JavaScript runtime for yt-dlp")
+            }
+            None => {
+                tracing::warn!("no JavaScript runtime for yt-dlp: YouTube offers fewer formats")
+            }
+        }
         let shared = Arc::new(Shared {
             inner,
             tools,
             dirs: Dirs {
                 cache: cfg.dir.join("cache"),
                 tmp: cfg.dir.join("tmp"),
+                js,
             },
             dir: cfg.dir.clone(),
             state: Mutex::new(st),

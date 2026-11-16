@@ -7,10 +7,12 @@
 // subtitles. When no app window is open, the native host starts the app with
 // only its small prompt window.
 //
-// Only the page's address and title leave the browser, and only on the
-// user's click (PRIVACY.md).
+// Only on the user's click, and only to the app on this computer: the page's
+// address and title, and what the browser sends to that page (its cookies
+// for the site, the user agent), so a video that only a signed-in browser can
+// see (Instagram, Facebook, a members-only video) downloads too (PRIVACY.md).
 
-import type { MediaOfferParams, MediaOfferResult } from "@wdm/api-client";
+import type { MediaOfferParams, MediaOfferResult, RequestContext } from "@wdm/api-client";
 
 import { t } from "../shared/i18n";
 import { MAX_TITLE, type ActionReply } from "../shared/messages";
@@ -22,6 +24,8 @@ export interface OfferDeps {
   settings(): Promise<Settings>;
   /** The store policy (store build only; nothing is blocked otherwise). */
   blocked(...urls: (string | undefined)[]): boolean;
+  /** What the browser would send to `url` from that cookie store (cookies, user agent, referrer). */
+  request?(url: string, referrer: string | undefined, storeId: string | undefined): Promise<RequestContext | undefined>;
 }
 
 export interface OfferRequest {
@@ -32,6 +36,8 @@ export interface OfferRequest {
   tabUrl?: string | undefined;
   /** The video button: never on excluded sites. The popup is an explicit request and is not. */
   fromButton: boolean;
+  /** The tab's cookie store (a private window, a Firefox container). */
+  cookieStoreId?: string | undefined;
 }
 
 export async function offerPage(deps: OfferDeps, req: OfferRequest): Promise<ActionReply> {
@@ -47,6 +53,9 @@ export async function offerPage(deps: OfferDeps, req: OfferRequest): Promise<Act
   const params: MediaOfferParams = { url: page.href };
   const title = req.title?.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE);
   if (title) params.title = title;
+  const referrer = req.tabUrl && req.tabUrl !== page.href ? req.tabUrl : undefined;
+  const request = await deps.request?.(page.href, referrer, req.cookieStoreId).catch(() => undefined);
+  if (request) params.request = request;
   try {
     await deps.daemon.call("media.offer", params);
     return { ok: true };
