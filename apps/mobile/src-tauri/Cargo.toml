@@ -1,0 +1,38 @@
+[package]
+name = "wdm-mobile"
+description = "WDM for Android: the shared Svelte UI over a wdm daemon running in the app's own process"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "wdm_mobile_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "wdm-mobile"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-clipboard-manager = "2"
+serde.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+# The daemon, in-process; no yt-dlp/ffmpeg (they cannot run on Android).
+wdm-daemon = { path = "../../../crates/daemon", default-features = false }
+wdm-net.workspace = true
+wdm-proto.workspace = true
+# Mozilla's root certificates: HTTPS is checked against these instead of the
+# Android system store, which needs a JNI bridge set up from Kotlin (later).
+webpki-root-certs = "1"
+
+[lints]
+workspace = true
