@@ -97,6 +97,37 @@ jobs:
         # Windows runs the whole suite too, and blocks like the others.
         run: cargo test --workspace --locked --no-fail-fast
 
+  android:
+    # The Android app (apps/mobile) and everything it runs in-process (daemon, engine, net,
+    # store) must keep building for Android: a desktop-only dependency would otherwise only
+    # show up when a release builds the APK. Clippy for the 64-bit ARM target is enough; the
+    # release workflow builds the APK itself.
+    name: Android (clippy, aarch64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: android
+          save-if: ${{ github.event_name == 'push' }}
+      - name: cargo clippy (Android)
+        run: |
+          set -euo pipefail
+          # The runner image's NDK compiles the C parts (sqlite, ring, aws-lc).
+          bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$bin/aarch64-linux-android30-clang"
+          export CXX_aarch64_linux_android="$bin/aarch64-linux-android30-clang++"
+          export AR_aarch64_linux_android="$bin/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$bin/aarch64-linux-android30-clang"
+          cargo clippy -p wdm-mobile --target aarch64-linux-android --locked -- -D warnings
+
   js:
     name: TypeScript (typecheck, test, build)
     runs-on: ubuntu-24.04
@@ -271,7 +302,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [workflows, rust, js, ui-a11y, install-script]
+    needs: [workflows, rust, js, ui-a11y, install-script, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
