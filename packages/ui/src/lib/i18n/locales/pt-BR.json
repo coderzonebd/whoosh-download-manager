@@ -564,5 +564,15 @@
     "recheck": "Verificar de novo",
     "done": "Concluir",
     "later": "Você pode voltar a esta página em Configurações → Navegadores."
+  },
+  "mobile": {
+    "all": "Todos",
+    "add": "Adicionar",
+    "back": "Voltar",
+    "menu": "Mais opções",
+    "filters": "Mostrar",
+    "waiting": "Aguardando o servidor",
+    "emptyGroup": "Nada aqui",
+    "emptyBody": "Toque em Adicionar e cole um link para começar um download."
   }
 }

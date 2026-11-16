@@ -21,6 +21,8 @@ interface Screen {
   name: string;
   /** The desktop app's prompt window (PromptApp, 520×440) instead of the main one. */
   prompt?: boolean;
+  /** The Android app's phone layout (MobileApp, 390×844, touch). */
+  phone?: boolean;
   /** Opens the screen; resolves once it is on the page. */
   open(page: Page): Promise<void>;
 }
@@ -138,6 +140,37 @@ const SCREENS: Screen[] = [
       await page.locator("#vy-media-title").waitFor({ timeout: 20_000 });
     },
   },
+  {
+    name: "phone: download list",
+    phone: true,
+    async open(page) {
+      await page.locator("article").first().waitFor();
+    },
+  },
+  {
+    name: "phone: details sheet",
+    phone: true,
+    async open(page) {
+      await page.locator("article .open").first().click();
+      await page.locator(".sheet aside dl").waitFor();
+    },
+  },
+  {
+    name: "phone: add sheet",
+    phone: true,
+    async open(page) {
+      await withApp(page, `app.openAdd("https://downloads.example.org/releases/ubuntu-24.04-desktop-amd64.iso");`);
+      await page.waitForFunction(() => (document.querySelector<HTMLInputElement>("#vy-add-name")?.value ?? "").includes("ubuntu"));
+    },
+  },
+  {
+    name: "phone: settings",
+    phone: true,
+    async open(page) {
+      await withApp(page, `app.view = "settings";`);
+      await page.locator("#vy-set-lang").waitFor();
+    },
+  },
 ];
 
 interface AxeNode {
@@ -217,8 +250,9 @@ describe.skipIf(!chrome)("accessibility (axe-core)", () => {
         for (const screen of SCREENS) {
           it(screen.name, async () => {
             const colorScheme = theme === "dark" ? "dark" : "light";
-            const viewport = screen.prompt ? { width: 520, height: 440 } : { width: 1280, height: 800 };
-            const context = await browser.newContext({ viewport, colorScheme, locale: lang === "bn" ? "bn-BD" : "en-US" });
+            const viewport = screen.phone ? { width: 390, height: 844 } : screen.prompt ? { width: 520, height: 440 } : { width: 1280, height: 800 };
+            const touch = screen.phone ? { isMobile: true, hasTouch: true } : {};
+            const context = await browser.newContext({ viewport, colorScheme, locale: lang === "bn" ? "bn-BD" : "en-US", ...touch });
             const page = await context.newPage();
             const errors: string[] = [];
             page.on("pageerror", (e) => errors.push(e.message));
@@ -227,6 +261,7 @@ describe.skipIf(!chrome)("accessibility (axe-core)", () => {
               url.searchParams.set("lang", lang);
               url.searchParams.set("theme", theme === "dark" ? "dark" : "light");
               if (screen.prompt) url.searchParams.set("view", "prompt");
+              if (screen.phone) url.searchParams.set("view", "mobile");
               await page.goto(url.toString());
               await page.waitForFunction(() => window.__wdmApp !== undefined);
               await page.waitForFunction((l) => document.documentElement.lang === l, lang);

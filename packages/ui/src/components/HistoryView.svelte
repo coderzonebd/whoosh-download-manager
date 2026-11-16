@@ -290,5 +290,21 @@
     .facts .dir {
       display: none;
     }
+    /* A phone: the buttons go under the facts instead of squeezing them. */
+    .entry {
+      flex-wrap: wrap;
+      row-gap: var(--vy-space-1-5);
+    }
+    .main {
+      flex-basis: calc(100% - 3rem);
+    }
+    .facts {
+      flex-wrap: wrap;
+      row-gap: 0;
+    }
+    .actions {
+      flex-basis: 100%;
+      justify-content: flex-end;
+    }
   }
 </style>

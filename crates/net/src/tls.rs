@@ -71,10 +71,20 @@ impl Tls {
             .map(|d| CertificateDer::from(d.clone()))
             .collect();
         if self.platform_roots {
-            match rustls_platform_verifier::Verifier::new_with_extra_roots(
-                extra.clone(),
-                provider(),
-            ) {
+            // Android's verifier asks the system TrustManager (through JNI, set up by the app at
+            // start) and cannot take extra roots; with extra roots configured they are trusted alone.
+            #[cfg(target_os = "android")]
+            let platform = if extra.is_empty() {
+                rustls_platform_verifier::Verifier::new(provider())
+            } else {
+                Err(rustls::Error::General(
+                    "extra roots replace the system store on Android".into(),
+                ))
+            };
+            #[cfg(not(target_os = "android"))]
+            let platform =
+                rustls_platform_verifier::Verifier::new_with_extra_roots(extra.clone(), provider());
+            match platform {
                 Ok(v) => return Ok(Arc::new(v)),
                 // No usable OS store (e.g. a bare container): fall back to
                 // the extra roots alone, if any.
