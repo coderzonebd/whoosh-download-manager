@@ -133,6 +133,7 @@
     "ms": "{{m}} mnt {{s}} dtk",
     "hm": "{{h}} jam {{m}} mnt",
     "dh": "{{d}} hr {{h}} jam",
+    "d": "{{d}} hr",
     "left": "{{eta}} lagi"
   },
   "progress": {
@@ -234,7 +235,9 @@
     "complete": "Unduhan selesai",
     "failed": "Unduhan gagal",
     "hide": "Sembunyikan",
+    "cancelAgain": "Klik lagi untuk membatalkan",
     "hint": "Unduhan tetap berjalan di latar belakang jika jendela ini disembunyikan, dan jendela muncul lagi saat unduhan selesai.",
+    "waiting": "Menunggu server… WDM akan mencoba lagi sendiri.",
     "open": "Buka",
     "openFolder": "Buka folder"
   },

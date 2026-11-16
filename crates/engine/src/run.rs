@@ -72,6 +72,9 @@ enum Recovery {
 /// written.
 const LEGACY_FINISHING: &str = "whoosh-finishing:";
 
+/// Waits for new connections at least this long are logged at `info`.
+const LOGGED_WAIT: Duration = Duration::from_secs(1);
+
 /// The finish intent of a checkpoint: the field, or the interim marker.
 fn intent(cp: &Checkpoint) -> Option<Finishing> {
     cp.finishing.clone().or_else(|| {
@@ -2092,6 +2095,19 @@ impl Driver {
             })
             .min(self.t.retry_cap);
         let until = now.checked_add(delay).unwrap_or(now + self.t.retry_cap);
+        // A long wait is what a user sees as a download stuck at 0 B/s (no
+        // new connection opens until it ends): say why, at the level release
+        // builds keep. The error is a status line, never the URL.
+        if until > self.open_gate && delay >= LOGGED_WAIT {
+            tracing::info!(
+                id = %self.id,
+                wait_ms = delay.as_millis() as u64,
+                retry_after = retry_after.is_some(),
+                round = self.consecutive,
+                working = self.working_owners(),
+                "waiting before new connections: {err}"
+            );
+        }
         self.open_gate = self.open_gate.max(until);
         Ok(())
     }

@@ -52,13 +52,15 @@ export function splitDuration(totalSecs: number): DurationParts {
  * Which ETA template to use. Two units at most, and seconds only when they
  * matter (under ten minutes), so the column stops jittering.
  */
-export function etaTemplate(totalSecs: number): "eta.s" | "eta.m" | "eta.ms" | "eta.hm" | "eta.dh" {
+export function etaTemplate(totalSecs: number): "eta.s" | "eta.m" | "eta.ms" | "eta.hm" | "eta.dh" | "eta.d" {
   const t = Math.max(0, Math.round(totalSecs));
   if (t < 60) return "eta.s";
   if (t < 600) return "eta.ms";
   if (t < 3600) return "eta.m";
   if (t < 86_400) return "eta.hm";
-  return "eta.dh";
+  // From ten days on the hours say nothing, and "1,072d 9h" no longer fits its column.
+  if (t < 10 * 86_400) return "eta.dh";
+  return "eta.d";
 }
 
 export function fraction(done: number, total: number | undefined): number | undefined {

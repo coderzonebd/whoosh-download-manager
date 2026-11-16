@@ -141,6 +141,7 @@
     "ms": "{{m}} min {{s}} s",
     "hm": "{{h}} h {{m}} min",
     "dh": "{{d}} d {{h}} h",
+    "d": "{{d}} d",
     "left": "{{eta}} restantes"
   },
   "progress": {
@@ -244,7 +245,9 @@
     "complete": "Descarga completada",
     "failed": "La descarga falló",
     "hide": "Ocultar",
+    "cancelAgain": "Haz clic otra vez para cancelar",
     "hint": "Si ocultas esta ventana, la descarga sigue en segundo plano y la ventana vuelve cuando termina.",
+    "waiting": "Esperando al servidor… WDM lo vuelve a intentar solo.",
     "open": "Abrir",
     "openFolder": "Abrir carpeta"
   },

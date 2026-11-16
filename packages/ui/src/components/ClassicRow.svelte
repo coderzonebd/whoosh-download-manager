@@ -37,15 +37,15 @@
     <FileIcon category={download.category} size="sm" />
     <span class="vy-truncate" title={d.filename} dir="auto">{d.filename}</span>
   </div>
-  <div class="cell num vy-num" role="gridcell">{d.totalBytes === undefined ? "—" : i18n.bytes(d.totalBytes)}</div>
+  <div class="cell num vy-num" role="gridcell"><span class="vy-truncate">{d.totalBytes === undefined ? "—" : i18n.bytes(d.totalBytes)}</span></div>
   <div class="cell progress" role="gridcell">
     <SegmentBar download={download} decorative />
     <span class="pct vy-num">{frac === undefined ? i18n.bytes(d.downloadedBytes) : i18n.percent(frac)}</span>
   </div>
   <div class="cell" role="gridcell"><StatusBadge state={d.state} step={d.media?.step} /></div>
-  <div class="cell num vy-num" role="gridcell">{moving ? i18n.speed(d.speedBps) : ""}</div>
-  <div class="cell num vy-num" role="gridcell">{moving ? i18n.eta(d.etaSecs) : ""}</div>
-  <div class="cell num vy-num" role="gridcell">{moving ? i18n.number(d.connections) : ""}</div>
+  <div class="cell num vy-num" role="gridcell"><span class="vy-truncate">{moving ? i18n.speed(d.speedBps) : ""}</span></div>
+  <div class="cell num vy-num" role="gridcell"><span class="vy-truncate">{moving ? i18n.eta(d.etaSecs) : ""}</span></div>
+  <div class="cell num vy-num" role="gridcell"><span class="vy-truncate">{moving ? i18n.number(d.connections) : ""}</span></div>
   <div class="cell muted vy-num" role="gridcell"><span class="vy-truncate" title={i18n.date(d.addedAt)}>{i18n.shortDate(d.addedAt)}</span></div>
 </div>
 
@@ -80,8 +80,10 @@
     white-space: nowrap;
     overflow: hidden;
   }
+  /* `safe`: a number wider than its column loses its end (with an ellipsis), never its start
+     ("1,072 days" must not read "072 days"). */
   .num {
-    justify-content: flex-end;
+    justify-content: safe flex-end;
   }
   .muted {
     color: var(--vy-color-text-muted);

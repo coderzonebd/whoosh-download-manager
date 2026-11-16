@@ -537,7 +537,10 @@ export class AppState {
     }
   }
 
-  /** "Cancel" in the confirmation dialog: the download goes away (nothing was fetched yet). */
+  /**
+   * "Cancel" in the confirmation dialog (nothing was fetched yet) and in the prompt window's
+   * progress: the download goes away with its partial file.
+   */
   async cancelWaiting(id: string): Promise<void> {
     await this.client.call("download.remove", { ids: [id], deleteFiles: true });
     this.store.remove([id]);
