@@ -30,6 +30,26 @@ pub trait Fetcher: Send + Sync + std::fmt::Debug {
     ) -> BoxFuture<'a, Result<String, String>>;
 }
 
+/// GitHub's API allows 60 requests an hour per address without a token, which shared CI runners
+/// use up (QuickJS's release digests come from it). With `GITHUB_TOKEN` in the environment (the
+/// release workflow's bundling step), requests to `api.github.com` carry it; nothing else does.
+fn github_api_auth(url: &str) -> Option<wdm_proto::RequestContext> {
+    let host = url::Url::parse(url).ok()?.host_str()?.to_ascii_lowercase();
+    if host != "api.github.com" {
+        return None;
+    }
+    let token = std::env::var("GITHUB_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())?;
+    Some(wdm_proto::RequestContext {
+        headers: vec![wdm_proto::Header {
+            name: "Authorization".into(),
+            value: format!("Bearer {token}"),
+        }],
+        ..Default::default()
+    })
+}
+
 /// Lower-case hex SHA-256 of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
@@ -59,7 +79,11 @@ impl Fetcher for NetFetcher {
 
     fn text<'a>(&'a self, url: &'a str) -> BoxFuture<'a, Result<String, String>> {
         Box::pin(async move {
-            let source = self.factory.source(url, None).map_err(|e| e.to_string())?;
+            let request = github_api_auth(url);
+            let source = self
+                .factory
+                .source(url, request.as_ref())
+                .map_err(|e| e.to_string())?;
             let (_, mut stream) = source.start().await.map_err(|e| e.to_string())?;
             let mut body = Vec::new();
             while let Some(chunk) = stream.next().await {
