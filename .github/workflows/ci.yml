@@ -226,11 +226,52 @@ jobs:
           docker run --rm wdm-labserver:ci --help
           test "$(docker run --rm --entrypoint id wdm-labserver:ci -u)" != "0"
 
+  install-script:
+    # packaging/install/install is one file for sh and PowerShell: each half must parse and pick
+    # the right way to install on its own system. A dry run changes nothing.
+    name: Install script (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The shell half
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(WDM_DRY_RUN=1 sh < packaging/install/install)"
+          echo "$out"
+          case "$RUNNER_OS" in
+            Linux) grep -q 'would install with apt' <<<"$out" ;;
+            macOS) grep -q 'would install with Homebrew' <<<"$out" ;;
+          esac
+      - name: The PowerShell half
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:WDM_DRY_RUN = '1'
+          $out = (Get-Content -Raw packaging/install/install | Invoke-Expression) 6>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'would install with winget|would install the per-user installer') { throw 'the PowerShell half did not run' }
+      - name: The PowerShell half parses on Linux too
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseInput((Get-Content -Raw packaging/install/install), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; throw 'PowerShell cannot parse the install script' }
+
   # Single required check for branch protection (matrix job names change).
   ci-ok:
     name: CI OK
     if: always()
-    needs: [workflows, rust, js, ui-a11y]
+    needs: [workflows, rust, js, ui-a11y, install-script]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

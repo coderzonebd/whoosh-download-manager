@@ -512,7 +512,7 @@ describe("connect your browser and updates (desktop)", () => {
     const { user } = await setup({ host });
     await user.click(within(nav()).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Updates" })).toBeInTheDocument();
-    const daily = await screen.findByRole("checkbox", { name: "Look for a new version of Whoosh Download Manager once a day" });
+    const daily = await screen.findByRole("checkbox", { name: "Keep Whoosh Download Manager up to date by itself" });
     await waitFor(() => expect(daily).toBeChecked());
     await user.click(daily);
     expect(prefs.autoUpdateCheck).toBe(false);

@@ -276,6 +276,41 @@ without it (pull requests, local builds, dry runs without the secret) contain
 no active reporter, hide the switch and send nothing. What a report holds:
 [docs/privacy.md](privacy.md).
 
+## Package channels
+
+Installing takes one command on every system (README, *Install*), and the app keeps itself up
+to date afterwards; the package manager it came from sees each new version, so nothing fights:
+
+| Channel | Install | Who updates | How the package manager knows |
+|---|---|---|---|
+| winget | `winget install --id CoderZoneBD.WDM -e` | the app (signed in-app update, NSIS/MSI) | the installer writes the new version to Windows' list of programs, which winget reads |
+| Homebrew cask | `brew install --cask coderzonebd/tap/whoosh-download-manager` | the app | the cask says `auto_updates true`, so `brew upgrade` leaves it to the app |
+| apt / dnf / zypper (Cloudsmith repository) | `packaging/install/install`, or the repository by hand | the app, through `dpkg -i` / `rpm -U` (asks for the password once, with pkexec); `apt upgrade` / `dnf upgrade` work too | dpkg's and rpm's own database |
+| AppImage, `.dmg`, NSIS from the releases page | `packaging/install/install` | the app | — |
+| AUR (`wdm`, built from source) | `yay -S wdm` | pacman / the AUR helper; the app does not update itself | it is pacman's package |
+| Flathub | `flatpak install flathub com.coderzonebd.whoosh` | the software centre (`flatpak update`); not the app (sandboxed) | it is Flatpak's |
+| Scoop | not published: a self-updating app and Scoop's versioned folders would disagree; the manifest stays in `packaging/scoop` for later | — | — |
+
+The app's own updates: `apps/desktop/src-tauri/src/updates.rs`. With *Keep Whoosh Download
+Manager up to date by itself* on (the default), it checks once a day, downloads a new version
+quietly, and installs it when nothing is downloading and the window is closed, or when the user
+quits; downloads resume after the restart. A `.deb` or `.rpm` asks first (a toast with
+*Install*), since installing needs the administrator's password. Where a package manager owns
+the copy (Flatpak, Scoop, an AUR build), Settings says so and shows its update command.
+
+When a release is published, `.github/workflows/publish-channels.yml` hands it on. Each job runs
+only when its secret exists in the `release` environment:
+
+| Secret / variable | Channel | What to create |
+|---|---|---|
+| `CLOUDSMITH_API_KEY` (secret), `CLOUDSMITH_REPO` (variable, `owner/repository`), optionally `CLOUDSMITH_BETA_REPO` | apt and rpm repository | a free [Cloudsmith open-source](https://cloudsmith.com/product/open-source) account and a public repository; the API key of a user with write access. Then set `WDM_APT_REPO` (`https://dl.cloudsmith.io/public/<owner>/<repo>/deb/any-distro`), `WDM_RPM_REPO` and `WDM_REPO_KEY` (the repository's GPG key URL) as the defaults in `packaging/install/install` |
+| `WINGET_TOKEN` (secret) | winget | a GitHub token (classic, `public_repo`) of an account that forked `microsoft/winget-pkgs`. The first version is submitted by hand from the release's package manifests (`packaging/winget/README.md`); Komac updates it from then on |
+| `HOMEBREW_TAP_TOKEN` (secret), `HOMEBREW_TAP` (variable, default `coderzonebd/homebrew-tap`) | Homebrew | a public `homebrew-tap` repository and a fine-grained token with *Contents: write* on it |
+| `AUR_SSH_PRIVATE_KEY` (secret) | AUR | an AUR account with that SSH key; the first push creates the `wdm` package |
+
+Pre-releases go only to `CLOUDSMITH_BETA_REPO` (when set); winget, Homebrew and the AUR take full
+releases. Flathub is a pull request to `flathub/flathub` by hand (`packaging/flatpak/README.md`).
+
 ## Accounts to create
 
 For v1.0 the owner chose distribution at no cost: no Apple Developer Program and no Chrome Web Store fee for now ([ADR 0007, Amendment 1](adr/0007-phase2-plan.md#amendment-1-the-road-to-v10-at-no-cost-2026-11-14)). The paid rows below stay for later.
@@ -288,7 +323,7 @@ For v1.0 the owner chose distribution at no cost: no Apple Developer Program and
 | Chrome Web Store developer account | store extension | one-time US$5 |
 | addons.mozilla.org account | Firefox extension (AMO also wants the source archive for review) | free |
 | Microsoft Partner Center (later) | Microsoft Store / MSIX | free for individuals, fee for companies |
-| Flathub, Snapcraft, AUR, Homebrew tap, Scoop bucket | Linux and package-manager channels (`packaging/`) | free |
+| Cloudsmith (open source), Homebrew tap repository, AUR, winget-pkgs fork, Flathub | package channels (*Package channels* above) | free |
 
 ## GitHub settings to switch on after the first push
 

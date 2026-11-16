@@ -14,6 +14,8 @@ cask "whoosh-download-manager" do
     strategy :github_latest
   end
 
+  # The app updates itself (signed in-app updates); `brew upgrade` leaves it alone.
+  auto_updates true
   depends_on macos: ">= :monterey"
 
   app "Whoosh Download Manager.app"

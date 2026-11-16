@@ -11,11 +11,12 @@ those release assets. How a release is cut and signed: [docs/release.md](../docs
 | [`aur/`](aur) | Arch User Repository (`wdm`) | from-source `PKGBUILD` |
 | [`winget/`](winget) | `microsoft/winget-pkgs` | multi-file manifest template |
 | [`homebrew/`](homebrew) | own tap, later `homebrew/cask` | cask template |
-| [`scoop/`](scoop) | own bucket, later Extras | manifest with `checkver`/`autoupdate` |
+| [`scoop/`](scoop) | not published (the app updates itself) | manifest with `checkver`/`autoupdate`, kept for later |
 | [`docker/`](docker) | GHCR / Docker Hub | multi-stage, non-root; builds `wdm-labserver` until the daemon exists |
 | [`linux/`](linux) | shared | `.desktop` entry and AppStream metainfo (both validate) |
 | [`browsers/`](browsers) | every installer | the extension's store IDs (`extension-ids.json`) and the generator for the installers' browser integration |
 | [`signpath/`](signpath) | Windows signing | SignPath artifact configuration used by `release.yml` |
+| [`install/`](install) | one-command install | `install`: one file that is both a shell and a PowerShell script and picks the way to install on each system; see the README's *Install* |
 | [`media-tools/`](media-tools) | every desktop installer | licence texts and notice shipped next to the bundled yt-dlp and ffmpeg |
 
 ## Filled in per release
@@ -25,7 +26,8 @@ those release assets. How a release is cut and signed: [docs/release.md](../docs
 on the release assets and attaches `wdm-<version>-package-manifests.tar.gz`
 to the draft release: the winget, Scoop, Homebrew, Flatpak and AUR files from
 here with the real version, URLs and SHA-256s (and an AUR `.SRCINFO`).
-Nothing is submitted; each channel's README says how to submit by hand.
+`publish-channels.yml` hands a published release to the apt/rpm repository, winget, the
+Homebrew tap and the AUR when their secrets are set ([docs/release.md](../docs/release.md#package-channels)).
 
 ## Placeholders everywhere
 
@@ -38,7 +40,7 @@ here:
 
 - the command and package name `wdm`, the app id **`com.coderzonebd.whoosh`** (also in
   `tauri.conf.json` and the native messaging host name), winget id
-  `CoderZoneBD.Whoosh`;
+  `CoderZoneBD.WDM`;
 - the repository URL **`github.com/coderzonebd/whoosh-download-manager`**;
 - versions (`0.0.1`) and zeroed hashes in the templates here (the release's
   generated copies have the real ones).
@@ -47,5 +49,5 @@ Renaming later means: `tauri.conf.json` (`productName`, `identifier`), the
 file names in `linux/` and `flatpak/`, every manifest here, and the
 `HOST_NAME` the extension and `wdm-nmhost` agree on.
 
-Not here yet: Snap, Nix, Chocolatey, MSIX, apt/dnf repositories, and
+Not here yet: Snap, Nix, Chocolatey, MSIX, and
 Unraid/Synology templates for the daemon image.

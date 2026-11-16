@@ -15,7 +15,7 @@ The simplest path is [wingetcreate](https://github.com/microsoft/winget-create),
 which downloads the installers, computes the hashes and opens the PR:
 
 ```powershell
-wingetcreate update CoderZoneBD.Whoosh --version 0.1.0 `
+wingetcreate update CoderZoneBD.WDM --version 0.1.0 `
   --urls https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh-Download-Manager_0.1.0_x64-setup.exe `
          https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh-Download-Manager_0.1.0_x64_en-US.msi `
   --submit
@@ -31,7 +31,7 @@ fine-grained token with `public_repo` on a fork of winget-pkgs
 
 ## Placeholders until the name and signing are settled
 
-- `PackageIdentifier` `CoderZoneBD.Whoosh`, `PackageName`, `Moniker` and every
+- `PackageIdentifier` `CoderZoneBD.WDM`, `PackageName`, `Moniker` and every
   `github.com/coderzonebd/whoosh-download-manager` URL.
 - Zeroed `InstallerSha256` values and version `0.0.1`.
 - **Wait for signed installers.** winget-pkgs runs malware scans on every

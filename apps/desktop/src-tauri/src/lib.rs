@@ -147,6 +147,13 @@ fn quit_app<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
     save_window_state(app);
+    // A new version downloaded in the background goes in now (it stops the daemon itself).
+    if updates::install_on_quit(app) {
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            let _ = window.hide();
+        }
+        return;
+    }
     if !app.state::<prefs::PrefsState>().get().stop_daemon_on_quit {
         app.exit(0);
         return;
@@ -292,6 +299,7 @@ pub fn run() {
             let first_run = !loaded.browser_setup_shown;
             app.manage(prefs::PrefsState(std::sync::Mutex::new(loaded)));
             app.manage(updates::Pending::default());
+            app.manage(updates::Ready::default());
             app.manage(watch::Followed::default());
             std::thread::spawn(move || browsers::ensure_registered(first_run));
             updates::start_daily_check(app.handle().clone());
@@ -361,6 +369,7 @@ pub fn run() {
             browsers::open_extension_page,
             updates::check_for_update,
             updates::install_update,
+            updates::update_source,
             crash::crash_reports,
             crash::set_crash_reports,
             crash::dismiss_crash_notice,

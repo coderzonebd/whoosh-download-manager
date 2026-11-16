@@ -115,6 +115,11 @@ export interface Host {
    * when one ends, also while the main window sleeps in the tray (desktop app).
    */
   setFollowed?: (ids: string[]) => Promise<void>;
+  /**
+   * A package manager that updates this copy instead of the app (Flatpak, Scoop, an AUR build):
+   * its name and the command that updates now (may be empty). undefined: the app updates itself.
+   */
+  updatesFrom?: () => Promise<{ manager: string; command: string } | undefined>;
   /** Signed in-app updates (desktop app). */
   updates?: {
     /** undefined when this is the newest version. */

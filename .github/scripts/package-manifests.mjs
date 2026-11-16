@@ -77,7 +77,7 @@ export function winget({ version, date, repo, assets }) {
   }
   if (installers.length === 0) return undefined;
   const installer = `# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
-PackageIdentifier: CoderZoneBD.Whoosh
+PackageIdentifier: CoderZoneBD.WDM
 PackageVersion: ${version}
 MinimumOSVersion: 10.0.17763.0
 Platform:
@@ -92,9 +92,9 @@ ManifestVersion: 1.10.0
 `;
   const fill = (t) => untemplate(t).replaceAll("0.0.1", version).replaceAll("coderzonebd/whoosh-download-manager", repo);
   return {
-    "CoderZoneBD.Whoosh.yaml": fill(read("winget/CoderZoneBD.Whoosh.yaml")),
-    "CoderZoneBD.Whoosh.installer.yaml": installer,
-    "CoderZoneBD.Whoosh.locale.en-US.yaml": fill(read("winget/CoderZoneBD.Whoosh.locale.en-US.yaml")),
+    "CoderZoneBD.WDM.yaml": fill(read("winget/CoderZoneBD.WDM.yaml")),
+    "CoderZoneBD.WDM.installer.yaml": installer,
+    "CoderZoneBD.WDM.locale.en-US.yaml": fill(read("winget/CoderZoneBD.WDM.locale.en-US.yaml")),
   };
 }
 

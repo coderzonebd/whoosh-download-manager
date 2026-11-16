@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The shell's quiet daily update check (`updates.rs`) only announces a new
-// version; this shows it as a toast whose button installs it and restarts.
+// The shell keeps the app up to date by itself (`updates.rs`); where installing needs the
+// password (a .deb or .rpm) it announces the new version instead, and this shows it as a toast
+// whose button installs it and restarts.
 import type { AppState } from "@wdm/ui";
 import { installUpdate } from "./host.ts";
 
