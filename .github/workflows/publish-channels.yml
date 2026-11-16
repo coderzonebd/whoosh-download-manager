@@ -1,0 +1,201 @@
+# Package channels: when a release is published (by hand, from the draft release.yml made), hand
+# it to the package managers, so `apt install`, `dnf install`, `winget install`, `brew install`
+# and the AUR get it without anyone downloading an installer by hand.
+#
+# Each job runs only when its secret is set (docs/release.md, "Package channels"), so a fork or
+# a repository without them publishes nothing. Pre-releases go only to the Linux beta repository
+# (when one is set up); winget, Homebrew and the AUR take full releases.
+#
+# The app updates itself after that, and the package managers see it: winget reads the version
+# the installer writes to Windows' list of programs, the cask says `auto_updates`, and a .deb or
+# .rpm is updated through dpkg/rpm (apps/desktop/src-tauri/src/updates.rs).
+name: Package channels
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to hand to the package channels again, e.g. v1.0.0
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-channels-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  meta:
+    name: Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The channels' secrets live in the `release` environment, like the signing keys.
+    environment: release
+    outputs:
+      version: ${{ steps.r.outputs.version }}
+      prerelease: ${{ steps.r.outputs.prerelease }}
+      linux-repo: ${{ steps.s.outputs.linux-repo }}
+      winget: ${{ steps.s.outputs.winget }}
+      homebrew: ${{ steps.s.outputs.homebrew }}
+      aur: ${{ steps.s.outputs.aur }}
+    steps:
+      - id: r
+        run: |
+          set -euo pipefail
+          case "$TAG" in v[0-9]*) ;; *) echo "::error::$TAG is not a v* tag"; exit 1 ;; esac
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease > r.json
+          [ "$(jq -r .isDraft r.json)" = false ] || { echo "::error::$TAG is still a draft"; exit 1; }
+          {
+            echo "version=${TAG#v}"
+            echo "prerelease=$(jq -r .isPrerelease r.json)"
+          } >> "$GITHUB_OUTPUT"
+      - id: s
+        # Which channels are set up (secrets cannot be tested in a job's `if`).
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          {
+            echo "linux-repo=${CLOUDSMITH_API_KEY:+true}"
+            echo "winget=${WINGET_TOKEN:+true}"
+            echo "homebrew=${HOMEBREW_TAP_TOKEN:+true}"
+            echo "aur=${AUR_SSH_PRIVATE_KEY:+true}"
+          } >> "$GITHUB_OUTPUT"
+
+  linux-repo:
+    name: apt and rpm repository (Cloudsmith)
+    needs: meta
+    if: needs.meta.outputs.linux-repo == 'true' && (needs.meta.outputs.prerelease == 'false' || vars.CLOUDSMITH_BETA_REPO != '')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    env:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      # owner/repository on Cloudsmith, e.g. coderzonebd/whoosh-download-manager
+      REPO: ${{ needs.meta.outputs.prerelease == 'true' && vars.CLOUDSMITH_BETA_REPO || vars.CLOUDSMITH_REPO }}
+    steps:
+      - name: The release's packages
+        run: |
+          set -euo pipefail
+          [ -n "$REPO" ] || { echo "::error::set the CLOUDSMITH_REPO variable (owner/repository)"; exit 1; }
+          mkdir pkgs && cd pkgs
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.deb' --pattern '*.rpm' --pattern SHA256SUMS
+          grep -E '\.(deb|rpm)$' SHA256SUMS | sha256sum -c -
+          ls -l
+      - name: Upload to Cloudsmith
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user --quiet cloudsmith-cli==1.31.1
+          export PATH="$HOME/.local/bin:$PATH"
+          cd pkgs
+          # any-distro/any-version: one package for every Debian/Ubuntu and every rpm distribution.
+          for f in *.deb; do cloudsmith push deb "$REPO/any-distro/any-version" "$f" --republish; done
+          for f in *.rpm; do cloudsmith push rpm "$REPO/any-distro/any-version" "$f" --republish; done
+
+  winget:
+    name: winget (microsoft/winget-pkgs)
+    needs: meta
+    if: needs.meta.outputs.winget == 'true' && needs.meta.outputs.prerelease == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release
+    steps:
+      - name: Komac
+        run: |
+          set -euo pipefail
+          v=2.17.2
+          f="komac-$v-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL -o "$f" "https://github.com/russellbanks/Komac/releases/download/v$v/$f"
+          echo "b03b020eec98acfb0b53e284a6e21815b884be33de6785b97e7a120f0e748966  $f" | sha256sum -c -
+          tar -xzf "$f" && install -m 0755 "$(find . -name komac -type f | head -n 1)" "$HOME/komac"
+      - name: Open the winget-pkgs pull request
+        # The first version goes in by hand (packaging/winget/README.md); from then on Komac
+        # updates the existing package with this release's installers.
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          "$HOME/komac" update CoderZoneBD.Whoosh --version "$VERSION" --submit \
+            --urls "$base/Whoosh-Download-Manager_${VERSION}_x64-setup.exe" \
+                   "$base/Whoosh-Download-Manager_${VERSION}_arm64-setup.exe" \
+                   "$base/Whoosh-Download-Manager_${VERSION}_x64_en-US.msi"
+
+  homebrew:
+    name: Homebrew tap
+    needs: meta
+    if: needs.meta.outputs.homebrew == 'true' && needs.meta.outputs.prerelease == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    env:
+      TAP: ${{ vars.HOMEBREW_TAP || 'coderzonebd/homebrew-tap' }}
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - name: The release's cask
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-package-manifests.tar.gz"
+          tar -xzf "wdm-$VERSION-package-manifests.tar.gz"
+          ls "wdm-$VERSION-package-manifests/homebrew/whoosh-download-manager.rb"
+      - name: Push it to the tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/$TAP.git" tap
+          mkdir -p tap/Casks
+          cp "wdm-$VERSION-package-manifests/homebrew/whoosh-download-manager.rb" tap/Casks/
+          cd tap
+          git add Casks/whoosh-download-manager.rb
+          if git diff --cached --quiet; then echo "the tap already has $VERSION"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "whoosh-download-manager $VERSION"
+          git push origin HEAD
+
+  aur:
+    name: AUR (wdm)
+    needs: meta
+    if: needs.meta.outputs.aur == 'true' && needs.meta.outputs.prerelease == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - name: The release's PKGBUILD
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-package-manifests.tar.gz"
+          tar -xzf "wdm-$VERSION-package-manifests.tar.gz"
+          ls "wdm-$VERSION-package-manifests/aur/PKGBUILD" "wdm-$VERSION-package-manifests/aur/.SRCINFO"
+      - name: Push it to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur && chmod 0600 ~/.ssh/aur
+          # aur.archlinux.org's published host keys (https://wiki.archlinux.org/title/AUR_submission_guidelines).
+          cat >> ~/.ssh/known_hosts <<'KEYS'
+          aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
+          KEYS
+          sed -i 's/^ *//' ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
+          git clone ssh://aur@aur.archlinux.org/wdm.git aur
+          cp "wdm-$VERSION-package-manifests/aur/PKGBUILD" "wdm-$VERSION-package-manifests/aur/.SRCINFO" aur/
+          cd aur
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then echo "the AUR already has $VERSION"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "$VERSION"
+          git push origin HEAD:master

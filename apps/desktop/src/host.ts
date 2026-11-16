@@ -120,6 +120,10 @@ export function desktopHost(): Host {
     async setFollowed(ids) {
       await invoke("set_followed", { ids });
     },
+    // Flatpak, Scoop or an AUR build: that package manager updates this copy (`updates.rs`).
+    async updatesFrom() {
+      return (await invoke<{ manager: string; command: string } | null>("update_source")) ?? undefined;
+    },
     updates: {
       async check() {
         return (await invoke<UpdateInfo | null>("check_for_update")) ?? undefined;

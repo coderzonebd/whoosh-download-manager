@@ -199,6 +199,14 @@
   const host = app.host;
   const hasDesktop = host.desktopPrefs !== undefined || host.launchAtLogin !== undefined;
   const updates = host.updates;
+  /** Set when a package manager updates this copy: no checking or installing here then. */
+  let updatesFrom = $state<{ manager: string; command: string } | undefined>(undefined);
+  $effect(() => {
+    host.updatesFrom?.().then(
+      (v) => (updatesFrom = v),
+      () => {},
+    );
+  });
 
   type UpdateState = { kind: "idle" | "checking" | "current" | "installing" } | { kind: "available"; version: string };
   let update = $state<UpdateState>({ kind: "idle" });
@@ -575,6 +583,10 @@
       {#if updates}
         <section aria-labelledby="vy-set-updates">
           <h2 id="vy-set-updates">{t("settings.updates")}</h2>
+          {#if updatesFrom}
+            <p class="vy-hint">{t("settings.updatesFrom", { manager: updatesFrom.manager })}</p>
+            {#if updatesFrom.command}<p class="vy-hint">{t("settings.updatesFromCommand", { command: "" })}<code dir="ltr">{updatesFrom.command}</code></p>{/if}
+          {:else}
           {#if host.desktopPrefs}
             <div class="vy-field">
               <label class="vy-check">
@@ -598,6 +610,7 @@
               {#if update.kind === "current"}{t("settings.upToDate")}{:else if update.kind === "available"}{t("settings.updateAvailable", { version: update.version })}{/if}
             </span>
           </div>
+          {/if}
         </section>
       {/if}
 

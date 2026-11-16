@@ -63,7 +63,21 @@ Whoosh Download Manager doesn't call a download done until the bytes are synced 
   - the `wdm` CLI;
   - a native-messaging host for the browser extension.
 
-## Quick start
+## Install
+
+One command per system; each checks what it downloads and the app keeps itself up to date afterwards.
+
+| System | Command |
+|---|---|
+| Windows | `winget install --id CoderZoneBD.Whoosh -e` |
+| Windows (without winget) | `irm https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install.ps1 \| iex` |
+| macOS (Homebrew) | `brew install --cask coderzonebd/tap/whoosh-download-manager` |
+| Linux and macOS | `curl -fsSL https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install.sh \| sh` |
+| Arch Linux | `yay -S wdm` (AUR) |
+
+The Linux script uses apt (Debian, Ubuntu, Mint), dnf or zypper (Fedora, openSUSE) through the signed WDM repository, else the AppImage. The installers are also on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases). How each channel updates: [docs/release.md](docs/release.md#package-channels).
+
+## Quick start (from source)
 
 ```bash
 # build (Rust toolchain pinned in rust-toolchain.toml)

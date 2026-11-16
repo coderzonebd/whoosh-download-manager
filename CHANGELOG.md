@@ -4,6 +4,11 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## Unreleased: Phase 2
 
+### Installing and updating
+- **One command to install on every system:** `winget install --id CoderZoneBD.Whoosh -e`, `brew install --cask coderzonebd/tap/whoosh-download-manager`, `curl -fsSL …/install.sh | sh` (apt, dnf or zypper through the signed WDM repository, else the AppImage; the `.dmg` on a Mac without Homebrew) and `irm …/install.ps1 | iex` (winget, else the per-user installer). The scripts check every download against the release's `SHA256SUMS`.
+- **The app keeps itself up to date.** It downloads a new version quietly and installs it when nothing is downloading and the window is closed, or when you quit; downloads resume after the restart. A Linux package (.deb, .rpm) asks first, since installing needs the password, and is installed through dpkg/rpm so apt and dnf know the version. Copies a package manager owns (Flatpak, Scoop, the AUR) leave updating to it, and Settings shows its command.
+- **Release automation:** a published release goes to the apt/rpm repository (Cloudsmith), winget (Komac), the Homebrew tap and the AUR, each once its secret is set. The cask says `auto_updates`.
+
 ### Downloads from the browser
 - **Download videos from the browser, like IDM.** Pointing at a video of a reasonable size (or starting one) shows a small "Download with WDM" button at its top-right corner (only its icon on narrow videos; in fullscreen, embedded players and single-page sites such as YouTube too). It works on sites that stream through MSE, where there is no file to catch: the button hands the page to the app, whose add dialog probes it with yt-dlp and lets you choose video or audio, the quality and subtitles. The toolbar popup has the same as "Download this video with WDM" at the top of *Media on this page* on every web page. The button lives in a closed shadow root, never shifts the page, can be reached with the keyboard, stays away from excluded sites and can be turned off on the options page ("Show a download button on videos", on by default). The store builds of the extension show neither on YouTube and the other store-blocked sites.
 - *Media on this page* leaves out audio and video files under 100 KiB (page sounds such as YouTube's own UI clicks); streams and files of unknown size are still listed.
