@@ -283,10 +283,10 @@ to date afterwards; the package manager it came from sees each new version, so n
 
 | Channel | Install | Who updates | How the package manager knows |
 |---|---|---|---|
-| winget | `winget install --id CoderZoneBD.Whoosh -e` | the app (signed in-app update, NSIS/MSI) | the installer writes the new version to Windows' list of programs, which winget reads |
+| winget | `winget install --id CoderZoneBD.WDM -e` | the app (signed in-app update, NSIS/MSI) | the installer writes the new version to Windows' list of programs, which winget reads |
 | Homebrew cask | `brew install --cask coderzonebd/tap/whoosh-download-manager` | the app | the cask says `auto_updates true`, so `brew upgrade` leaves it to the app |
-| apt / dnf / zypper (Cloudsmith repository) | `install.sh`, or the repository by hand | the app, through `dpkg -i` / `rpm -U` (asks for the password once, with pkexec); `apt upgrade` / `dnf upgrade` work too | dpkg's and rpm's own database |
-| AppImage, `.dmg`, NSIS from the releases page | `install.sh` / `install.ps1` | the app | — |
+| apt / dnf / zypper (Cloudsmith repository) | `packaging/install/install`, or the repository by hand | the app, through `dpkg -i` / `rpm -U` (asks for the password once, with pkexec); `apt upgrade` / `dnf upgrade` work too | dpkg's and rpm's own database |
+| AppImage, `.dmg`, NSIS from the releases page | `packaging/install/install` | the app | — |
 | AUR (`wdm`, built from source) | `yay -S wdm` | pacman / the AUR helper; the app does not update itself | it is pacman's package |
 | Flathub | `flatpak install flathub com.coderzonebd.whoosh` | the software centre (`flatpak update`); not the app (sandboxed) | it is Flatpak's |
 | Scoop | not published: a self-updating app and Scoop's versioned folders would disagree; the manifest stays in `packaging/scoop` for later | — | — |
@@ -303,7 +303,7 @@ only when its secret exists in the `release` environment:
 
 | Secret / variable | Channel | What to create |
 |---|---|---|
-| `CLOUDSMITH_API_KEY` (secret), `CLOUDSMITH_REPO` (variable, `owner/repository`), optionally `CLOUDSMITH_BETA_REPO` | apt and rpm repository | a free [Cloudsmith open-source](https://cloudsmith.com/product/open-source) account and a public repository; the API key of a user with write access. Then set `WDM_APT_REPO` (`https://dl.cloudsmith.io/public/<owner>/<repo>/deb/any-distro`), `WDM_RPM_REPO` and `WDM_REPO_KEY` (the repository's GPG key URL) as the defaults in `packaging/install/install.sh` |
+| `CLOUDSMITH_API_KEY` (secret), `CLOUDSMITH_REPO` (variable, `owner/repository`), optionally `CLOUDSMITH_BETA_REPO` | apt and rpm repository | a free [Cloudsmith open-source](https://cloudsmith.com/product/open-source) account and a public repository; the API key of a user with write access. Then set `WDM_APT_REPO` (`https://dl.cloudsmith.io/public/<owner>/<repo>/deb/any-distro`), `WDM_RPM_REPO` and `WDM_REPO_KEY` (the repository's GPG key URL) as the defaults in `packaging/install/install` |
 | `WINGET_TOKEN` (secret) | winget | a GitHub token (classic, `public_repo`) of an account that forked `microsoft/winget-pkgs`. The first version is submitted by hand from the release's package manifests (`packaging/winget/README.md`); Komac updates it from then on |
 | `HOMEBREW_TAP_TOKEN` (secret), `HOMEBREW_TAP` (variable, default `coderzonebd/homebrew-tap`) | Homebrew | a public `homebrew-tap` repository and a fine-grained token with *Contents: write* on it |
 | `AUR_SSH_PRIVATE_KEY` (secret) | AUR | an AUR account with that SSH key; the first push creates the `wdm` package |

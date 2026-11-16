@@ -126,7 +126,7 @@ jobs:
         run: |
           set -euo pipefail
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
-          "$HOME/komac" update CoderZoneBD.Whoosh --version "$VERSION" --submit \
+          "$HOME/komac" update CoderZoneBD.WDM --version "$VERSION" --submit \
             --urls "$base/Whoosh-Download-Manager_${VERSION}_x64-setup.exe" \
                    "$base/Whoosh-Download-Manager_${VERSION}_arm64-setup.exe" \
                    "$base/Whoosh-Download-Manager_${VERSION}_x64_en-US.msi"

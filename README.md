@@ -69,13 +69,13 @@ One command per system; each checks what it downloads and the app keeps itself u
 
 | System | Command |
 |---|---|
-| Windows | `winget install --id CoderZoneBD.Whoosh -e` |
-| Windows (without winget) | `irm https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install.ps1 \| iex` |
+| Windows | `winget install --id CoderZoneBD.WDM -e` |
 | macOS (Homebrew) | `brew install --cask coderzonebd/tap/whoosh-download-manager` |
-| Linux and macOS | `curl -fsSL https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install.sh \| sh` |
+| Any system, one script: Linux and macOS | `curl -fsSL https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install \| sh` |
+| Any system, one script: Windows (PowerShell) | `irm https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install \| iex` |
 | Arch Linux | `yay -S wdm` (AUR) |
 
-The Linux script uses apt (Debian, Ubuntu, Mint), dnf or zypper (Fedora, openSUSE) through the signed WDM repository, else the AppImage. The installers are also on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases). How each channel updates: [docs/release.md](docs/release.md#package-channels).
+The script is the same file for every system: it works out which one it runs on. On Windows it uses winget, else the per-user installer; on macOS Homebrew, else the `.dmg`; on Linux it uses apt (Debian, Ubuntu, Mint), dnf or zypper (Fedora, openSUSE) through the signed WDM repository, else the AppImage. The installers are also on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases). How each channel updates: [docs/release.md](docs/release.md#package-channels).
 
 ## Quick start (from source)
 

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
 # TEMPLATE: version, URLs and hashes are filled per release (see README.md).
-PackageIdentifier: CoderZoneBD.Whoosh
+PackageIdentifier: CoderZoneBD.WDM
 PackageVersion: 0.0.1
 MinimumOSVersion: 10.0.17763.0
 Platform:

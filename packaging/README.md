@@ -16,7 +16,7 @@ those release assets. How a release is cut and signed: [docs/release.md](../docs
 | [`linux/`](linux) | shared | `.desktop` entry and AppStream metainfo (both validate) |
 | [`browsers/`](browsers) | every installer | the extension's store IDs (`extension-ids.json`) and the generator for the installers' browser integration |
 | [`signpath/`](signpath) | Windows signing | SignPath artifact configuration used by `release.yml` |
-| [`install/`](install) | one-command install | `install.sh` (Linux, macOS) and `install.ps1` (Windows); see the README's *Install* |
+| [`install/`](install) | one-command install | `install`: one file that is both a shell and a PowerShell script and picks the way to install on each system; see the README's *Install* |
 | [`media-tools/`](media-tools) | every desktop installer | licence texts and notice shipped next to the bundled yt-dlp and ffmpeg |
 
 ## Filled in per release
@@ -40,7 +40,7 @@ here:
 
 - the command and package name `wdm`, the app id **`com.coderzonebd.whoosh`** (also in
   `tauri.conf.json` and the native messaging host name), winget id
-  `CoderZoneBD.Whoosh`;
+  `CoderZoneBD.WDM`;
 - the repository URL **`github.com/coderzonebd/whoosh-download-manager`**;
 - versions (`0.0.1`) and zeroed hashes in the templates here (the release's
   generated copies have the real ones).

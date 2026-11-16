@@ -1,18 +1,29 @@
-#!/bin/sh
+echo `# <#` >/dev/null
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Installs Whoosh Download Manager on Linux or macOS with one command:
+# Installs Whoosh Download Manager on any system, with one script that works out the rest:
 #
-#   curl -fsSL https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install.sh | sh
+#   Linux, macOS:  curl -fsSL https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install | sh
+#   Windows:       irm https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install | iex
 #
+# The same file is a POSIX shell script and a PowerShell script. The first line is the switch:
+# sh runs `echo` with an empty command substitution and goes on with the shell part below,
+# which ends with `exit`; PowerShell reads "echo `#" and then a block comment that hides the
+# whole shell part, up to the line that closes it, and runs the PowerShell part after it.
+# (So the shell part must never contain the two characters that close a PowerShell block comment.)
+#
+# - Windows: winget when it is there (`winget install --id CoderZoneBD.WDM`), else the release's
+#   per-user installer (no administrator rights).
 # - macOS: Homebrew's cask when Homebrew is there, else the .dmg into /Applications.
-# - Debian, Ubuntu, Mint…: the WDM apt repository when it is set up (updates then come with
-#   `apt upgrade` too), else the release's .deb through apt.
+# - Debian, Ubuntu, Mint…: the WDM apt repository when it is set up (updates also come with
+#   `apt upgrade`), else the release's .deb through apt.
 # - Fedora, openSUSE…: the WDM rpm repository, else the release's .rpm through dnf/zypper.
-# - Anything else: the AppImage in ~/.local/bin, with a menu entry.
+# - Any other Linux: the AppImage in ~/.local/bin, with a menu entry.
 #
-# Every download is checked against the release's SHA256SUMS. The app keeps itself up to date
+# Every download is checked against the release's SHA256SUMS; the app keeps itself up to date
 # afterwards. WDM_VERSION=v1.2.3 installs that release; WDM_CHANNEL=beta prefers pre-releases.
+
+# ------------------------------------------------------------------ Linux and macOS (sh)
 set -eu
 
 REPO="coderzonebd/whoosh-download-manager"
@@ -147,6 +158,14 @@ DESKTOP
   say "installed $bin/Whoosh-Download-Manager.AppImage"
 }
 
+# WDM_DRY_RUN=1: say how it would install, change nothing (CI checks the script this way).
+if [ "${WDM_DRY_RUN-}" = 1 ]; then
+  install_macos() { have brew && echo "wdm: would install with Homebrew" || echo "wdm: would install the .dmg"; }
+  install_apt() { echo "wdm: would install with apt"; }
+  install_rpm() { echo "wdm: would install with $1"; }
+  install_appimage() { echo "wdm: would install the AppImage"; }
+fi
+
 case "$(uname -s)" in
   Darwin) install_macos ;;
   Linux)
@@ -156,6 +175,70 @@ case "$(uname -s)" in
     elif have yum; then install_rpm yum
     else install_appimage; fi
     ;;
-  *) die "this script is for Linux and macOS; on Windows run: winget install --id CoderZoneBD.Whoosh -e" ;;
+  *) die "this script is for Linux and macOS; on Windows run: winget install --id CoderZoneBD.WDM -e" ;;
 esac
 say "done. Whoosh Download Manager keeps itself up to date."
+exit 0
+#> > $null
+
+# ------------------------------------------------------------------ Windows (PowerShell)
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+$Repo = 'coderzonebd/whoosh-download-manager'
+$WingetId = 'CoderZoneBD.WDM'
+
+function Say($m) { Write-Host "wdm: $m" }
+
+function Get-ReleaseTag {
+    if ($env:WDM_VERSION) { return $env:WDM_VERSION }
+    $api = "https://api.github.com/repos/$Repo/releases"
+    if ($env:WDM_CHANNEL -ne 'beta') {
+        try { return (Invoke-RestMethod "$api/latest").tag_name } catch { }
+    }
+    $all = Invoke-RestMethod "$api`?per_page=20"
+    if (-not $all) { throw 'no release found' }
+    return $all[0].tag_name
+}
+
+function Install-WithWinget {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget -or $env:WDM_VERSION -or $env:WDM_CHANNEL -eq 'beta') { return $false }
+    Say 'installing with winget'
+    & winget install --id $WingetId --exact --source winget --accept-source-agreements --accept-package-agreements
+    # 0 = installed; -1978335189 = already installed and up to date.
+    return ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335189)
+}
+
+function Install-FromRelease {
+    $tag = Get-ReleaseTag
+    $version = $tag.TrimStart('v')
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') { 'arm64' } else { 'x64' }
+    $name = "Whoosh-Download-Manager_${version}_${arch}-setup.exe"
+    $base = "https://github.com/$Repo/releases/download/$tag"
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("wdm-" + [guid]::NewGuid())
+    New-Item -ItemType Directory -Path $tmp | Out-Null
+    try {
+        Say "downloading $name"
+        $sums = (Invoke-WebRequest "$base/SHA256SUMS" -UseBasicParsing).Content
+        $want = ($sums -split "`n" | Where-Object { $_ -match "^([0-9a-fA-F]{64})\s+\*?$([regex]::Escape($name))\s*$" } | ForEach-Object { $Matches[1] }) | Select-Object -First 1
+        if (-not $want) { throw "$name is not in SHA256SUMS" }
+        $file = Join-Path $tmp $name
+        Invoke-WebRequest "$base/$name" -OutFile $file -UseBasicParsing
+        $got = (Get-FileHash $file -Algorithm SHA256).Hash
+        if ($got -ne $want.ToUpperInvariant()) { throw "$name`: checksum mismatch, nothing was installed" }
+        Say 'installing (per user, no administrator rights needed)'
+        $p = Start-Process -FilePath $file -ArgumentList '/S' -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "the installer stopped with code $($p.ExitCode)" }
+    } finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
+}
+
+# $env:WDM_DRY_RUN = "1": say how it would install, change nothing (CI checks the script this way).
+if ($env:WDM_DRY_RUN -eq '1') {
+    if (Get-Command winget -ErrorAction SilentlyContinue) { Say 'would install with winget' } else { Say 'would install the per-user installer' }
+    return
+}
+if (-not (Install-WithWinget)) { Install-FromRelease }
+Say 'done. Whoosh Download Manager keeps itself up to date; find it in the Start menu.'

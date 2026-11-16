@@ -29,10 +29,10 @@ test("every channel gets the real version, URLs and hashes", () => {
   try {
     const nsis = sha256(join(dir, `Whoosh-Download-Manager_${V}_x64-setup.exe`));
     const w = winget(ctx);
-    assert.match(w["CoderZoneBD.Whoosh.installer.yaml"], new RegExp(`InstallerSha256: ${nsis.toUpperCase()}`));
-    assert.ok(!w["CoderZoneBD.Whoosh.installer.yaml"].includes("wix"), "no MSI for a pre-release");
-    assert.ok(w["CoderZoneBD.Whoosh.locale.en-US.yaml"].includes(`PackageVersion: ${V}`));
-    assert.ok(!w["CoderZoneBD.Whoosh.locale.en-US.yaml"].includes("TEMPLATE"));
+    assert.match(w["CoderZoneBD.WDM.installer.yaml"], new RegExp(`InstallerSha256: ${nsis.toUpperCase()}`));
+    assert.ok(!w["CoderZoneBD.WDM.installer.yaml"].includes("wix"), "no MSI for a pre-release");
+    assert.ok(w["CoderZoneBD.WDM.locale.en-US.yaml"].includes(`PackageVersion: ${V}`));
+    assert.ok(!w["CoderZoneBD.WDM.locale.en-US.yaml"].includes("TEMPLATE"));
 
     const s = JSON.parse(scoop(ctx)["whoosh-download-manager.json"]);
     assert.equal(s.version, V);
