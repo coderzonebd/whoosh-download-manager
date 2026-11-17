@@ -8,13 +8,21 @@
 //!
 //! It starts on the first `daemon_connection` and stays up for the life of
 //! the process. Media downloads (yt-dlp/ffmpeg) are not part of this build.
+//!
+//! While something downloads, [`watch_downloads`] keeps Android's foreground
+//! service running (`WdmPlugin.setActive`, Kotlin), so the process — and the
+//! engine in it — lives on with the app in the background. [`android_update`]
+//! tells the UI about a newer release on GitHub (the app is not in a store).
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::Manager;
 use tokio::sync::OnceCell;
 use wdm_daemon::{DaemonConfig, RunningDaemon};
+use wdm_proto::service::Service;
 
 /// What the UI needs to open its WebSocket (the same shape as the desktop's).
 #[derive(Debug, Clone, Serialize)]
@@ -31,7 +39,11 @@ struct Daemon {
     running: OnceCell<RunningDaemon>,
 }
 
-async fn start(data_dir: PathBuf, download_dir: PathBuf) -> Result<RunningDaemon, String> {
+async fn start(
+    data_dir: PathBuf,
+    download_dir: PathBuf,
+    app: tauri::AppHandle,
+) -> Result<RunningDaemon, String> {
     let mut config = DaemonConfig::new(&data_dir);
     // Any free port: another app may hold the desktop default.
     config.port = 0;
@@ -55,16 +67,194 @@ async fn start(data_dir: PathBuf, download_dir: PathBuf) -> Result<RunningDaemon
     )
     .await
     .map_err(|e| format!("cannot start the download engine: {e}"))?;
-    let daemon = claim.serve(service).await.map_err(|e| e.to_string())?;
+    let daemon = claim
+        .serve(service.clone())
+        .await
+        .map_err(|e| e.to_string())?;
     tracing::info!(port = daemon.port(), store_ms, "in-process daemon ready");
+    tauri::async_runtime::spawn(watch_downloads(service, app));
     Ok(daemon)
 }
 
+/// `WdmPlugin.setActive`'s arguments.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Active {
+    active: u64,
+    title: String,
+    text: String,
+}
+
+/// "3.4 MB/s"
+fn speed(bps: u64) -> String {
+    let units = ["B", "KB", "MB", "GB"];
+    let mut v = bps as f64;
+    let mut u = 0;
+    while v >= 1000.0 && u < units.len() - 1 {
+        v /= 1000.0;
+        u += 1;
+    }
+    if u == 0 {
+        format!("{bps} B/s")
+    } else {
+        format!("{v:.1} {}/s", units[u])
+    }
+}
+
+fn active_of(stats: &wdm_proto::Stats) -> Active {
+    let active = u64::from(stats.active) + u64::from(stats.queued);
+    Active {
+        active,
+        title: if stats.active == 1 {
+            "Downloading 1 file".into()
+        } else {
+            format!("Downloading {} files", stats.active)
+        },
+        text: if stats.queued > 0 {
+            format!("{} · {} waiting", speed(stats.download_bps), stats.queued)
+        } else {
+            speed(stats.download_bps)
+        },
+    }
+}
+
+/// Every two seconds: something downloading or waiting keeps the foreground service (and its
+/// notification) up to date; nothing left stops it.
+async fn watch_downloads(service: Arc<dyn Service>, app: tauri::AppHandle) {
+    let mut last: Option<Active> = None;
+    loop {
+        if let Ok(stats) = service.stats().await {
+            let now = active_of(&stats);
+            if last.as_ref() != Some(&now) {
+                set_active(&app, &now);
+                last = Some(now);
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+#[cfg(target_os = "android")]
+fn set_active(app: &tauri::AppHandle, active: &Active) {
+    if let Some(plugin) = app.try_state::<AndroidPlugin>()
+        && let Err(e) = plugin
+            .0
+            .run_mobile_plugin::<()>("setActive", active.clone())
+    {
+        tracing::warn!("download service: {e}");
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn set_active(_app: &tauri::AppHandle, _active: &Active) {}
+
+#[cfg(target_os = "android")]
+struct AndroidPlugin(tauri::plugin::PluginHandle<tauri::Wry>);
+
+/// The Kotlin side (`WdmPlugin`), registered when the app starts.
+fn android_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("wdm")
+        .setup(|_app, _api| {
+            #[cfg(target_os = "android")]
+            {
+                let handle = _api.register_android_plugin("com.coderzonebd.whoosh", "WdmPlugin")?;
+                _app.manage(AndroidPlugin(handle));
+            }
+            Ok(())
+        })
+        .build()
+}
+
+/// A newer release than this app, for the UI to offer.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    version: String,
+    /// The release's page on GitHub.
+    url: String,
+}
+
+/// `1.2.0-beta.3` → (1, 2, 0, false, 3): numbers, then a pre-release below its release.
+fn version_key(v: &str) -> Option<(u64, u64, u64, bool, u64)> {
+    let v = v.trim().trim_start_matches('v');
+    let (core, pre) = v.split_once('-').map_or((v, None), |(c, p)| (c, Some(p)));
+    let mut n = core.split('.').map(|x| x.parse::<u64>().ok());
+    let (a, b, c) = (n.next()??, n.next()??, n.next()??);
+    let pre_n = pre
+        .and_then(|p| p.rsplit('.').next())
+        .and_then(|x| x.parse().ok())
+        .unwrap_or(0);
+    Some((a, b, c, pre.is_none(), pre_n))
+}
+
+/// The newest release that ships an Android app, if newer than this one. Pre-releases count
+/// while this app is one (a beta tester gets the next beta).
+fn newer_release(json: &str, current: &str) -> Option<UpdateInfo> {
+    let list: serde_json::Value = serde_json::from_str(json).ok()?;
+    let mine = version_key(current)?;
+    let on_beta = current.contains('-');
+    list.as_array()?
+        .iter()
+        .filter(|r| r["draft"] != true && (on_beta || r["prerelease"] != true))
+        .filter(|r| {
+            r["assets"].as_array().is_some_and(|a| {
+                a.iter().any(|x| {
+                    x["name"]
+                        .as_str()
+                        .is_some_and(|n| n.ends_with("_android.apk"))
+                })
+            })
+        })
+        .filter_map(|r| {
+            let tag = r["tag_name"].as_str()?;
+            let key = version_key(tag)?;
+            let url = r["html_url"].as_str()?.to_owned();
+            (key > mine && url.starts_with("https://github.com/")).then_some((key, tag, url))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, tag, url)| UpdateInfo {
+            version: tag.trim_start_matches('v').to_owned(),
+            url,
+        })
+}
+
+const RELEASES: &str =
+    "https://api.github.com/repos/coderzonebd/whoosh-download-manager/releases?per_page=10";
+
+/// A newer release on GitHub, or `null`. Any failure (offline, no releases yet) is `null`.
 #[tauri::command]
-async fn daemon_connection(state: tauri::State<'_, Daemon>) -> Result<Connection, String> {
+async fn android_update() -> Option<UpdateInfo> {
+    use futures::StreamExt;
+    use wdm_core::SourceFactory;
+    let net = wdm_net::NetConfig {
+        platform_roots: false,
+        extra_root_certs: webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            .iter()
+            .map(|c| c.as_ref().to_vec())
+            .collect(),
+        ..wdm_net::NetConfig::default()
+    };
+    let factory = wdm_net::HttpSourceFactory::new(net);
+    let source = factory.source(RELEASES, None).ok()?;
+    let (_, mut stream) = source.start().await.ok()?;
+    let mut body = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        body.extend_from_slice(&chunk.ok()?);
+        if body.len() > 4 << 20 {
+            return None;
+        }
+    }
+    newer_release(std::str::from_utf8(&body).ok()?, env!("CARGO_PKG_VERSION"))
+}
+
+#[tauri::command]
+async fn daemon_connection(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Daemon>,
+) -> Result<Connection, String> {
     let daemon = state
         .running
-        .get_or_try_init(|| start(state.data_dir.clone(), state.download_dir.clone()))
+        .get_or_try_init(|| start(state.data_dir.clone(), state.download_dir.clone(), app))
         .await?;
     let info = daemon.runtime_info();
     Ok(Connection {
@@ -74,19 +264,34 @@ async fn daemon_connection(state: tauri::State<'_, Daemon>) -> Result<Connection
     })
 }
 
+/// Where downloads go until the user picks a folder. On Android the phone's shared Download
+/// folder, where every file manager and app looks (Android 11 and later let an app create and
+/// rename its own files there without any permission); Tauri's own "download dir" there is the
+/// app's private folder under `Android/data`, which people do not find.
+fn default_download_dir(tauri_dir: Option<PathBuf>, data_dir: &std::path::Path) -> PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        let _ = tauri_dir;
+        let shared = PathBuf::from("/storage/emulated/0/Download");
+        if shared.is_dir() {
+            return shared;
+        }
+        data_dir.join("downloads")
+    }
+    #[cfg(not(target_os = "android"))]
+    tauri_dir.unwrap_or_else(|| data_dir.join("downloads"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = tracing_subscriber::fmt().with_ansi(false).try_init();
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(android_plugin())
         .setup(|app| {
             let paths = app.path();
             let data_dir = paths.app_data_dir()?;
-            // Android: the shared Download folder, where the app may create its own files
-            // (Android 11+); elsewhere the user's downloads folder.
-            let download_dir = paths
-                .download_dir()
-                .unwrap_or_else(|_| data_dir.join("downloads"));
+            let download_dir = default_download_dir(paths.download_dir().ok(), &data_dir);
             app.manage(Daemon {
                 data_dir,
                 download_dir,
@@ -94,10 +299,63 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![daemon_connection])
+        .invoke_handler(tauri::generate_handler![daemon_connection, android_update])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
             tracing::error!("cannot start WDM: {e}");
             std::process::exit(1);
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn versions_order_releases_after_their_betas() {
+        assert!(version_key("1.0.0").unwrap() > version_key("1.0.0-beta.3").unwrap());
+        assert!(version_key("v1.0.0-beta.3").unwrap() > version_key("1.0.0-beta.2").unwrap());
+        assert!(version_key("1.0.1").unwrap() > version_key("1.0.0").unwrap());
+        assert!(version_key("nonsense").is_none());
+    }
+
+    #[test]
+    fn offers_the_newest_release_with_an_android_app() {
+        let json = r#"[
+          {"tag_name":"v1.0.0-beta.2","prerelease":true,"draft":false,"html_url":"https://github.com/o/r/releases/tag/v1.0.0-beta.2",
+           "assets":[{"name":"Whoosh-Download-Manager_1.0.0-beta.2_android.apk"}]},
+          {"tag_name":"v0.9.0","prerelease":false,"draft":false,"html_url":"https://github.com/o/r/releases/tag/v0.9.0",
+           "assets":[{"name":"Whoosh-Download-Manager_0.9.0_android.apk"}]},
+          {"tag_name":"v2.0.0","prerelease":false,"draft":false,"html_url":"https://github.com/o/r/releases/tag/v2.0.0",
+           "assets":[{"name":"something-else.zip"}]}
+        ]"#;
+        // A beta sees the next beta; a release does not.
+        assert_eq!(
+            newer_release(json, "1.0.0-beta.1").unwrap().version,
+            "1.0.0-beta.2"
+        );
+        assert_eq!(newer_release(json, "0.8.0").unwrap().version, "0.9.0");
+        assert!(
+            newer_release(json, "1.0.0").is_none(),
+            "v2.0.0 has no Android app"
+        );
+        assert!(newer_release("not json", "0.1.0").is_none());
+    }
+
+    #[test]
+    fn says_what_downloads() {
+        let s = |active, queued, bps| wdm_proto::Stats {
+            download_bps: bps,
+            upload_bps: 0,
+            active,
+            queued,
+        };
+        let a = active_of(&s(2, 1, 3_400_000));
+        assert_eq!(
+            (a.active, a.title.as_str(), a.text.as_str()),
+            (3, "Downloading 2 files", "3.4 MB/s · 1 waiting")
+        );
+        assert_eq!(active_of(&s(0, 0, 0)).active, 0);
+        assert_eq!(speed(950), "950 B/s");
+    }
 }

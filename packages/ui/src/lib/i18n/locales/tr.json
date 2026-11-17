@@ -567,6 +567,7 @@
     "filters": "Göster",
     "waiting": "Sunucu bekleniyor",
     "emptyGroup": "Burada bir şey yok",
-    "emptyBody": "İndirmeye başlamak için Ekle'ye dokunup bir bağlantı yapıştırın."
+    "emptyBody": "İndirmeye başlamak için Ekle'ye dokunup bir bağlantı yapıştırın.",
+    "getUpdate": "İndir"
   }
 }
