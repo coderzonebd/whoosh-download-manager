@@ -517,9 +517,20 @@ async fn engine_path_merges_video_and_audio() {
     );
 
     // Event stream: the media download only, never a part.
+    // Until the media download's Completed arrives (a slow Windows runner can pause longer than
+    // the 200 ms between events), then whatever follows within 200 ms.
+    let completed = |n: &Notification| matches!(n, Notification::DownloadState(s) if s.state == DownloadState::Completed);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let mut seen = Vec::new();
-    while let Ok(Some(n)) = tokio::time::timeout(Duration::from_millis(200), events.next()).await {
-        seen.push(n);
+    loop {
+        match tokio::time::timeout(Duration::from_millis(200), events.next()).await {
+            Ok(Some(n)) => seen.push(n),
+            Ok(None) => break,
+            Err(_) if seen.iter().any(completed) || tokio::time::Instant::now() >= deadline => {
+                break;
+            }
+            Err(_) => {}
+        }
     }
     let ids: Vec<String> = seen
         .iter()
