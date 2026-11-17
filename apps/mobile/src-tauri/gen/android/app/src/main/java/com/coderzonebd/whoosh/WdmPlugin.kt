@@ -10,6 +10,7 @@ import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
+import kotlin.concurrent.thread
 
 @InvokeArg
 class ActiveArgs {
@@ -25,6 +26,20 @@ class ActiveArgs {
 @TauriPlugin
 class WdmPlugin(private val activity: Activity) : Plugin(activity) {
   private var running = false
+
+  /** yt-dlp, ffmpeg and QuickJS for the engine ([MediaTools]); waits for the first unpack. */
+  @Command
+  fun mediaTools(invoke: Invoke) {
+    MediaTools.start(activity)
+    thread(name = "wdm-media-tools-wait", isDaemon = true) {
+      val tools = MediaTools.await(120_000)
+      if (tools != null) {
+        invoke.resolve(tools)
+      } else {
+        invoke.reject(MediaTools.error ?: "the media tools are still unpacking")
+      }
+    }
+  }
 
   @Command
   fun setActive(invoke: Invoke) {

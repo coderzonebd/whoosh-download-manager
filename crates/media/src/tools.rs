@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use wdm_proto::media::{TOOL_FFMPEG, TOOL_QUICKJS, TOOL_YT_DLP};
+use wdm_proto::media::{TOOL_DENO, TOOL_FFMPEG, TOOL_QUICKJS, TOOL_YT_DLP};
 use wdm_proto::{MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus, UnixMillis};
 
 use crate::bundle::{self, Manifest};
@@ -44,16 +44,20 @@ pub enum Kind {
     /// The JavaScript runtime for YouTube ([`crate::js`]); used only when
     /// the computer has none of its own.
     QuickJs,
+    /// The faster JavaScript runtime the desktop installers ship; preferred
+    /// over QuickJS when present, never fetched on its own (40 MB).
+    Deno,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 3] = [Kind::YtDlp, Kind::Ffmpeg, Kind::QuickJs];
+    pub const ALL: [Kind; 4] = [Kind::YtDlp, Kind::Ffmpeg, Kind::QuickJs, Kind::Deno];
 
     pub fn name(self) -> &'static str {
         match self {
             Kind::YtDlp => TOOL_YT_DLP,
             Kind::Ffmpeg => TOOL_FFMPEG,
             Kind::QuickJs => TOOL_QUICKJS,
+            Kind::Deno => TOOL_DENO,
         }
     }
 
@@ -78,6 +82,7 @@ impl Kind {
             Kind::YtDlp => upstream::YT_DLP_UPSTREAM,
             Kind::Ffmpeg => upstream::ffmpeg_upstream(),
             Kind::QuickJs => upstream::QUICKJS_UPSTREAM,
+            Kind::Deno => upstream::DENO_UPSTREAM,
         }
     }
 
@@ -86,6 +91,7 @@ impl Kind {
             Kind::YtDlp => upstream::YT_DLP_LICENSE,
             Kind::Ffmpeg => upstream::ffmpeg_license(),
             Kind::QuickJs => upstream::QUICKJS_LICENSE,
+            Kind::Deno => upstream::DENO_LICENSE,
         }
     }
 }
@@ -145,6 +151,7 @@ pub struct ToolsConfig {
     pub yt_dlp: Option<Tool>,
     pub ffmpeg: Option<Tool>,
     pub quickjs: Option<Tool>,
+    pub deno: Option<Tool>,
     /// The tools shipped with the desktop app (a directory with
     /// [`bundle::MANIFEST`]), if any.
     pub bundled: Option<PathBuf>,
@@ -278,6 +285,7 @@ impl Tools {
             Kind::YtDlp => &self.cfg.yt_dlp,
             Kind::Ffmpeg => &self.cfg.ffmpeg,
             Kind::QuickJs => &self.cfg.quickjs,
+            Kind::Deno => &self.cfg.deno,
         };
         if let Some(tool) = fixed {
             return Some(Found {
@@ -356,6 +364,11 @@ impl Tools {
         let slots = lock(&self.slots);
         let tools = Kind::ALL
             .into_iter()
+            // A tool this platform has no build of, and does not have, is not offered (Deno on
+            // Android).
+            .filter(|kind| {
+                published_here(*kind) || slots.get(kind).is_some_and(|s| s.found.is_some())
+            })
             .map(|kind| {
                 let slot = slots.get(&kind);
                 let found = slot.and_then(|s| s.found.as_ref());
@@ -427,6 +440,11 @@ impl Tools {
         })
     }
 
+    /// Whether the installer ships `kind` (copied into `bin` on first use).
+    pub fn is_bundled(&self, kind: Kind) -> bool {
+        self.bundle_entry(kind).is_some()
+    }
+
     /// Shows the tool as installing right away (the install itself runs
     /// in the background).
     pub fn begin_install(&self, kind: Kind) {
@@ -446,7 +464,7 @@ impl Tools {
     pub async fn check_updates(&self) -> Result<(), String> {
         let mut first_err = None;
         for kind in Kind::ALL {
-            if self.fixed(kind) {
+            if self.fixed(kind) || !published_here(kind) {
                 continue;
             }
             match self.latest(kind).await {
@@ -502,6 +520,7 @@ impl Tools {
             Kind::YtDlp => self.cfg.yt_dlp.is_some(),
             Kind::Ffmpeg => self.cfg.ffmpeg.is_some(),
             Kind::QuickJs => self.cfg.quickjs.is_some(),
+            Kind::Deno => self.cfg.deno.is_some(),
         }
     }
 
@@ -516,6 +535,7 @@ impl Tools {
             Kind::QuickJs => {
                 upstream::latest_quickjs(self.fetcher.as_ref(), &self.cfg.upstreams).await
             }
+            Kind::Deno => upstream::latest_deno(self.fetcher.as_ref(), &self.cfg.upstreams).await,
         }
     }
 
@@ -799,6 +819,17 @@ pub(crate) async fn download_verified(
     Ok(())
 }
 
+/// Whether upstream publishes `kind` for this machine (the JavaScript
+/// runtimes are optional; a missing build is no failed update check).
+fn published_here(kind: Kind) -> bool {
+    let p = upstream::Platform::current();
+    match kind {
+        Kind::YtDlp | Kind::Ffmpeg => true,
+        Kind::QuickJs => upstream::quickjs_asset_name_for(p).is_some(),
+        Kind::Deno => upstream::deno_asset_name_for(p).is_some(),
+    }
+}
+
 /// Whether the system's copy may be used.
 fn system_allowed(kind: Kind) -> bool {
     match kind {
@@ -806,7 +837,7 @@ fn system_allowed(kind: Kind) -> bool {
         Kind::Ffmpeg => cfg!(any(target_os = "linux", target_os = "macos")),
         // A runtime installed on the computer (Deno, Node.js) is found by
         // crate::js instead; a system `qjs` may be another QuickJS.
-        Kind::QuickJs => false,
+        Kind::QuickJs | Kind::Deno => false,
     }
 }
 
@@ -830,7 +861,7 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
 /// "ffmpeg version 9.0.2 Copyright …".
 async fn version_of(kind: Kind, tool: &Tool) -> Option<String> {
     let arg = match kind {
-        Kind::YtDlp | Kind::QuickJs => "--version",
+        Kind::YtDlp | Kind::QuickJs | Kind::Deno => "--version",
         Kind::Ffmpeg => "-version",
     };
     let out = process::run(
@@ -849,6 +880,12 @@ async fn version_of(kind: Kind, tool: &Tool) -> Option<String> {
     let v = match kind {
         // `qjs --version` → `0.18.0`
         Kind::YtDlp | Kind::QuickJs => first.to_owned(),
+        // `deno --version` → `deno 2.9.8 (stable, release, …)`
+        Kind::Deno => first
+            .strip_prefix("deno ")?
+            .split_whitespace()
+            .next()?
+            .to_owned(),
         Kind::Ffmpeg => first
             .strip_prefix("ffmpeg version ")?
             .split_whitespace()
@@ -861,6 +898,16 @@ async fn version_of(kind: Kind, tool: &Tool) -> Option<String> {
 /// Unpacks with the system's `tar` (bsdtar on macOS and Windows 10+, which
 /// also reads zip; GNU tar on Linux, which detects xz).
 pub(crate) async fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
+    // GNU tar cannot read zip (Deno's builds, macOS ffmpeg): read it here.
+    if archive
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    {
+        let (archive, into) = (archive.to_path_buf(), into.to_path_buf());
+        return tokio::task::spawn_blocking(move || unzip(&archive, &into))
+            .await
+            .map_err(|e| format!("unzip: {e}"))?;
+    }
     let tar = system_tar().ok_or("no `tar` program to unpack ffmpeg with")?;
     let out = process::run(
         &Tool::new(tar),
@@ -880,6 +927,30 @@ pub(crate) async fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
     } else {
         Err(format!("tar: {}", out.error_line()))
     }
+}
+
+/// Unpacks a zip's regular files (names that would leave `into` are
+/// refused).
+fn unzip(archive: &Path, into: &Path) -> Result<(), String> {
+    let file = std::fs::File::open(archive).map_err(|e| format!("{}: {e}", archive.display()))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("{}: {e}", archive.display()))?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| format!("unzip: {e}"))?;
+        let Some(rel) = entry.enclosed_name() else {
+            return Err(format!("unzip: unsafe name {:?}", entry.name()));
+        };
+        let to = into.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            continue;
+        }
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        let mut out = std::fs::File::create(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| format!("{}: {e}", to.display()))?;
+    }
+    Ok(())
 }
 
 pub(crate) fn system_tar() -> Option<PathBuf> {
@@ -940,4 +1011,34 @@ async fn replace_file(from: &Path, to: &Path) -> Result<(), String> {
     tokio::fs::rename(from, to)
         .await
         .map_err(|e| format!("{}: {e}", to.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[tokio::test]
+    async fn unpacks_a_zip_without_tar() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("deno-x86_64-unknown-linux-gnu.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let opts = zip::write::SimpleFileOptions::default();
+            zip.start_file("deno", opts).unwrap();
+            zip.write_all(b"program").unwrap();
+            zip.finish().unwrap();
+        }
+        let out = tmp.path().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        unpack(&archive, &out).await.unwrap();
+        let found = find_file(&out, "deno").unwrap();
+        assert_eq!(std::fs::read(found).unwrap(), b"program");
+    }
+
+    #[test]
+    fn deno_names_its_version() {
+        assert_eq!(Kind::from_name("deno"), Some(Kind::Deno));
+        assert_eq!(Kind::Deno.program(), "deno");
+    }
 }

@@ -28,8 +28,10 @@ futures.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-# The daemon, in-process; no yt-dlp/ffmpeg (they cannot run on Android).
-wdm-daemon = { path = "../../../crates/daemon", default-features = false }
+# The daemon, in-process, with media downloads: yt-dlp, ffmpeg and QuickJS come with the
+# app (youtubedl-android, see MediaTools.kt) and run as separate programs.
+wdm-daemon = { path = "../../../crates/daemon", default-features = false, features = ["media"] }
+wdm-media.workspace = true
 wdm-core.workspace = true
 wdm-net.workspace = true
 wdm-proto.workspace = true

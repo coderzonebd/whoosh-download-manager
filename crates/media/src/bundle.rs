@@ -1,4 +1,4 @@
-//! yt-dlp, ffmpeg and QuickJS shipped inside the desktop installers, so video and
+//! yt-dlp, ffmpeg, QuickJS and Deno shipped inside the desktop installers, so video and
 //! audio sites work right after installation.
 //!
 //! **At build time** (`wdm-media-bundle`, run by the release workflow)
@@ -359,6 +359,55 @@ async fn fetch_into(
             license: upstream::QUICKJS_LICENSE.to_owned(),
             sources,
             files: BTreeMap::from([(qjs, String::new())]),
+            tars: BTreeMap::new(),
+        },
+    );
+
+    // Deno (the faster JavaScript runtime, preferred over QuickJS): one zip
+    // per architecture holding the program, joined for a universal target.
+    let deno = format!("{}{exe}", Kind::Deno.program());
+    let mut parts = Vec::new();
+    let mut sources = Vec::new();
+    let mut deno_version: Option<String> = None;
+    for (i, p) in platforms.iter().enumerate() {
+        let asset = upstream::latest_deno_for(fetcher, up, *p).await?;
+        log(&format!(
+            "Deno {} ({} {}): {}",
+            asset.version, p.os, p.arch, asset.url
+        ));
+        if deno_version.as_ref().is_some_and(|v| *v != asset.version) {
+            return Err("Deno versions differ between architectures; try again later".into());
+        }
+        deno_version = Some(asset.version.clone());
+        let dir = work.join(format!("deno-{i}"));
+        let download = fetch_asset(fetcher, &asset, &dir).await?;
+        let unpacked = dir.join("unpacked");
+        tokio::fs::create_dir_all(&unpacked)
+            .await
+            .map_err(|e| e.to_string())?;
+        tools::unpack(&download, &unpacked).await?;
+        parts.push(
+            tools::find_file(&unpacked, &deno)
+                .ok_or_else(|| format!("{deno} is not in {}", asset.url))?,
+        );
+        sources.push(Source {
+            url: asset.url,
+            sha256: asset.sha256,
+        });
+    }
+    let to = out.join(&deno);
+    match parts.as_slice() {
+        [one] => place(one, &to).await?,
+        many => lipo(&many.iter().collect::<Vec<_>>(), &to).await?,
+    }
+    manifest.tools.insert(
+        Kind::Deno.name().to_owned(),
+        BundledTool {
+            version: deno_version.unwrap_or_default(),
+            upstream: upstream::DENO_UPSTREAM.to_owned(),
+            license: upstream::DENO_LICENSE.to_owned(),
+            sources,
+            files: BTreeMap::from([(deno, String::new())]),
             tars: BTreeMap::new(),
         },
     );

@@ -23,3 +23,10 @@
 -keepclassmembers class com.coderzonebd.whoosh.MainActivity$Bridge {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# youtubedl-android (MediaTools.kt): its updater reads GitHub's JSON with Jackson, through
+# reflection that R8 cannot see.
+-keep class com.yausername.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-dontwarn com.fasterxml.jackson.**
+-dontwarn org.apache.commons.**

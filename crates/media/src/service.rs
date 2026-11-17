@@ -71,6 +71,9 @@ pub struct MediaConfig {
     /// Fixed tools (tests): never found or fetched.
     pub yt_dlp: Option<Tool>,
     pub ffmpeg: Option<Tool>,
+    /// A fixed JavaScript runtime for YouTube (Android: the QuickJS the app
+    /// ships next to its Python); never fetched or updated here.
+    pub quickjs: Option<Tool>,
     /// The network for fetching tools; wdm-net by default.
     pub fetcher: Option<Arc<dyn Fetcher>>,
     /// Run the daily update check when the user enabled it.
@@ -88,6 +91,7 @@ impl MediaConfig {
             system_tools: true,
             yt_dlp: None,
             ffmpeg: None,
+            quickjs: None,
             fetcher: None,
             auto_update: true,
             bundled_tools: None,
@@ -190,7 +194,8 @@ impl MediaService {
                 system: cfg.system_tools,
                 yt_dlp: cfg.yt_dlp.clone(),
                 ffmpeg: cfg.ffmpeg.clone(),
-                quickjs: None,
+                quickjs: cfg.quickjs.clone(),
+                deno: None,
                 bundled: cfg.bundled_tools.clone(),
             },
             fetcher,
@@ -668,25 +673,46 @@ fn failed(code: &'static str, message: impl Into<String>) -> Fail {
 
 impl Shared {
     /// yt-dlp's directories and JavaScript runtime for a run on `url`: the
-    /// computer's own runtime (found at start), else the managed QuickJS,
-    /// fetched (or copied from the installer) on the first YouTube page that
-    /// needs it. A failure only means fewer YouTube formats, never a failed run.
+    /// computer's own runtime (found at start), else the managed Deno (the
+    /// desktop installers ship it), else the managed QuickJS, fetched (or
+    /// copied from the installer) on the first YouTube page that needs it. A
+    /// failure only means fewer YouTube formats, never a failed run.
     async fn run_dirs(&self, url: Option<&str>) -> Dirs {
         let mut dirs = self.dirs.clone();
         if dirs.js.is_some() {
             return dirs;
         }
-        let tool = match self.tools.get(Kind::QuickJs) {
+        let wants = url.is_some_and(crate::js::wants_runtime);
+        let deno = match self.tools.get(Kind::Deno) {
             Some(t) => Some(t),
-            None if url.is_some_and(crate::js::wants_runtime) => {
-                match self.tools.ensure(Kind::QuickJs).await {
+            // Still being copied out of the installer: wait for it.
+            None if wants && self.tools.is_bundled(Kind::Deno) => {
+                match self.tools.ensure(Kind::Deno).await {
                     Ok(t) => Some(t),
                     Err(e) => {
-                        tracing::warn!(error = %e, "QuickJS unavailable: YouTube offers fewer formats");
+                        tracing::warn!(error = %e, "the installer's Deno is unusable; trying QuickJS");
                         None
                     }
                 }
             }
+            None => None,
+        };
+        if let Some(t) = deno {
+            dirs.js = Some(crate::js::JsRuntime {
+                kind: "deno",
+                path: t.program,
+            });
+            return dirs;
+        }
+        let tool = match self.tools.get(Kind::QuickJs) {
+            Some(t) => Some(t),
+            None if wants => match self.tools.ensure(Kind::QuickJs).await {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    tracing::warn!(error = %e, "QuickJS unavailable: YouTube offers fewer formats");
+                    None
+                }
+            },
             None => None,
         };
         dirs.js = tool.map(|t| crate::js::JsRuntime {

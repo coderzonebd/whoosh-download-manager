@@ -42,6 +42,8 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // Unpack yt-dlp's Python and ffmpeg while the UI loads (seconds, once per install).
+    MediaTools.start(this)
     takeShare(intent)
     // The download notification (Android 13+): asked once; downloads work without it too.
     if (Build.VERSION.SDK_INT >= 33 &&

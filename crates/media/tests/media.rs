@@ -816,11 +816,13 @@ fn tools_config(dir: &Path) -> ToolsConfig {
             ffmpeg: "https://up.example.test/ffmpeg/releases".into(),
             ffmpeg_macos: "https://up.example.test/ffmpeg-macos".into(),
             quickjs: "https://up.example.test/quickjs/latest".into(),
+            deno: "https://up.example.test/deno/latest".into(),
         },
         system: false,
         yt_dlp: None,
         ffmpeg: None,
         quickjs: None,
+        deno: None,
         bundled: None,
     }
 }
@@ -919,6 +921,7 @@ fn bundle_dir_as(dir: &Path, yt_dlp_version: &str, bad: Option<&str>, tar: bool)
         ("yt-dlp", yt_dlp_version, vec![exe("yt-dlp")]),
         ("ffmpeg", "9.0", vec![exe("ffmpeg"), exe("ffprobe")]),
         ("quickjs", "0.18.0", vec![exe("qjs")]),
+        ("deno", "2.9.8", vec![exe("deno")]),
     ] {
         let mut sums = serde_json::Map::new();
         let mut tars = serde_json::Map::new();
@@ -1012,6 +1015,8 @@ async fn bundled_tools_are_copied_and_checked() {
     assert_eq!(status.tools[1].version.as_deref(), Some("9.0"));
     assert_eq!(status.tools[2].name, "quickjs");
     assert_eq!(status.tools[2].version.as_deref(), Some("0.18.0"));
+    assert_eq!(status.tools[3].name, "deno");
+    assert_eq!(status.tools[3].version.as_deref(), Some("2.9.8"));
 
     let yt = tools.ensure(Kind::YtDlp).await.unwrap();
     assert_eq!(yt.program, data.join("bin").join(exe("yt-dlp")));
@@ -1024,6 +1029,8 @@ async fn bundled_tools_are_copied_and_checked() {
     assert!(data.join("bin").join(exe("ffprobe")).is_file());
     let qjs = tools.ensure(Kind::QuickJs).await.unwrap();
     assert_eq!(qjs.program, data.join("bin").join(exe("qjs")));
+    let deno = tools.ensure(Kind::Deno).await.unwrap();
+    assert_eq!(deno.program, data.join("bin").join(exe("deno")));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
