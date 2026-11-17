@@ -23,11 +23,14 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
 serde.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+serde_json.workspace = true
+futures.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 # The daemon, in-process; no yt-dlp/ffmpeg (they cannot run on Android).
 wdm-daemon = { path = "../../../crates/daemon", default-features = false }
+wdm-core.workspace = true
 wdm-net.workspace = true
 wdm-proto.workspace = true
 # Mozilla's root certificates: HTTPS is checked against these instead of the

@@ -582,6 +582,7 @@
     "filters": "Mostrar",
     "waiting": "Esperando al servidor",
     "emptyGroup": "No hay nada aquí",
-    "emptyBody": "Toca Añadir y pega un enlace para empezar una descarga."
+    "emptyBody": "Toca Añadir y pega un enlace para empezar una descarga.",
+    "getUpdate": "Obtener"
   }
 }

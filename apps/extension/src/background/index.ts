@@ -114,8 +114,11 @@ const catchUp = new Coalescer(
   (error) => console.debug("wdm: catch-up skipped:", error instanceof Error ? error.message : String(error)),
 );
 const daemonUp = new RisingEdge();
+/** The daemon's state as last reported (undefined until the first report: treated as down). */
+let daemonRunning: boolean | undefined;
 transport.onOpen(() => void catchUp.trigger());
 transport.onStatus((status) => {
+  daemonRunning = status.daemonRunning;
   if (daemonUp.update(status.daemonRunning)) void catchUp.trigger();
 });
 
@@ -177,6 +180,8 @@ const capture = new CaptureController({
   isFirefox: firefox,
   now: () => Date.now(),
   report,
+  // A closed app is started by the native host; the hand-over then waits for it.
+  daemonUp: () => daemonRunning === true,
 });
 
 if (canHoldDownloads(api)) {

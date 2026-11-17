@@ -552,6 +552,7 @@
     "filters": "Tampilkan",
     "waiting": "Menunggu server",
     "emptyGroup": "Tidak ada apa pun di sini",
-    "emptyBody": "Ketuk Tambah dan tempel tautan untuk mulai mengunduh."
+    "emptyBody": "Ketuk Tambah dan tempel tautan untuk mulai mengunduh.",
+    "getUpdate": "Unduh"
   }
 }

@@ -12,7 +12,7 @@ import "@wdm/ui/styles.css";
 import type { WdmClient } from "@wdm/api-client";
 import { createMockClient } from "@wdm/api-client/mock";
 import { connectWs } from "@wdm/api-client/ws";
-import { MobileApp } from "@wdm/ui";
+import { MobileApp, type AppState } from "@wdm/ui";
 import { mount } from "svelte";
 import { mobileHost } from "./host.ts";
 
@@ -52,7 +52,10 @@ interface Insets {
 }
 interface AndroidBridge {
   insets?: () => string;
+  takeShared?: () => string | null;
+  openUrl?: (url: string) => void;
 }
+const android = (): AndroidBridge | undefined => (window as { WdmAndroid?: AndroidBridge }).WdmAndroid;
 function applyInsets(i: Insets): void {
   const s = document.documentElement.style;
   s.setProperty("--wdm-inset-top", `${i.top}px`);
@@ -75,7 +78,42 @@ const client: WdmClient = live ? liveClient() : createMockClient({ latencyMs: 30
 const target = document.getElementById("app");
 if (!target) throw new Error("#app is missing from index.html");
 
+/** Share → Whoosh Download Manager: the add dialog with the shared link. */
+function startShares(app: AppState): void {
+  (window as { __wdmShared?: (url: string) => boolean }).__wdmShared = (url) => {
+    app.openAdd(url);
+    return true;
+  };
+  const pending = android()?.takeShared?.();
+  if (pending) app.openAdd(pending);
+}
+
+/** A newer release on GitHub (the app is not in a store): said once per start, with a link. */
+async function startUpdateNotice(app: AppState): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const found = await invoke<{ version: string; url: string } | null>("android_update").catch(() => null);
+  if (!found) return;
+  const { t } = app.i18n;
+  app.toasts.push(
+    {
+      tone: "info",
+      message: t("toast.updateAvailable", { version: found.version }),
+      action: { label: t("mobile.getUpdate"), run: () => android()?.openUrl?.(found.url) },
+    },
+    24 * 60 * 60 * 1000,
+  );
+}
+
 mount(MobileApp, {
   target,
-  props: { client, mode: live ? "live" : "mock", ...(live ? { host: mobileHost() } : {}) },
+  props: {
+    client,
+    mode: live ? "live" : "mock",
+    ...(live ? { host: mobileHost() } : {}),
+    onready: (app: AppState) => {
+      if (!live) return;
+      startShares(app);
+      void startUpdateNotice(app);
+    },
+  },
 });

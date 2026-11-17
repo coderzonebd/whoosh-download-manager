@@ -82,6 +82,9 @@ pub struct Config {
     /// Starts the desktop app (`needsApp`); at most once per `launch_gap`.
     pub launcher: Launcher,
     pub launch_gap: Duration,
+    /// A download handed over while no daemon runs starts the app, and its answer waits this
+    /// long for the app's daemon to come up (the extension waits a little longer).
+    pub app_start_wait: Duration,
 }
 
 /// What starts the desktop app: [`crate::launch::launch_app`], or a test
@@ -101,6 +104,9 @@ impl fmt::Debug for Launcher {
     }
 }
 
+/// While the app starts for a hand-over, how often the host looks for its daemon.
+const APP_START_POLL: Duration = Duration::from_millis(400);
+
 impl Config {
     pub fn new(runtime_file: PathBuf, client: ClientInfo) -> Self {
         Self {
@@ -114,6 +120,7 @@ impl Config {
             max_from_browser: MAX_FROM_BROWSER,
             launcher: Launcher::app(),
             launch_gap: crate::launch::MIN_GAP,
+            app_start_wait: Duration::from_secs(15),
         }
     }
 }
@@ -311,6 +318,9 @@ struct Relay {
     /// Pending `download.add` and `media.offer` requests (keys of `pending`).
     adds: HashSet<String>,
     last_launch: Option<Instant>,
+    /// Set when this host started the app for a waiting hand-over: until then, a failed
+    /// connection keeps the requests waiting and tries again shortly.
+    starting_until: Option<Instant>,
 }
 
 impl Relay {
@@ -330,6 +340,7 @@ impl Relay {
             reported: None,
             adds: HashSet::new(),
             last_launch: None,
+            starting_until: None,
         }
     }
 
@@ -446,6 +457,7 @@ impl Relay {
             ConnEvent::RetryDue => self.start_connecting(),
             ConnEvent::Connected(Ok(daemon)) => {
                 log::debug(&format!("connected to daemon {}", daemon.version));
+                self.starting_until = None;
                 self.conn = Conn::Up(daemon);
                 self.retry_delay = self.cfg.retry_min;
                 self.report(true).await;
@@ -463,6 +475,13 @@ impl Relay {
             }
             ConnEvent::Connected(Err(e)) => {
                 log::debug(&format!("cannot reach the daemon: {e}"));
+                if self.waits_for_app_start() {
+                    // The app (and its daemon) is starting for a waiting hand-over: try again soon.
+                    self.conn = Conn::Down {
+                        retry_at: Instant::now() + APP_START_POLL,
+                    };
+                    return;
+                }
                 self.conn = Conn::Down {
                     retry_at: Instant::now() + self.retry_delay,
                 };
@@ -532,6 +551,36 @@ impl Relay {
             return;
         }
         self.send_raw(text.as_bytes()).await;
+    }
+
+    /// No daemon answers and a hand-over (`download.add`, `media.offer`) waits: start the app,
+    /// which starts its daemon, once, and keep the hand-over waiting for it while
+    /// `app_start_wait` lasts. Whether to keep waiting now.
+    fn waits_for_app_start(&mut self) -> bool {
+        let now = Instant::now();
+        if let Some(until) = self.starting_until {
+            if now < until {
+                return true;
+            }
+            self.starting_until = None;
+            return false;
+        }
+        let hand_over = self
+            .waiting
+            .iter()
+            .any(|w| matches!(w, Waiter::Forward { is_add: true, .. }));
+        if !hand_over
+            || self
+                .last_launch
+                .is_some_and(|at| at.elapsed() < self.cfg.launch_gap)
+        {
+            return false;
+        }
+        log::debug("no daemon for a hand-over: starting the app");
+        self.last_launch = Some(now);
+        self.starting_until = Some(now + self.cfg.app_start_wait);
+        (self.cfg.launcher.0)();
+        true
     }
 
     /// A `download.add` or `media.offer` was answered: start the app if it waits

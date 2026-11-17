@@ -27,10 +27,12 @@ echo `# <#` >/dev/null
 set -eu
 
 REPO="coderzonebd/whoosh-download-manager"
-# The signed apt/rpm repository (Cloudsmith, free for open source). Empty until it exists.
-APT_REPO="${WDM_APT_REPO-}"
-RPM_REPO="${WDM_RPM_REPO-}"
-REPO_KEY="${WDM_REPO_KEY-}"
+# The signed apt/rpm repository, hosted by Cloudsmith. Set a variable to "" to skip it; when the
+# repository cannot serve the package, the release's own .deb/.rpm is installed instead.
+CLOUDSMITH="https://dl.cloudsmith.io/public/coderzonebd/whoosh-download-manager"
+APT_REPO="${WDM_APT_REPO-$CLOUDSMITH/deb/any-distro}"
+RPM_REPO="${WDM_RPM_REPO-$CLOUDSMITH/rpm/any-distro/any-version/\$basearch}"
+REPO_KEY="${WDM_REPO_KEY-$CLOUDSMITH/gpg.35EDBBE261FE7235.key}"
 CASK="coderzonebd/tap/whoosh-download-manager"
 
 say() { printf '%s\n' "wdm: $*"; }
@@ -97,19 +99,28 @@ install_macos() {
 arch_deb() { case "$(uname -m)" in x86_64|amd64) echo amd64 ;; aarch64|arm64) echo arm64 ;; *) die "no Linux build for $(uname -m)" ;; esac; }
 arch_rpm() { case "$(uname -m)" in x86_64|amd64) echo x86_64 ;; aarch64|arm64) echo aarch64 ;; *) die "no Linux build for $(uname -m)" ;; esac; }
 
+# Each step returns on failure itself: `set -e` is off inside a function called from `if`.
+apt_from_repo() {
+  say "adding the WDM apt repository"
+  fetch "$REPO_KEY" "$TMP/wdm.asc" || return 1
+  root install -d -m 0755 /etc/apt/keyrings || return 1
+  root sh -c "gpg --dearmor < '$TMP/wdm.asc' > /etc/apt/keyrings/whoosh-download-manager.gpg" 2>/dev/null \
+    || root cp "$TMP/wdm.asc" /etc/apt/keyrings/whoosh-download-manager.asc || return 1
+  key=/etc/apt/keyrings/whoosh-download-manager.gpg
+  [ -f "$key" ] || key=/etc/apt/keyrings/whoosh-download-manager.asc
+  echo "deb [signed-by=$key] $APT_REPO any-version main" \
+    | root tee /etc/apt/sources.list.d/whoosh-download-manager.list >/dev/null || return 1
+  root apt-get update -o Dir::Etc::sourcelist=sources.list.d/whoosh-download-manager.list \
+    -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || return 1
+  root apt-get install -y whoosh-download-manager
+}
+
 install_apt() {
   if [ -n "$APT_REPO" ] && [ -n "$REPO_KEY" ]; then
-    say "adding the WDM apt repository"
-    fetch "$REPO_KEY" "$TMP/wdm.asc"
-    root install -d -m 0755 /etc/apt/keyrings
-    root sh -c "gpg --dearmor < '$TMP/wdm.asc' > /etc/apt/keyrings/whoosh-download-manager.gpg" 2>/dev/null \
-      || root cp "$TMP/wdm.asc" /etc/apt/keyrings/whoosh-download-manager.asc
-    key=/etc/apt/keyrings/whoosh-download-manager.gpg
-    [ -f "$key" ] || key=/etc/apt/keyrings/whoosh-download-manager.asc
-    echo "deb [signed-by=$key] $APT_REPO any-version main" | root tee /etc/apt/sources.list.d/whoosh-download-manager.list >/dev/null
-    root apt-get update -o Dir::Etc::sourcelist=sources.list.d/whoosh-download-manager.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
-    root apt-get install -y whoosh-download-manager
-    return
+    if apt_from_repo; then return; fi
+    say "the apt repository did not work; installing the release's .deb instead"
+    root rm -f /etc/apt/sources.list.d/whoosh-download-manager.list \
+      /etc/apt/keyrings/whoosh-download-manager.gpg /etc/apt/keyrings/whoosh-download-manager.asc
   fi
   TAG="$(release_tag)"; [ -n "$TAG" ] || die "no release found"
   deb="Whoosh-Download-Manager_${TAG#v}_$(arch_deb).deb"
@@ -119,16 +130,21 @@ install_apt() {
   root apt-get install -y "$TMP/$deb"
 }
 
+rpm_from_repo() { # <package manager> <repo directory>
+  say "adding the WDM rpm repository"
+  printf '[whoosh-download-manager]\nname=Whoosh Download Manager\nbaseurl=%s\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=%s\n' \
+    "$RPM_REPO" "$REPO_KEY" | root tee "$2/whoosh-download-manager.repo" >/dev/null || return 1
+  if [ "$1" = zypper ]; then root zypper --non-interactive --gpg-auto-import-keys install whoosh-download-manager
+  else root "$1" install -y whoosh-download-manager; fi
+}
+
 install_rpm() {
   pm="$1"
-  if [ -n "$RPM_REPO" ]; then
-    say "adding the WDM rpm repository"
+  if [ -n "$RPM_REPO" ] && [ -n "$REPO_KEY" ]; then
     dir=/etc/yum.repos.d; [ "$pm" = zypper ] && dir=/etc/zypp/repos.d
-    printf '[whoosh-download-manager]\nname=Whoosh Download Manager\nbaseurl=%s\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=%s\n' \
-      "$RPM_REPO" "$REPO_KEY" | root tee "$dir/whoosh-download-manager.repo" >/dev/null
-    if [ "$pm" = zypper ]; then root zypper --non-interactive --gpg-auto-import-keys install whoosh-download-manager
-    else root "$pm" install -y whoosh-download-manager; fi
-    return
+    if rpm_from_repo "$pm" "$dir"; then return; fi
+    say "the rpm repository did not work; installing the release's .rpm instead"
+    root rm -f "$dir/whoosh-download-manager.repo"
   fi
   TAG="$(release_tag)"; [ -n "$TAG" ] || die "no release found"
   v="${TAG#v}"

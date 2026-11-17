@@ -36,7 +36,16 @@ export interface CaptureDeps {
   now(): number;
   /** Told about every decision, for the popup and debugging. */
   report?(candidate: CandidateDownload, result: CaptureResult): void;
+  /**
+   * Whether the daemon was answering when last heard of. When it was not (the app is closed),
+   * the native host starts the app and holds the hand-over until its daemon is up, which takes
+   * several seconds: the download waits up to `COLD_START_TIMEOUT_MS` then.
+   */
+  daemonUp?(): boolean;
 }
+
+/** How long a hand-over waits while the native host starts the app (the host waits 15 s). */
+export const COLD_START_TIMEOUT_MS = 20_000;
 
 export type CaptureResult =
   | { outcome: "skipped"; reason: SkipReason }
@@ -110,7 +119,8 @@ export class CaptureController {
         userAgent: deps.userAgent,
       });
 
-    return handOff(candidate.id, prepare, deps, { timeoutMs: settings.handoffTimeoutMs, release });
+    const timeoutMs = deps.daemonUp?.() === false ? Math.max(settings.handoffTimeoutMs, COLD_START_TIMEOUT_MS) : settings.handoffTimeoutMs;
+    return handOff(candidate.id, prepare, deps, { timeoutMs, release });
   }
 
   private storeOf(candidate: CandidateDownload): string | undefined {

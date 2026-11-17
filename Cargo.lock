@@ -6491,13 +6491,16 @@ dependencies = [
 name = "wdm-mobile"
 version = "0.1.2"
 dependencies = [
+ "futures",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "wdm-core",
  "wdm-daemon",
  "wdm-net",
  "wdm-proto",

@@ -552,6 +552,7 @@
     "filters": "显示",
     "waiting": "正在等待服务器",
     "emptyGroup": "这里什么也没有",
-    "emptyBody": "点按“添加”并粘贴链接即可开始下载。"
+    "emptyBody": "点按“添加”并粘贴链接即可开始下载。",
+    "getUpdate": "获取"
   }
 }

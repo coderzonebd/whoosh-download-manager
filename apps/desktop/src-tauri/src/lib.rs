@@ -104,6 +104,8 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let mut cmd = std::process::Command::new("xdg-open");
+    // From an AppImage, xdg-open and the browser must not load the image's bundled libraries.
+    wdm_proto::outside_appimage!(cmd);
     // Not waited for here: reaped on a thread so no zombie is left behind.
     let mut child = cmd.arg(url).spawn()?;
     std::thread::spawn(move || child.wait());
