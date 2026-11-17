@@ -153,7 +153,7 @@ describe("CaptureController", () => {
       for (const up of [true, false]) {
         const h = harness({ settings: { handoffTimeoutMs: 1_000 } });
         // The native host starts the app; its daemon answers after 8 s.
-        h.deps.daemon.call = (() => new Promise((resolve) => setTimeout(() => resolve({ id: "dl_cold" }), 8_000))) as CaptureDeps["daemon"]["call"];
+        h.deps.daemon.call = (() => new Promise((resolve) => setTimeout(() => resolve({ id: "dl_cold" }), 8_000))) as unknown as CaptureDeps["daemon"]["call"];
         h.deps.daemonUp = () => up;
         const done = h.controller.onBrowserDownload(item, () => {});
         await vi.advanceTimersByTimeAsync(9_000);
