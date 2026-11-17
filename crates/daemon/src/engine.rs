@@ -24,6 +24,17 @@ pub async fn start(
     store_ms: &mut f64,
     media: Option<Option<PathBuf>>,
 ) -> std::io::Result<Arc<dyn Service>> {
+    let engine = start_engine(data_dir, net, download_dir, store_ms).await?;
+    with_media(engine, data_dir, media).await
+}
+
+/// The engine alone, without media downloads.
+async fn start_engine(
+    data_dir: &Path,
+    net: wdm_net::NetConfig,
+    download_dir: String,
+    store_ms: &mut f64,
+) -> std::io::Result<Arc<dyn Service>> {
     let mut capabilities: Vec<String> = vec!["http".into(), "https".into(), "preconnect".into()];
     if net.http2 {
         capabilities.push("h2".into());
@@ -60,7 +71,7 @@ pub async fn start(
     )
     .await?;
     tracing::info!("download engine started");
-    with_media(engine, data_dir, media).await
+    Ok(engine)
 }
 
 /// As [`start`], with media downloads set up by the caller (the Android app,
@@ -73,7 +84,7 @@ pub async fn start_with_media(
     store_ms: &mut f64,
     media: wdm_media::MediaConfig,
 ) -> std::io::Result<Arc<dyn Service>> {
-    let engine = start(data_dir, net, download_dir, store_ms, None).await?;
+    let engine = start_engine(data_dir, net, download_dir, store_ms).await?;
     let media = wdm_media::MediaService::start(engine, media).await?;
     tracing::info!("media downloads available");
     Ok(media)
