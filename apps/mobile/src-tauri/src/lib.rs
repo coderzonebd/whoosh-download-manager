@@ -132,7 +132,10 @@ async fn media_tools(app: &tauri::AppHandle) -> Option<MediaTools> {
         .iter()
         .all(|p| std::path::Path::new(p).is_file());
     if !usable {
-        tracing::warn!(?got, "video and audio sites unavailable: a media program is missing");
+        tracing::warn!(
+            ?got,
+            "video and audio sites unavailable: a media program is missing"
+        );
         return None;
     }
     Some(got)
@@ -151,11 +154,8 @@ fn media_config(
     net: &wdm_net::NetConfig,
     t: MediaTools,
 ) -> wdm_media::MediaConfig {
-    let env: Vec<(std::ffi::OsString, std::ffi::OsString)> = t
-        .env
-        .iter()
-        .map(|(k, v)| (k.into(), v.into()))
-        .collect();
+    let env: Vec<(std::ffi::OsString, std::ffi::OsString)> =
+        t.env.iter().map(|(k, v)| (k.into(), v.into())).collect();
     let tool = |program: &str, prefix: Vec<std::ffi::OsString>| wdm_media::Tool {
         program: program.into(),
         prefix,
@@ -487,12 +487,18 @@ mod tests {
         assert_eq!(got.sha256.as_deref(), Some(sha.as_str()));
         // Elsewhere, or without a checksum: only the release page.
         let other = newer_release(
-            &release("https://example.com/x_android.apk", &format!("sha256:{sha}")),
+            &release(
+                "https://example.com/x_android.apk",
+                &format!("sha256:{sha}"),
+            ),
             "0.9.0",
         )
         .unwrap();
         assert_eq!(other.apk, None);
-        assert_eq!(newer_release(&release(ours, ""), "0.9.0").unwrap().apk, None);
+        assert_eq!(
+            newer_release(&release(ours, ""), "0.9.0").unwrap().apk,
+            None
+        );
     }
 
     #[test]
