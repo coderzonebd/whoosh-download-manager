@@ -18,6 +18,8 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 - The daemon's engine start-up moved into the library (`wdm_daemon::engine`) so the Android app can run it in-process; `wdm-net` builds for Android.
 
 ### Downloads from the browser
+- **A download from the browser while WDM is closed** (app and daemon both stopped) is no longer left to the browser: the native host starts the app, holds the hand-over until its daemon answers (up to 15 s), then hands it over; the extension waits up to 20 s instead of 4 when it last saw no daemon.
+- AppImage: programs started from it (`xdg-open`, the file's app, yt-dlp, ffmpeg) no longer inherit the image's library paths, which made system programs load the image's `libsystemd` and fail.
 - **Playlists.** A video opened from a playlist or a YouTube mix (`list=` in the address) offers *This video* or *Whole playlist (N)*; a playlist page offers the playlist. The whole playlist becomes one download per video, named after its title, at the chosen quality (or the nearest below) or as audio. yt-dlp lists it without opening each video (`--flat-playlist`): at most 1000 videos, 100 for a mix, which never ends. The daemon prepares two media downloads at a time, so a playlist does not start dozens of yt-dlp processes. Protocol: `MediaProbeResult.playlist`.
 - YouTube pages no longer fail with "media.probe timed out after 30000 ms" when yt-dlp solves YouTube's challenges with QuickJS (20–30 s): the app waits as long as the daemon does (200 s for `media.probe` and `media.add`), and after 8 seconds says that some sites take up to half a minute.
 - A long post caption as the video title (Facebook, Instagram) stops at two lines instead of widening the add dialog.

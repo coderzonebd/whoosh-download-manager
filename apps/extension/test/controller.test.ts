@@ -147,6 +147,25 @@ describe("CaptureController", () => {
     await expect(controller.onBrowserDownload({ ...item, id: 8 }, () => {})).resolves.toEqual({ outcome: "skipped", reason: "disabled" });
   });
 
+  it("waits for the app to start when the daemon was not running", async () => {
+    vi.useFakeTimers();
+    try {
+      for (const up of [true, false]) {
+        const h = harness({ settings: { handoffTimeoutMs: 1_000 } });
+        // The native host starts the app; its daemon answers after 8 s.
+        h.deps.daemon.call = (() => new Promise((resolve) => setTimeout(() => resolve({ id: "dl_cold" }), 8_000))) as CaptureDeps["daemon"]["call"];
+        h.deps.daemonUp = () => up;
+        const done = h.controller.onBrowserDownload(item, () => {});
+        await vi.advanceTimersByTimeAsync(9_000);
+        const result = await done;
+        // Running: the usual 1 s, so the browser keeps it. Not running: it waits for the app.
+        expect(result.outcome).toBe(up ? "kept" : "sent");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves store-blocked downloads to the browser", async () => {
     const { controller, deps, added } = harness();
     deps.blocked = (urls) => urls.some((u) => u?.includes("example.com"));

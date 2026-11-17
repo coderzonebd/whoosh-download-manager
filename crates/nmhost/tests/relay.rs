@@ -235,6 +235,9 @@ fn test_config(runtime_file: PathBuf) -> Config {
     cfg.retry_min = Duration::from_millis(20);
     cfg.retry_max = Duration::from_millis(100);
     cfg.on_demand_gap = Duration::ZERO;
+    // No real app is started by the tests, and a missing daemon is given up on quickly.
+    cfg.launcher = relay::Launcher(Arc::new(|| {}));
+    cfg.app_start_wait = Duration::from_millis(300);
     cfg
 }
 
@@ -413,6 +416,53 @@ async fn starts_the_app_when_a_download_waits_for_a_missing_window() {
 
     browser.close().await.unwrap();
     daemon.stop().await;
+}
+
+#[tokio::test]
+async fn starts_the_app_when_a_download_arrives_and_no_daemon_runs() {
+    let dir = TempDir::new("launch-cold");
+    // The app's daemon: up, but nobody knows its port until the app writes runtime.json.
+    let mut daemon = FakeDaemon::start("cold").await;
+    let port = daemon.port;
+    let runtime = dir.runtime_file();
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(runtime.clone());
+    cfg.app_start_wait = Duration::from_secs(5);
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        write_runtime(&runtime, port, "cold");
+    }));
+    let mut browser = Browser::start(cfg);
+
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":1,"method":"download.add","params":{"url":"https://example.com/td.tar.xz"}}"#)
+        .await;
+    // The host started the app, waited for its daemon and handed the download over.
+    let forwarded = daemon.recv().await;
+    assert!(forwarded.contains("td.tar.xz"), "{forwarded}");
+    daemon.send(r#"{"jsonrpc":"2.0","id":1,"result":{"id":"dl_1"}}"#);
+    let reply = browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(reply["result"]["id"], "dl_1");
+    assert_eq!(launches.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    browser.close().await.unwrap();
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn a_status_check_alone_never_starts_the_app() {
+    let dir = TempDir::new("launch-status");
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(dir.runtime_file());
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    assert_eq!(browser.status(1).await["daemonRunning"], false);
+    assert_eq!(launches.load(std::sync::atomic::Ordering::SeqCst), 0);
+    browser.close().await.unwrap();
 }
 
 #[tokio::test]

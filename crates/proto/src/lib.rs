@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod appimage;
 pub mod auth;
 pub mod media;
 pub mod queue;

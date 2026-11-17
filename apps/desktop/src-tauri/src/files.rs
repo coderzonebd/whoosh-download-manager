@@ -50,6 +50,8 @@ fn file_of(state: DownloadState, directory: &str, filename: &str) -> Result<Path
 }
 
 fn spawn(mut cmd: std::process::Command) -> Result<(), String> {
+    // From an AppImage, the file's app must not load the image's bundled libraries.
+    wdm_proto::outside_appimage!(cmd);
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     // Reaped on a thread so no zombie is left behind.
     std::thread::spawn(move || child.wait());

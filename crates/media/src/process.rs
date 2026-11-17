@@ -37,6 +37,8 @@ impl Tool {
         let mut c = Command::new(&self.program);
         c.args(&self.prefix);
         c.args(args.into_iter().map(Into::into));
+        // From an AppImage, the tools must not load the image's bundled libraries.
+        wdm_proto::outside_appimage!(c);
         for (k, v) in &self.env {
             c.env(k, v);
         }
