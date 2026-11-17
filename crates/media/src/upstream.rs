@@ -6,6 +6,7 @@
 //! | ffmpeg | Windows, Linux | `github.com/BtbN/FFmpeg-Builds` (linked from ffmpeg.org's download page), the **LGPL** static build of the newest release branch (`nX.Y`), else master | `checksums.sha256` of the same release |
 //! | ffmpeg | macOS | `ffmpeg.martin-riedl.de` release build (no LGPL macOS build exists upstream; this one is GPL, run as a separate program and never linked) | the `.sha256` file published next to it |
 //! | QuickJS (`qjs`) | all | `github.com/quickjs-ng/quickjs` releases (the project's own static builds; Windows on ARM runs the x86_64 one) | the asset's SHA-256 digest from GitHub's release API |
+//! | Deno | Windows, macOS, Linux (glibc) | `github.com/denoland/deno` releases (the project's own builds, a zip) | the asset's SHA-256 digest from GitHub's release API |
 //!
 //! Every file is checked against the upstream checksum before it is
 //! unpacked or made executable; a mismatch deletes it.
@@ -27,6 +28,8 @@ pub struct Upstreams {
     pub ffmpeg_macos: String,
     /// `https://api.github.com/repos/quickjs-ng/quickjs/releases/latest`
     pub quickjs: String,
+    /// `https://api.github.com/repos/denoland/deno/releases/latest`
+    pub deno: String,
 }
 
 impl Default for Upstreams {
@@ -36,6 +39,7 @@ impl Default for Upstreams {
             ffmpeg: "https://github.com/BtbN/FFmpeg-Builds/releases".into(),
             ffmpeg_macos: "https://ffmpeg.martin-riedl.de/redirect/latest/macos".into(),
             quickjs: "https://api.github.com/repos/quickjs-ng/quickjs/releases/latest".into(),
+            deno: "https://api.github.com/repos/denoland/deno/releases/latest".into(),
         }
     }
 }
@@ -63,6 +67,8 @@ pub const YT_DLP_UPSTREAM: &str = "github.com/yt-dlp/yt-dlp";
 pub const YT_DLP_LICENSE: &str = "Unlicense";
 pub const QUICKJS_UPSTREAM: &str = "github.com/quickjs-ng/quickjs";
 pub const QUICKJS_LICENSE: &str = "MIT";
+pub const DENO_UPSTREAM: &str = "github.com/denoland/deno";
+pub const DENO_LICENSE: &str = "MIT";
 
 /// An operating system and processor the tools are fetched for: this
 /// machine at run time, any release target when bundling them into an
@@ -376,6 +382,41 @@ pub async fn latest_quickjs_for(
     })
 }
 
+/// Deno's build for `p`: a zip holding the `deno` program. None for musl
+/// Linux (Deno links glibc).
+pub fn deno_asset_name_for(p: Platform) -> Option<&'static str> {
+    Some(match (p.os, p.arch, p.musl) {
+        ("linux", "x86_64", false) => "deno-x86_64-unknown-linux-gnu.zip",
+        ("linux", "aarch64", false) => "deno-aarch64-unknown-linux-gnu.zip",
+        ("macos", "x86_64", _) => "deno-x86_64-apple-darwin.zip",
+        ("macos", "aarch64", _) => "deno-aarch64-apple-darwin.zip",
+        ("windows", "x86_64", _) => "deno-x86_64-pc-windows-msvc.zip",
+        ("windows", "aarch64", _) => "deno-aarch64-pc-windows-msvc.zip",
+        _ => return None,
+    })
+}
+
+/// The newest Deno for this platform.
+pub async fn latest_deno(fetcher: &dyn Fetcher, up: &Upstreams) -> Result<Asset, String> {
+    latest_deno_for(fetcher, up, Platform::current()).await
+}
+
+/// The newest Deno for `p`.
+pub async fn latest_deno_for(
+    fetcher: &dyn Fetcher,
+    up: &Upstreams,
+    p: Platform,
+) -> Result<Asset, String> {
+    let name = deno_asset_name_for(p).ok_or("Deno publishes no build for this platform")?;
+    let (version, url, sha256) = pick_github_asset(&fetcher.text(&up.deno).await?, name)?;
+    Ok(Asset {
+        url,
+        sha256,
+        version,
+        archive: Archive::Packed,
+    })
+}
+
 /// Whether `latest` is newer than `current`. yt-dlp versions are dates
 /// (`2026.10.26`, nightlies add a fourth number); ffmpeg's are
 /// `major.minor[.patch]`, possibly behind an `n` and with a suffix
@@ -565,5 +606,23 @@ mod tests {
             quickjs_asset_name_for(p("aarch64-pc-windows-msvc")),
             Some("qjs-windows-x86_64.exe")
         );
+    }
+
+    #[test]
+    fn deno_builds_per_platform() {
+        let p = |t| Platform::from_triple(t).unwrap();
+        assert_eq!(
+            deno_asset_name_for(p("aarch64-pc-windows-msvc")),
+            Some("deno-aarch64-pc-windows-msvc.zip")
+        );
+        assert_eq!(
+            deno_asset_name_for(p("x86_64-unknown-linux-gnu")),
+            Some("deno-x86_64-unknown-linux-gnu.zip")
+        );
+        assert_eq!(
+            deno_asset_name_for(p("aarch64-apple-darwin")),
+            Some("deno-aarch64-apple-darwin.zip")
+        );
+        assert_eq!(deno_asset_name_for(p("x86_64-unknown-linux-musl")), None);
     }
 }

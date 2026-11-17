@@ -63,6 +63,22 @@ pub async fn start(
     with_media(engine, data_dir, media).await
 }
 
+/// As [`start`], with media downloads set up by the caller (the Android app,
+/// whose yt-dlp, ffmpeg and QuickJS come with the app).
+#[cfg(feature = "media")]
+pub async fn start_with_media(
+    data_dir: &Path,
+    net: wdm_net::NetConfig,
+    download_dir: String,
+    store_ms: &mut f64,
+    media: wdm_media::MediaConfig,
+) -> std::io::Result<Arc<dyn Service>> {
+    let engine = start(data_dir, net, download_dir, store_ms, None).await?;
+    let media = wdm_media::MediaService::start(engine, media).await?;
+    tracing::info!("media downloads available");
+    Ok(media)
+}
+
 /// Once per data directory: in-progress files named before the rename
 /// (`<name>.whoosh-part`) get the current suffix, so unfinished downloads
 /// resume where they were. Failures are logged and never stop the start.

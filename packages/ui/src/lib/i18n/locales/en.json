@@ -568,6 +568,10 @@
     "waiting": "Waiting for the server",
     "emptyGroup": "Nothing here",
     "emptyBody": "Tap Add and paste a link to start a download.",
-    "getUpdate": "Get it"
+    "getUpdate": "Get it",
+    "installUpdate": "Update",
+    "updateDownloading": "Downloading the update…",
+    "updatePermission": "Allow installing apps from Whoosh Download Manager, then tap Update again.",
+    "updateFailed": "The update did not install: {{reason}}"
   }
 }

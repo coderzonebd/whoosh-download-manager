@@ -6485,6 +6485,7 @@ dependencies = [
  "wdm-net",
  "wdm-proto",
  "wdm-store",
+ "zip",
 ]
 
 [[package]]
@@ -6502,6 +6503,7 @@ dependencies = [
  "tracing-subscriber",
  "wdm-core",
  "wdm-daemon",
+ "wdm-media",
  "wdm-net",
  "wdm-proto",
  "webpki-root-certs",

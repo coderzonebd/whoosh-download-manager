@@ -42,6 +42,12 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    AppUpdate.listener = { state ->
+      val json = org.json.JSONObject.quote(state)
+      runOnUiThread { webView?.evaluateJavascript("window.__wdmUpdate && window.__wdmUpdate($json)", null) }
+    }
+    // Unpack yt-dlp's Python and ffmpeg while the UI loads (seconds, once per install).
+    MediaTools.start(this)
     takeShare(intent)
     // The download notification (Android 13+): asked once; downloads work without it too.
     if (Build.VERSION.SDK_INT >= 33 &&
@@ -106,6 +112,12 @@ class MainActivity : TauriActivity() {
         } catch (_: Exception) {
         }
       }
+    }
+
+    /** Downloads the release's APK and installs it ([AppUpdate]); progress to `window.__wdmUpdate`. */
+    @JavascriptInterface
+    fun installUpdate(url: String, sha256: String) {
+      AppUpdate.start(this@MainActivity, url, sha256)
     }
 
     @JavascriptInterface

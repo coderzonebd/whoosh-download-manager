@@ -17,6 +17,9 @@ pub const TOOL_FFMPEG: &str = "ffmpeg";
 /// QuickJS, the JavaScript runtime yt-dlp uses for YouTube when the computer
 /// has none of its own (Deno, Node.js, Bun). Its program is `qjs`.
 pub const TOOL_QUICKJS: &str = "quickjs";
+/// Deno, the JavaScript runtime the desktop installers ship for YouTube
+/// (faster than QuickJS, yt-dlp's preferred runtime). Its program is `deno`.
+pub const TOOL_DENO: &str = "deno";
 
 fn is_false(b: &bool) -> bool {
     !*b
@@ -248,7 +251,7 @@ pub enum MediaStep {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaToolsStatus {
-    /// yt-dlp first, then ffmpeg, then QuickJS.
+    /// yt-dlp first, then ffmpeg, then QuickJS, then Deno.
     pub tools: Vec<MediaTool>,
     /// Check for updates (and install them) at most once a day.
     pub auto_update: bool,
@@ -259,7 +262,7 @@ pub struct MediaToolsStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaTool {
-    /// [`TOOL_YT_DLP`], [`TOOL_FFMPEG`] or [`TOOL_QUICKJS`].
+    /// [`TOOL_YT_DLP`], [`TOOL_FFMPEG`], [`TOOL_QUICKJS`] or [`TOOL_DENO`].
     pub name: String,
     pub state: MediaToolState,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -12,7 +12,7 @@ let service = wdm_media::MediaService::start(engine, MediaConfig::new(data_dir.j
 
 ## The tools
 
-yt-dlp, ffmpeg and QuickJS (`qjs`) are separate programs. They are never linked, and run with an argument array (no shell). The desktop installers ship them (see [Shipped with the desktop app](#shipped-with-the-desktop-app)); otherwise `Tools` finds or fetches them on first use. Either way they come from:
+yt-dlp, ffmpeg, QuickJS (`qjs`) and Deno are separate programs. They are never linked, and run with an argument array (no shell). The desktop installers ship them (see [Shipped with the desktop app](#shipped-with-the-desktop-app)); otherwise `Tools` finds or fetches them on first use. Either way they come from:
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
@@ -22,12 +22,14 @@ yt-dlp, ffmpeg and QuickJS (`qjs`) are separate programs. They are never linked,
 | from | [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) `latest`, newest `nX.Y` release branch, checked against `checksums.sha256` | [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de) `redirect/latest/macos/<arch>/release/ffmpeg.zip`, checked against the `.sha256` next to it | as Windows |
 | QuickJS | `qjs-windows-x86_64.exe` (also on ARM64) | `qjs-darwin-arm64` / `-x86_64` (joined for the universal app) | `qjs-linux-x86_64` / `-aarch64` |
 | from | [quickjs-ng releases](https://github.com/quickjs-ng/quickjs/releases) `latest`, checked against the SHA-256 GitHub's release API lists for the file | | |
+| Deno | `deno-x86_64-pc-windows-msvc.zip` / `deno-aarch64-pc-windows-msvc.zip` | `deno-aarch64-apple-darwin.zip` / `deno-x86_64-apple-darwin.zip` (joined for the universal app) | `deno-x86_64-unknown-linux-gnu.zip` / `deno-aarch64-…` (none for musl) |
+| from | [Deno releases](https://github.com/denoland/deno/releases) `latest`, checked against the SHA-256 GitHub's release API lists for the file | | |
 
-QuickJS is yt-dlp's JavaScript runtime for YouTube's challenges, used only when the computer has none of its own (`src/js.rs`: Deno, Node.js 20+, Bun on `PATH`); without a bundled copy it is fetched on the first YouTube page.
+Deno and QuickJS are yt-dlp's JavaScript runtimes for YouTube's challenges, used only when the computer has none of its own (`src/js.rs`: Deno, Node.js 20+, Bun on `PATH`). The installers ship both and the managed Deno wins (it solves the challenges several times faster). Deno is never fetched by itself (40 MB; Settings can install it); without it QuickJS is fetched on the first YouTube page.
 
 Why these: yt-dlp's own builds are the only official ones. BtbN's builds are linked from ffmpeg.org's download page (Windows), cover Windows and Linux on x64 and ARM64, publish LGPL variants and a checksum list with every build, and are the base of yt-dlp's own ffmpeg builds. Nobody publishes an LGPL ffmpeg build for macOS; Martin Riedl's is a long-running, scripted build with per-file checksums. It is GPL (it includes x264), which does not affect Whoosh Download Manager's own licence: ffmpeg is a separate program, never linked. The macOS installer ships it with its licence, source references and a written offer for the source ([packaging/media-tools](../../packaging/media-tools)). Without a managed copy, Homebrew's ffmpeg is used when installed. (Intel macOS release builds there end in January 2027; a Homebrew ffmpeg keeps working.)
 
-Managed copies live in `<data dir>/media/bin`, their versions and checksums in `<data dir>/media/tools.json`. A managed copy wins over a system one. Each download goes to a temporary directory, is hashed while it streams, and is deleted on a checksum mismatch before anything is unpacked or made executable. Archives are unpacked with the system's `tar` (bsdtar on Windows 10+ and macOS reads zip). Updates: only on `media.updateTools`, or at most once a day when the user turned on `autoUpdate`.
+Managed copies live in `<data dir>/media/bin`, their versions and checksums in `<data dir>/media/tools.json`. A managed copy wins over a system one. Each download goes to a temporary directory, is hashed while it streams, and is deleted on a checksum mismatch before anything is unpacked or made executable. Zip archives are unpacked in-process; others with the system's `tar`. Updates: only on `media.updateTools`, or at most once a day when the user turned on `autoUpdate`.
 
 ### Shipped with the desktop app
 

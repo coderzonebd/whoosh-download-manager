@@ -568,6 +568,10 @@
     "waiting": "सर्वर की प्रतीक्षा",
     "emptyGroup": "यहाँ कुछ नहीं है",
     "emptyBody": "डाउनलोड शुरू करने के लिए “जोड़ें” दबाकर लिंक चिपकाएँ।",
-    "getUpdate": "पाएँ"
+    "getUpdate": "पाएँ",
+    "installUpdate": "अपडेट",
+    "updateDownloading": "अपडेट डाउनलोड हो रहा है…",
+    "updatePermission": "Whoosh Download Manager से ऐप इंस्टॉल करने की अनुमति दें, फिर से अपडेट दबाएँ।",
+    "updateFailed": "अपडेट इंस्टॉल नहीं हुआ: {{reason}}"
   }
 }

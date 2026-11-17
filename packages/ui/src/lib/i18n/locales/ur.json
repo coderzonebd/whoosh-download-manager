@@ -568,6 +568,10 @@
     "waiting": "سرور کا انتظار",
     "emptyGroup": "یہاں کچھ نہیں",
     "emptyBody": "ڈاؤن لوڈ شروع کرنے کے لیے “شامل کریں” دبا کر لنک چسپاں کریں۔",
-    "getUpdate": "حاصل کریں"
+    "getUpdate": "حاصل کریں",
+    "installUpdate": "اپ ڈیٹ",
+    "updateDownloading": "اپ ڈیٹ ڈاؤن لوڈ ہو رہی ہے…",
+    "updatePermission": "Whoosh Download Manager سے ایپس انسٹال کرنے کی اجازت دیں، پھر دوبارہ اپ ڈیٹ دبائیں۔",
+    "updateFailed": "اپ ڈیٹ انسٹال نہیں ہوئی: {{reason}}"
   }
 }

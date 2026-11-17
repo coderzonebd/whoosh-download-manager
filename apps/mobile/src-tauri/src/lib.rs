@@ -7,7 +7,12 @@
 //! the app's private data directory).
 //!
 //! It starts on the first `daemon_connection` and stays up for the life of
-//! the process. Media downloads (yt-dlp/ffmpeg) are not part of this build.
+//! the process.
+//!
+//! Video and audio sites work as on the desktop: yt-dlp, ffmpeg and QuickJS
+//! come inside the app (youtubedl-android's Python build, unpacked by
+//! `MediaTools.kt`), and the media service runs them as separate programs
+//! with the paths and environment Kotlin hands over ([`media_config`]).
 //!
 //! While something downloads, [`watch_downloads`] keeps Android's foreground
 //! service running (`WdmPlugin.setActive`, Kotlin), so the process — and the
@@ -58,14 +63,30 @@ async fn start(
         ..wdm_net::NetConfig::default()
     };
     let mut store_ms = 0.0;
-    let service = wdm_daemon::engine::start(
-        &data_dir,
-        net,
-        download_dir.to_string_lossy().into_owned(),
-        &mut store_ms,
-        None,
-    )
-    .await
+    let tools = media_tools(&app).await;
+    let service = match tools {
+        Some(tools) => {
+            let media = media_config(&data_dir, &net, tools);
+            wdm_daemon::engine::start_with_media(
+                &data_dir,
+                net,
+                download_dir.to_string_lossy().into_owned(),
+                &mut store_ms,
+                media,
+            )
+            .await
+        }
+        None => {
+            wdm_daemon::engine::start(
+                &data_dir,
+                net,
+                download_dir.to_string_lossy().into_owned(),
+                &mut store_ms,
+                None,
+            )
+            .await
+        }
+    }
     .map_err(|e| format!("cannot start the download engine: {e}"))?;
     let daemon = claim
         .serve(service.clone())
@@ -74,6 +95,84 @@ async fn start(
     tracing::info!(port = daemon.port(), store_ms, "in-process daemon ready");
     tauri::async_runtime::spawn(watch_downloads(service, app));
     Ok(daemon)
+}
+
+/// What `WdmPlugin.mediaTools` (Kotlin) answers once youtubedl-android has unpacked Python and
+/// ffmpeg: the programs (all in the app's native library directory, the only place Android lets
+/// an app run programs from) and the environment Python needs.
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct MediaTools {
+    python: String,
+    yt_dlp: String,
+    ffmpeg: String,
+    quickjs: String,
+    env: std::collections::BTreeMap<String, String>,
+}
+
+/// The phone's media tools, or `None` (then the app downloads files only). The first start
+/// after an install unpacks about 40 MB, a few seconds.
+#[cfg(target_os = "android")]
+async fn media_tools(app: &tauri::AppHandle) -> Option<MediaTools> {
+    let app = app.clone();
+    let got = tauri::async_runtime::spawn_blocking(move || {
+        let plugin = app.try_state::<AndroidPlugin>()?;
+        match plugin.0.run_mobile_plugin::<MediaTools>("mediaTools", ()) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                tracing::warn!("video and audio sites unavailable: {e}");
+                None
+            }
+        }
+    })
+    .await
+    .ok()
+    .flatten()?;
+    let usable = [&got.python, &got.yt_dlp, &got.ffmpeg]
+        .iter()
+        .all(|p| std::path::Path::new(p).is_file());
+    if !usable {
+        tracing::warn!(
+            ?got,
+            "video and audio sites unavailable: a media program is missing"
+        );
+        return None;
+    }
+    Some(got)
+}
+
+#[cfg(not(target_os = "android"))]
+async fn media_tools(_app: &tauri::AppHandle) -> Option<MediaTools> {
+    None
+}
+
+/// The media service over the app's own tools: yt-dlp is Python running the yt-dlp file, every
+/// program gets Python's environment (its libraries, certificates, home). They are fixed: the
+/// app updates yt-dlp itself (`MediaTools.kt`), the rest with the app.
+fn media_config(
+    data_dir: &std::path::Path,
+    net: &wdm_net::NetConfig,
+    t: MediaTools,
+) -> wdm_media::MediaConfig {
+    let env: Vec<(std::ffi::OsString, std::ffi::OsString)> =
+        t.env.iter().map(|(k, v)| (k.into(), v.into())).collect();
+    let tool = |program: &str, prefix: Vec<std::ffi::OsString>| wdm_media::Tool {
+        program: program.into(),
+        prefix,
+        env: env.clone(),
+    };
+    let mut config = wdm_media::MediaConfig::new(data_dir.join("media"));
+    config.system_tools = false;
+    config.auto_update = false;
+    config.yt_dlp = Some(tool(&t.python, vec![t.yt_dlp.clone().into()]));
+    config.ffmpeg = Some(tool(&t.ffmpeg, Vec::new()));
+    if std::path::Path::new(&t.quickjs).is_file() {
+        config.quickjs = Some(tool(&t.quickjs, Vec::new()));
+    }
+    config.fetcher = Some(Arc::new(wdm_media::NetFetcher::new(
+        wdm_net::HttpSourceFactory::new(net.clone()),
+    )));
+    config
 }
 
 /// `WdmPlugin.setActive`'s arguments.
@@ -172,6 +271,32 @@ struct UpdateInfo {
     version: String,
     /// The release's page on GitHub.
     url: String,
+    /// The release's APK and the SHA-256 GitHub lists for it, for the app to install itself
+    /// (`AppUpdate.kt`); absent when GitHub lists no checksum.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apk: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+}
+
+const RELEASE_DOWNLOADS: &str =
+    "https://github.com/coderzonebd/whoosh-download-manager/releases/download/";
+
+/// The release's `_android.apk` asset: its address and SHA-256, if GitHub lists one.
+fn apk_asset(release: &serde_json::Value) -> Option<(String, String)> {
+    let asset = release["assets"].as_array()?.iter().find(|x| {
+        x["name"]
+            .as_str()
+            .is_some_and(|n| n.ends_with("_android.apk"))
+    })?;
+    let url = asset["browser_download_url"]
+        .as_str()
+        .filter(|u| u.starts_with(RELEASE_DOWNLOADS))?;
+    let sha = asset["digest"]
+        .as_str()
+        .and_then(|d| d.strip_prefix("sha256:"))
+        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))?;
+    Some((url.to_owned(), sha.to_ascii_lowercase()))
 }
 
 /// `1.2.0-beta.3` → (1, 2, 0, false, 3): numbers, then a pre-release below its release.
@@ -209,12 +334,17 @@ fn newer_release(json: &str, current: &str) -> Option<UpdateInfo> {
             let tag = r["tag_name"].as_str()?;
             let key = version_key(tag)?;
             let url = r["html_url"].as_str()?.to_owned();
-            (key > mine && url.starts_with("https://github.com/")).then_some((key, tag, url))
+            (key > mine && url.starts_with("https://github.com/")).then_some((key, tag, url, r))
         })
         .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, tag, url)| UpdateInfo {
-            version: tag.trim_start_matches('v').to_owned(),
-            url,
+        .map(|(_, tag, url, r)| {
+            let apk = apk_asset(r);
+            UpdateInfo {
+                version: tag.trim_start_matches('v').to_owned(),
+                url,
+                apk: apk.as_ref().map(|a| a.0.clone()),
+                sha256: apk.map(|a| a.1),
+            }
         })
 }
 
@@ -340,6 +470,35 @@ mod tests {
             "v2.0.0 has no Android app"
         );
         assert!(newer_release("not json", "0.1.0").is_none());
+    }
+
+    #[test]
+    fn hands_over_the_apk_only_from_this_repository_with_a_checksum() {
+        let sha = "ab".repeat(32);
+        let release = |url: &str, digest: &str| {
+            format!(
+                r#"[{{"tag_name":"v1.0.0","prerelease":false,"draft":false,"html_url":"https://github.com/o/r/releases/tag/v1.0.0",
+                 "assets":[{{"name":"Whoosh-Download-Manager_1.0.0_android.apk","browser_download_url":"{url}","digest":"{digest}"}}]}}]"#
+            )
+        };
+        let ours = "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0/Whoosh-Download-Manager_1.0.0_android.apk";
+        let got = newer_release(&release(ours, &format!("sha256:{sha}")), "0.9.0").unwrap();
+        assert_eq!(got.apk.as_deref(), Some(ours));
+        assert_eq!(got.sha256.as_deref(), Some(sha.as_str()));
+        // Elsewhere, or without a checksum: only the release page.
+        let other = newer_release(
+            &release(
+                "https://example.com/x_android.apk",
+                &format!("sha256:{sha}"),
+            ),
+            "0.9.0",
+        )
+        .unwrap();
+        assert_eq!(other.apk, None);
+        assert_eq!(
+            newer_release(&release(ours, ""), "0.9.0").unwrap().apk,
+            None
+        );
     }
 
     #[test]

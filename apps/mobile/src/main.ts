@@ -54,6 +54,7 @@ interface AndroidBridge {
   insets?: () => string;
   takeShared?: () => string | null;
   openUrl?: (url: string) => void;
+  installUpdate?: (url: string, sha256: string) => void;
 }
 const android = (): AndroidBridge | undefined => (window as { WdmAndroid?: AndroidBridge }).WdmAndroid;
 function applyInsets(i: Insets): void {
@@ -88,20 +89,48 @@ function startShares(app: AppState): void {
   if (pending) app.openAdd(pending);
 }
 
-/** A newer release on GitHub (the app is not in a store): said once per start, with a link. */
+interface UpdateInfo {
+  version: string;
+  url: string;
+  apk?: string;
+  sha256?: string;
+}
+
+/**
+ * A newer release on GitHub (the app is not in a store): said once per start. *Update* downloads
+ * the release's APK in the app, checks it and hands it to Android's installer (`AppUpdate.kt`);
+ * without that, *Get it* opens the release page.
+ */
 async function startUpdateNotice(app: AppState): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
-  const found = await invoke<{ version: string; url: string } | null>("android_update").catch(() => null);
+  const found = await invoke<UpdateInfo | null>("android_update").catch(() => null);
   if (!found) return;
   const { t } = app.i18n;
-  app.toasts.push(
-    {
-      tone: "info",
-      message: t("toast.updateAvailable", { version: found.version }),
-      action: { label: t("mobile.getUpdate"), run: () => android()?.openUrl?.(found.url) },
-    },
-    24 * 60 * 60 * 1000,
-  );
+  const bridge = android();
+  const inApp = !!(found.apk && found.sha256 && bridge?.installUpdate);
+  const openPage = { label: t("mobile.getUpdate"), run: () => android()?.openUrl?.(found.url) };
+  const offer = (message: string) =>
+    app.toasts.push(
+      {
+        tone: "info",
+        message,
+        action: inApp
+          ? { label: t("mobile.installUpdate"), run: () => android()?.installUpdate?.(found.apk!, found.sha256!) }
+          : openPage,
+      },
+      24 * 60 * 60 * 1000,
+    );
+  (window as { __wdmUpdate?: (state: string) => void }).__wdmUpdate = (state) => {
+    if (state === "downloading") {
+      app.toasts.push({ tone: "info", message: t("mobile.updateDownloading") }, 60 * 1000);
+    } else if (state === "permission") {
+      offer(t("mobile.updatePermission"));
+    } else if (state.startsWith("failed")) {
+      const reason = state.replace(/^failed:\s*/, "");
+      app.toasts.push({ tone: "error", message: t("mobile.updateFailed", { reason }), action: openPage });
+    }
+  };
+  offer(t("toast.updateAvailable", { version: found.version }));
 }
 
 mount(MobileApp, {

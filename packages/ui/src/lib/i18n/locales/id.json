@@ -553,6 +553,10 @@
     "waiting": "Menunggu server",
     "emptyGroup": "Tidak ada apa pun di sini",
     "emptyBody": "Ketuk Tambah dan tempel tautan untuk mulai mengunduh.",
-    "getUpdate": "Unduh"
+    "getUpdate": "Unduh",
+    "installUpdate": "Perbarui",
+    "updateDownloading": "Mengunduh pembaruan…",
+    "updatePermission": "Izinkan pemasangan aplikasi dari Whoosh Download Manager, lalu ketuk Perbarui lagi.",
+    "updateFailed": "Pembaruan tidak terpasang: {{reason}}"
   }
 }

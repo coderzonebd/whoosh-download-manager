@@ -568,6 +568,10 @@
     "waiting": "Sunucu bekleniyor",
     "emptyGroup": "Burada bir şey yok",
     "emptyBody": "İndirmeye başlamak için Ekle'ye dokunup bir bağlantı yapıştırın.",
-    "getUpdate": "İndir"
+    "getUpdate": "İndir",
+    "installUpdate": "Güncelle",
+    "updateDownloading": "Güncelleme indiriliyor…",
+    "updatePermission": "Whoosh Download Manager'dan uygulama yüklemeye izin verin, sonra yeniden Güncelle'ye dokunun.",
+    "updateFailed": "Güncelleme yüklenmedi: {{reason}}"
   }
 }

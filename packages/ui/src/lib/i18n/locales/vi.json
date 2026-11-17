@@ -553,6 +553,10 @@
     "waiting": "Đang chờ máy chủ",
     "emptyGroup": "Không có gì ở đây",
     "emptyBody": "Nhấn Thêm và dán liên kết để bắt đầu tải xuống.",
-    "getUpdate": "Tải về"
+    "getUpdate": "Tải về",
+    "installUpdate": "Cập nhật",
+    "updateDownloading": "Đang tải bản cập nhật…",
+    "updatePermission": "Cho phép cài ứng dụng từ Whoosh Download Manager, rồi chạm Cập nhật lần nữa.",
+    "updateFailed": "Bản cập nhật chưa được cài: {{reason}}"
   }
 }

@@ -240,11 +240,12 @@ jobs:
           rm -rf "$dir"
           "target/release/wdm-media-bundle$exe" fetch --target "$TARGET" --out "$dir" > media-tools.md
           cp packaging/media-tools/NOTICE.txt packaging/media-tools/LGPL-2.1.txt \
-             packaging/media-tools/Unlicense.txt packaging/media-tools/QuickJS-MIT.txt "$dir/"
+             packaging/media-tools/Unlicense.txt packaging/media-tools/QuickJS-MIT.txt \
+             packaging/media-tools/Deno-MIT.txt "$dir/"
           cp LICENSE-GPL "$dir/GPL-3.0.txt"
           { echo "#### yt-dlp and ffmpeg in the $TARGET installers"; echo; cat media-tools.md; } >> "$GITHUB_STEP_SUMMARY"
           ls -l "$dir"
-      - name: Sign yt-dlp, ffmpeg and QuickJS (macOS)
+      - name: Sign yt-dlp, ffmpeg, QuickJS and Deno (macOS)
         # Inside the .app they must be signed like the app: Developer ID when
         # configured, else ad hoc. lipo's universal ffmpeg is unsigned. Signing
         # changes the files, so the manifest's checksums are taken again.
@@ -253,13 +254,18 @@ jobs:
           set -euo pipefail
           dir=apps/desktop/src-tauri/media-tools
           files=()
-          for f in yt-dlp ffmpeg ffprobe qjs; do [ -e "$dir/$f" ] && files+=("$dir/$f"); done
+          for f in yt-dlp ffmpeg ffprobe qjs deno; do [ -e "$dir/$f" ] && files+=("$dir/$f"); done
           if [ "$APPLE_SIGNING_ENABLED" = true ]; then
             # yt-dlp is a PyInstaller program: under the hardened runtime it
             # loads the Python libraries it unpacks, signed by its authors.
             MACOS_SIGN_ENTITLEMENTS=packaging/media-tools/yt-dlp.entitlements \
               .github/scripts/macos-sign.sh "$dir/yt-dlp"
-            .github/scripts/macos-sign.sh "${files[@]:1}"
+            # Deno runs V8: under the hardened runtime it needs JIT memory.
+            MACOS_SIGN_ENTITLEMENTS=packaging/media-tools/deno.entitlements \
+              .github/scripts/macos-sign.sh "$dir/deno"
+            others=()
+            for f in "${files[@]:1}"; do [ "$f" = "$dir/deno" ] || others+=("$f"); done
+            .github/scripts/macos-sign.sh "${others[@]}"
           else
             for f in "${files[@]}"; do
               codesign --force --sign - "$f"
@@ -518,7 +524,9 @@ jobs:
           WDM_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           WDM_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           WDM_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: pnpm tauri android build --ci --apk --aab --target aarch64 armv7 x86_64
+        # arm64 only: the app carries yt-dlp's Python and ffmpeg (~50 MB per processor type),
+        # and the build keeps only arm64-v8a (app/build.gradle.kts).
+        run: pnpm tauri android build --ci --apk --aab --target aarch64
       - name: Collect
         run: |
           set -euo pipefail
