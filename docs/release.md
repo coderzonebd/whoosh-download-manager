@@ -170,7 +170,7 @@ neither, macOS artifacts are signed but not notarized (warning in the log).
 `GITHUB_TOKEN` covers the draft release and the attestation; no personal token
 is needed. Not used yet, but will be for automated store/package submissions:
 `CHROME_WEBSTORE_*` (client id/secret/refresh token), `AMO_JWT_ISSUER` /
-`AMO_JWT_SECRET`, `WINGET_TOKEN`, `HOMEBREW_TAP_TOKEN`, `SNAPCRAFT_STORE_CREDENTIALS`,
+`AMO_JWT_SECRET`, `WINGET_TOKEN`, `SNAPCRAFT_STORE_CREDENTIALS`,
 `AUR_SSH_KEY`, a GPG key for apt/dnf repositories, `DOCKERHUB_TOKEN`.
 
 ### Updater key
@@ -328,7 +328,7 @@ only when its secret exists in the `release` environment:
 |---|---|---|
 | `CLOUDSMITH_API_KEY` (secret), `CLOUDSMITH_REPO` (variable, `owner/repository`), optionally `CLOUDSMITH_BETA_REPO` | apt and rpm repository | the open-source repository `coderzonebd/whoosh-download-manager` (created with *Repositories → New repository*, *Broadcast* on, then *Open source*, licence GPL-3.0-or-later, project URL this repository; a plain *Public* repository is only a trial. [Policy](https://docs.cloudsmith.com/resources/open-source-hosting-policy): the README credits Cloudsmith as the host); the API key of a user with write access. `packaging/install/install` points at it (`CLOUDSMITH`, `REPO_KEY`): change both if the repository or its GPG key changes. A deleted repository's name stays taken for a while |
 | `WINGET_TOKEN` (secret) | winget | a GitHub token (classic, `public_repo`) of an account that forked `microsoft/winget-pkgs`. The first version is submitted by hand from the release's package manifests (`packaging/winget/README.md`); Komac updates it from then on |
-| `HOMEBREW_TAP_TOKEN` (secret), `HOMEBREW_TAP` (variable, default `coderzonebd/homebrew-tap`) | Homebrew | a public `homebrew-tap` repository and a fine-grained token with *Contents: write* on it |
+| `HOMEBREW_TAP_DEPLOY_KEY` (secret), `HOMEBREW_TAP` (variable, default `coderzonebd/homebrew-tap`) | Homebrew | the public `coderzonebd/homebrew-tap` repository and an SSH deploy key with write access on it (its private half is the secret); no personal token |
 | `AUR_SSH_PRIVATE_KEY` (secret) | AUR | an AUR account with that SSH key; the first push creates the `wdm` package |
 
 Pre-releases go only to `CLOUDSMITH_BETA_REPO` (when set); winget, Homebrew and the AUR take full

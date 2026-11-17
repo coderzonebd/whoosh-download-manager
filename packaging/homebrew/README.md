@@ -24,8 +24,8 @@ brew bump-cask-pr --version 0.1.0 wdm            # in the tap or homebrew/cask
 brew audit --cask --new whoosh-download-manager && brew style whoosh-download-manager.rb
 ```
 
-Automating the bump from `release.yml` needs a token that can push to the tap
-(`HOMEBREW_TAP_TOKEN`, not used yet).
+`publish-channels.yml` pushes each full release's cask to `coderzonebd/homebrew-tap` with a deploy
+key (secret `HOMEBREW_TAP_DEPLOY_KEY`) that can write to that repository only.
 
 ## Placeholders until the name and signing are settled
 
