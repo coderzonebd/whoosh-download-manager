@@ -598,6 +598,10 @@
     "waiting": "Ожидание сервера",
     "emptyGroup": "Здесь пусто",
     "emptyBody": "Нажмите «Добавить» и вставьте ссылку, чтобы начать загрузку.",
-    "getUpdate": "Скачать"
+    "getUpdate": "Скачать",
+    "installUpdate": "Обновить",
+    "updateDownloading": "Загружается обновление…",
+    "updatePermission": "Разрешите установку приложений из Whoosh Download Manager и снова нажмите «Обновить».",
+    "updateFailed": "Обновление не установлено: {{reason}}"
   }
 }

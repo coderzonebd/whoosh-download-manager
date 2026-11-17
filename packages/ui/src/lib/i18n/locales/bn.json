@@ -568,6 +568,10 @@
     "waiting": "সার্ভারের অপেক্ষায়",
     "emptyGroup": "এখানে কিছু নেই",
     "emptyBody": "ডাউনলোড শুরু করতে “যোগ করুন” চেপে একটা লিংক দিন।",
-    "getUpdate": "নামান"
+    "getUpdate": "নামান",
+    "installUpdate": "আপডেট",
+    "updateDownloading": "আপডেট নামানো হচ্ছে…",
+    "updatePermission": "Whoosh Download Manager থেকে অ্যাপ ইনস্টল করার অনুমতি দিন, তারপর আবার আপডেট চাপুন।",
+    "updateFailed": "আপডেট ইনস্টল হয়নি: {{reason}}"
   }
 }

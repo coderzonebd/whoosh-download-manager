@@ -553,6 +553,10 @@
     "waiting": "正在等待服务器",
     "emptyGroup": "这里什么也没有",
     "emptyBody": "点按“添加”并粘贴链接即可开始下载。",
-    "getUpdate": "获取"
+    "getUpdate": "获取",
+    "installUpdate": "更新",
+    "updateDownloading": "正在下载更新…",
+    "updatePermission": "请允许 Whoosh Download Manager 安装应用，然后再次点按“更新”。",
+    "updateFailed": "更新未能安装：{{reason}}"
   }
 }

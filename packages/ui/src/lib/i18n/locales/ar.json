@@ -628,6 +628,10 @@
     "waiting": "في انتظار الخادم",
     "emptyGroup": "لا شيء هنا",
     "emptyBody": "انقر على «إضافة» والصق رابطًا لبدء التنزيل.",
-    "getUpdate": "احصل عليه"
+    "getUpdate": "احصل عليه",
+    "installUpdate": "تحديث",
+    "updateDownloading": "جارٍ تنزيل التحديث…",
+    "updatePermission": "اسمح بتثبيت التطبيقات من Whoosh Download Manager، ثم اضغط تحديث مرة أخرى.",
+    "updateFailed": "لم يُثبَّت التحديث: {{reason}}"
   }
 }

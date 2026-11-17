@@ -583,6 +583,10 @@
     "waiting": "Aguardando o servidor",
     "emptyGroup": "Nada aqui",
     "emptyBody": "Toque em Adicionar e cole um link para começar um download.",
-    "getUpdate": "Obter"
+    "getUpdate": "Obter",
+    "installUpdate": "Atualizar",
+    "updateDownloading": "Baixando a atualização…",
+    "updatePermission": "Permita instalar apps pelo Whoosh Download Manager e toque em Atualizar de novo.",
+    "updateFailed": "A atualização não foi instalada: {{reason}}"
   }
 }
