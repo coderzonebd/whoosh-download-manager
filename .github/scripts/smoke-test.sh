@@ -14,10 +14,10 @@
 # Usage: smoke-test.sh <desktop-artifact-dir> <binaries-artifact-dir> <out-dir>
 set -euo pipefail
 
-desktop=$1
-binaries=$2
-out=$3
-mkdir -p "$out"
+desktop=$(cd "$1" && pwd)
+binaries=$(cd "$2" && pwd)
+mkdir -p "$3"
+out=$(cd "$3" && pwd)
 work=$(mktemp -d)
 log() { printf '\n== %s\n' "$*"; }
 fail() { echo "::error::$*"; exit 1; }
