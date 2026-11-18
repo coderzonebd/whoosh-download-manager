@@ -237,7 +237,7 @@ concurrent copies of the whole suite pass at load average 54–65.
 ## Benchmarking
 
 ```bash
-cargo run --release -p wdm-net --example throughput -- --compare
+cargo run --release -p wdm-net --example net_throughput -- --compare
 ```
 
 `tools/daemon-ab.sh` and `tools/ab-summary.py` measure the whole daemon
@@ -393,7 +393,7 @@ every 20 ms; ticks of 10 ms per GiB):
 | `wdm-store-sync` (`fdatasync`) | 0.07–0.11 s | 0.07 s |
 
 Almost all of it is **kernel** time; user time is ~0.1 s/GiB for the whole
-daemon. wdm-net alone (`examples/throughput.rs`, one plain HTTP/1.1
+daemon. wdm-net alone (`examples/net_throughput.rs`, one plain HTTP/1.1
 connection, client CPU only) costs **0.15 CPU-s/GiB**, the same as wget
 (0.14) and curl (0.18) reading to `/dev/null`: the kernel's receive copy.
 The rest of the worker's time is the engine (its gather copy of chunks

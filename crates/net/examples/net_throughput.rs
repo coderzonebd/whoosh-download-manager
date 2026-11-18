@@ -2,7 +2,7 @@
 //! (plain or TLS), HTTP/2 and HTTP/3, with 1, 4 and 16 concurrent opens.
 //!
 //! ```text
-//! cargo run --release -p wdm-net --example throughput -- \
+//! cargo run --release -p wdm-net --example net_throughput -- \
 //!     [--transports h1,h1s,h2,h3] [--conns 1,4,16] [--file 100m.bin] \
 //!     [--scenario clean | --rate <MB/s per connection>] \
 //!     [--gb 1] [--runs 5] [--threads 4] [--cache-mb 256] [--compare]
