@@ -840,9 +840,56 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  smoke:
+    # The installers on a real machine of each platform, before anything is released: install,
+    # start the daemon with the shipped tools, download a file through it, download and merge a
+    # YouTube video with the shipped yt-dlp, Deno and ffmpeg, open the window and keep a
+    # screenshot (.github/scripts/smoke-test.sh).
+    name: Smoke test (${{ matrix.platform }})
+    needs: [desktop, binaries]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            os: ubuntu-24.04
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
+          - platform: macos-universal
+            os: macos-15
+          - platform: windows-x64
+            os: windows-2025
+          - platform: windows-arm64
+            os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-desktop-${{ matrix.platform }}
+          path: smoke/desktop
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-binaries-${{ matrix.platform }}
+          path: smoke/binaries
+      - name: Install and try it
+        shell: bash
+        run: .github/scripts/smoke-test.sh smoke/desktop smoke/binaries smoke/out
+      - name: Keep the screenshot and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-${{ matrix.platform }}
+          path: smoke/out/
+          if-no-files-found: ignore
+          retention-days: 7
+
   release:
     name: Draft GitHub release
-    needs: [meta, desktop, binaries, extension, sbom, manifests, android]
+    needs: [meta, desktop, binaries, extension, sbom, manifests, android, smoke]
     # Never on a dry run: only a v* tag creates (or refreshes) a draft release.
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
