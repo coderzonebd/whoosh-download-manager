@@ -178,7 +178,10 @@
     {/key}
   {/if}
   {#if app.addOpen}
-    <AddDownloadDialog initialUrl={app.addUrl} onclose={() => (app.addOpen = false)} />
+    <!-- A link shared or handed over while the dialog is open starts it again with that link. -->
+    {#key app.addUrl}
+      <AddDownloadDialog initialUrl={app.addUrl} onclose={() => (app.addOpen = false)} />
+    {/key}
   {/if}
   {#if app.removeIds}
     <RemoveDialog ids={app.removeIds} onclose={() => (app.removeIds = undefined)} />

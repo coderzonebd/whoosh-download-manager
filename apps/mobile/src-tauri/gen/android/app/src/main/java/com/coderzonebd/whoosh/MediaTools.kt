@@ -39,13 +39,16 @@ object MediaTools {
     }
     val app = context.applicationContext
     thread(name = "wdm-media-tools", isDaemon = true) {
+      val t0 = System.currentTimeMillis()
       try {
         YoutubeDL.getInstance().init(app)
         FFmpeg.getInstance().init(app)
         result = info(app)
+        Log.i(TAG, "media tools ready in ${System.currentTimeMillis() - t0} ms")
       } catch (e: Throwable) {
         Log.w(TAG, "media tools unavailable", e)
-        error = e.message ?: e.toString()
+        // The whole chain: an ExceptionInInitializerError says nothing by itself.
+        error = Log.getStackTraceString(e).lines().take(40).joinToString("\n")
       }
       synchronized(done) {
         finished = true

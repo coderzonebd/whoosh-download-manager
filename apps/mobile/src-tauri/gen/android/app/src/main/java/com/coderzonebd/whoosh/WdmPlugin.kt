@@ -30,6 +30,7 @@ class WdmPlugin(private val activity: Activity) : Plugin(activity) {
   /** yt-dlp, ffmpeg and QuickJS for the engine ([MediaTools]); waits for the first unpack. */
   @Command
   fun mediaTools(invoke: Invoke) {
+    android.util.Log.i("WdmMediaTools", "mediaTools asked")
     MediaTools.start(activity)
     thread(name = "wdm-media-tools-wait", isDaemon = true) {
       val tools = MediaTools.await(120_000)

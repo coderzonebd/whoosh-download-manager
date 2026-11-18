@@ -52,6 +52,7 @@ async fn start(
     let mut config = DaemonConfig::new(&data_dir);
     // Any free port: another app may hold the desktop default.
     config.port = 0;
+    tracing::info!("starting the in-process daemon");
     let claim = wdm_daemon::claim(config).await.map_err(|e| e.to_string())?;
 
     let net = wdm_net::NetConfig {
@@ -115,6 +116,8 @@ struct MediaTools {
 #[cfg(target_os = "android")]
 async fn media_tools(app: &tauri::AppHandle) -> Option<MediaTools> {
     let app = app.clone();
+    let t = std::time::Instant::now();
+    tracing::info!("asking the app for its media tools");
     let got = tauri::async_runtime::spawn_blocking(move || {
         let plugin = app.try_state::<AndroidPlugin>()?;
         match plugin.0.run_mobile_plugin::<MediaTools>("mediaTools", ()) {
@@ -128,6 +131,7 @@ async fn media_tools(app: &tauri::AppHandle) -> Option<MediaTools> {
     .await
     .ok()
     .flatten()?;
+    tracing::info!(ms = t.elapsed().as_millis() as u64, "media tools answered");
     let usable = [&got.python, &got.yt_dlp, &got.ffmpeg]
         .iter()
         .all(|p| std::path::Path::new(p).is_file());

@@ -29,4 +29,7 @@
 -keep class com.yausername.** { *; }
 -keep class com.fasterxml.jackson.** { *; }
 -dontwarn com.fasterxml.jackson.**
+# Its unzip (Apache Commons Compress, Commons IO) finds classes by reflection: R8 left an abstract
+# class where a concrete one was looked up ("class … is not a concrete class").
+-keep class org.apache.commons.** { *; }
 -dontwarn org.apache.commons.**
