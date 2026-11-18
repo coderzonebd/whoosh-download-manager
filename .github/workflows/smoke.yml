@@ -1,6 +1,7 @@
 # The release smoke test (release.yml, job `smoke`) on its own, against the installers of an
 # earlier Release run: for trying a change to .github/scripts/smoke-test.sh without building
-# everything again.
+# everything again. On a push that changes it, the newest finished Release run of the same
+# branch is used.
 name: Smoke test
 
 on:
@@ -9,14 +10,48 @@ on:
       run-id:
         description: ID of a finished Release run whose installers to test
         required: true
+  push:
+    paths:
+      - .github/scripts/smoke-test.sh
+      - .github/workflows/smoke.yml
 
 permissions:
   contents: read
   actions: read # the other run's artifacts
 
 jobs:
+  find:
+    name: Which installers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run-id: ${{ steps.r.outputs.run-id }}
+    steps:
+      - id: r
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT: ${{ inputs.run-id }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          id="$INPUT"
+          if [ -z "$id" ]; then
+            # The newest finished Release run of this branch that built the desktop installers.
+            for r in $(gh run list -R "$GITHUB_REPOSITORY" --workflow release.yml --branch "$BRANCH" \
+                         --status completed -L 10 --json databaseId -q '.[].databaseId'); do
+              if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$r/artifacts" \
+                   -q '.artifacts[].name' | grep -qx release-desktop-linux-x64; then
+                id=$r; break
+              fi
+            done
+          fi
+          [ -n "$id" ] || { echo "::error::no Release run with installers on $BRANCH"; exit 1; }
+          echo "Release run $id"
+          echo "run-id=$id" >> "$GITHUB_OUTPUT"
+
   smoke:
     name: Smoke test (${{ matrix.platform }})
+    needs: find
     strategy:
       fail-fast: false
       matrix:
@@ -41,13 +76,13 @@ jobs:
         with:
           name: release-desktop-${{ matrix.platform }}
           path: smoke/desktop
-          run-id: ${{ inputs.run-id }}
+          run-id: ${{ needs.find.outputs.run-id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-binaries-${{ matrix.platform }}
           path: smoke/binaries
-          run-id: ${{ inputs.run-id }}
+          run-id: ${{ needs.find.outputs.run-id }}
           github-token: ${{ github.token }}
       - name: Install and try it
         shell: bash
