@@ -1,7 +1,7 @@
 # The release smoke test (release.yml, job `smoke`) on its own, against the installers of an
 # earlier Release run: for trying a change to .github/scripts/smoke-test.sh without building
-# everything again. On a push that changes it, the newest finished Release run of the same
-# branch is used.
+# everything again. On a push that changes it, the finished Release run of that very commit is
+# used; without one (a merge, say), nothing is tested.
 name: Smoke test
 
 on:
@@ -36,22 +36,27 @@ jobs:
           set -euo pipefail
           id="$INPUT"
           if [ -z "$id" ]; then
-            # The newest finished Release run of this branch that built the desktop installers.
+            # A finished Release run of this commit that built the desktop installers: older
+            # installers would test older code.
             for r in $(gh run list -R "$GITHUB_REPOSITORY" --workflow release.yml --branch "$BRANCH" \
-                         --status completed -L 10 --json databaseId -q '.[].databaseId'); do
+                         --commit "$GITHUB_SHA" --status completed -L 10 --json databaseId -q '.[].databaseId'); do
               if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$r/artifacts" \
                    -q '.artifacts[].name' | grep -qx release-desktop-linux-x64; then
                 id=$r; break
               fi
             done
           fi
-          [ -n "$id" ] || { echo "::error::no Release run with installers on $BRANCH"; exit 1; }
+          if [ -z "$id" ]; then
+            echo "::notice::no Release run of $GITHUB_SHA with installers; nothing to test (start a Release dry run, then run this with its ID)"
+            exit 0
+          fi
           echo "Release run $id"
           echo "run-id=$id" >> "$GITHUB_OUTPUT"
 
   smoke:
     name: Smoke test (${{ matrix.platform }})
     needs: find
+    if: needs.find.outputs.run-id != ''
     strategy:
       fail-fast: false
       matrix:

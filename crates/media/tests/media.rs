@@ -1163,8 +1163,9 @@ async fn tar_bundled_tools_are_unpacked_and_checked() {
     );
     assert!(data.join("bin").join(exe("ffprobe")).is_file());
     tools.ensure(Kind::YtDlp).await.unwrap();
-    // Every bundled tool is copied in the background at start; wait for the last one too.
+    // Every bundled tool is copied in the background at start; wait for each of them.
     tools.ensure(Kind::QuickJs).await.unwrap();
+    tools.ensure(Kind::Deno).await.unwrap();
     assert!(up.fetched.lock().unwrap().is_empty(), "no network");
     let left: Vec<_> = std::fs::read_dir(data.join("bin"))
         .unwrap()
