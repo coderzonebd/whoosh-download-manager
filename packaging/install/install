@@ -76,11 +76,15 @@ asset() {
   [ "$got" = "$want" ] || die "$1: checksum mismatch, nothing was installed"
 }
 
+# Homebrew carries full releases only (the tap gets no betas), so a pinned version or the beta
+# channel goes straight to the .dmg, and so does a Homebrew that cannot install it.
+use_brew() { have brew && [ -z "${WDM_VERSION-}" ] && [ "${WDM_CHANNEL-}" != beta ]; }
+
 install_macos() {
-  if have brew; then
+  if use_brew; then
     say "installing with Homebrew"
-    brew install --cask "$CASK"
-    return
+    if brew install --cask "$CASK"; then return; fi
+    say "Homebrew could not install it (the tap has full releases only); installing the .dmg instead"
   fi
   TAG="$(release_tag)"; [ -n "$TAG" ] || die "no release found"
   v="${TAG#v}"
@@ -184,7 +188,7 @@ DESKTOP
 
 # WDM_DRY_RUN=1: say how it would install, change nothing (CI checks the script this way).
 if [ "${WDM_DRY_RUN-}" = 1 ]; then
-  install_macos() { have brew && echo "wdm: would install with Homebrew" || echo "wdm: would install the .dmg"; }
+  install_macos() { if use_brew; then echo "wdm: would install with Homebrew, else the .dmg"; else echo "wdm: would install the .dmg"; fi; }
   install_apt() { echo "wdm: would install with apt"; }
   install_rpm() { echo "wdm: would install with $1"; }
   install_appimage() { echo "wdm: would install the AppImage"; }
