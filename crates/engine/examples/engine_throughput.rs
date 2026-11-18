@@ -17,7 +17,7 @@
 //! `Tuning::write_coalesce` (0 = one write per network chunk, the old path).
 //!
 //! ```text
-//! cargo run --release -p wdm-engine --example throughput -- [GiB] [chunk KiB] [runs] [null|thread] [MB/s per connection] [connections, e.g. 1,4,16]
+//! cargo run --release -p wdm-engine --example engine_throughput -- [GiB] [chunk KiB] [runs] [null|thread] [MB/s per connection] [connections, e.g. 1,4,16]
 //! ```
 //!
 //! With a per-connection rate the source paces its chunks like a network

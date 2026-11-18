@@ -5,10 +5,10 @@
 //! discarding the bytes. Build it in release mode:
 //!
 //! ```text
-//! cargo run --release -p wdm-labserver --example throughput -- --conns 4 --secs 5
-//! cargo run --release -p wdm-labserver --example throughput -- --file 1g.bin --cache-mb 0   # generation-bound
-//! cargo run --release -p wdm-labserver --example throughput -- --h2 --tls
-//! cargo run --release -p wdm-labserver --example throughput -- --h3 --conns 2
+//! cargo run --release -p wdm-labserver --example labserver_throughput -- --conns 4 --secs 5
+//! cargo run --release -p wdm-labserver --example labserver_throughput -- --file 1g.bin --cache-mb 0   # generation-bound
+//! cargo run --release -p wdm-labserver --example labserver_throughput -- --h2 --tls
+//! cargo run --release -p wdm-labserver --example labserver_throughput -- --h3 --conns 2
 //! ```
 
 use bytes::{Buf, Bytes};

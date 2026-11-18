@@ -369,11 +369,11 @@ Also: `mint_url` / `mint_path` (signed URLs), `current_version` and `etag`
 
 ## Throughput
 
-`examples/throughput.rs` runs the server and N client connections in one
+`examples/labserver_throughput.rs` runs the server and N client connections in one
 process, each fetching its own slice of a file in a loop:
 
 ```bash
-cargo run --release -p wdm-labserver --example throughput -- --conns 4 --secs 5
+cargo run --release -p wdm-labserver --example labserver_throughput -- --conns 4 --secs 5
 ```
 
 Add `--raw` for a hand-written HTTP/1.1 client (measures the server rather

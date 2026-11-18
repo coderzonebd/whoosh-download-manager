@@ -1108,23 +1108,23 @@ What the numbers came from:
   s at more. A daemon log showed one connection alone at 0.7 GB/s and eight
   together at 0.8–0.9 GB/s, the seven new ones waiting 50–200 ms for their
   first byte (labserver generating far content; curl sees 48 ms there while
-  a transfer runs, 0.4 ms idle). In-process (`examples/throughput.rs`,
+  a transfer runs, 0.4 ms idle). In-process (`examples/engine_throughput.rs`,
   writer thread into the page cache) 1 and 8 connections cost the same
   (1.45 GiB/s; 1.06 vs 1.27 CPU s per GB), so the extra CPU is in the
   network and storage layers. See *Known limitations*.
 
 ### Engine data path
 
-`examples/throughput.rs` pushes data through the engine in-process from a
+`examples/engine_throughput.rs` pushes data through the engine in-process from a
 zero-copy pattern source, with fixed connection counts, and reports
 throughput, CPU seconds per GB (median over runs) and `write_at` calls per
 GiB:
 
 ```sh
-scripts/cargo-slot.sh cargo build --release -p wdm-engine --example throughput
+scripts/cargo-slot.sh cargo build --release -p wdm-engine --example engine_throughput
 # GiB, chunk KiB, runs, storage (null|thread), MB/s per connection (0 = unpaced), connections
-target/release/examples/throughput 0.25 8 5 thread 4 16
-WDM_COALESCE=0 target/release/examples/throughput 0.25 8 5 thread 4 16   # one write per chunk
+target/release/examples/engine_throughput 0.25 8 5 thread 4 16
+WDM_COALESCE=0 target/release/examples/engine_throughput 0.25 8 5 thread 4 16   # one write per chunk
 ```
 
 `null` storage discards writes inline (the engine's own cost). `thread`
