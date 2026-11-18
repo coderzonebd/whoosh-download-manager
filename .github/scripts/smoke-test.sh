@@ -36,23 +36,24 @@ exe=""; [ "$os" = windows ] && exe=.exe
 log "install ($os)"
 case "$os" in
   linux)
-    deb=$(ls "$desktop"/*.deb | head -n 1)
-    sudo apt-get update -qq
+    deb=$(realpath "$(find "$desktop" -maxdepth 1 -name '*.deb' | head -n 1)")
+    # A third-party list on the runner may refuse (429); the packages come from Ubuntu's.
+    sudo apt-get update -qq || true
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$deb" xvfb imagemagick > /dev/null
     app_bin=$(command -v wdm-desktop)
     daemon=$(command -v wdm-daemon)
     ;;
   macos)
-    dmg=$(ls "$desktop"/*.dmg | head -n 1)
+    dmg=$(find "$desktop" -maxdepth 1 -name '*.dmg' | head -n 1)
     mnt=$(hdiutil attach -nobrowse -readonly "$dmg" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -n 1)
     cp -R "$mnt"/*.app /Applications/
     hdiutil detach "$mnt" > /dev/null
-    app=$(ls -d /Applications/*[Ww]hoosh*.app | head -n 1)
+    app=$(find /Applications -maxdepth 1 -name '*[Ww]hoosh*.app' | head -n 1)
     app_bin="$app/Contents/MacOS/wdm-desktop"
     daemon="$app/Contents/MacOS/wdm-daemon"
     ;;
   windows)
-    setup=$(ls "$desktop"/*-setup.exe | head -n 1)
+    setup=$(find "$desktop" -maxdepth 1 -name '*-setup.exe' | head -n 1)
     # NSIS, per-user, silent; Start-Process waits for the installer to finish.
     powershell -NoProfile -Command "Start-Process -FilePath '$(cygpath -w "$setup")' -ArgumentList '/S' -Wait"
     dir=$(cygpath -u "$LOCALAPPDATA")/"Whoosh Download Manager"
@@ -67,7 +68,7 @@ done
 echo "app: $app_bin"; echo "daemon: $daemon"
 
 # The CLI comes from the release's CLI archive.
-archive=$(ls "$binaries"/wdm-[0-9]*.tar.gz "$binaries"/wdm-[0-9]*.zip 2>/dev/null | head -n 1)
+archive=$(find "$binaries" -maxdepth 1 \( -name 'wdm-[0-9]*.tar.gz' -o -name 'wdm-[0-9]*.zip' \) | head -n 1)
 [ -n "$archive" ] || fail "no CLI archive in $binaries"
 case "$archive" in
   *.zip) unzip -q "$archive" -d "$work/cli" ;;
