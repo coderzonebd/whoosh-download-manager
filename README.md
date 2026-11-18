@@ -158,4 +158,6 @@ Starring the repository, reporting bugs and translating help too.
 
 The engine, protocol and libraries (`crates/`, `packages/`) are **Apache-2.0**, so you can embed them anywhere. The applications (`apps/`) are **GPL-3.0-or-later**. Details are in [LICENSE.md](LICENSE.md).
 
+Made by [Coder Zone BD](https://coderzonebd.com) and contributors.
+
 <sub>Not affiliated with Tonec Inc. "Internet Download Manager" and "IDM" are trademarks of their owner and appear here only for comparison.</sub>
