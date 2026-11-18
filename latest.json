@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0-beta.1",
+  "notes": "See https://github.com/coderzonebd/whoosh-download-manager/releases/tag/v1.0.0-beta.1",
+  "pub_date": "2026-11-18T15:15:42.000Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL1hCbWVHYVRrZWFyNWtMU0l2bjBCTGFiNFpqT3JjeklnNXR4Vnl2U1NCbzZ4ODROdnVnbXNvNTg3RmpVc3VHT0w4c3k2WmZkVmVVdElONjlicWNSOHdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE2Mjk0CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXIuYXBwLnRhci5negl2ZXJzaW9uOjEuMC4wLWJldGEuMQpheGhsaExzRXNhNElMN2x1Z28xL0FJd2RyblN4Q0l4SEhvd1Z4RysvSmo5dGZWODF1cVZLelBHR1kwSDJaTFdYZXc4M1FFMGp0aFI5c09mUUc4cGlDZz09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_universal.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL1hCbWVHYVRrZWFyNWtMU0l2bjBCTGFiNFpqT3JjeklnNXR4Vnl2U1NCbzZ4ODROdnVnbXNvNTg3RmpVc3VHT0w4c3k2WmZkVmVVdElONjlicWNSOHdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE2Mjk0CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXIuYXBwLnRhci5negl2ZXJzaW9uOjEuMC4wLWJldGEuMQpheGhsaExzRXNhNElMN2x1Z28xL0FJd2RyblN4Q0l4SEhvd1Z4RysvSmo5dGZWODF1cVZLelBHR1kwSDJaTFdYZXc4M1FFMGp0aFI5c09mUUc4cGlDZz09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_universal.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL1hCbWVHYVRrZWFyNWtMU0l2bjBCTGFiNFpqT3JjeklnNXR4Vnl2U1NCbzZ4ODROdnVnbXNvNTg3RmpVc3VHT0w4c3k2WmZkVmVVdElONjlicWNSOHdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE2Mjk0CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXIuYXBwLnRhci5negl2ZXJzaW9uOjEuMC4wLWJldGEuMQpheGhsaExzRXNhNElMN2x1Z28xL0FJd2RyblN4Q0l4SEhvd1Z4RysvSmo5dGZWODF1cVZLelBHR1kwSDJaTFdYZXc4M1FFMGp0aFI5c09mUUc4cGlDZz09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_universal.app.tar.gz"
+    },
+    "darwin-x86_64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL1hCbWVHYVRrZWFyNWtMU0l2bjBCTGFiNFpqT3JjeklnNXR4Vnl2U1NCbzZ4ODROdnVnbXNvNTg3RmpVc3VHT0w4c3k2WmZkVmVVdElONjlicWNSOHdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE2Mjk0CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXIuYXBwLnRhci5negl2ZXJzaW9uOjEuMC4wLWJldGEuMQpheGhsaExzRXNhNElMN2x1Z28xL0FJd2RyblN4Q0l4SEhvd1Z4RysvSmo5dGZWODF1cVZLelBHR1kwSDJaTFdYZXc4M1FFMGp0aFI5c09mUUc4cGlDZz09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_universal.app.tar.gz"
+    },
+    "linux-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2Uwdm9sdTg1TVc3ZUU3V3dPZW1CTkhKYmx4M3FrRWdLZW1yNWNSYjhjRnZOaDIzaXNkcmNlREZQN2ZIM3k3eGxtc21Zc1g3RWpXNjZ2cGNBaVdXbkFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NDY2CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FhcmNoNjQuQXBwSW1hZ2UJdmVyc2lvbjoxLjAuMC1iZXRhLjEKVmtaVkVWd0R5U3RiU1UrbGxRcUlLbXRsbW1qSHI4Q1RWVTFKRXZLbFp4bWJhOUtYdXdkNXRzSjJSUE9JZTFPVGpLNEZBSFBsczMzMitSK0UrampKRGc9PQo=",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_aarch64.AppImage"
+    },
+    "linux-aarch64-appimage": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2Uwdm9sdTg1TVc3ZUU3V3dPZW1CTkhKYmx4M3FrRWdLZW1yNWNSYjhjRnZOaDIzaXNkcmNlREZQN2ZIM3k3eGxtc21Zc1g3RWpXNjZ2cGNBaVdXbkFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NDY2CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FhcmNoNjQuQXBwSW1hZ2UJdmVyc2lvbjoxLjAuMC1iZXRhLjEKVmtaVkVWd0R5U3RiU1UrbGxRcUlLbXRsbW1qSHI4Q1RWVTFKRXZLbFp4bWJhOUtYdXdkNXRzSjJSUE9JZTFPVGpLNEZBSFBsczMzMitSK0UrampKRGc9PQo=",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_aarch64.AppImage"
+    },
+    "linux-aarch64-deb": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2IwVmhRZmZoV1p3TUpWdUJzb2VBSG9JUWl1Q2pFUnRnbWNjWmJOSlFqcSsvLzE4Q2x5MVgwQ055T3BoZ21BWHJPZEduanZxSjNKMmhzM1R0cS9IVEFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NDY2CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FybTY0LmRlYgl2ZXJzaW9uOjEuMC4wLWJldGEuMQpXOEF0WDJGa3JhL2RNWlVqblppTTdrcTdWZHRpYUdHaXg4OFdOMEdnUk5vR2p3TmdiUHRTVHBBdWVsYnBVVUw3c0VIdTFmSHVXMEczWE14QkFvQU9CUT09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_arm64.deb"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2VRdXltVHNJT1AvSUtSeUFQaTlaMVNrQmVlWERkbzNhaHhKdnNjUWlOYVNGL3o2S2dIYWh6MGxQZ2d6UEZNTHJnQU1jVjR1Wm9IT1NpbTU3SE00R1FzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NjA2CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FtZDY0LkFwcEltYWdlCXZlcnNpb246MS4wLjAtYmV0YS4xClRkejloT3hOZVR0QTVPSlRpckFvWDJEaG1DbzdsWFRDZDBqUXRnTHhFSVplT3lDY3JyemR2dUltaWt0aklSc0pKMTF2SCs2MFRheGlXbXZCZlowdUJ3PT0K",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_amd64.AppImage"
+    },
+    "linux-x86_64-appimage": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2VRdXltVHNJT1AvSUtSeUFQaTlaMVNrQmVlWERkbzNhaHhKdnNjUWlOYVNGL3o2S2dIYWh6MGxQZ2d6UEZNTHJnQU1jVjR1Wm9IT1NpbTU3SE00R1FzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NjA2CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FtZDY0LkFwcEltYWdlCXZlcnNpb246MS4wLjAtYmV0YS4xClRkejloT3hOZVR0QTVPSlRpckFvWDJEaG1DbzdsWFRDZDBqUXRnTHhFSVplT3lDY3JyemR2dUltaWt0aklSc0pKMTF2SCs2MFRheGlXbXZCZlowdUJ3PT0K",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_amd64.AppImage"
+    },
+    "linux-x86_64-deb": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL1hDNldoTDRXWVVQM0RyUmlxZkV1VXdZZWxIdE9adHNsS3FQSTZxV1BSZ1Q3L2U0bUFNYzBFYTZLUjFvYkJDQlpPWitoclU5N1ZBMFhTTG9Ua1hqN0EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NjA3CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FtZDY0LmRlYgl2ZXJzaW9uOjEuMC4wLWJldGEuMQpRdDE5VnltMjVXZXlGRjR2TnhVQ1daeXV2ZnlDdmhoZmJqV1p2V0hnYndyNDMzOGZlMTIyODQwamh6YWt4YUFNaTlmT0p3ZlBQWFBWOXFzU0U1emFBQT09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_amd64.deb"
+    },
+    "windows-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2NPVXZoVVBoU0N6Q0ljWkhuZ1ZwU25FM1hmbFE1cWwwWUpDWGYyRlp5NDZVQUZmTzlWRk1mRmVVNmgxWjEyVStVY2QxM3Ird05zOTZBY1ZzcjlOb2cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NTg3CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FybTY0LXNldHVwLmV4ZQl2ZXJzaW9uOjEuMC4wLWJldGEuMQpTVnNGNWVPelFJN2pKYndRTk42cXdwMHIyOFlkektoK1QydFZHVVdoMVZrZExFVHlGOEVoL3laZ3FobFI2Ykd6T09wcDNQelRoeVpDRUtXa1h0RDlEZz09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_arm64-setup.exe"
+    },
+    "windows-aarch64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2NPVXZoVVBoU0N6Q0ljWkhuZ1ZwU25FM1hmbFE1cWwwWUpDWGYyRlp5NDZVQUZmTzlWRk1mRmVVNmgxWjEyVStVY2QxM3Ird05zOTZBY1ZzcjlOb2cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NTg3CWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX2FybTY0LXNldHVwLmV4ZQl2ZXJzaW9uOjEuMC4wLWJldGEuMQpTVnNGNWVPelFJN2pKYndRTk42cXdwMHIyOFlkektoK1QydFZHVVdoMVZrZExFVHlGOEVoL3laZ3FobFI2Ykd6T09wcDNQelRoeVpDRUtXa1h0RDlEZz09Cg==",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_arm64-setup.exe"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2V6UG1qZC9RK3J6amY4UExsNkd2MmwxcVZrcVRkY2VSc2UrNzdIWGZ5YjJxY0FKa25qVmN5Qk1UV2NsdjBEY3JTS0xCUi9QK1EvMko4b29EeXFxWlFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NzMzCWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjAuMC1iZXRhLjEKWjJVTTlySU9oMnJtNUNZNllscUNDSDJoREhUc2IrUXA5bkh1K3RDaDNXVlM0bUp1MGhSc20wRWRoRGJldy9XVVdLaExWK05PTDBtRVMwZ2xoT1ViQ3c9PQo=",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbmRvMHJ0WHhOL2V6UG1qZC9RK3J6amY4UExsNkd2MmwxcVZrcVRkY2VSc2UrNzdIWGZ5YjJxY0FKa25qVmN5Qk1UV2NsdjBEY3JTS0xCUi9QK1EvMko4b29EeXFxWlFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDE1NzMzCWZpbGU6V2hvb3NoIERvd25sb2FkIE1hbmFnZXJfMS4wLjAtYmV0YS4xX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjAuMC1iZXRhLjEKWjJVTTlySU9oMnJtNUNZNllscUNDSDJoREhUc2IrUXA5bkh1K3RDaDNXVlM0bUp1MGhSc20wRWRoRGJldy9XVVdLaExWK05PTDBtRVMwZ2xoT1ViQ3c9PQo=",
+      "url": "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v1.0.0-beta.1/Whoosh-Download-Manager_1.0.0-beta.1_x64-setup.exe"
+    }
+  }
+}
