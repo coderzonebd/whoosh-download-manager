@@ -130,10 +130,12 @@ done
 "$bin/ffmpeg$exe" -hide_banner -version | head -n 1 || fail "the shipped ffmpeg does not run"
 "$bin/yt-dlp$exe" --version || fail "the shipped yt-dlp does not run"
 video="$work/video"
+# yt-dlp is a native program: on Windows it needs Windows paths.
+native() { if [ "$os" = windows ]; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 if (cd "$work" && limit 300 "$bin/yt-dlp$exe" --ignore-config --no-playlist --no-cache-dir \
-      --js-runtimes "deno:$bin/deno$exe" --ffmpeg-location "$bin" \
+      --js-runtimes "deno:$(native "$bin/deno$exe")" --ffmpeg-location "$(native "$bin")" \
       -f 'bv*[height<=360]+ba/b[height<=360]' --merge-output-format mkv \
-      -o "$video.%(ext)s" "https://www.youtube.com/watch?v=jNQXAC9IVRw" > "$out/yt-dlp.log" 2>&1); then
+      -o "$(native "$video").%(ext)s" "https://www.youtube.com/watch?v=jNQXAC9IVRw" > "$out/yt-dlp.log" 2>&1); then
   # ffprobe where the build has one (not every macOS build does), else ffmpeg's own listing.
   if [ -x "$bin/ffprobe$exe" ]; then
     "$bin/ffprobe$exe" -v error -show_entries stream=codec_type -of csv=p=0 "$video.mkv" | sort | tee "$out/streams.txt"
@@ -153,7 +155,9 @@ log "the app's window"
 shot="$out/screenshot.png"
 case "$os" in
   linux)
-    xvfb-run -a -s "-screen 0 1280x800x24" bash -c "
+    # No GPU on the runner: WebKitGTK draws in software, or the window stays black.
+    WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 \
+      xvfb-run -a -s "-screen 0 1280x800x24" bash -c "
       '$app_bin' > '$out/app.log' 2>&1 &
       sleep 20
       import -window root '$shot'
