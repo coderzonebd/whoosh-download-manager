@@ -9,17 +9,17 @@ Open-source, crash-proof, and measured against every competitor in public.
 
 [![License: Apache-2.0 / GPL-3.0](https://img.shields.io/badge/license-Apache--2.0%20%2F%20GPL--3.0-2f74ec)](LICENSE.md)
 [![Rust](https://img.shields.io/badge/engine-Rust-6a4bd8?logo=rust)](crates)
-[![Status](https://img.shields.io/badge/status-pre--release%20·%20engine%20done-2f74ec)](#roadmap)
+[![Release](https://img.shields.io/github/v/release/coderzonebd/whoosh-download-manager?include_prereleases&label=release&color=2f74ec)](https://github.com/coderzonebd/whoosh-download-manager/releases)
 [![Platforms](https://img.shields.io/badge/targets-Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-6a4bd8)](MASTER-PLAN.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome%20(into%20dev)-2f74ec)](CONTRIBUTING.md)
 
-[Benchmarks](#measured-not-claimed) · [Features](#what-the-engine-does-today) · [Quick start](#quick-start) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh-download-manager)
+**[Download](https://coderzonebd.github.io/wdm/)** · [Benchmarks](#measured-not-claimed) · [Features](#what-it-does) · [Install](#install) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh-download-manager)
 
 </div>
 
 ---
 
-> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux, macOS and Windows and can be built from source (on Windows the whole test suite runs in CI; see [docs/windows.md](docs/windows.md)). The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `wdm`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
+> **Public beta: [v1.0.0-beta.1](https://github.com/coderzonebd/whoosh-download-manager/releases/tag/v1.0.0-beta.1) is out** for Windows, macOS, Linux and Android, with the browser extension for Firefox and Edge. Get it from **[the website](https://coderzonebd.github.io/wdm/)**, which picks the right download for your system. It is a beta: please [report what breaks](https://github.com/coderzonebd/whoosh-download-manager/issues). Benchmark runs recorded before the rename call WDM by its old codename, `vayu`.
 
 ## Measured, not claimed
 
@@ -39,7 +39,17 @@ Every number below comes from [`wdm-bench`](crates/bench). It runs Whoosh Downlo
 
 Whoosh Download Manager doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
 
-## What the engine does today
+## What it does
+
+- **Apps for every system:**
+  - desktop app for Windows, macOS and Linux, with a tray icon and a classic or modern download list;
+  - Android app with the same engine;
+  - browser extension (Firefox, Edge, Chrome and other Chromium browsers) that hands downloads to WDM;
+  - Bangla, English and ten more languages.
+- **Videos and playlists** from YouTube, Facebook and the other sites yt-dlp supports: pick the quality, or audio only. The media tools are fetched in the background after install, so the installers stay small.
+- **Updates itself:** the desktop app checks for new versions and updates in place.
+
+### The engine
 
 - **Every HTTP:** HTTP/1.1, HTTP/2 and HTTP/3 (QUIC) over TLS, with Happy Eyeballs.
 - **Smart connections:**
@@ -65,17 +75,25 @@ Whoosh Download Manager doesn't call a download done until the bytes are synced 
 
 ## Install
 
-One command per system; each checks what it downloads and the app keeps itself up to date afterwards.
+The easiest way: open **[coderzonebd.github.io/wdm](https://coderzonebd.github.io/wdm/)**. It detects your system and offers the right installer first.
+
+Or one command, which checks what it downloads; the app keeps itself up to date afterwards:
 
 | System | Command |
 |---|---|
+| Linux and macOS | `curl -fsSL https://coderzonebd.github.io/wdm/install.txt \| sh` |
+| Windows (PowerShell) | `irm https://coderzonebd.github.io/wdm/install.txt \| iex` |
+| Android | the `.apk` on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases) |
+
+Package managers start with the first full release (1.0.0); betas are not published there:
+
+| System | Command (from 1.0.0) |
+|---|---|
 | Windows | `winget install --id CoderZoneBD.WDM -e` |
 | macOS (Homebrew) | `brew install --cask coderzonebd/tap/whoosh-download-manager` |
-| Any system, one script: Linux and macOS | `curl -fsSL https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install \| sh` |
-| Any system, one script: Windows (PowerShell) | `irm https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install \| iex` |
 | Arch Linux | `yay -S wdm` (AUR) |
 
-The script is the same file for every system: it works out which one it runs on. On Windows it uses winget, else the per-user installer; on macOS Homebrew, else the `.dmg`; on Linux it uses apt (Debian, Ubuntu, Mint), dnf or zypper (Fedora, openSUSE) through the signed WDM repository, else the AppImage. The installers are also on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases). How each channel updates: [docs/release.md](docs/release.md#package-channels).
+The script is the same file for every system: it works out which one it runs on. On Windows it uses winget, else the per-user installer; on macOS Homebrew, else the `.dmg`; on Linux it uses apt (Debian, Ubuntu, Mint), dnf or zypper (Fedora, openSUSE) through the signed WDM repository, else the AppImage (betas have no `.rpm`, so Fedora and openSUSE get the AppImage until 1.0.0). The installers are also on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases). How each channel updates: [docs/release.md](docs/release.md#package-channels).
 
 The browser extension: [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/whoosh-download-manager/) and [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/lbcnfampnnfcbfacehkdjlggmbigpbdh); for Chrome, Brave and other Chromium browsers, the zip on the releases page. The app's *Connect your browser* page links the right one.
 
@@ -105,7 +123,8 @@ All commands are listed in [`crates/cli`](crates/cli/README.md). To benchmark on
 flowchart LR
   ext[Browser extension] -- native messaging --> nm[wdm-nmhost]
   cli[wdm CLI] -- JSON-RPC / WebSocket --> d
-  ui[Desktop app · Phase 2] -- JSON-RPC / WebSocket --> d
+  ui[Desktop app] -- JSON-RPC / WebSocket --> d
+  m[Android app] -- embedded daemon --> d
   nm --> d[wdm-daemon]
   d --> e[wdm-engine<br/>scheduler · tuner · journal]
   e --> n[wdm-net<br/>H1 · H2 · H3 · TLS]
@@ -116,11 +135,11 @@ flowchart LR
 |---|---|
 | [`crates/core`](crates/core) | engine types and traits (ranges, sources, storage, journal) |
 | [`crates/net`](crates/net) · [`engine`](crates/engine) · [`store`](crates/store) | network, scheduling, durable storage |
-| [`crates/media`](crates/media) | video and audio sites: yt-dlp and ffmpeg as separate programs, shipped with the desktop app (else fetched on first use), downloads through the engine |
+| [`crates/media`](crates/media) | video and audio sites: yt-dlp, ffmpeg and Deno as separate programs, fetched and checked in the background after install, downloads through the engine |
 | [`crates/daemon`](crates/daemon) · [`cli`](crates/cli) · [`nmhost`](crates/nmhost) | the service and its clients |
 | [`crates/proto`](crates/proto) · [`packages/api-client`](packages/api-client) | the local API, in Rust and TypeScript |
 | [`crates/labserver`](crates/labserver) · [`bench`](crates/bench) | fault-injecting test server and benchmark harness |
-| [`apps/desktop`](apps/desktop) · [`apps/extension`](apps/extension) · [`packages/ui`](packages/ui) | Tauri app, browser extension, Svelte UI |
+| [`apps/desktop`](apps/desktop) · [`apps/mobile`](apps/mobile) · [`apps/extension`](apps/extension) · [`packages/ui`](packages/ui) | Tauri desktop and Android apps, browser extension, Svelte UI |
 
 ## Roadmap
 
@@ -128,9 +147,9 @@ flowchart LR
 |---|---|---|
 | **0 · Foundations** | monorepo, CI, design system, labserver, bench, baseline report | ✅ done |
 | **1 · Engine** | H1/H2/H3 engine, daemon, CLI, crash-proof journal; [public gate](MASTER-PLAN.md#phase-1--engine-months-13) | ✅ done |
-| **2 · v1.0** | desktop app (Windows, macOS, Linux), extension Pro mode, self-healing links, yt-dlp, signed installers, Bangla + English and ten machine-seeded languages on Weblate | next |
-| **3 · v1.5** | BitTorrent, FTP/SFTP, HLS/DASH, multi-source + LAN peers, BDIX mode, Docker, web remote | planned |
-| **4 · v2.0** | extension Lite mode (WASM), Android, iOS companion, send-to-device, plugins | planned |
+| **2 · v1.0** | desktop app (Windows, macOS, Linux), Android app, browser extension, video and playlists (yt-dlp), self-update, signed installers, Bangla + English and ten more languages | 🧪 public beta ([v1.0.0-beta.1](https://github.com/coderzonebd/whoosh-download-manager/releases/tag/v1.0.0-beta.1)); 1.0.0 after testing |
+| **3 · v1.5** | BitTorrent (next), FTP/SFTP, HLS/DASH, multi-source + LAN peers, BDIX mode, Docker, web remote | planned |
+| **4 · v2.0** | extension Lite mode (WASM), iOS companion, send-to-device, plugins | planned |
 
 The full plan is in [MASTER-PLAN.md](MASTER-PLAN.md), and decisions are recorded in [docs/adr](docs/adr).
 
