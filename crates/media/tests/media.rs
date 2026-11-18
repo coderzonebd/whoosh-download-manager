@@ -65,6 +65,9 @@ fn main() {
         ("install_checks_the_upstream_checksum", || {
             Box::pin(install_checks_the_upstream_checksum())
         }),
+        ("prefetch_fetches_what_is_missing_and_says_so", || {
+            Box::pin(prefetch_fetches_what_is_missing_and_says_so())
+        }),
         ("install_refuses_a_checksum_mismatch", || {
             Box::pin(install_refuses_a_checksum_mismatch())
         }),
@@ -828,6 +831,7 @@ fn tools_config(dir: &Path) -> ToolsConfig {
             ffmpeg_macos: "https://up.example.test/ffmpeg-macos".into(),
             quickjs: "https://up.example.test/quickjs/latest".into(),
             deno: "https://up.example.test/deno/latest".into(),
+            deno_releases: "https://up.example.test/deno/releases".into(),
         },
         system: false,
         yt_dlp: None,
@@ -836,6 +840,22 @@ fn tools_config(dir: &Path) -> ToolsConfig {
         deno: None,
         bundled: None,
     }
+}
+
+/// The background fetch gets what upstream has and reports a failure for what it has not,
+/// without stopping at the first one.
+async fn prefetch_fetches_what_is_missing_and_says_so() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (up, body) = upstream(None);
+    let tools = Tools::open(tools_config(tmp.path()), up).await;
+    // The fake upstream serves yt-dlp only: ffmpeg and Deno fail, so not everything is here.
+    assert!(!tools.prefetch().await);
+    let yt = tools.get(Kind::YtDlp).expect("yt-dlp fetched");
+    assert_eq!(std::fs::read(&yt.program).unwrap(), body);
+    assert!(tools.get(Kind::Deno).is_none());
+    // A second run leaves what is here alone.
+    assert!(!tools.prefetch().await);
+    assert_eq!(std::fs::read(&yt.program).unwrap(), body);
 }
 
 async fn install_checks_the_upstream_checksum() {

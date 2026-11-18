@@ -44,8 +44,8 @@ pub enum Kind {
     /// The JavaScript runtime for YouTube ([`crate::js`]); used only when
     /// the computer has none of its own.
     QuickJs,
-    /// The faster JavaScript runtime the desktop installers ship; preferred
-    /// over QuickJS when present, never fetched on its own (40 MB).
+    /// The faster JavaScript runtime, preferred over QuickJS when present; fetched in the
+    /// background with the other tools ([`Tools::prefetch`]).
     Deno,
 }
 
@@ -438,6 +438,26 @@ impl Tools {
                 .filter(|f| !f.bundled)
                 .map(|f| f.tool.clone())
         })
+    }
+
+    /// Fetches the tools that are not here yet, one after another (yt-dlp, ffmpeg, then Deno),
+    /// so the first video page needs no download. Quiet: failures are logged and shown in
+    /// Settings, never in the way; the next start tries again.
+    pub async fn prefetch(&self) -> bool {
+        let mut all = true;
+        for kind in [Kind::YtDlp, Kind::Ffmpeg, Kind::Deno] {
+            if self.fixed(kind) || !published_here(kind) || self.get(kind).is_some() {
+                continue;
+            }
+            match self.ensure(kind).await {
+                Ok(_) => tracing::info!(tool = kind.name(), "fetched in the background"),
+                Err(e) => {
+                    all = false;
+                    tracing::warn!(tool = kind.name(), error = %e, "background fetch failed");
+                }
+            }
+        }
+        all
     }
 
     /// Whether the installer ships `kind` (copied into `bin` on first use).

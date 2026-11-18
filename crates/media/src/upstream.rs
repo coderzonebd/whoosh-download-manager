@@ -6,7 +6,7 @@
 //! | ffmpeg | Windows, Linux | `github.com/BtbN/FFmpeg-Builds` (linked from ffmpeg.org's download page), the **LGPL** static build of the newest release branch (`nX.Y`), else master | `checksums.sha256` of the same release |
 //! | ffmpeg | macOS | `ffmpeg.martin-riedl.de` release build (no LGPL macOS build exists upstream; this one is GPL, run as a separate program and never linked) | the `.sha256` file published next to it |
 //! | QuickJS (`qjs`) | all | `github.com/quickjs-ng/quickjs` releases (the project's own static builds; Windows on ARM runs the x86_64 one) | the asset's SHA-256 digest from GitHub's release API |
-//! | Deno | Windows, macOS, Linux (glibc) | `github.com/denoland/deno` releases (the project's own builds, a zip) | the asset's SHA-256 digest from GitHub's release API |
+//! | Deno | Windows, macOS, Linux (glibc) | `github.com/denoland/deno` releases (the project's own builds, a zip; the version from `dl.deno.land/release-latest.txt`, so no GitHub API request that shared addresses run out of) | the `.sha256sum` file the release publishes next to it |
 //!
 //! Every file is checked against the upstream checksum before it is
 //! unpacked or made executable; a mismatch deletes it.
@@ -28,8 +28,10 @@ pub struct Upstreams {
     pub ffmpeg_macos: String,
     /// `https://api.github.com/repos/quickjs-ng/quickjs/releases/latest`
     pub quickjs: String,
-    /// `https://api.github.com/repos/denoland/deno/releases/latest`
+    /// `https://dl.deno.land/release-latest.txt` (the newest version, e.g. `v2.9.8`)
     pub deno: String,
+    /// `https://github.com/denoland/deno/releases/download` (`/<tag>/<asset>`)
+    pub deno_releases: String,
 }
 
 impl Default for Upstreams {
@@ -39,7 +41,8 @@ impl Default for Upstreams {
             ffmpeg: "https://github.com/BtbN/FFmpeg-Builds/releases".into(),
             ffmpeg_macos: "https://ffmpeg.martin-riedl.de/redirect/latest/macos".into(),
             quickjs: "https://api.github.com/repos/quickjs-ng/quickjs/releases/latest".into(),
-            deno: "https://api.github.com/repos/denoland/deno/releases/latest".into(),
+            deno: "https://dl.deno.land/release-latest.txt".into(),
+            deno_releases: "https://github.com/denoland/deno/releases/download".into(),
         }
     }
 }
@@ -396,6 +399,31 @@ pub fn deno_asset_name_for(p: Platform) -> Option<&'static str> {
     })
 }
 
+/// The checksum in a Deno `.sha256sum` file: `<hash>  <name>` (made with `shasum`), or, for the
+/// Windows builds, PowerShell's `Get-FileHash` listing (`Hash : <HASH>` and `Path : …\<name>`).
+pub fn deno_sum(text: &str, name: &str) -> Option<String> {
+    if let Some(h) = sum_for(&parse_sums(text), name) {
+        return Some(h.to_owned());
+    }
+    let mut hash = None;
+    let mut path_ok = false;
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "Hash" if value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                hash = Some(value.to_ascii_lowercase());
+            }
+            // `C:\a\deno\…\deno-x86_64-pc-windows-msvc.zip` (the drive's colon is in value).
+            "Path" => path_ok = line.trim_end().ends_with(name),
+            _ => {}
+        }
+    }
+    hash.filter(|_| path_ok)
+}
+
 /// The newest Deno for this platform.
 pub async fn latest_deno(fetcher: &dyn Fetcher, up: &Upstreams) -> Result<Asset, String> {
     latest_deno_for(fetcher, up, Platform::current()).await
@@ -408,7 +436,17 @@ pub async fn latest_deno_for(
     p: Platform,
 ) -> Result<Asset, String> {
     let name = deno_asset_name_for(p).ok_or("Deno publishes no build for this platform")?;
-    let (version, url, sha256) = pick_github_asset(&fetcher.text(&up.deno).await?, name)?;
+    let tag = fetcher.text(&up.deno).await?.trim().to_owned();
+    let version = tag.strip_prefix('v').unwrap_or(&tag).to_owned();
+    if version.is_empty()
+        || version.len() > 32
+        || !version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+    {
+        return Err(format!("cannot tell Deno's version from {tag:?}"));
+    }
+    let url = format!("{}/v{version}/{name}", up.deno_releases);
+    let sha256 = deno_sum(&fetcher.text(&format!("{url}.sha256sum")).await?, name)
+        .ok_or_else(|| format!("{name}.sha256sum lists no checksum for it"))?;
     Ok(Asset {
         url,
         sha256,
@@ -605,6 +643,23 @@ mod tests {
         assert_eq!(
             quickjs_asset_name_for(p("aarch64-pc-windows-msvc")),
             Some("qjs-windows-x86_64.exe")
+        );
+    }
+
+    #[test]
+    fn reads_both_kinds_of_deno_checksum_file() {
+        let name = "deno-x86_64-pc-windows-msvc.zip";
+        let windows = "\r\nAlgorithm : SHA256\r\nHash      : CBA84B26E0DF5AE7F74FC66B86A95B866872A86292EBD84FA1E959927EDD93BF\r\nPath      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip\r\n\r\n";
+        assert_eq!(
+            deno_sum(windows, name).as_deref(),
+            Some("cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf")
+        );
+        // Another file's listing is not this one's checksum.
+        assert_eq!(deno_sum(windows, "deno-aarch64-pc-windows-msvc.zip"), None);
+        let unix = "e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609  deno-x86_64-unknown-linux-gnu.zip\n";
+        assert_eq!(
+            deno_sum(unix, "deno-x86_64-unknown-linux-gnu.zip").as_deref(),
+            Some("e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609")
         );
     }
 

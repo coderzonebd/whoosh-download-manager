@@ -142,6 +142,8 @@ async fn with_media(
         tracing::info!(dir = %dir.display(), "media tools shipped with the app");
     }
     config.bundled_tools = bundled;
+    // The installers ship no tools: fetch them quietly so the first video page is ready.
+    config.prefetch = true;
     let media = wdm_media::MediaService::start(engine, config).await?;
     tracing::info!("media downloads available");
     Ok(media)

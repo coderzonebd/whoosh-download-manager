@@ -59,6 +59,11 @@ fn lock<T>(m: &StdMutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Background fetch of the media tools: after the start, and again after a failure.
+const PREFETCH_DELAY: Duration = Duration::from_secs(15);
+const PREFETCH_RETRY: Duration = Duration::from_secs(600);
+const PREFETCH_TRIES: u32 = 12;
+
 /// How [`MediaService`] is set up.
 #[derive(Debug, Clone)]
 pub struct MediaConfig {
@@ -78,6 +83,9 @@ pub struct MediaConfig {
     pub fetcher: Option<Arc<dyn Fetcher>>,
     /// Run the daily update check when the user enabled it.
     pub auto_update: bool,
+    /// Fetch the missing tools in the background soon after the start (the installers ship
+    /// none), retrying every ten minutes until they are all here. Off in tests.
+    pub prefetch: bool,
     /// yt-dlp and ffmpeg shipped with the desktop app ([`crate::bundle`]):
     /// copied into the data directory instead of downloaded on first use.
     pub bundled_tools: Option<PathBuf>,
@@ -94,6 +102,7 @@ impl MediaConfig {
             quickjs: None,
             fetcher: None,
             auto_update: true,
+            prefetch: false,
             bundled_tools: None,
         }
     }
@@ -272,6 +281,21 @@ impl MediaService {
         }
         tokio::spawn(pump(Arc::downgrade(&shared), events));
         shared.resume_all().await;
+        if cfg.prefetch {
+            let weak = Arc::downgrade(&shared);
+            tokio::spawn(async move {
+                // Not on the start's path: the engine and the window come first.
+                tokio::time::sleep(PREFETCH_DELAY).await;
+                for _ in 0..PREFETCH_TRIES {
+                    let Some(s) = weak.upgrade() else { return };
+                    if s.closed.load(Ordering::Acquire) || s.tools.prefetch().await {
+                        return;
+                    }
+                    drop(s);
+                    tokio::time::sleep(PREFETCH_RETRY).await;
+                }
+            });
+        }
         if cfg.auto_update {
             let weak = Arc::downgrade(&shared);
             tokio::spawn(async move {
