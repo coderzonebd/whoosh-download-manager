@@ -399,6 +399,31 @@ pub fn deno_asset_name_for(p: Platform) -> Option<&'static str> {
     })
 }
 
+/// The checksum in a Deno `.sha256sum` file: `<hash>  <name>` (made with `shasum`), or, for the
+/// Windows builds, PowerShell's `Get-FileHash` listing (`Hash : <HASH>` and `Path : …\<name>`).
+pub fn deno_sum(text: &str, name: &str) -> Option<String> {
+    if let Some(h) = sum_for(&parse_sums(text), name) {
+        return Some(h.to_owned());
+    }
+    let mut hash = None;
+    let mut path_ok = false;
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "Hash" if value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                hash = Some(value.to_ascii_lowercase());
+            }
+            // `C:\a\deno\…\deno-x86_64-pc-windows-msvc.zip` (the drive's colon is in value).
+            "Path" => path_ok = line.trim_end().ends_with(name),
+            _ => {}
+        }
+    }
+    hash.filter(|_| path_ok)
+}
+
 /// The newest Deno for this platform.
 pub async fn latest_deno(fetcher: &dyn Fetcher, up: &Upstreams) -> Result<Asset, String> {
     latest_deno_for(fetcher, up, Platform::current()).await
@@ -420,10 +445,8 @@ pub async fn latest_deno_for(
         return Err(format!("cannot tell Deno's version from {tag:?}"));
     }
     let url = format!("{}/v{version}/{name}", up.deno_releases);
-    let sums = parse_sums(&fetcher.text(&format!("{url}.sha256sum")).await?);
-    let sha256 = sum_for(&sums, name)
-        .ok_or_else(|| format!("{name}.sha256sum lists no checksum for it"))?
-        .to_owned();
+    let sha256 = deno_sum(&fetcher.text(&format!("{url}.sha256sum")).await?, name)
+        .ok_or_else(|| format!("{name}.sha256sum lists no checksum for it"))?;
     Ok(Asset {
         url,
         sha256,
@@ -620,6 +643,23 @@ mod tests {
         assert_eq!(
             quickjs_asset_name_for(p("aarch64-pc-windows-msvc")),
             Some("qjs-windows-x86_64.exe")
+        );
+    }
+
+    #[test]
+    fn reads_both_kinds_of_deno_checksum_file() {
+        let name = "deno-x86_64-pc-windows-msvc.zip";
+        let windows = "\r\nAlgorithm : SHA256\r\nHash      : CBA84B26E0DF5AE7F74FC66B86A95B866872A86292EBD84FA1E959927EDD93BF\r\nPath      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip\r\n\r\n";
+        assert_eq!(
+            deno_sum(windows, name).as_deref(),
+            Some("cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf")
+        );
+        // Another file's listing is not this one's checksum.
+        assert_eq!(deno_sum(windows, "deno-aarch64-pc-windows-msvc.zip"), None);
+        let unix = "e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609  deno-x86_64-unknown-linux-gnu.zip\n";
+        assert_eq!(
+            deno_sum(unix, "deno-x86_64-unknown-linux-gnu.zip").as_deref(),
+            Some("e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609")
         );
     }
 
