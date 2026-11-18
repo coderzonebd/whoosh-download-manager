@@ -31,6 +31,27 @@ export function excludeMatchPatterns(sites) {
 }
 
 /**
+ * The browsers' version for an app version. Extension versions are one to four numbers
+ * (0–65535) that must grow with every upload, so a pre-release `X.Y.Z-beta.N` cannot be used
+ * as it is: it becomes a version just below `X.Y.Z` (`1.0.0-beta.2` → `0.65535.65535.2`,
+ * `1.2.3-beta.2` → `1.2.2.2`), which still grows from beta to beta and is passed by the
+ * release. The full version is kept in `version_name` (shown by Chromium).
+ * @param {string} version
+ * @returns {{ version: string, versionName?: string }}
+ */
+export function browserVersion(version) {
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(version);
+  if (!m) throw new Error(`not a release version: ${version}`);
+  const [x, y, z] = [m[1], m[2], m[3]].map(Number);
+  if (!m[4]) return { version: `${x}.${y}.${z}` };
+  const n = Number(/(\d+)$/.exec(m[4])?.[1] ?? 0);
+  const max = 65535;
+  const below = z > 0 ? [x, y, z - 1] : y > 0 ? [x, y - 1, max] : x > 0 ? [x - 1, max, max] : null;
+  if (!below) throw new Error(`no browser version below ${version}`);
+  return { version: `${below.join(".")}.${Math.min(n, max)}`, versionName: version };
+}
+
+/**
  * @param {"chromium" | "firefox"} target
  * @param {{ version: string, store: boolean }} options
  *   `store`: the Chrome Web Store / AMO build — no development `key`, and the
@@ -43,7 +64,11 @@ export function manifestFor(target, { version, store }) {
     // Translated: _locales/<lang>/messages.json (extName, extDescription).
     name: "__MSG_extName__",
     short_name: "__MSG_extShortName__",
-    version,
+    ...(() => {
+      const v = browserVersion(version);
+      // Firefox has no version_name; Chromium shows it instead of the numbers.
+      return target === "chromium" && v.versionName ? { version: v.version, version_name: v.versionName } : { version: v.version };
+    })(),
     description: "__MSG_extDescription__",
     default_locale: "en",
     icons,

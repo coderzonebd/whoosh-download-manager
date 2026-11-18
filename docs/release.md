@@ -77,6 +77,10 @@ without the development `key` (the job fails if a key is left in).
    - `apps/mobile/package.json` → `version`
 
    Run `cargo check` so `Cargo.lock` follows, and commit on `dev` (via a PR).
+   Two versions are derived, not set: the browser extension's (numbers only; a pre-release
+   becomes a version just below its release, `apps/extension/scripts/manifest.mjs`,
+   `browserVersion`) and Android's versionCode (`(major*1e6 + minor*1e3 + patch)*100`, plus
+   the pre-release number or 99 for the release; the *Android* job in `release.yml`).
    Then open the **release PR `dev → pub`** and merge it with a merge commit
    ([ADR 0006](adr/0006-dev-and-pub-branches.md)).
 3. Tag the merge commit on `pub` and push the tag (the release workflow

@@ -438,7 +438,26 @@ jobs:
           WDM_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         # arm64 only: the app carries yt-dlp's Python and ffmpeg (~50 MB per processor type),
         # and the build keeps only arm64-v8a (app/build.gradle.kts).
-        run: pnpm tauri android build --ci --apk --aab --target aarch64
+        run: |
+          set -euo pipefail
+          # Android only installs an update with a versionCode at least as high, and Google Play
+          # wants it strictly higher; Tauri's own (major*1e6 + minor*1e3 + patch) gives a beta and
+          # its release the same one. Two more digits: a pre-release's number (1-98), 99 for the
+          # release itself (1.0.0-beta.1 -> 100000001, 1.0.0 -> 100000099).
+          code=$(python3 - "$VERSION" <<'PY'
+          import re, sys
+          m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-(.+))?", sys.argv[1])
+          major, minor, patch = (int(m.group(i)) for i in (1, 2, 3))
+          pre = m.group(4)
+          n = int(re.search(r"(\d+)$", pre).group(1)) if pre and re.search(r"(\d+)$", pre) else 0
+          if pre and not 1 <= n <= 98:
+              sys.exit(f"pre-release number {n} of {sys.argv[1]} does not fit (1-98)")
+          print((major * 1_000_000 + minor * 1_000 + patch) * 100 + (n if pre else 99))
+          PY
+          )
+          echo "versionCode $code for $VERSION"
+          pnpm tauri android build --ci --apk --aab --target aarch64 \
+            --config "{\"bundle\":{\"android\":{\"versionCode\":$code}}}"
       - name: Collect
         run: |
           set -euo pipefail
