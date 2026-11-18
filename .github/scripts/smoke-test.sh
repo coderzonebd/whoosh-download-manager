@@ -101,14 +101,19 @@ grep -q "media downloads available" "$out/daemon.log" \
   || { cat "$out/daemon.log"; fail "the daemon has no media support"; }
 
 log "download a file through the daemon"
-url="https://ash-speed.hetzner.com/10MB.bin"
+# A file on GitHub's own servers (speed-test hosts refuse datacenter machines), checked against
+# the checksum its release publishes.
+base="https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26"
+url="$base/yt-dlp_linux"
+want=$(curl -fsSL "$base/SHA2-256SUMS" | awk '$2 == "yt-dlp_linux" {print $1}')
+[ -n "$want" ] || fail "no checksum for yt-dlp_linux"
 dl="$work/downloads"; [ "$os" = windows ] && dl=$(cygpath -w "$dl")
 saved=$("$cli" get --dir "$dl" "$url" | tail -n 1) \
-  || { cat "$out/daemon.log"; fail "wdm get failed"; }
+  || { tail -n 30 "$out/daemon.log"; fail "wdm get failed"; }
 [ "$os" = windows ] && saved=$(cygpath -u "$saved")
-size=$(wc -c < "$saved" | tr -d ' ')
-[ "$size" = 10485760 ] || fail "downloaded $size bytes, expected 10485760 ($saved)"
-echo "ok: $saved ($size bytes)"
+if command -v sha256sum > /dev/null; then got=$(sha256sum "$saved" | cut -d' ' -f1); else got=$(shasum -a 256 "$saved" | cut -d' ' -f1); fi
+[ "$got" = "$want" ] || fail "checksum mismatch: $got, expected $want ($saved)"
+echo "ok: $saved ($(wc -c < "$saved" | tr -d ' ') bytes, SHA-256 matches)"
 
 # ---------------------------------------- 3. the media tools, fetched by the daemon
 log "the daemon fetches yt-dlp, ffmpeg and Deno by itself"

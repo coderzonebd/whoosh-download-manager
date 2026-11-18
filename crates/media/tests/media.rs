@@ -831,6 +831,7 @@ fn tools_config(dir: &Path) -> ToolsConfig {
             ffmpeg_macos: "https://up.example.test/ffmpeg-macos".into(),
             quickjs: "https://up.example.test/quickjs/latest".into(),
             deno: "https://up.example.test/deno/latest".into(),
+            deno_releases: "https://up.example.test/deno/releases".into(),
         },
         system: false,
         yt_dlp: None,

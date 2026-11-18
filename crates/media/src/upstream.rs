@@ -6,7 +6,7 @@
 //! | ffmpeg | Windows, Linux | `github.com/BtbN/FFmpeg-Builds` (linked from ffmpeg.org's download page), the **LGPL** static build of the newest release branch (`nX.Y`), else master | `checksums.sha256` of the same release |
 //! | ffmpeg | macOS | `ffmpeg.martin-riedl.de` release build (no LGPL macOS build exists upstream; this one is GPL, run as a separate program and never linked) | the `.sha256` file published next to it |
 //! | QuickJS (`qjs`) | all | `github.com/quickjs-ng/quickjs` releases (the project's own static builds; Windows on ARM runs the x86_64 one) | the asset's SHA-256 digest from GitHub's release API |
-//! | Deno | Windows, macOS, Linux (glibc) | `github.com/denoland/deno` releases (the project's own builds, a zip) | the asset's SHA-256 digest from GitHub's release API |
+//! | Deno | Windows, macOS, Linux (glibc) | `github.com/denoland/deno` releases (the project's own builds, a zip; the version from `dl.deno.land/release-latest.txt`, so no GitHub API request that shared addresses run out of) | the `.sha256sum` file the release publishes next to it |
 //!
 //! Every file is checked against the upstream checksum before it is
 //! unpacked or made executable; a mismatch deletes it.
@@ -28,8 +28,10 @@ pub struct Upstreams {
     pub ffmpeg_macos: String,
     /// `https://api.github.com/repos/quickjs-ng/quickjs/releases/latest`
     pub quickjs: String,
-    /// `https://api.github.com/repos/denoland/deno/releases/latest`
+    /// `https://dl.deno.land/release-latest.txt` (the newest version, e.g. `v2.9.8`)
     pub deno: String,
+    /// `https://github.com/denoland/deno/releases/download` (`/<tag>/<asset>`)
+    pub deno_releases: String,
 }
 
 impl Default for Upstreams {
@@ -39,7 +41,8 @@ impl Default for Upstreams {
             ffmpeg: "https://github.com/BtbN/FFmpeg-Builds/releases".into(),
             ffmpeg_macos: "https://ffmpeg.martin-riedl.de/redirect/latest/macos".into(),
             quickjs: "https://api.github.com/repos/quickjs-ng/quickjs/releases/latest".into(),
-            deno: "https://api.github.com/repos/denoland/deno/releases/latest".into(),
+            deno: "https://dl.deno.land/release-latest.txt".into(),
+            deno_releases: "https://github.com/denoland/deno/releases/download".into(),
         }
     }
 }
@@ -408,7 +411,19 @@ pub async fn latest_deno_for(
     p: Platform,
 ) -> Result<Asset, String> {
     let name = deno_asset_name_for(p).ok_or("Deno publishes no build for this platform")?;
-    let (version, url, sha256) = pick_github_asset(&fetcher.text(&up.deno).await?, name)?;
+    let tag = fetcher.text(&up.deno).await?.trim().to_owned();
+    let version = tag.strip_prefix('v').unwrap_or(&tag).to_owned();
+    if version.is_empty()
+        || version.len() > 32
+        || !version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+    {
+        return Err(format!("cannot tell Deno's version from {tag:?}"));
+    }
+    let url = format!("{}/v{version}/{name}", up.deno_releases);
+    let sums = parse_sums(&fetcher.text(&format!("{url}.sha256sum")).await?);
+    let sha256 = sum_for(&sums, name)
+        .ok_or_else(|| format!("{name}.sha256sum lists no checksum for it"))?
+        .to_owned();
     Ok(Asset {
         url,
         sha256,
