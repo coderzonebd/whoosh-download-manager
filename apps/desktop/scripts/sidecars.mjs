@@ -13,7 +13,7 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const NAMES = ["whoosh-daemon", "whoosh-nmhost"];
+const NAMES = ["wdm-daemon", "wdm-nmhost"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const out = join(root, "apps", "desktop", "src-tauri", "binaries");
 
@@ -44,6 +44,9 @@ if (target === "universal-apple-darwin") {
   for (const name of NAMES) {
     const parts = arches.map((t) => join(root, "target", t, "release", name));
     run("lipo", ["-create", "-output", join(out, `${name}-${target}`), ...parts]);
+    // A universal `tauri build` compiles the app once per architecture and
+    // looks for each architecture's sidecar too.
+    for (const t of arches) copyFileSync(join(root, "target", t, "release", name), join(out, `${name}-${t}`));
   }
 } else {
   build(target);

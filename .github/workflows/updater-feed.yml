@@ -1,0 +1,82 @@
+# Updater feed: when a release is published (by hand, from the draft that
+# release.yml made), copy its latest.json to the `updater` branch, which the
+# app reads from raw.githubusercontent.com. Pre-releases update latest.json
+# too, so beta users get the next beta; stable.json only takes full releases.
+# Needs no secret: GITHUB_TOKEN may push to `updater` (only dev and pub are
+# protected). See docs/release.md, "Updater key".
+name: Updater feed
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to (re)publish to the feed, e.g. v1.0.0-beta.1
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: updater-feed
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    name: Publish latest.json to the updater branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # push to the updater branch
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: src
+      - name: The release's updater manifest
+        id: manifest
+        run: |
+          set -euo pipefail
+          case "$TAG" in v*) ;; *) echo "::error::$TAG is not a v* release tag"; exit 1 ;; esac
+          info=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease)
+          if [ "$(jq -r .isDraft <<<"$info")" = true ]; then
+            echo "::error::$TAG is still a draft; publish it first"; exit 1
+          fi
+          echo "prerelease=$(jq -r .isPrerelease <<<"$info")" >> "$GITHUB_OUTPUT"
+          if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$RUNNER_TEMP"; then
+            echo "::notice::$TAG has no latest.json (no updater key at build time); the feed is unchanged"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+      - name: Update and push the feed
+        if: steps.manifest.outputs.found == 'true'
+        env:
+          PRERELEASE: ${{ steps.manifest.outputs.prerelease }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          set -euo pipefail
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$url" updater > /dev/null; then
+            git clone --quiet --depth 1 --branch updater "$url" feed
+          else
+            git init --quiet -b updater feed
+            git -C feed remote add origin "$url"
+          fi
+          node src/.github/scripts/updater-feed.mjs "$RUNNER_TEMP/latest.json" feed "$PRERELEASE"
+          cd feed
+          git add -A
+          if git diff --cached --quiet; then echo "feed unchanged"; exit 0; fi
+          # Committed in the name of whoever published the release.
+          git -c user.name="$ACTOR" -c user.email="${ACTOR_ID}+${ACTOR}@users.noreply.github.com" \
+            commit --quiet -m "updater: $TAG"
+          git push --quiet origin updater
+          {
+            echo "### Updater feed"
+            echo "$TAG published to the \`updater\` branch (prerelease: $PRERELEASE)."
+          } >> "$GITHUB_STEP_SUMMARY"

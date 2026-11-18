@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::time::Instant;
-use whoosh_proto::UnixMillis;
+use wdm_proto::UnixMillis;
 
 pub(crate) fn unix_millis() -> UnixMillis {
     SystemTime::now()

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Settings that belong to this app, not to the daemon (whose settings every
-//! client shares): what closing the window and Quit do. Kept in
+//! client shares): what closing the window and Quit do, and the update
+//! check. Kept in
 //! `<app config dir>/desktop.json`; a missing or unreadable file means the
 //! defaults.
 
@@ -22,6 +23,18 @@ pub struct Prefs {
     pub stop_daemon_on_quit: bool,
     /// The "still running in the tray" notice has been shown once.
     pub tray_notice_shown: bool,
+    /// The UI's language when it last ran, so the tray starts in it
+    /// (`shell_i18n`). Empty: English.
+    pub language: String,
+    /// Look for a new version once a day (`updates`). Never installs alone.
+    pub auto_update_check: bool,
+    /// When the app last looked for an update (Unix seconds; 0 = never).
+    pub last_update_check: u64,
+    /// The "Connect your browser" page has been shown once (first run).
+    pub browser_setup_shown: bool,
+    /// Launch at login was turned on at the first start (`login_item`);
+    /// never again, so turning it off in Settings sticks.
+    pub login_item_set: bool,
 }
 
 impl Default for Prefs {
@@ -30,6 +43,11 @@ impl Default for Prefs {
             close_to_tray: true,
             stop_daemon_on_quit: false,
             tray_notice_shown: false,
+            language: String::new(),
+            auto_update_check: true,
+            last_update_check: 0,
+            browser_setup_shown: false,
+            login_item_set: false,
         }
     }
 }
@@ -95,6 +113,10 @@ mod tests {
         let p = Prefs::default();
         assert!(p.close_to_tray);
         assert!(!p.stop_daemon_on_quit);
+        assert!(p.auto_update_check);
+        assert!(!p.browser_setup_shown);
+        // Not set yet: the first start of an installed build turns launch at login on.
+        assert!(!p.login_item_set);
     }
 
     #[test]

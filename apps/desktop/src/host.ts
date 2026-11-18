@@ -1,12 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// What the desktop shell adds to the shared UI (`Host` in @whoosh/ui): the
+// What the desktop shell adds to the shared UI (`Host` in @wdm/ui): the
 // native folder picker, the app's own settings (`desktop.json`, through the
-// `desktop_prefs` / `set_desktop_prefs` commands) and launch at login.
-import type { DesktopPrefs, Host } from "@whoosh/ui";
+// `desktop_prefs` / `set_desktop_prefs` commands), launch at login, the
+// "Send crash reports" switch (`crash.rs`), opening the translation site
+// from the language picker, "Connect your browser" (`browsers.rs`), signed
+// updates (`updates.rs`) and the prompt window (`prompt.rs`), which asks about
+// a browser download that waits for confirmation or a video page the
+// extension offered, without bringing up the main window.
+import type { BrowserState, CrashReportsState, DesktopPrefs, Host, UpdateInfo } from "@wdm/ui";
 
 /** The full `desktop.json` as the shell sends it (`prefs.rs`). */
 interface ShellPrefs extends DesktopPrefs {
   trayNoticeShown: boolean;
+  /** Kept by the shell for the tray (`shell_i18n.rs`). */
+  language: string;
+  lastUpdateCheck: number;
+  browserSetupShown: boolean;
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -14,8 +23,19 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return core.invoke<T>(cmd, args);
 }
 
-function pick({ closeToTray, stopDaemonOnQuit }: DesktopPrefs): DesktopPrefs {
-  return { closeToTray, stopDaemonOnQuit };
+function pick({ closeToTray, stopDaemonOnQuit, autoUpdateCheck }: DesktopPrefs): DesktopPrefs {
+  return { closeToTray, stopDaemonOnQuit, autoUpdateCheck };
+}
+
+/** Changes some fields of `desktop.json`, keeping the rest. */
+async function patchPrefs(patch: Partial<ShellPrefs>): Promise<ShellPrefs> {
+  const current = await invoke<ShellPrefs>("desktop_prefs");
+  return invoke<ShellPrefs>("set_desktop_prefs", { prefs: { ...current, ...patch } });
+}
+
+/** Download, install and restart (the shell restarts the app on success). */
+export async function installUpdate(): Promise<void> {
+  await invoke("install_update");
 }
 
 export function desktopHost(): Host {
@@ -33,10 +53,28 @@ export function desktopHost(): Host {
       },
       async set(next) {
         // The command replaces the whole file: keep what the UI doesn't edit.
-        const current = await invoke<ShellPrefs>("desktop_prefs");
-        const saved = await invoke<ShellPrefs>("set_desktop_prefs", { prefs: { ...current, ...pick(next) } });
-        return pick(saved);
+        return pick(await patchPrefs(pick(next)));
       },
+    },
+    // Only translation pages: the shell refuses anything else.
+    async openUrl(url) {
+      await invoke("open_translation_page", { url });
+    },
+    crashReports: {
+      async get() {
+        const s = await invoke<{ available: boolean; enabled: boolean; noticeShown: boolean }>("crash_reports");
+        return s.available ? { enabled: s.enabled, noticeShown: s.noticeShown } : undefined;
+      },
+      async set(on) {
+        await invoke("set_crash_reports", { enabled: on });
+      },
+      async dismissNotice() {
+        await invoke("dismiss_crash_notice");
+      },
+    },
+    async readClipboard() {
+      const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+      return readText();
     },
     launchAtLogin: {
       async get() {
@@ -47,6 +85,50 @@ export function desktopHost(): Host {
         const autostart = await import("@tauri-apps/plugin-autostart");
         await (on ? autostart.enable() : autostart.disable());
       },
+    },
+    browsers: {
+      status: () => invoke<BrowserState[]>("browser_status"),
+      async connect(browser) {
+        await invoke("connect_browser", { browser: browser ?? null });
+      },
+      async openStore(browser) {
+        await invoke("open_extension_page", { browser });
+      },
+      async firstRun() {
+        const prefs = await invoke<ShellPrefs>("desktop_prefs");
+        if (prefs.browserSetupShown) return false;
+        await patchPrefs({ browserSetupShown: true });
+        return true;
+      },
+    },
+    // The shell's own show: on macOS it also brings the app back into the Dock.
+    async showWindow() {
+      await invoke("show_window");
+    },
+    // The one prompt window, opened (or brought to the front) by whichever UI hears first.
+    async openPrompt() {
+      await invoke("open_prompt");
+    },
+    async closePrompt() {
+      await invoke("close_prompt");
+    },
+    // The shell looks the file up with the daemon; only a completed download's.
+    async openDownload(id, reveal) {
+      await invoke("open_download", { id, reveal });
+    },
+    // The shell's own watch (`watch.rs`) brings the prompt window back when one of these ends.
+    async setFollowed(ids) {
+      await invoke("set_followed", { ids });
+    },
+    // Flatpak, Scoop or an AUR build: that package manager updates this copy (`updates.rs`).
+    async updatesFrom() {
+      return (await invoke<{ manager: string; command: string } | null>("update_source")) ?? undefined;
+    },
+    updates: {
+      async check() {
+        return (await invoke<UpdateInfo | null>("check_for_update")) ?? undefined;
+      },
+      install: installUpdate,
     },
   };
 }

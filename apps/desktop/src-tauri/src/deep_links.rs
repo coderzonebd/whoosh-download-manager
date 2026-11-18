@@ -9,7 +9,7 @@
 //! ([`take_deep_links`]) and tells it to look ([`EVENT_DEEP_LINK`]). The UI
 //! may not be listening yet at launch, so the links wait instead of riding
 //! on the event. What a link means is decided by the UI, which checks it
-//! (`parseDeepLink` in `@whoosh/ui`): this side only filters the scheme.
+//! (`parseDeepLink` in `@wdm/ui`): this side only filters the scheme.
 
 use std::sync::Mutex;
 
@@ -68,7 +68,7 @@ pub fn setup<R: Runtime>(app: &tauri::App<R>) {
     if (cfg!(windows) || cfg!(debug_assertions) || std::env::var_os("APPIMAGE").is_some())
         && let Err(err) = app.deep_link().register_all()
     {
-        eprintln!("whoosh-desktop: could not register whoosh:// links: {err}");
+        eprintln!("wdm-desktop: could not register whoosh:// links: {err}");
     }
     let handle = app.handle().clone();
     app.deep_link().on_open_url(move |event| {
@@ -90,7 +90,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keeps_only_whoosh_links() {
+    fn keeps_only_wdm_links() {
         let p = Pending::default();
         let n = push(
             &p,

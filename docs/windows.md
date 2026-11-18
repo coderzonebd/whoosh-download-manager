@@ -1,4 +1,4 @@
-# Whoosh on Windows
+# Whoosh Download Manager on Windows
 
 What the engine, daemon and CLI do differently on Windows, and why. The
 whole Rust test suite runs on Windows in CI (`windows-2025`) and blocks a
@@ -6,12 +6,12 @@ merge like Linux and macOS do.
 
 ## Data directory and private files
 
-The data directory is `%LOCALAPPDATA%\whoosh` (`WHOOSH_DATA_DIR` overrides
+The data directory is `%LOCALAPPDATA%\wdm` (`WDM_DATA_DIR` overrides
 it). It holds `runtime.json` (the daemon's port and token), the state
 database, the journal and the logs.
 
 On Unix these are kept private with modes 0700 and 0600. On Windows the
-same job is done with access control lists (`whoosh_proto::winacl`):
+same job is done with access control lists (`wdm_proto::winacl`):
 
 - **Created private.** The daemon, the CLI (when it starts the daemon) and
   the store create the data directory, `logs\`, the journal and state
@@ -21,7 +21,7 @@ same job is done with access control lists (`whoosh_proto::winacl`):
   everything created inside. No moment exists where the object has a wider
   ACL.
 - **Checked like the modes.** Every client reads `runtime.json` through
-  `whoosh_proto::runtime::read_runtime`, which refuses:
+  `wdm_proto::runtime::read_runtime`, which refuses:
   - a symbolic link or junction;
   - an owner other than the current user, `SYSTEM` or `Administrators`;
   - a missing DACL (a NULL DACL, or a filesystem without ACLs such as FAT),
@@ -87,25 +87,25 @@ Filesystems without streams (FAT, exFAT) get no mark; the download still
 completes, with a warning in the log. There is no setting: the mark is
 always written.
 
-macOS gets the `com.apple.quarantine` attribute (`0081;<time>;Whoosh;`);
+macOS gets the `com.apple.quarantine` attribute (`0081;<time>;Whoosh Download Manager;`);
 Linux gets `user.xdg.origin.url` and `user.xdg.referrer.url` where the
 filesystem allows user attributes.
 
 ## Starting the daemon at logon
 
 ```
-whoosh daemon autostart on
-whoosh daemon autostart status
-whoosh daemon autostart off
+wdm daemon autostart on
+wdm daemon autostart status
+wdm daemon autostart off
 ```
 
-`on` adds a value named `Whoosh daemon` under
+`on` adds a value named `WDM daemon` under
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`: per user, no
-administrator rights. The value runs `whoosh-autostart.exe`, which ships
-next to `whoosh.exe`:
+administrator rights. The value runs `wdm-autostart.exe`, which ships
+next to `wdm.exe`:
 
-- `whoosh-daemon` is a console program, so starting it from the Run key
-  would open a console window at every logon. `whoosh-autostart` is a
+- `wdm-daemon` is a console program, so starting it from the Run key
+  would open a console window at every logon. `wdm-autostart` is a
   GUI-subsystem program: it starts the daemon detached, with no window, and
   exits.
 - A data directory other than the default is passed with `--data-dir`.
@@ -116,16 +116,16 @@ Task Manager's "Startup apps" page (and Settings > Apps > Startup) can
 switch the entry off without removing it. `status` reports that as
 "switched off"; `on` switches it back on.
 
-For the desktop app's "launch at login", `whoosh_client::autostart` offers
+For the desktop app's "launch at login", `wdm_client::autostart` offers
 the same calls (`enable`, `disable`, `status`) for any program under any
 value name. On macOS and Linux they return "unsupported": there the desktop
 app registers itself (a launch agent, an XDG autostart entry).
 
 ## Stopping the daemon
 
-`whoosh daemon stop` and the desktop app use the `daemon.shutdown` request.
+`wdm daemon stop` and the desktop app use the `daemon.shutdown` request.
 A daemon started in a console also stops on Ctrl-C, Ctrl-Break, closing the
-console, log-off and shutdown. `whoosh get` and `whoosh watch` treat
+console, log-off and shutdown. `wdm get` and `wdm watch` treat
 Ctrl-Break like Ctrl-C (pause the download, exit 130), since in a console
 Ctrl-Break would otherwise kill them outright.
 
@@ -145,4 +145,4 @@ Windows forms of the Unix-only tests use:
   too).
 
 The registry test uses a value name of its own, so running the suite on a
-developer machine does not touch the user's `Whoosh daemon` entry.
+developer machine does not touch the user's `WDM daemon` entry.

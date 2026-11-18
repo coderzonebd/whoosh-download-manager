@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Pro mode: JSON-RPC to the daemon through the `whoosh-nmhost` native
+// Pro mode: JSON-RPC to the daemon through the `wdm-nmhost` native
 // messaging host. The host performs `session.hello` and holds the token; the
 // extension only ever sees the relayed requests, responses and events.
 
-import type { EventMap, MethodMap } from "@whoosh/api-client";
+import type { EventMap, MethodMap } from "@wdm/api-client";
 
 import { HOST_NAME } from "../shared/constants";
 import { RpcPeer, TransportError, type TransportErrorKind } from "./rpc";
@@ -54,11 +54,11 @@ export function classifyDisconnect(message: string | undefined): TransportErrorK
 function describe(kind: TransportErrorKind, message: string | undefined): string {
   switch (kind) {
     case "host-missing":
-      return "The whoosh native host is not installed for this browser (run `whoosh-nmhost --register`).";
+      return "The wdm native host is not installed for this browser (run `wdm-nmhost --register`).";
     case "forbidden":
-      return "The whoosh native host does not allow this extension ID (re-run `whoosh-nmhost --register`).";
+      return "The wdm native host does not allow this extension ID (re-run `wdm-nmhost --register`).";
     default:
-      return message ? `The whoosh native host disconnected: ${message}` : "The whoosh native host disconnected.";
+      return message ? `The wdm native host disconnected: ${message}` : "The wdm native host disconnected.";
   }
 }
 
@@ -195,7 +195,7 @@ export class NativeMessagingTransport implements Transport {
         try {
           listener();
         } catch (e) {
-          console.error("whoosh: open listener failed", e);
+          console.error("wdm: open listener failed", e);
         }
       }
     }, 0);
@@ -268,7 +268,7 @@ export class NativeMessagingTransport implements Transport {
     };
     if (typeof s.hostVersion === "string") status.hostVersion = s.hostVersion;
     if (s.daemonRunning && typeof s.daemonVersion === "string") status.daemonVersion = s.daemonVersion;
-    if (!status.daemonRunning) status.error = "The whoosh app is not running.";
+    if (!status.daemonRunning) status.error = "The wdm app is not running.";
     return status;
   }
 
@@ -286,7 +286,7 @@ export class NativeMessagingTransport implements Transport {
       try {
         listener(status);
       } catch (e) {
-        console.error("whoosh: status listener failed", e);
+        console.error("wdm: status listener failed", e);
       }
     }
   }

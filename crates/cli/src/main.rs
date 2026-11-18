@@ -1,4 +1,4 @@
-//! `whoosh` — the command-line client of the whoosh download daemon. See the
+//! `wdm` — the command-line client of the wdm download daemon. See the
 //! crate README for commands, options and exit codes.
 
 mod client;
@@ -16,15 +16,15 @@ use std::process::ExitCode;
 
 use clap::builder::BoolishValueParser;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
-use whoosh_proto::DownloadState;
+use wdm_proto::DownloadState;
 
 use crate::error::{CliError, EXIT_CODES_HELP};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "whoosh",
+    name = "wdm",
     version,
-    about = "Command-line client of the whoosh download daemon",
+    about = "Command-line client of Whoosh Download Manager",
     after_help = EXIT_CODES_HELP
 )]
 struct Cli {
@@ -41,12 +41,12 @@ pub struct Global {
     pub json: bool,
 
     /// The daemon's data directory (holds runtime.json). Default:
-    /// $WHOOSH_DATA_DIR, then the platform's data directory.
+    /// $WDM_DATA_DIR, then the platform's data directory.
     #[arg(long, global = true, value_name = "DIR")]
     pub data_dir: Option<PathBuf>,
 
     /// Never start the daemon automatically.
-    #[arg(long, global = true, env = "WHOOSH_NO_START", action = ArgAction::SetTrue,
+    #[arg(long, global = true, env = "WDM_NO_START", action = ArgAction::SetTrue,
           value_parser = BoolishValueParser::new())]
     pub no_start: bool,
 }
@@ -59,7 +59,7 @@ pub struct DownloadOpts {
     /// File name to save as (default: from the server or the URL).
     #[arg(short = 'n', long = "name", value_name = "NAME")]
     pub name: Option<String>,
-    /// Extra request header, e.g. -H 'X-Requested-With: whoosh'. Repeatable.
+    /// Extra request header, e.g. -H 'X-Requested-With: wdm'. Repeatable.
     /// Command lines are visible to other local users (`ps`): put secret
     /// headers in --headers-file.
     #[arg(short = 'H', long = "header", value_name = "'K: V'")]
@@ -199,7 +199,7 @@ pub enum DaemonCmd {
         /// Run in this terminal, logging to stderr, until Ctrl-C.
         #[arg(long)]
         foreground: bool,
-        /// Arguments for whoosh-daemon, after `--` (e.g. `-- --mock`).
+        /// Arguments for wdm-daemon, after `--` (e.g. `-- --mock`).
         #[arg(last = true, value_name = "DAEMON ARGS")]
         args: Vec<String>,
     },
@@ -262,7 +262,7 @@ fn main() -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("whoosh: cannot start the async runtime: {e}");
+            eprintln!("wdm: cannot start the async runtime: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -275,7 +275,7 @@ fn main() -> ExitCode {
             if json {
                 eprintln!("{}", e.to_json());
             } else {
-                eprintln!("whoosh: {e}");
+                eprintln!("wdm: {e}");
             }
             ExitCode::from(e.exit_code())
         }
@@ -301,7 +301,7 @@ async fn run(cli: Cli) -> Result<u8, CliError> {
             limit,
             offset,
         } => {
-            let params = whoosh_proto::ListParams {
+            let params = wdm_proto::ListParams {
                 states: state.into_iter().map(Into::into).collect(),
                 category,
                 offset,
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn parses_the_documented_forms() {
         let cli = Cli::try_parse_from([
-            "whoosh",
+            "wdm",
             "--json",
             "add",
             "https://a/x",
@@ -373,7 +373,7 @@ mod tests {
         assert!(paused);
 
         // `-i FILE` alone is enough; no URL argument needed.
-        let cli = Cli::try_parse_from(["whoosh", "add", "-i", "links.txt"]).unwrap();
+        let cli = Cli::try_parse_from(["wdm", "add", "-i", "links.txt"]).unwrap();
         let Cmd::Add {
             urls, input_file, ..
         } = cli.cmd
@@ -385,18 +385,16 @@ mod tests {
             input_file.as_deref(),
             Some(std::path::Path::new("links.txt"))
         );
-        assert!(Cli::try_parse_from(["whoosh", "add"]).is_err());
+        assert!(Cli::try_parse_from(["wdm", "add"]).is_err());
 
-        let cli =
-            Cli::try_parse_from(["whoosh", "list", "--state", "paused,needs_refresh"]).unwrap();
+        let cli = Cli::try_parse_from(["wdm", "list", "--state", "paused,needs_refresh"]).unwrap();
         let Cmd::List { state, .. } = cli.cmd else {
             panic!("not list")
         };
         assert_eq!(state, [StateArg::Paused, StateArg::NeedsRefresh]);
 
-        let cli =
-            Cli::try_parse_from(["whoosh", "daemon", "start", "--foreground", "--", "--mock"])
-                .unwrap();
+        let cli = Cli::try_parse_from(["wdm", "daemon", "start", "--foreground", "--", "--mock"])
+            .unwrap();
         let Cmd::Daemon {
             action: DaemonCmd::Start { foreground, args },
         } = cli.cmd
@@ -405,7 +403,7 @@ mod tests {
         };
         assert!(foreground);
         assert_eq!(args, ["--mock"]);
-        let cli = Cli::try_parse_from(["whoosh", "daemon", "autostart", "on"]).unwrap();
+        let cli = Cli::try_parse_from(["wdm", "daemon", "autostart", "on"]).unwrap();
         assert!(matches!(
             cli.cmd,
             Cmd::Daemon {
@@ -415,17 +413,17 @@ mod tests {
             }
         ));
 
-        assert!(Cli::try_parse_from(["whoosh", "get"]).is_err());
-        assert!(Cli::try_parse_from(["whoosh", "get", "u", "-c", "8", "--queue", "q"]).is_ok());
-        assert!(Cli::try_parse_from(["whoosh", "get", "u", "-c", "0"]).is_err());
-        assert!(Cli::try_parse_from(["whoosh", "get", "u", "-c", "65"]).is_err());
+        assert!(Cli::try_parse_from(["wdm", "get"]).is_err());
+        assert!(Cli::try_parse_from(["wdm", "get", "u", "-c", "8", "--queue", "q"]).is_ok());
+        assert!(Cli::try_parse_from(["wdm", "get", "u", "-c", "0"]).is_err());
+        assert!(Cli::try_parse_from(["wdm", "get", "u", "-c", "65"]).is_err());
         assert!(
-            Cli::try_parse_from(["whoosh", "get", "u", "--cookie", "a", "--cookie-file", "f"])
+            Cli::try_parse_from(["wdm", "get", "u", "--cookie", "a", "--cookie-file", "f"])
                 .is_err()
         );
-        assert!(Cli::try_parse_from(["whoosh", "pause"]).is_err());
-        assert!(Cli::try_parse_from(["whoosh", "rm", "--delete-files", "dl_1"]).is_ok());
-        assert!(Cli::try_parse_from(["whoosh", "settings", "set", "theme=dark"]).is_ok());
-        assert!(Cli::try_parse_from(["whoosh", "settings"]).is_ok());
+        assert!(Cli::try_parse_from(["wdm", "pause"]).is_err());
+        assert!(Cli::try_parse_from(["wdm", "rm", "--delete-files", "dl_1"]).is_ok());
+        assert!(Cli::try_parse_from(["wdm", "settings", "set", "theme=dark"]).is_ok());
+        assert!(Cli::try_parse_from(["wdm", "settings"]).is_ok());
     }
 }

@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use support::*;
-use whoosh_core::{SourceError, SourceFactory, Validators};
-use whoosh_net::{HttpSourceFactory, NetConfig};
+use wdm_core::{SourceError, SourceFactory, Validators};
+use wdm_net::{HttpSourceFactory, NetConfig};
 
 #[derive(Debug, Clone, Copy)]
 enum Mode {

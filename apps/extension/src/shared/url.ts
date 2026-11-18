@@ -74,3 +74,17 @@ export function isSiteExcluded(urls: (string | undefined)[], patterns: readonly 
     return host !== undefined && patterns.some((p) => hostMatches(host, p));
   });
 }
+
+/**
+ * The address of the frame a content script spoke from. The browser's
+ * `sender.url` is trusted for the origin, but a single-page site (YouTube
+ * going from a video to a Short) changes its address without a new document,
+ * and the browser may still report the first one. So the page's own
+ * `location.href` wins when it has the same origin; otherwise the browser's.
+ */
+export function frameUrl(senderUrl: string | undefined, pageUrl: string | undefined): string | undefined {
+  const sender = parseHttpUrl(senderUrl);
+  const page = parseHttpUrl(pageUrl);
+  if (!sender) return page?.href;
+  return page && page.origin === sender.origin ? page.href : sender.href;
+}

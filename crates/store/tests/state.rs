@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use futures::future::join_all;
-use whoosh_core::source::Protocol;
-use whoosh_core::{DownloadRecord, HostProfile, StateStore};
-use whoosh_proto::{Checksum, DownloadState, ErrorInfo, Header, RequestContext};
-use whoosh_store::SqliteStateStore;
+use wdm_core::source::Protocol;
+use wdm_core::{DownloadRecord, HostProfile, StateStore};
+use wdm_proto::{Checksum, DownloadState, ErrorInfo, Header, RequestContext};
+use wdm_store::SqliteStateStore;
 
 /// A realistic record (~700 bytes of JSON, with a cookie).
 fn record(i: u64) -> DownloadRecord {
@@ -52,6 +52,8 @@ fn record(i: u64) -> DownloadRecord {
             code: "disk_full".into(),
             message: "No space left on device".into(),
         }),
+        awaiting_confirmation: false,
+        active_ms: i.is_multiple_of(3).then_some(12_345 + i),
     }
 }
 
@@ -190,7 +192,7 @@ async fn files_are_owner_only() {
     use std::os::unix::fs::PermissionsExt;
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     let d = tempfile::tempdir().unwrap();
-    let dir = d.path().join("whoosh");
+    let dir = d.path().join("wdm");
     let path = dir.join("state.db");
     let s = SqliteStateStore::open(&path).await.unwrap();
     s.save_download(&record(1)).await.unwrap();
@@ -216,7 +218,7 @@ async fn files_are_owner_only() {
 #[cfg(windows)]
 #[tokio::test]
 async fn files_are_owner_only() {
-    use whoosh_proto::runtime::{check_private_dir, check_private_file};
+    use wdm_proto::runtime::{check_private_dir, check_private_file};
     let icacls = |p: &Path, grant: &str| {
         let out = std::process::Command::new("icacls")
             .arg(p)
@@ -227,7 +229,7 @@ async fn files_are_owner_only() {
     };
     let d = tempfile::tempdir().unwrap();
     icacls(d.path(), "*S-1-1-0:(OI)(CI)M");
-    let dir = d.path().join("whoosh");
+    let dir = d.path().join("wdm");
     let path = dir.join("state.db");
     let s = SqliteStateStore::open(&path).await.unwrap();
     s.save_download(&record(1)).await.unwrap();

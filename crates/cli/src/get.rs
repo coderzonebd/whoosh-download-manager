@@ -1,4 +1,4 @@
-//! `whoosh get URL`: add, wait, report. Meant to be driven like curl by
+//! `wdm get URL`: add, wait, report. Meant to be driven like curl by
 //! scripts and the benchmark harness: the saved path is the only thing on
 //! stdout, the progress bar (terminals only) goes to stderr, and the exit
 //! code says what happened.
@@ -7,7 +7,7 @@ use std::io::{IsTerminal, Write};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use whoosh_proto::{
+use wdm_proto::{
     AddResult, DownloadDetail, DownloadState, DownloadSummary, IdParams, IdsParams, ProgressItem,
     StateEvent, event, method,
 };
@@ -53,7 +53,7 @@ pub async fn get(ctx: &Ctx, url: String, opts: &DownloadOpts) -> Result<u8> {
                     bar.clear();
                     return Err(CliError::DaemonUnavailable(format!(
                         "lost the connection to the daemon; the download may continue there \
-                         (check with `whoosh info {id}`)"
+                         (check with `wdm info {id}`)"
                     )));
                 }
             },
@@ -69,9 +69,9 @@ pub async fn get(ctx: &Ctx, url: String, opts: &DownloadOpts) -> Result<u8> {
                 );
                 let paused = matches!(tokio::time::timeout(Duration::from_secs(2), pause).await, Ok(Ok(_)));
                 if paused {
-                    eprintln!("whoosh: interrupted; {id} is paused (continue with `whoosh resume {id}`)");
+                    eprintln!("wdm: interrupted; {id} is paused (continue with `wdm resume {id}`)");
                 } else {
-                    eprintln!("whoosh: interrupted; {id} may still be downloading (see `whoosh info {id}`)");
+                    eprintln!("wdm: interrupted; {id} may still be downloading (see `wdm info {id}`)");
                 }
                 return Err(CliError::Interrupted);
             }
@@ -95,7 +95,7 @@ pub async fn get(ctx: &Ctx, url: String, opts: &DownloadOpts) -> Result<u8> {
         if bar.enabled {
             let secs = elapsed.as_secs_f64().max(0.001);
             eprintln!(
-                "whoosh: {} in {:.1}s ({})",
+                "wdm: {} in {:.1}s ({})",
                 format::bytes(done.downloaded_bytes),
                 secs,
                 format::speed((done.downloaded_bytes as f64 / secs) as u64)
@@ -112,8 +112,8 @@ async fn fetch(client: &Client, id: &str) -> Result<Option<DownloadSummary>> {
         .await
     {
         Ok(d) => Ok(Some(d.summary)),
-        Err(whoosh_client::ClientError::Rpc { code, .. })
-            if code == i64::from(whoosh_proto::error_code::NOT_FOUND) =>
+        Err(wdm_client::ClientError::Rpc { code, .. })
+            if code == i64::from(wdm_proto::error_code::NOT_FOUND) =>
         {
             Ok(None)
         }
@@ -306,7 +306,7 @@ impl Bar {
 mod tests {
     use super::*;
     use serde_json::json;
-    use whoosh_proto::ErrorInfo;
+    use wdm_proto::ErrorInfo;
 
     fn summary() -> DownloadSummary {
         DownloadSummary {
@@ -326,6 +326,9 @@ mod tests {
             added_at: 0,
             completed_at: None,
             error: None,
+            media: None,
+            awaiting_confirmation: false,
+            active_ms: None,
         }
     }
 

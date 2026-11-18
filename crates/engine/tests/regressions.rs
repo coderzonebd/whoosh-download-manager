@@ -8,17 +8,17 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use common::*;
-use whoosh_core::{Journal, SourceError, StorageProvider};
-use whoosh_engine::Tuning;
-use whoosh_proto::service::Service;
-use whoosh_proto::{
+use wdm_core::{Journal, SourceError, StorageProvider};
+use wdm_engine::Tuning;
+use wdm_proto::service::Service;
+use wdm_proto::{
     DownloadState, Header, IdsParams, ListParams, RefreshUrlParams, RemoveParams, RequestContext,
 };
 
 const LONG: Duration = Duration::from_secs(600);
 
 async fn plant(lab: &Lab, name: &str, data: Bytes) {
-    let part = Path::new(DIR).join(format!("{name}.whoosh-part"));
+    let part = Path::new(DIR).join(format!("{name}.wdm-part"));
     let s = lab.storage.open(&part).await.unwrap();
     s.write_at(0, data).await.unwrap();
 }
@@ -27,18 +27,18 @@ async fn plant(lab: &Lab, name: &str, data: Bytes) {
 /// engine itself must get rid of stale bytes (the contract now has the
 /// store truncate, but the engine does not rely on it).
 async fn growing_store() -> (
-    Arc<whoosh_engine::Engine>,
-    Arc<whoosh_core::testing::MemSourceFactory>,
+    Arc<wdm_engine::Engine>,
+    Arc<wdm_core::testing::MemSourceFactory>,
     Arc<CrashFs>,
 ) {
-    let sources = Arc::new(whoosh_core::testing::MemSourceFactory::default());
+    let sources = Arc::new(wdm_core::testing::MemSourceFactory::default());
     let fs = Arc::new(CrashFs::growing());
-    let engine = whoosh_engine::Engine::start(
-        whoosh_engine::EngineDeps {
+    let engine = wdm_engine::Engine::start(
+        wdm_engine::EngineDeps {
             sources: sources.clone(),
             storage: fs.clone(),
-            journal: Arc::new(whoosh_core::testing::MemJournal::default()),
-            state: Arc::new(whoosh_core::testing::MemStateStore::default()),
+            journal: Arc::new(wdm_core::testing::MemJournal::default()),
+            state: Arc::new(wdm_core::testing::MemStateStore::default()),
         },
         config(),
     )
@@ -47,13 +47,13 @@ async fn growing_store() -> (
     (engine, sources, fs)
 }
 
-/// #1: a stale `<name>.whoosh-part` must never end up inside a new file.
+/// #1: a stale `<name>.wdm-part` must never end up inside a new file.
 #[tokio::test(start_paused = true)]
 async fn a_stale_part_file_is_not_reused() {
     let (engine, sources, fs) = growing_store().await;
     // Leftover of another, bigger file with the same name.
     let stale = fs
-        .open(&Path::new(DIR).join("data.bin.whoosh-part"))
+        .open(&Path::new(DIR).join("data.bin.wdm-part"))
         .await
         .unwrap();
     stale.write_at(0, content(10 * MIB, 99)).await.unwrap();
@@ -375,7 +375,7 @@ async fn remove_cannot_race_the_queue() {
     assert!(lab.journal.load(&b).await.unwrap().is_none());
     assert!(
         lab.storage
-            .in_progress(&Path::new(DIR).join("b.bin.whoosh-part"))
+            .in_progress(&Path::new(DIR).join("b.bin.wdm-part"))
             .is_none()
     );
 }

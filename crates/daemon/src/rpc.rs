@@ -18,8 +18,8 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
-use whoosh_proto::method;
-use whoosh_proto::service::{Service, ServiceError};
+use wdm_proto::method;
+use wdm_proto::service::{Service, ServiceError};
 
 pub const PARSE_ERROR: i32 = -32700;
 pub const INVALID_REQUEST: i32 = -32600;
@@ -146,6 +146,7 @@ pub async fn dispatch(service: &Arc<dyn Service>, req: Request) -> Result<Value,
         }
         method::SETTINGS_SET => to_value(service.set_settings(by_name(params)?).await?),
         method::DOWNLOAD_SET_QUEUE => to_value(service.set_queue(by_name(params)?).await?),
+        method::DOWNLOAD_CONFIRM => to_value(service.confirm(by_name(params)?).await?),
         method::QUEUE_LIST => {
             no_params(params)?;
             to_value(service.queues().await?)
@@ -159,6 +160,18 @@ pub async fn dispatch(service: &Arc<dyn Service>, req: Request) -> Result<Value,
         method::QUEUE_CANCEL_ACTION => {
             to_value(service.cancel_queue_action(by_name(params)?).await?)
         }
+        method::MEDIA_PROBE => to_value(service.media_probe(by_name(params)?).await?),
+        method::MEDIA_ADD => to_value(service.media_add(by_name(params)?).await?),
+        method::MEDIA_TOOLS => {
+            no_params(params)?;
+            to_value(service.media_tools().await?)
+        }
+        method::MEDIA_CHECK_UPDATES => {
+            no_params(params)?;
+            to_value(service.media_check_updates().await?)
+        }
+        method::MEDIA_UPDATE_TOOLS => to_value(service.media_update_tools(by_name(params)?).await?),
+        method::MEDIA_CONFIGURE => to_value(service.media_configure(by_name(params)?).await?),
         other => Err(ServiceError::new(
             METHOD_NOT_FOUND,
             format!("method not found: {other}"),
@@ -258,16 +271,16 @@ mod tests {
         assert!(no_params(Some(json!({}))).is_ok());
         assert!(no_params(Some(json!([]))).is_ok());
         assert_eq!(no_params(Some(json!({"a":1}))).unwrap_err().code, -32602);
-        let list: whoosh_proto::ListParams = by_name(None).unwrap();
-        assert_eq!(list, whoosh_proto::ListParams::default());
+        let list: wdm_proto::ListParams = by_name(None).unwrap();
+        assert_eq!(list, wdm_proto::ListParams::default());
         assert_eq!(
-            by_name::<whoosh_proto::IdParams>(Some(json!(["dl_1"])))
+            by_name::<wdm_proto::IdParams>(Some(json!(["dl_1"])))
                 .unwrap_err()
                 .code,
             -32602
         );
         assert_eq!(
-            by_name::<whoosh_proto::IdParams>(Some(json!({})))
+            by_name::<wdm_proto::IdParams>(Some(json!({})))
                 .unwrap_err()
                 .code,
             -32602

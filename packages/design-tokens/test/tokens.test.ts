@@ -14,12 +14,13 @@ const TEXT_PAIRS: [Key, Key[]][] = [
   ["text", ["bg", "bgSunken", "surface", "surfaceRaised", "surfaceHover", "selection", "selectionStrong"]],
   ["textMuted", ["bg", "bgSunken", "surface", "surfaceRaised", "surfaceHover", "selection", "selectionStrong"]],
   ["textSubtle", ["bg", "bgSunken", "surface", "surfaceRaised"]],
-  ["accentText", ["surface", "surfaceRaised", "accentSubtle", "bgSunken"]],
+  ["accentText", ["surface", "surfaceRaised", "accentSubtle", "bgSunken", "selectionStrong"]],
   ["textOnAccent", ["accent", "accentHover", "accentActive"]],
   ["successText", ["surface", "successSubtle", "bgSunken"]],
   ["warningText", ["surface", "warningSubtle", "bgSunken"]],
   ["dangerText", ["surface", "dangerSubtle", "bgSunken", "surfaceRaised"]],
   ["infoText", ["surface", "infoSubtle", "bgSunken"]],
+  ["primaryText", ["primary", "primaryHover"]],
 ];
 
 /** WCAG 1.4.11: UI component boundaries and meaningful graphics ≥ 3:1. */

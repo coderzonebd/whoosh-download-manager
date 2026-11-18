@@ -46,12 +46,12 @@ Branches are cut from `dev` and merged back by PR (ADR 0006). Contract files (`c
 
 **Wave 4: shipping (one Rust stream, then everyone on bugs)**
 8. **Release engineering.** `release.yml` ships `whoosh` and `whoosh-daemon`; installers register the native host with the store extension IDs; Tauri updater with a minisign key pinned in the binary; real package manifests generated from the release (winget, scoop, Homebrew cask, Flathub, AUR); Windows and Linux ARM64; signing validated end to end.
-9. **Accessibility and QA.** axe checks in Playwright on the UI's web build; a manual screen-reader pass (NVDA, VoiceOver, Orca) from a written checklist; desktop end-to-end tests against the real daemon; opt-in crash reports for the beta.
+9. **Accessibility and QA.** axe checks in Playwright on the UI's web build; a manual screen-reader pass (NVDA, VoiceOver, Orca) from a written checklist; desktop end-to-end tests against the real daemon; crash reports for the beta (on by default, can be turned off: Amendment 1).
 
 ### Gate (MASTER-PLAN §8, unchanged in spirit)
 
 1. All nine streams merged; Windows tests blocking and green; no open P1 bugs.
-2. Two weeks of public beta (a GitHub pre-release, clearly labelled), crash-free rate above 99.5 % from opt-in crash reports.
+2. Two weeks of public beta (a GitHub pre-release, clearly labelled), crash-free rate above 99.5 % from crash reports (on by default since Amendment 1).
 3. The extension approved by the Chrome Web Store and Firefox AMO.
 4. Then `v1.0.0` is tagged on `pub` and published.
 
@@ -60,7 +60,7 @@ Branches are cut from `dev` and merged back by PR (ADR 0006). Contract files (`c
 1. **Desktop architecture:** the daemon sidecar described above. ADR 0001 and MASTER-PLAN §4.1 are amended.
 2. **Distribution channels for v1.0:** GitHub Releases (NSIS, MSI, portable zip, dmg, AppImage, deb, rpm), winget, scoop, Homebrew cask, Flathub and AUR. MSIX and the Microsoft Store, Snap, Nix, Chocolatey and apt/dnf repositories move to v1.x (MASTER-PLAN §8 amended).
 3. **Accounts** are opened now, alongside wave 1, so signing is ready by wave 4: Apple Developer (US$99/yr; needs a D-U-N-S number, takes weeks), SignPath Foundation (free, reviewed), Chrome Web Store (US$5), Firefox AMO (free). Hosted Weblate (free for libre projects) is opened before wave 3.
-4. **Crash reports for the gate:** opt-in only, off by default, sent to a self-hosted GlitchTip (MASTER-PLAN §5). The crash-free rate is computed from those reports.
+4. **Crash reports for the gate:** ~~opt-in only, off by default, sent to a self-hosted GlitchTip~~ superseded by Amendment 1: on by default, can be turned off, sent to hosted GlitchTip (MASTER-PLAN §5). The crash-free rate is computed from those reports.
 
 ## Consequences
 
@@ -73,14 +73,14 @@ Branches are cut from `dev` and merged back by PR (ADR 0006). Contract files (`c
 The owner's decisions:
 - The beta is a **public pre-release**, published only after waves 3 and 4 are done (no release before the apps and UI are complete).
 - Distribution must **cost nothing** on every platform. Paid programmes (Apple Developer, the Chrome Web Store fee) are left out until the owner decides otherwise.
-- Crash reports go to **hosted GlitchTip**: opt-in, off by default, on its free plan.
+- Crash reports go to **hosted GlitchTip**, on its free plan. They are **on by default and can be turned off** in Settings; the app tells the user once, on first run, with a link to the switch. (The owner changed this from opt-in on 2026-11-14. The scrubber, and the absence of performance tracing, session replay and default PII, are unchanged.)
 - The `v0.1.0` draft release was deleted; the `v0.1.0` tag stays as the engine milestone.
 
 ### Steps
 
 1. **Finish building.** Wave 2 (the Windows port, #20), wave 3 (yt-dlp/ffmpeg, languages) and wave 4 (release engineering, accessibility and QA). Nothing is published meanwhile.
 2. **Private check.** Release builds from the workflow's dry run (`docs/release.md`, *Dry run*) are installed by the owner on macOS, Windows and Linux and run through a written checklist: install, first run, a download, the extension handing over, quit and relaunch, update.
-3. **Public beta.** Tag `v1.0.0-beta.1` on `pub`. `release.yml` makes it a GitHub pre-release (NSIS only on Windows, since MSI rejects pre-release versions). It runs for at least two weeks, with fixes shipped as `beta.2`, `beta.3`, and so on. The beta's crash-report DSN is a build secret, and reporting stays off unless the user turns it on. The extension is submitted to the stores during the beta.
+3. **Public beta.** Tag `v1.0.0-beta.1` on `pub`. `release.yml` makes it a GitHub pre-release (NSIS only on Windows, since MSI rejects pre-release versions). It runs for at least two weeks, with fixes shipped as `beta.2`, `beta.3`, and so on. The beta's crash-report DSN is a build secret (`WHOOSH_CRASH_DSN` in the `release` environment); reporting is on by default and the user can turn it off. The extension is submitted to the stores during the beta.
 4. **v1.0.0.** When the gate below passes, tag `v1.0.0` on `pub`, publish it, and update the package-manager manifests from it.
 
 ### Free signing and channels
@@ -94,13 +94,13 @@ The owner's decisions:
 | In-app updates | Tauri updater with our own minisign key; `latest.json` on GitHub Releases. | Signed updates whether or not the installer was code-signed. |
 | Extension | Firefox AMO and Microsoft Edge Add-ons, both free. The Chrome Web Store needs a one-time US$5 fee and waits for the owner. Until then, Chrome, Brave and Vivaldi users can install the store zip from GitHub as an unpacked extension (developer mode). | Chromium users outside Edge get a manual install. |
 | Translations | Hosted Weblate, free for libre projects (reviewed). | — |
-| Crash reports | Hosted GlitchTip free plan (event limits apply). | An opt-in switch in settings. |
+| Crash reports | Hosted GlitchTip free plan (event limits apply). | On by default; a first-run notice and a switch in Settings to turn them off. |
 
 ### Gate (amends the one above)
 
 1. All of Phase 2 is merged. The Windows tests are blocking and green. No open P1 bugs.
 2. The checklist from step 2 passes on all three operating systems.
-3. A public beta of at least two weeks, with a crash-free rate above 99.5 % among users who opted in to crash reports.
+3. A public beta of at least two weeks, with a crash-free rate above 99.5 % among users who send crash reports (everyone who has not turned them off).
 4. The extension is approved on Firefox AMO and Microsoft Edge Add-ons. The Chrome Web Store follows when the owner pays its fee.
 
 ### Connecting the browsers (wave 4, release engineering)

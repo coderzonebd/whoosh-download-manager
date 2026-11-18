@@ -1,4 +1,4 @@
-//! `whoosh-proto`: the daemon's local API contract.
+//! `wdm-proto`: the daemon's local API contract.
 //!
 //! Every client — desktop window, CLI, browser extension (through the native
 //! messaging host), web remote, MCP server — speaks JSON-RPC 2.0 to the
@@ -12,13 +12,22 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod appimage;
 pub mod auth;
+pub mod media;
 pub mod queue;
 pub mod runtime;
 pub mod service;
 #[cfg(windows)]
 pub mod winacl;
 
+pub use media::{
+    AudioConvert, MAX_PLAYLIST_ENTRIES, MEDIA_CAPABILITY, MediaAddParams, MediaChoice,
+    MediaConfigureParams, MediaDownloadInfo, MediaFormat, MediaFormatKind, MediaOffer,
+    MediaOfferParams, MediaOfferResult, MediaPlaylist, MediaPlaylistEntry, MediaProbeParams,
+    MediaProbeResult, MediaStep, MediaSubtitle, MediaTool, MediaToolSource, MediaToolState,
+    MediaToolsStatus, MediaUpdateParams, MediaVia,
+};
 pub use queue::{
     AfterDone, ClockTime, MAIN_QUEUE, Queue, QueueConfig, QueueFinishedEvent, QueueNameParams,
     QueueRenameParams, Schedule, SetQueueParams, SpeedWindow,
@@ -48,6 +57,8 @@ pub mod method {
     pub const DOWNLOAD_REMOVE: &str = "download.remove";
     pub const DOWNLOAD_REFRESH_URL: &str = "download.refreshUrl";
     pub const DOWNLOAD_SET_QUEUE: &str = "download.setQueue";
+    /// Answers a download that waits for the user (`awaitingConfirmation`).
+    pub const DOWNLOAD_CONFIRM: &str = "download.confirm";
 
     pub const QUEUE_LIST: &str = "queue.list";
     pub const QUEUE_CREATE: &str = "queue.create";
@@ -59,6 +70,21 @@ pub mod method {
     pub const QUEUE_CANCEL_ACTION: &str = "queue.cancelAction";
 
     pub const NET_PRECONNECT: &str = "net.preconnect";
+
+    // Media (yt-dlp / ffmpeg): only with the `media` capability.
+    pub const MEDIA_PROBE: &str = "media.probe";
+    pub const MEDIA_ADD: &str = "media.add";
+    pub const MEDIA_TOOLS: &str = "media.tools";
+    pub const MEDIA_CHECK_UPDATES: &str = "media.checkUpdates";
+    pub const MEDIA_UPDATE_TOOLS: &str = "media.updateTools";
+    pub const MEDIA_CONFIGURE: &str = "media.configure";
+    /// The browser extension hands a page to the app's media picker (only
+    /// its session may call it; the daemon itself downloads nothing).
+    pub const MEDIA_OFFER: &str = "media.offer";
+    /// Pages offered by the extension that no window has taken yet.
+    pub const MEDIA_OFFERS: &str = "media.offers";
+    /// A window takes one offered page to show it (it is then gone).
+    pub const MEDIA_TAKE_OFFER: &str = "media.takeOffer";
 
     pub const STATS_GET: &str = "stats.get";
     pub const SETTINGS_GET: &str = "settings.get";
@@ -82,9 +108,15 @@ pub mod event {
     pub const QUEUES: &str = "event.queues";
     /// A queue finished and its after-done action is about to run.
     pub const QUEUE_FINISHED: &str = "event.queue.finished";
+    /// `MediaToolsStatus`, after any change to the media tools (install
+    /// progress at most once per second).
+    pub const MEDIA_TOOLS: &str = "event.media.tools";
+    /// `MediaOffer`: the extension offered a page (`media.offer`). Sent to
+    /// every session except the extension's.
+    pub const MEDIA_OFFERED: &str = "event.media.offered";
 }
 
-/// Answered by `whoosh-nmhost` itself, never by the daemon (PROTOCOL.md §1).
+/// Answered by `wdm-nmhost` itself, never by the daemon (PROTOCOL.md §1).
 pub mod host {
     pub const NM_STATUS: &str = "nm.status";
     /// Sent by the host whenever its daemon connection goes up or down.
@@ -136,7 +168,7 @@ pub mod close_code {
 }
 
 /// Opaque to clients. Daemons generate ids matching `[a-z0-9_-]{1,64}`
-/// (whoosh-engine: `dl_` + lower-case hex); storage relies on that to keep
+/// (wdm-engine: `dl_` + lower-case hex); storage relies on that to keep
 /// file names short and portable.
 pub type DownloadId = String;
 pub type UnixMillis = i64;
@@ -266,18 +298,70 @@ pub struct AddParams {
     /// A named queue (runs one download at a time); the main queue when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue: Option<String>,
+    /// The download was caught in a web browser. Set by the daemon itself
+    /// for requests that arrive through the native messaging host (whatever
+    /// the client sent); with [`Settings::confirm_browser_downloads`] such a
+    /// download waits for the user instead of starting.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub from_browser: bool,
 }
 
 /// Bounds of [`AddParams::connections`].
 pub const MAX_CONNECTIONS_PER_DOWNLOAD: u32 = 64;
 
-fn default_true() -> bool {
+pub(crate) fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AddResult {
     pub id: DownloadId,
+    /// The download was added but waits for the user to confirm it
+    /// (`download.confirm`) instead of starting.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub awaiting_confirmation: bool,
+    /// With `awaiting_confirmation`: no desktop window is connected to ask
+    /// the user, so the native messaging host starts the desktop app. Set by
+    /// the daemon, not the engine.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub needs_app: bool,
+}
+
+impl AddResult {
+    pub fn new(id: DownloadId) -> Self {
+        Self {
+            id,
+            ..Self::default()
+        }
+    }
+}
+
+/// `download.confirm`: the user's answer for a download that waits for
+/// confirmation. Every field but `id` and `start` is optional and replaces
+/// what the download had (the dialog lets the user edit them).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmParams {
+    pub id: DownloadId,
+    /// `true`: start now ("Start download"). `false`: keep it for later
+    /// ("Download later"): it stays paused, or, in a named queue that is not
+    /// running, waits with the rest of that queue.
+    pub start: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    /// Absolute directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// A queue name; `""` or `"main"` is the main queue. Absent keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -374,6 +458,19 @@ pub struct DownloadSummary {
     pub completed_at: Option<UnixMillis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+    /// Present on media downloads (`media.add`): `url` is then the page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaDownloadInfo>,
+    /// Added from a browser and waiting for the user to confirm it
+    /// (`download.confirm`); `state` is then `paused`. Absent means false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub awaiting_confirmation: bool,
+    /// How long the download has actually been transferring, in
+    /// milliseconds: the time its runs took, without the time it was
+    /// paused, queued or waiting. Absent when unknown (records from older
+    /// versions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -433,6 +530,10 @@ pub struct Settings {
     /// `speed_limit_bps` (see [`SpeedWindow`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub speed_schedule: Vec<SpeedWindow>,
+    /// Downloads caught in a web browser wait for the user to confirm them
+    /// (name, folder, queue) before they start. Absent means true.
+    #[serde(default = "default_true")]
+    pub confirm_browser_downloads: bool,
 }
 
 /// What a finished (and a checkpointed) download survives.
@@ -441,11 +542,11 @@ pub struct Settings {
 pub enum Durability {
     /// Data is forced to disk before a file is finished or its progress is
     /// journalled: a power cut never leaves a finished file with missing
-    /// bytes. The default (load-shedding is common where whoosh is used).
+    /// bytes. The default (load-shedding is common where wdm is used).
     #[default]
     PowerSafe,
     /// Data is handed to the operating system but not forced to disk: a
-    /// killed or crashed whoosh loses nothing, a power cut can damage files
+    /// killed or crashed wdm loses nothing, a power cut can damage files
     /// finished in the last few seconds. Faster on small files and fast
     /// links, like wget, aria2 and IDM.
     ProcessSafe,
@@ -545,6 +646,9 @@ mod tests {
                 added_at: 0,
                 completed_at: None,
                 error: None,
+                media: None,
+                awaiting_confirmation: false,
+                active_ms: None,
             },
             segments: vec![],
         };
@@ -568,6 +672,64 @@ mod tests {
             serde_json::to_value(&p).unwrap()["segments"],
             json!([[0, 10, 7]])
         );
+    }
+
+    #[test]
+    fn confirmation_fields_are_omitted_unless_set() {
+        let p: AddParams =
+            serde_json::from_value(json!({ "url": "u", "fromBrowser": true })).unwrap();
+        assert!(p.from_browser);
+        let r = AddResult::new("dl_1".into());
+        assert_eq!(serde_json::to_value(&r).unwrap(), json!({ "id": "dl_1" }));
+        let r = AddResult {
+            awaiting_confirmation: true,
+            needs_app: true,
+            ..r
+        };
+        assert_eq!(
+            serde_json::to_value(&r).unwrap(),
+            json!({ "id": "dl_1", "awaitingConfirmation": true, "needsApp": true })
+        );
+        let c: ConfirmParams =
+            serde_json::from_value(json!({ "id": "dl_1", "start": false, "queue": "night" }))
+                .unwrap();
+        assert!(!c.start);
+        assert_eq!(c.queue.as_deref(), Some("night"));
+        assert_eq!(c.filename, None);
+    }
+
+    #[test]
+    fn settings_ask_for_browser_downloads_by_default() {
+        let s: Settings = serde_json::from_value(json!({
+            "defaultDirectory": "/d", "maxActiveDownloads": 3,
+            "maxConnectionsPerDownload": 8, "language": "en", "theme": "system"
+        }))
+        .unwrap();
+        assert!(s.confirm_browser_downloads);
+        assert_eq!(
+            serde_json::to_value(&s).unwrap()["confirmBrowserDownloads"],
+            json!(true)
+        );
+    }
+
+    #[test]
+    fn active_time_and_waiting_flag_on_the_wire() {
+        let v = json!({
+            "id": "dl_1", "url": "u", "filename": "f", "directory": "/d", "state": "paused",
+            "downloadedBytes": 0, "speedBps": 0, "connections": 0, "resumable": false,
+            "addedAt": 0
+        });
+        let s: DownloadSummary = serde_json::from_value(v).unwrap();
+        assert!(!s.awaiting_confirmation);
+        assert_eq!(s.active_ms, None);
+        let s = DownloadSummary {
+            awaiting_confirmation: true,
+            active_ms: Some(1500),
+            ..s
+        };
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["awaitingConfirmation"], json!(true));
+        assert_eq!(v["activeMs"], json!(1500));
     }
 
     #[test]

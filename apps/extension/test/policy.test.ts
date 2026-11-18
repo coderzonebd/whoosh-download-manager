@@ -147,7 +147,7 @@ async function offerVideoDownload(file: string): Promise<{ released: boolean; co
 }
 
 describe("store build (built bundles)", () => {
-  const out = mkdtempSync(join(tmpdir(), "whoosh-policy-"));
+  const out = mkdtempSync(join(tmpdir(), "wdm-policy-"));
   const storeDir = join(out, "store");
   const devDir = join(out, "dev");
 
@@ -163,7 +163,7 @@ describe("store build (built bundles)", () => {
     expect(result).toEqual({ released: true, contactedHost: false });
   });
 
-  it("the GitHub/desktop bundle is unchanged: it offers the same download to Whoosh", async () => {
+  it("the GitHub/desktop bundle is unchanged: it offers the same download to WDM", async () => {
     const result = await offerVideoDownload(join(devDir, "chromium", "background.js"));
     expect(result.contactedHost).toBe(true);
   });
@@ -201,7 +201,7 @@ describe("store build (built bundles)", () => {
       const bg = check(file);
       const reply = await new Promise<{ media?: unknown[] }>((resolve) => {
         bg.listener("runtime.onMessage")(
-          { type: "whoosh/popup-state", tabId: 3, pageUrl: "https://example.org/" },
+          { type: "wdm/popup-state", tabId: 3, pageUrl: "https://example.org/" },
           { id: "test", url: "chrome-extension://test/popup.html" },
           resolve,
         );
@@ -210,5 +210,40 @@ describe("store build (built bundles)", () => {
     };
     expect(await media(join(storeDir, "chromium", "background.js"))).toEqual([]);
     expect(await media(join(devDir, "chromium", "background.js"))).toHaveLength(1);
+  });
+
+  /** Sends `message` to a bundle's background as `sender`; resolves to the reply and whether the host was contacted. */
+  const ask = async (file: string, message: unknown, sender: Record<string, unknown>) => {
+    const bg = loadBackground(file);
+    const reply = await new Promise<Record<string, unknown>>((resolve) => {
+      bg.listener("runtime.onMessage")(message, { id: "test", ...sender }, resolve);
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    return { reply, contactedHost: bg.native.length > 0 };
+  };
+
+  it("the store bundle offers no video download on blocked sites; the GitHub bundle does", async () => {
+    const popup = { url: "chrome-extension://test/popup.html" };
+    const state = (file: string) => ask(file, { type: "wdm/popup-state", pageUrl: "https://www.youtube.com/watch?v=abc" }, popup);
+    expect((await state(join(storeDir, "chromium", "background.js"))).reply["canOffer"]).toBe(false);
+    expect((await state(join(devDir, "chromium", "background.js"))).reply["canOffer"]).toBe(true);
+    // Elsewhere the store bundle offers it too.
+    const other = await ask(join(storeDir, "chromium", "background.js"), { type: "wdm/popup-state", pageUrl: "https://example.org/talk" }, popup);
+    expect(other.reply["canOffer"]).toBe(true);
+
+    // The popup button and the video button on YouTube: refused without asking the host.
+    const offer = { type: "wdm/offer-page", url: "https://www.youtube.com/watch?v=abc" };
+    const button = { type: "wdm/offer-video", url: "https://www.youtube.com/watch?v=abc", title: "A video" };
+    const fromPage = { url: "https://www.youtube.com/watch?v=abc", tab: { url: "https://www.youtube.com/watch?v=abc" } };
+    for (const [message, sender] of [
+      [offer, popup],
+      [button, fromPage],
+    ] as const) {
+      const store = await ask(join(storeDir, "chromium", "background.js"), message, sender);
+      expect(store.reply["ok"]).toBe(false);
+      expect(store.contactedHost).toBe(false);
+      const dev = await ask(join(devDir, "chromium", "background.js"), message, sender);
+      expect(dev.contactedHost).toBe(true);
+    }
   });
 });

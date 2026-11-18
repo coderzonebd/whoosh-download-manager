@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <script lang="ts">
-  import { CATEGORIES, type Category } from "@whoosh/api-client/categories";
+  import { CATEGORIES, type Category } from "@wdm/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
   import type { StateGroup, View } from "../lib/state/downloads.svelte.ts";
   import Icon from "./Icon.svelte";
@@ -49,6 +49,13 @@
   const queues = app.queues;
   const queueNames = $derived(["main", ...(queues.enabled ? queues.named.map((q) => q.name) : [])]);
 
+  /** The app's name split for the two-line wordmark: first word, then the rest. */
+  const wordmark = $derived.by(() => {
+    const name = t("app.name").trim();
+    const space = name.indexOf(" ");
+    return space < 0 ? { main: name, rest: "" } : { main: name.slice(0, space), rest: name.slice(space + 1) };
+  });
+
   function foot(view: "history" | "settings"): void {
     app.view = view;
     app.navOpen = false;
@@ -58,11 +65,15 @@
 <nav class="sidebar" aria-label={t("nav.label")}>
   <div class="brand">
     <span class="logo" aria-hidden="true"><Icon name="wind" size={18} /></span>
-    <span class="wordmark">{t("app.name")}</span>
+    <!-- "Whoosh" large, "Download Manager" small under it: the full name in
+         the sidebar's width. Read as one name ("Whoosh Download Manager"). -->
+    <span class="wordmark">
+      <span class="wordmark-main">{wordmark.main}</span>{#if wordmark.rest}{" "}<span class="wordmark-rest">{wordmark.rest}</span>{/if}
+    </span>
   </div>
 
   <div class="scroll">
-    <section aria-labelledby="vy-nav-downloads">
+    <div class="nav-group" role="group" aria-labelledby="vy-nav-downloads">
       <h2 id="vy-nav-downloads">{t("nav.downloads")}</h2>
       <ul>
         {#each GROUPS as g (g.group)}
@@ -79,9 +90,9 @@
           </li>
         {/each}
       </ul>
-    </section>
+    </div>
 
-    <section aria-labelledby="vy-nav-categories">
+    <div class="nav-group" role="group" aria-labelledby="vy-nav-categories">
       <h2 id="vy-nav-categories">{t("nav.categories")}</h2>
       <ul>
         {#each CATEGORIES as c (c)}
@@ -96,9 +107,9 @@
           </li>
         {/each}
       </ul>
-    </section>
+    </div>
 
-    <section aria-labelledby="vy-nav-queues">
+    <div class="nav-group" role="group" aria-labelledby="vy-nav-queues">
       <div class="section-head">
         <h2 id="vy-nav-queues">{t("nav.queues")}</h2>
         {#if queues.enabled}
@@ -126,7 +137,7 @@
           </li>
         {/each}
       </ul>
-    </section>
+    </div>
   </div>
 
   <div class="foot">
@@ -169,16 +180,32 @@
     box-shadow: var(--vy-shadow-sm);
   }
   .wordmark {
-    font-size: var(--vy-font-size-lg);
-    font-weight: var(--vy-font-weight-bold);
-    letter-spacing: var(--vy-letter-spacing-tight);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-inline-size: 0;
+  }
+  .wordmark-main {
+    font-family: var(--vy-font-display);
+    font-size: var(--vy-font-size-xl);
+    font-weight: 800;
+    line-height: 1;
+  }
+  .wordmark-rest {
+    color: var(--vy-color-text-subtle);
+    font-size: var(--vy-font-size-xs);
+    font-weight: var(--vy-font-weight-semibold);
+    letter-spacing: var(--vy-letter-spacing-wide);
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
   .scroll {
     flex: 1;
     overflow-y: auto;
     padding-block-end: var(--vy-space-4);
   }
-  section + section {
+  .nav-group + .nav-group {
     margin-block-start: var(--vy-space-4);
   }
   h2 {
@@ -209,9 +236,9 @@
     inline-size: 100%;
     min-block-size: 30px;
     padding-block: 0;
-    padding-inline: var(--vy-space-2-5);
+    padding-inline: var(--vy-space-3);
     border: 0;
-    border-radius: var(--vy-radius-sm);
+    border-radius: var(--vy-radius-full);
     background: transparent;
     color: var(--vy-color-text-muted);
     text-align: start;
@@ -227,10 +254,9 @@
     }
   }
   .item[aria-current="page"] {
-    background: var(--vy-color-surface);
-    color: var(--vy-color-text);
-    font-weight: var(--vy-font-weight-medium);
-    box-shadow: var(--vy-shadow-sm), inset 0 0 0 1px var(--vy-color-border);
+    background: var(--vy-color-selection-strong);
+    color: var(--vy-color-accent-text);
+    font-weight: var(--vy-font-weight-semibold);
   }
   .item[aria-current="page"] > :global(.icon) {
     color: var(--vy-color-accent-text);

@@ -1,5 +1,5 @@
 {
-  "name": "whoosh-monorepo",
+  "name": "wdm-monorepo",
   "private": true,
   "license": "SEE LICENSE IN LICENSE.md",
   "packageManager": "pnpm@12.18.0",

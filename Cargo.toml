@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/desktop/src-tauri"]
+members = ["crates/*", "apps/desktop/src-tauri", "apps/mobile/src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0-beta.1"
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
@@ -26,12 +26,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 
-whoosh-client = { path = "crates/client" }
-whoosh-core = { path = "crates/core" }
-whoosh-engine = { path = "crates/engine" }
-whoosh-net = { path = "crates/net" }
-whoosh-proto = { path = "crates/proto" }
-whoosh-store = { path = "crates/store" }
+wdm-client = { path = "crates/client" }
+wdm-core = { path = "crates/core" }
+wdm-crash = { path = "crates/crash" }
+wdm-engine = { path = "crates/engine" }
+wdm-media = { path = "crates/media" }
+wdm-net = { path = "crates/net" }
+wdm-proto = { path = "crates/proto" }
+wdm-store = { path = "crates/store" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

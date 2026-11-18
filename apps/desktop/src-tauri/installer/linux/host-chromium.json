@@ -1,0 +1,10 @@
+{
+  "name": "com.coderzonebd.whoosh",
+  "description": "whoosh download manager — browser integration",
+  "path": "/usr/bin/wdm-nmhost",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/",
+    "chrome-extension://lbcnfampnnfcbfacehkdjlggmbigpbdh/"
+  ]
+}

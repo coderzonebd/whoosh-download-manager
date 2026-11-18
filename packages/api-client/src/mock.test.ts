@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it } from "vitest";
-import { WhooshConnectionError, WhooshRpcError } from "./errors";
-import { categoryForFilename, createMockClient, type MockWhooshClient } from "./mock";
+import { WdmConnectionError, WdmRpcError } from "./errors";
+import { categoryForFilename, createMockClient, type MockWdmClient } from "./mock";
 import { ErrorCode, type EventMap } from "./types";
 
-let client: MockWhooshClient | undefined;
+let client: MockWdmClient | undefined;
 afterEach(() => client?.close());
 
-function mock(opts: Parameters<typeof createMockClient>[0] = {}): MockWhooshClient {
+function mock(opts: Parameters<typeof createMockClient>[0] = {}): MockWdmClient {
   client = createMockClient({ autoTick: false, ...opts });
   return client;
 }
 
-function record<E extends keyof EventMap>(c: MockWhooshClient, event: E): EventMap[E][] {
+function record<E extends keyof EventMap>(c: MockWdmClient, event: E): EventMap[E][] {
   const out: EventMap[E][] = [];
   c.on(event, (p) => out.push(p));
   return out;
@@ -24,7 +24,7 @@ describe("mock client", () => {
     const hello = await c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 1, client: { name: "test", version: "0" } });
     expect(hello.protocol).toBe(1);
     expect(hello.capabilities).toContain("http");
-    await expect(c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 99, client: { name: "t", version: "0" } })).rejects.toBeInstanceOf(WhooshRpcError);
+    await expect(c.call("session.hello", { token: "x", nonce: "0".repeat(32), protocol: 99, client: { name: "t", version: "0" } })).rejects.toBeInstanceOf(WdmRpcError);
   });
 
   it("starts with a realistic mix of states", async () => {
@@ -133,10 +133,10 @@ describe("mock client", () => {
     const [done] = await c.call("download.list", { states: ["completed"] });
     if (!done) throw new Error("no completed download");
     const err = await c.call("download.resume", { ids: [done.id] }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(WhooshRpcError);
-    expect((err as WhooshRpcError).code).toBe(ErrorCode.InvalidState);
+    expect(err).toBeInstanceOf(WdmRpcError);
+    expect((err as WdmRpcError).code).toBe(ErrorCode.InvalidState);
     const nf = await c.call("download.get", { id: "nope" }).catch((e: unknown) => e);
-    expect((nf as WhooshRpcError).isNotFound).toBe(true);
+    expect((nf as WdmRpcError).isNotFound).toBe(true);
   });
 
   it("removes downloads and emits event.download.removed", async () => {
@@ -243,7 +243,7 @@ describe("mock client", () => {
   it("rejects calls after close", async () => {
     const c = mock();
     c.close();
-    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(WhooshConnectionError);
+    await expect(c.call("stats.get", undefined)).rejects.toBeInstanceOf(WdmConnectionError);
   });
 
   it("unsubscribes handlers", () => {
@@ -284,8 +284,8 @@ describe("mock queues", () => {
     expect((await c.call("queue.list", undefined)).map((q) => q.name)).toEqual(["main"]);
     const night = await c.call("queue.create", { name: "Night", schedule: { start: { at: "01:00" }, afterDone: "sleep" } });
     expect(night).toEqual({ name: "Night", maxActive: 1, running: true, schedule: { start: { at: "01:00" }, afterDone: "sleep" } });
-    await expect(c.call("queue.create", { name: "Night" })).rejects.toBeInstanceOf(WhooshRpcError);
-    await expect(c.call("queue.create", { name: "main" })).rejects.toBeInstanceOf(WhooshRpcError);
+    await expect(c.call("queue.create", { name: "Night" })).rejects.toBeInstanceOf(WdmRpcError);
+    await expect(c.call("queue.create", { name: "main" })).rejects.toBeInstanceOf(WdmRpcError);
 
     const { id } = await c.call("download.add", { url: "https://example.com/a.iso", queue: "Night" });
     expect((await c.call("download.get", { id })).queue).toBe("Night");
@@ -304,9 +304,9 @@ describe("mock queues", () => {
     expect(q.maxActive).toBe(3);
     expect(q.schedule?.stop).toEqual({ at: "07:30", days: [1, 2] });
     expect((await c.call("queue.update", { name: "Q" })).schedule).toBeUndefined();
-    await expect(c.call("queue.update", { name: "Q", schedule: { start: { at: "25:00" } } })).rejects.toBeInstanceOf(WhooshRpcError);
-    await expect(c.call("queue.update", { name: "Q", maxActive: 0 })).rejects.toBeInstanceOf(WhooshRpcError);
-    await expect(c.call("queue.update", { name: "nope" })).rejects.toBeInstanceOf(WhooshRpcError);
+    await expect(c.call("queue.update", { name: "Q", schedule: { start: { at: "25:00" } } })).rejects.toBeInstanceOf(WdmRpcError);
+    await expect(c.call("queue.update", { name: "Q", maxActive: 0 })).rejects.toBeInstanceOf(WdmRpcError);
+    await expect(c.call("queue.update", { name: "nope" })).rejects.toBeInstanceOf(WdmRpcError);
   });
 
   it("moves downloads between queues and stops and starts a queue", async () => {
@@ -328,7 +328,85 @@ describe("mock queues", () => {
     const s = await c.call("settings.get", undefined);
     const window = { days: [0, 6], from: "09:00", to: "17:00", limitBps: 1_000_000 };
     expect((await c.call("settings.set", { ...s, speedSchedule: [window] })).speedSchedule).toEqual([window]);
-    await expect(c.call("settings.set", { ...s, speedSchedule: [{ ...window, from: "9:00" }] })).rejects.toBeInstanceOf(WhooshRpcError);
+    await expect(c.call("settings.set", { ...s, speedSchedule: [{ ...window, from: "9:00" }] })).rejects.toBeInstanceOf(WdmRpcError);
     expect((await c.call("settings.set", { ...s, speedSchedule: [] })).speedSchedule).toBeUndefined();
+  });
+});
+
+describe("mock media (yt-dlp)", () => {
+  const page = "https://video.example.com/watch?v=abc";
+
+  it("advertises the media capability, and can do without it", async () => {
+    const hello = { token: "", nonce: "", protocol: 1, client: { name: "t", version: "0" } };
+    expect((await mock().call("session.hello", hello)).capabilities).toContain("media");
+    client?.close();
+    const off = mock({ media: false });
+    expect((await off.call("session.hello", hello)).capabilities).not.toContain("media");
+    await expect(off.call("media.tools", undefined)).rejects.toMatchObject({ code: ErrorCode.Unsupported });
+    await expect(off.call("media.probe", { url: page })).rejects.toMatchObject({ code: ErrorCode.Unsupported });
+  });
+
+  it("probes a video page and refuses a file", async () => {
+    const c = mock({ scenario: "empty" });
+    const r = await c.call("media.probe", { url: page });
+    expect(r.title).toBe("Demo video abc");
+    expect(r.formats.some((f) => f.kind === "audioOnly")).toBe(true);
+    expect(r.formats.some((f) => !f.direct)).toBe(true);
+    expect(r.subtitles.map((s) => s.lang)).toEqual(["en", "bn"]);
+    await expect(c.call("media.probe", { url: "https://example.com/file.zip" })).rejects.toMatchObject({ code: ErrorCode.Network });
+    expect((await c.call("download.probe", { url: page })).contentType).toMatch(/text\/html/);
+  });
+
+  it("adds a media download that merges and completes", async () => {
+    const c = mock({ scenario: "empty" });
+    const states = record(c, "event.download.state");
+    const { id } = await c.call("media.add", { url: page, choice: { kind: "best", maxHeight: 720 } });
+    const d = await c.call("download.get", { id });
+    expect(d.media).toMatchObject({ title: "Demo video abc", format: "720p mp4", via: "engine" });
+    expect(d.filename).toBe("Demo video abc.mp4");
+    expect(d.category).toBe("video");
+    c.advance(120_000);
+    expect(states.filter((s) => s.id === id).map((s) => s.state)).toEqual(["probing", "downloading", "verifying", "completed"]);
+    const audio = await c.call("media.add", { url: page, choice: { kind: "audio", convert: "mp3" } });
+    expect((await c.call("download.get", { id: audio.id })).filename).toBe("Demo video abc.mp3");
+  });
+
+  it("installs, checks and configures the tools", async () => {
+    const c = mock({ mediaToolsMissing: true });
+    const events = record(c, "event.media.tools");
+    let s = await c.call("media.tools", undefined);
+    expect(s.tools.map((t) => [t.name, t.state])).toEqual([["yt-dlp", "missing"], ["ffmpeg", "missing"]]);
+    // First use fetches yt-dlp.
+    await c.call("media.probe", { url: page });
+    expect((await c.call("media.tools", undefined)).tools[0]?.state).toBe("ready");
+    s = await c.call("media.updateTools", { tools: ["ffmpeg"] });
+    expect(s.tools[1]?.state).toBe("installing");
+    c.advance(2000);
+    expect((await c.call("media.tools", undefined)).tools[1]?.state).toBe("ready");
+    s = await c.call("media.checkUpdates", undefined);
+    expect(s.tools[0]).toMatchObject({ latestVersion: "2026.11.10", updateAvailable: true });
+    expect((await c.call("media.configure", { autoUpdate: true })).autoUpdate).toBe(true);
+    await expect(c.call("media.updateTools", { tools: ["curl"] })).rejects.toBeInstanceOf(WdmRpcError);
+    expect(events.length).toBeGreaterThan(3);
+  });
+});
+
+describe("mock media offers", () => {
+  it("keeps offered pages until a window takes them", async () => {
+    const c = mock();
+    const events = record(c, "event.media.offered");
+    const a = await c.call("media.offer", { url: "https://www.youtube.com/watch?v=x", title: "  A \n video " });
+    expect(a.needsApp).toBeUndefined();
+    const again = await c.call("media.offer", { url: "https://www.youtube.com/watch?v=x" });
+    expect(again.id).toBe(a.id);
+    await c.call("media.offer", { url: "https://vimeo.com/1" });
+    await expect(c.call("media.offer", { url: "file:///etc/passwd" })).rejects.toBeInstanceOf(WdmRpcError);
+    expect(events.map((e) => e.url)).toEqual(["https://www.youtube.com/watch?v=x", "https://www.youtube.com/watch?v=x", "https://vimeo.com/1"]);
+    const list = await c.call("media.offers", undefined);
+    expect(list.map((o) => o.url)).toEqual(["https://www.youtube.com/watch?v=x", "https://vimeo.com/1"]);
+    expect(list[0]?.title).toBe("A video");
+    expect((await c.call("media.takeOffer", { id: a.id })).url).toBe("https://www.youtube.com/watch?v=x");
+    await expect(c.call("media.takeOffer", { id: a.id })).rejects.toMatchObject({ code: ErrorCode.NotFound });
+    expect(await c.call("media.offers", undefined)).toHaveLength(1);
   });
 });

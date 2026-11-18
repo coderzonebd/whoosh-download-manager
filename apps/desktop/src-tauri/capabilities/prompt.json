@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "prompt",
+  "description": "The prompt window (prompt.rs): asks about a browser download that waits for confirmation or a video page offered by the extension. Core IPC and events, the folder picker and the clipboard of the add dialog; it closes itself through the close_prompt command. After Start it follows the download (progress, then \"Download complete\"), whose Open and Open folder go through the open_download command.",
+  "windows": [
+    "prompt"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "clipboard-manager:allow-read-text"
+  ]
+}

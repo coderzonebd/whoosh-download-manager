@@ -1,26 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { CollectLinksMessage, CollectLinksReply, LinkInfo } from "../shared/messages";
+import { t } from "../shared/i18n";
 import type { Api } from "./browser";
 
 export const MENU = {
-  link: "whoosh-link",
-  selection: "whoosh-selection",
-  page: "whoosh-all-links",
+  link: "wdm-link",
+  selection: "wdm-selection",
+  page: "wdm-all-links",
 } as const;
 
 /** (Re)creates the context menu items. Safe to call on every install/startup. */
 export async function createMenus(api: Api): Promise<void> {
   await api.contextMenus.removeAll();
   const documentUrlPatterns = ["http://*/*", "https://*/*"];
-  api.contextMenus.create({ id: MENU.link, title: "Download link with Whoosh", contexts: ["link"], documentUrlPatterns });
+  api.contextMenus.create({ id: MENU.link, title: t("menuLink"), contexts: ["link"], documentUrlPatterns });
   api.contextMenus.create({
     id: MENU.selection,
-    title: "Download selected links with Whoosh",
+    title: t("menuSelection"),
     contexts: ["selection"],
     documentUrlPatterns,
   });
-  api.contextMenus.create({ id: MENU.page, title: "Download all links with Whoosh", contexts: ["page"], documentUrlPatterns });
+  api.contextMenus.create({ id: MENU.page, title: t("menuPage"), contexts: ["page"], documentUrlPatterns });
 }
 
 function isReply(value: unknown): value is CollectLinksReply {
@@ -38,7 +39,7 @@ export async function collectLinks(
   frameId: number,
   scope: CollectLinksMessage["scope"],
 ): Promise<LinkInfo[]> {
-  const message: CollectLinksMessage = { type: "whoosh/collect-links", scope };
+  const message: CollectLinksMessage = { type: "wdm/collect-links", scope };
   const ask = async () => {
     const reply: unknown = await api.tabs.sendMessage(tabId, message, { frameId });
     if (!isReply(reply)) throw new Error("no link list from the page");

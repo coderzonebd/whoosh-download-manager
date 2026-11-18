@@ -33,8 +33,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use futures::future::BoxFuture;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use tokio::sync::oneshot;
-use whoosh_core::{DownloadRecord, HostProfile, StateStore};
-use whoosh_proto::DownloadId;
+use wdm_core::{DownloadRecord, HostProfile, StateStore};
+use wdm_proto::DownloadId;
 
 use crate::sys;
 
@@ -153,7 +153,7 @@ impl SqliteStateStore {
         #[cfg(test)]
         let thread_stats = stats.clone();
         std::thread::Builder::new()
-            .name("whoosh-store-sqlite".into())
+            .name("wdm-store-sqlite".into())
             .spawn(move || match open_db(&p) {
                 Ok(opened) => {
                     let _ = ready_tx.send(Ok(()));
@@ -866,7 +866,7 @@ fn check_files(path: &Path) -> io::Result<()> {
         }
         #[cfg(windows)]
         {
-            use whoosh_proto::winacl;
+            use wdm_proto::winacl;
             if winacl::access(&p)?.is_loose() {
                 tracing::warn!(path = %p.display(), "state file was open to others; restricting it to the owner");
                 winacl::make_private(&p)?;
@@ -958,7 +958,7 @@ mod tests {
         DownloadRecord {
             id: id.into(),
             url: "https://example.test/f".into(),
-            request: cookie.map(|c| whoosh_proto::RequestContext {
+            request: cookie.map(|c| wdm_proto::RequestContext {
                 cookie: Some(c.into()),
                 ..Default::default()
             }),
@@ -968,7 +968,7 @@ mod tests {
             directory: "/d".into(),
             category: None,
             queue: None,
-            state: whoosh_proto::DownloadState::Downloading,
+            state: wdm_proto::DownloadState::Downloading,
             total_bytes: None,
             downloaded_bytes: 0,
             resumable: true,
@@ -976,6 +976,8 @@ mod tests {
             added_at: 0,
             completed_at: None,
             error: None,
+            awaiting_confirmation: false,
+            active_ms: None,
         }
     }
 

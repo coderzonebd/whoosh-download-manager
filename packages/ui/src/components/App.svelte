@@ -1,18 +1,21 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!--
-  The whole download manager UI. Hand it any WhooshClient (mock, WebSocket,
+  The whole download manager UI. Hand it any WdmClient (mock, WebSocket,
   native messaging) and it runs. Hosts (desktop, extension, mobile, web
   remote) only decide which client to pass and where to mount it.
 -->
 <script lang="ts">
-  import type { WhooshClient } from "@whoosh/api-client";
+  import type { WdmClient } from "@wdm/api-client";
   import { onDestroy, untrack } from "svelte";
   import { AppState, provideApp, type AppOptions } from "../lib/state/app.svelte.ts";
   import type { Host } from "../lib/host.ts";
   import AddDownloadDialog from "./AddDownloadDialog.svelte";
   import AfterDoneBanner from "./AfterDoneBanner.svelte";
+  import BrowsersView from "./BrowsersView.svelte";
   import ClearHistoryDialog from "./ClearHistoryDialog.svelte";
+  import ConfirmDownloadDialog from "./ConfirmDownloadDialog.svelte";
   import ContextMenu from "./ContextMenu.svelte";
+  import CrashNotice from "./CrashNotice.svelte";
   import DetailPanel from "./DetailPanel.svelte";
   import DownloadList from "./DownloadList.svelte";
   import HistoryView from "./HistoryView.svelte";
@@ -30,7 +33,7 @@
   import Toolbar from "./Toolbar.svelte";
 
   interface Props {
-    client: WhooshClient;
+    client: WdmClient;
     /** "mock" shows "Demo data" in the status bar. */
     mode?: "mock" | "live";
     /** Where device preferences persist (default localStorage; null = nowhere). */
@@ -59,7 +62,7 @@
   const { store, prefs, i18n } = app;
 
   const detail = $derived(app.view === "downloads" && prefs.detailOpen ? store.get(store.activeId) : undefined);
-  const modal = $derived(
+  const otherModal = $derived(
     app.addOpen ||
       app.shortcutsOpen ||
       app.removeIds !== undefined ||
@@ -69,6 +72,20 @@
       app.moveIds !== undefined ||
       app.clearIds !== undefined,
   );
+  // What the browser hands over is asked about in the shell's prompt window when there is one
+  // (`Host.openPrompt`), else here, once no other dialog is open.
+  /** A browser download waiting for the user. */
+  const confirming = $derived(otherModal || app.delegates ? undefined : app.waiting[0]);
+  /** A page the extension offered ("Download with WDM" on a video): the add dialog for it. */
+  const offering = $derived(otherModal || app.delegates || confirming ? undefined : app.offers[0]);
+  const modal = $derived(otherModal || confirming !== undefined || offering !== undefined);
+  /** The downloads view's name, as its (visually hidden) page heading. */
+  const viewTitle = $derived.by(() => {
+    const v = store.view;
+    if (v.kind === "group") return i18n.t(`group.${v.group}`);
+    if (v.kind === "category") return i18n.t(`category.${v.category}`);
+    return app.queueLabel(v.queue);
+  });
   const queueView = $derived(app.view === "downloads" && store.view.kind === "queue" && app.queues.enabled ? store.view.queue : undefined);
 
   $effect(() => {
@@ -130,14 +147,18 @@
     <main class="main">
       <Toolbar />
       <AfterDoneBanner />
+      <CrashNotice />
       <div class="content">
         {#if app.view === "settings"}
           <SettingsView />
+        {:else if app.view === "browsers"}
+          <BrowsersView />
         {:else if app.view === "history"}
           <HistoryView />
         {:else}
           <div class="list-col">
-            {#if queueView !== undefined}<QueueBar name={queueView} />{/if}
+            <!-- The page heading: the queue bar's own title, or a hidden one. -->
+            {#if queueView !== undefined}<QueueBar name={queueView} />{:else}<h1 class="vy-sr-only" dir="auto">{viewTitle}</h1>{/if}
             <DownloadList />
           </div>
           {#if detail}
@@ -157,7 +178,10 @@
     {/key}
   {/if}
   {#if app.addOpen}
-    <AddDownloadDialog initialUrl={app.addUrl} onclose={() => (app.addOpen = false)} />
+    <!-- A link shared or handed over while the dialog is open starts it again with that link. -->
+    {#key app.addUrl}
+      <AddDownloadDialog initialUrl={app.addUrl} onclose={() => (app.addOpen = false)} />
+    {/key}
   {/if}
   {#if app.removeIds}
     <RemoveDialog ids={app.removeIds} onclose={() => (app.removeIds = undefined)} />
@@ -179,6 +203,15 @@
   {/if}
   {#if app.shortcutsOpen}
     <ShortcutsDialog onclose={() => (app.shortcutsOpen = false)} />
+  {/if}
+  {#if confirming}
+    {#key confirming.id}
+      <ConfirmDownloadDialog download={confirming} index={1} total={app.waiting.length} />
+    {/key}
+  {:else if offering}
+    {#key offering.id}
+      <AddDownloadDialog initialUrl={offering.url} onclose={() => app.doneWithOffer(offering.id)} />
+    {/key}
   {/if}
 </div>
 

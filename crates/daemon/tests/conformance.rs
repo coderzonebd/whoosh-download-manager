@@ -11,10 +11,10 @@ use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{self, Message};
-use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
-use whoosh_daemon::{ServeError, runtime};
-use whoosh_proto::service::Notification;
-use whoosh_proto::*;
+use wdm_daemon::mock::{MockOptions, MockService, Scenario};
+use wdm_daemon::{ServeError, runtime};
+use wdm_proto::service::Notification;
+use wdm_proto::*;
 
 fn mock() -> Arc<MockService> {
     MockService::new(MockOptions {
@@ -61,7 +61,7 @@ async fn listens_on_loopback_only_and_falls_back_to_a_free_port() {
     assert_eq!(runtime::read(dir.path()).unwrap().unwrap().port, d.port());
 
     let dir2 = TempDir::new("port-strict");
-    let err = whoosh_daemon::serve(ScriptedService::new(), {
+    let err = wdm_daemon::serve(ScriptedService::new(), {
         let mut c = config(dir2.path());
         c.port = taken;
         c.port_fallback = false;
@@ -181,10 +181,10 @@ async fn hello_returns_version_protocol_and_service_capabilities() {
     assert_eq!(
         reply["result"],
         json!({
-            "daemonVersion": whoosh_daemon::VERSION,
+            "daemonVersion": wdm_daemon::VERSION,
             "protocol": PROTOCOL_VERSION,
             "capabilities": ["http", "scripted"],
-            "proof": whoosh_proto::auth::hello_proof(&d.runtime_info().token, NONCE),
+            "proof": wdm_proto::auth::hello_proof(&d.runtime_info().token, NONCE),
         })
     );
     // A second hello on the same session is an invalid request.
@@ -575,7 +575,7 @@ fn progress_event(round: u64, items: usize) -> Notification {
 
 /// A client socket with a tiny receive buffer, so the daemon's writes block
 /// as soon as the client stops reading.
-async fn slow_client(d: &whoosh_daemon::RunningDaemon) -> Ws {
+async fn slow_client(d: &wdm_daemon::RunningDaemon) -> Ws {
     let socket = tokio::net::TcpSocket::new_v4().unwrap();
     socket.set_recv_buffer_size(4096).unwrap();
     let stream = socket.connect(d.local_addr()).await.unwrap();
@@ -690,6 +690,9 @@ async fn clients_too_far_behind_on_lossless_events_are_closed_with_4429() {
         added_at: 0,
         completed_at: None,
         error: None,
+        media: None,
+        awaiting_confirmation: false,
+        active_ms: None,
     };
     // Emit until the slow client's subscription is dropped by the daemon.
     let mut sent = 0u64;
@@ -716,13 +719,13 @@ async fn clients_too_far_behind_on_lossless_events_are_closed_with_4429() {
 #[tokio::test]
 async fn runtime_file_contents_and_permissions() {
     let dir = TempDir::new("runtime");
-    let data = dir.path().join("nested").join("whoosh");
+    let data = dir.path().join("nested").join("wdm");
     let d = start(ScriptedService::new(), &data).await;
     let raw: Value =
         serde_json::from_slice(&std::fs::read(data.join("runtime.json")).unwrap()).unwrap();
     assert_eq!(raw["port"], d.port());
     assert_eq!(raw["pid"], std::process::id());
-    assert_eq!(raw["version"], whoosh_daemon::VERSION);
+    assert_eq!(raw["version"], wdm_daemon::VERSION);
     let token = raw["token"].as_str().unwrap();
     assert_eq!(token.len(), 43);
     assert!(
@@ -739,7 +742,7 @@ async fn runtime_file_contents_and_permissions() {
     }
     #[cfg(windows)]
     {
-        use whoosh_proto::runtime::{check_private_dir, check_private_file};
+        use wdm_proto::runtime::{check_private_dir, check_private_file};
         check_private_file(&data.join("runtime.json")).unwrap();
         check_private_dir(&data).expect("a new data dir is owner-only");
     }
@@ -754,7 +757,7 @@ async fn runtime_file_contents_and_permissions() {
 async fn single_instance() {
     let dir = TempDir::new("single");
     let first = start(ScriptedService::new(), dir.path()).await;
-    match whoosh_daemon::serve(ScriptedService::new(), config(dir.path())).await {
+    match wdm_daemon::serve(ScriptedService::new(), config(dir.path())).await {
         Err(ServeError::AlreadyRunning { pid, port }) => {
             assert_eq!(pid, Some(std::process::id()));
             assert_eq!(port, Some(first.port()));
@@ -782,7 +785,7 @@ async fn single_instance_without_the_lock_still_checks_hello() {
         c.single_instance = false
     })
     .await;
-    match whoosh_daemon::serve(ScriptedService::new(), config(dir.path())).await {
+    match wdm_daemon::serve(ScriptedService::new(), config(dir.path())).await {
         Err(ServeError::AlreadyRunning { port, .. }) => assert_eq!(port, Some(other.port())),
         other => panic!("started next to a live daemon: {other:?}"),
     }
@@ -846,18 +849,18 @@ async fn ws_connect_only(port: u16) -> Ws {
 async fn the_bundled_client_and_probe() {
     let dir = TempDir::new("client");
     let d = start(mock(), dir.path()).await;
-    let token = whoosh_daemon::token::Token::from_string(d.runtime_info().token.clone());
-    let hello = whoosh_daemon::client::probe(d.port(), &token, Duration::from_secs(2))
+    let token = wdm_daemon::token::Token::from_string(d.runtime_info().token.clone());
+    let hello = wdm_daemon::client::probe(d.port(), &token, Duration::from_secs(2))
         .await
         .unwrap();
     assert!(hello.capabilities.contains(&"mock".to_owned()));
-    let bad = whoosh_daemon::token::Token::from_string("bad".into());
-    let err = whoosh_daemon::client::probe(d.port(), &bad, Duration::from_secs(2))
+    let bad = wdm_daemon::token::Token::from_string("bad".into());
+    let err = wdm_daemon::client::probe(d.port(), &bad, Duration::from_secs(2))
         .await
         .unwrap_err();
     assert_eq!(err.close_code(), Some(4401));
 
-    let mut c = whoosh_daemon::client::Client::connect(d.port(), token.expose(), "t")
+    let mut c = wdm_daemon::client::Client::connect(d.port(), token.expose(), "t")
         .await
         .unwrap();
     let added = c
@@ -916,7 +919,7 @@ async fn before_hello_at_most_64_kib_is_read() {
     d.shutdown().await;
 }
 
-async fn ws_connect(d: &whoosh_daemon::RunningDaemon) -> Ws {
+async fn ws_connect(d: &wdm_daemon::RunningDaemon) -> Ws {
     common::ws(d).await
 }
 
@@ -1048,19 +1051,19 @@ async fn impostor() -> (u16, tokio::task::JoinHandle<()>) {
 #[tokio::test]
 async fn a_port_that_answers_without_the_proof_is_not_the_daemon() {
     let (port, task) = impostor().await;
-    let token = whoosh_daemon::token::Token::from_string("stale-token".into());
-    let err = whoosh_daemon::client::probe(port, &token, Duration::from_secs(2))
+    let token = wdm_daemon::token::Token::from_string("stale-token".into());
+    let err = wdm_daemon::client::probe(port, &token, Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(
-        matches!(err, whoosh_daemon::client::ClientError::BadProof),
+        matches!(err, wdm_daemon::client::ClientError::BadProof),
         "{err}"
     );
 
     // A stale runtime.json pointing at that port does not stop a new daemon.
     let dir = TempDir::new("impostor");
-    whoosh_daemon::runtime::create_data_dir(dir.path()).unwrap();
-    whoosh_daemon::runtime::secure_dir(dir.path()).unwrap();
+    wdm_daemon::runtime::create_data_dir(dir.path()).unwrap();
+    wdm_daemon::runtime::secure_dir(dir.path()).unwrap();
     runtime::write_atomic(
         dir.path(),
         &runtime::RuntimeInfo {
@@ -1094,7 +1097,7 @@ async fn the_data_dir_is_made_private_or_refused() {
 
     let link = base.path().join("link");
     std::os::unix::fs::symlink(&data, &link).unwrap();
-    match whoosh_daemon::serve(ScriptedService::new(), config(&link)).await {
+    match wdm_daemon::serve(ScriptedService::new(), config(&link)).await {
         Err(ServeError::InsecureDataDir(_, reason)) => {
             assert!(reason.contains("symlink"), "{reason}")
         }
@@ -1108,7 +1111,7 @@ async fn the_data_dir_is_made_private_or_refused() {
 #[cfg(windows)]
 #[tokio::test]
 async fn the_data_dir_is_made_private_or_refused() {
-    use whoosh_proto::runtime::check_private_dir;
+    use wdm_proto::runtime::check_private_dir;
     let base = TempDir::new("private");
     let data = base.path().join("data");
     std::fs::create_dir(&data).unwrap();
@@ -1131,7 +1134,7 @@ async fn the_data_dir_is_made_private_or_refused() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{out:?}");
-    match whoosh_daemon::serve(ScriptedService::new(), config(&link)).await {
+    match wdm_daemon::serve(ScriptedService::new(), config(&link)).await {
         Err(ServeError::InsecureDataDir(_, reason)) => {
             assert!(reason.contains("junction"), "{reason}")
         }
@@ -1169,23 +1172,23 @@ async fn queue_methods_are_unsupported_until_the_service_has_them() {
 
 // ------------------------------------------- queues with the real engine
 
-/// whoosh-engine over whoosh-net and whoosh-store, its state in `dir`.
-async fn real_engine(dir: &std::path::Path) -> Arc<whoosh_engine::Engine> {
+/// wdm-engine over wdm-net and wdm-store, its state in `dir`.
+async fn real_engine(dir: &std::path::Path) -> Arc<wdm_engine::Engine> {
     std::fs::create_dir_all(dir).unwrap();
-    let state = whoosh_store::SqliteStateStore::open(dir.join("state.db"))
+    let state = wdm_store::SqliteStateStore::open(dir.join("state.db"))
         .await
         .unwrap();
-    let journal = whoosh_store::FileJournal::open(dir.join("journal")).unwrap();
-    whoosh_engine::Engine::start(
-        whoosh_engine::EngineDeps {
-            sources: whoosh_net::HttpSourceFactory::new(whoosh_net::NetConfig::default()),
-            storage: Arc::new(whoosh_store::FileStorageProvider::new(
-                whoosh_store::StorageOptions::default(),
+    let journal = wdm_store::FileJournal::open(dir.join("journal")).unwrap();
+    wdm_engine::Engine::start(
+        wdm_engine::EngineDeps {
+            sources: wdm_net::HttpSourceFactory::new(wdm_net::NetConfig::default()),
+            storage: Arc::new(wdm_store::FileStorageProvider::new(
+                wdm_store::StorageOptions::default(),
             )),
             journal: Arc::new(journal),
             state: Arc::new(state),
         },
-        whoosh_engine::EngineConfig::new(dir.join("downloads").to_string_lossy()),
+        wdm_engine::EngineConfig::new(dir.join("downloads").to_string_lossy()),
     )
     .await
     .unwrap()
@@ -1390,5 +1393,174 @@ async fn queue_methods_work_through_the_daemon_with_the_engine() {
     assert_eq!(ev.as_array().unwrap().len(), 1);
     let reply = call(&mut ws, 4, "download.get", json!({"id": id})).await;
     assert!(reply["result"].get("queue").is_none(), "{reply}");
+    d.shutdown().await;
+}
+
+// ------------------------------------------------------------ confirmation
+
+/// Opens a session that says it is `name` (`ClientInfo::name`).
+async fn session_as(daemon: &wdm_daemon::RunningDaemon, name: &str) -> common::Ws {
+    let mut ws = ws(daemon).await;
+    let hello = json!({
+        "jsonrpc": "2.0", "id": "h", "method": "session.hello",
+        "params": { "token": daemon.runtime_info().token, "nonce": NONCE,
+                    "protocol": PROTOCOL_VERSION, "client": { "name": name, "version": "0" } }
+    });
+    send(&mut ws, &hello).await;
+    assert_eq!(next_response(&mut ws).await["id"], "h");
+    ws
+}
+
+#[tokio::test]
+async fn only_the_browser_session_marks_downloads_and_needs_app_follows_desktop_windows() {
+    let dir = TempDir::new("confirm");
+    let d = start(mock(), dir.path()).await;
+    let url = "https://example.com/a.zip?size=1MiB";
+
+    // Another client cannot make its download wait by claiming the browser.
+    let mut cli = session_as(&d, "cli").await;
+    let r = call(
+        &mut cli,
+        1,
+        "download.add",
+        json!({ "url": url, "fromBrowser": true }),
+    )
+    .await;
+    assert!(r["result"].get("awaitingConfirmation").is_none(), "{r}");
+
+    // From the extension, with no desktop window: the host must start the app.
+    let mut ext = session_as(&d, "extension-chromium").await;
+    let r = call(&mut ext, 2, "download.add", json!({ "url": url })).await;
+    assert_eq!(r["result"]["awaitingConfirmation"], true, "{r}");
+    assert_eq!(r["result"]["needsApp"], true, "{r}");
+    let waiting = r["result"]["id"].as_str().unwrap().to_owned();
+
+    // A desktop window is there to ask.
+    let mut desktop = session_as(&d, "desktop").await;
+    let r = call(&mut ext, 3, "download.add", json!({ "url": url })).await;
+    assert_eq!(r["result"]["awaitingConfirmation"], true, "{r}");
+    assert!(r["result"].get("needsApp").is_none(), "{r}");
+    let list = call(&mut desktop, 4, "download.get", json!({ "id": waiting })).await;
+    assert_eq!(list["result"]["awaitingConfirmation"], true);
+    assert_eq!(list["result"]["state"], "paused");
+
+    // The window answers; asking again is an invalid state.
+    let r = call(
+        &mut desktop,
+        5,
+        "download.confirm",
+        json!({ "id": waiting, "start": false }),
+    )
+    .await;
+    assert_eq!(r["result"], Value::Null, "{r}");
+    let r = call(
+        &mut desktop,
+        6,
+        "download.confirm",
+        json!({ "id": waiting, "start": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], error_code::INVALID_STATE, "{r}");
+
+    // The window went away: needed again.
+    drop(desktop);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let r = call(&mut ext, 7, "download.add", json!({ "url": url })).await;
+    assert_eq!(r["result"]["needsApp"], true, "{r}");
+    d.shutdown().await;
+}
+
+// ------------------------------------------------------------ media offers
+
+/// Reads until the response `id`, returning the notifications on the way.
+async fn events_until(ws: &mut common::Ws, id: i64) -> Vec<Value> {
+    let mut seen = Vec::new();
+    loop {
+        let v = next_json(ws).await;
+        if v.get("method").is_none() {
+            assert_eq!(v["id"], id, "{v}");
+            return seen;
+        }
+        seen.push(v);
+    }
+}
+
+#[tokio::test]
+async fn only_the_extension_offers_pages_and_the_app_takes_them() {
+    let dir = TempDir::new("offers");
+    let d = start(mock(), dir.path()).await;
+    let page = "https://www.youtube.com/watch?v=abc";
+
+    // Nobody but the extension may offer, and it may not take.
+    let mut cli = session_as(&d, "cli").await;
+    let r = call(&mut cli, 1, "media.offer", json!({ "url": page })).await;
+    assert_eq!(r["error"]["code"], error_code::UNAUTHORIZED, "{r}");
+
+    // From the extension, with no desktop window: the host must start the app.
+    let mut ext = session_as(&d, "extension-chromium").await;
+    let r = call(
+        &mut ext,
+        2,
+        "media.offer",
+        json!({ "url": page, "title": " A  video " }),
+    )
+    .await;
+    assert_eq!(r["result"]["needsApp"], true, "{r}");
+    let first = r["result"]["id"].as_str().unwrap().to_owned();
+    let r = call(&mut ext, 3, "media.offers", json!({})).await;
+    assert_eq!(r["error"]["code"], error_code::UNAUTHORIZED, "{r}");
+    let r = call(
+        &mut ext,
+        4,
+        "media.offer",
+        json!({ "url": "file:///etc/passwd" }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], -32602, "{r}");
+
+    // A window that connects later finds it waiting.
+    let mut desktop = session_as(&d, "desktop").await;
+    let r = call(&mut desktop, 5, "media.offers", Value::Null).await;
+    let list = r["result"].as_array().expect("a list");
+    assert_eq!(list.len(), 1, "{r}");
+    assert_eq!(list[0]["id"], first.as_str());
+    assert_eq!(list[0]["url"], page);
+    assert_eq!(list[0]["title"], "A video");
+    assert!(list[0]["offeredAt"].as_i64().unwrap() > 0);
+
+    // With a window there: no app to start, and the window hears of it.
+    let other = "https://vimeo.com/123";
+    let r = call(&mut ext, 6, "media.offer", json!({ "url": other })).await;
+    assert!(r["result"].get("needsApp").is_none(), "{r}");
+    let second = r["result"]["id"].as_str().unwrap().to_owned();
+    let ev = loop {
+        let v = next_json(&mut desktop).await;
+        if v["method"] == "event.media.offered" {
+            break v;
+        }
+    };
+    assert_eq!(ev["params"]["id"], second.as_str());
+    assert_eq!(ev["params"]["url"], other);
+    // ... the CLI too, but never the extension.
+    let r = call(&mut ext, 7, "stats.get", Value::Null).await;
+    assert!(r.get("result").is_some(), "{r}");
+    send(
+        &mut ext,
+        &json!({"jsonrpc": "2.0", "id": 8, "method": "stats.get"}),
+    )
+    .await;
+    let seen = events_until(&mut ext, 8).await;
+    assert!(
+        seen.iter().all(|e| e["method"] != "event.media.offered"),
+        "{seen:?}"
+    );
+
+    // Taken once.
+    let r = call(&mut desktop, 9, "media.takeOffer", json!({ "id": first })).await;
+    assert_eq!(r["result"]["url"], page, "{r}");
+    let r = call(&mut desktop, 10, "media.takeOffer", json!({ "id": first })).await;
+    assert_eq!(r["error"]["code"], error_code::NOT_FOUND, "{r}");
+    let r = call(&mut desktop, 11, "media.offers", Value::Null).await;
+    assert_eq!(r["result"].as_array().unwrap().len(), 1, "{r}");
     d.shutdown().await;
 }

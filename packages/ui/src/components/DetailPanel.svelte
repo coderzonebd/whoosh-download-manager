@@ -51,8 +51,8 @@
   <header class="head">
     <FileIcon category={download.category} size="lg" />
     <div class="title">
-      <h2 id="vy-detail-title" dir="auto">{d.filename}</h2>
-      <StatusBadge state={d.state} variant="pill" />
+      <h2 id="vy-detail-title" dir="auto" title={d.filename}>{d.filename}</h2>
+      <StatusBadge state={d.state} variant="pill" step={d.media?.step} />
     </div>
     <button class="vy-btn vy-btn--icon vy-btn--sm" aria-label={t("detail.close")} title={t("detail.close")} onclick={() => (prefs.detailOpen = false)}>
       <Icon name="x" size={15} />
@@ -67,11 +67,15 @@
         {#if PAUSABLE.has(d.state)}
           <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.pause([download.id])}><Icon name="pause" size={14} />{t("action.pause")}</button>
         {:else if d.state === "needs_refresh"}
-          <button class="vy-btn vy-btn--primary vy-btn--sm" onclick={() => (app.refreshId = download.id)}><Icon name="refresh" size={14} />{t("action.refreshLink")}</button>
+          <button class="vy-btn vy-btn--primary vy-btn--sm" onclick={() => app.refreshLink(download.id)}><Icon name="refresh" size={14} />{t("action.refreshLink")}</button>
         {:else if RESUMABLE.has(d.state)}
           <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.resume([download.id])}>
             <Icon name={d.state === "failed" ? "refresh" : "play"} size={14} />{t(d.state === "failed" ? "action.retry" : "action.resume")}
           </button>
+        {/if}
+        {#if d.state === "completed" && app.host.openDownload}
+          <button class="vy-btn vy-btn--primary vy-btn--sm" onclick={() => app.openFile(download.id, false)}>{t("follow.open")}</button>
+          <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.openFile(download.id, true)}><Icon name="folder" size={14} />{t("follow.openFolder")}</button>
         {/if}
         <button class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => app.requestRemove([download.id])}><Icon name="trash" size={14} />{t("action.remove")}</button>
       </div>
@@ -93,7 +97,7 @@
       <div><dt>{t("detail.connections")}</dt><dd class="vy-num">{moving ? i18n.number(d.connections) : "—"}</dd></div>
       <div><dt>{t("detail.size")}</dt><dd class="vy-num">{i18n.bytes(d.totalBytes)}</dd></div>
       <div class="wide">
-        <dt>{t("detail.resumable")}</dt>
+        <dt>{t("detail.resumable.label")}</dt>
         <dd>{d.resumable ? t("detail.resumable.yes") : t("detail.resumable.no")}</dd>
       </div>
       <div class="wide"><dt>{t("detail.savedTo")}</dt><dd class="path" dir="auto">{d.directory}/{d.filename}</dd></div>
@@ -117,6 +121,12 @@
       </div>
       <div><dt>{t("detail.added")}</dt><dd class="vy-num">{i18n.date(d.addedAt)}</dd></div>
       {#if d.completedAt}<div><dt>{t("detail.finished")}</dt><dd class="vy-num">{i18n.date(d.completedAt)}</dd></div>{/if}
+      {#if d.state === "completed" && d.activeMs !== undefined}
+        <div><dt>{t("detail.timeTaken")}</dt><dd class="vy-num">{i18n.eta(Math.max(1, Math.round(d.activeMs / 1000)))}</dd></div>
+        {#if d.totalBytes !== undefined && d.activeMs > 0}
+          <div><dt>{t("detail.averageSpeed")}</dt><dd class="vy-num">{i18n.speed(Math.round((d.totalBytes * 1000) / d.activeMs))}</dd></div>
+        {/if}
+      {/if}
     </dl>
 
     {#if d.state !== "completed"}
@@ -201,6 +211,12 @@
     font-weight: var(--vy-font-weight-semibold);
     line-height: var(--vy-line-height-tight);
     overflow-wrap: anywhere;
+    /* A 255-byte name would take the whole panel: three lines, the rest under "Saved to". */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .scroll {
     flex: 1;

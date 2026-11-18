@@ -21,8 +21,8 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Role, WebSocketConfig};
-use whoosh_proto::RPC_PATH;
-use whoosh_proto::service::Service;
+use wdm_proto::RPC_PATH;
+use wdm_proto::service::Service;
 
 use crate::config::DaemonConfig;
 use crate::limit::{Budget, Limited};
@@ -44,6 +44,11 @@ pub(crate) struct Shared {
     /// Slots for connections that have not completed `session.hello`.
     pub pending_hellos: Arc<Semaphore>,
     pub tracker: Tracker,
+    /// Connected desktop windows (`ClientInfo::name` "desktop"): a download
+    /// that waits for confirmation needs one to ask the user.
+    pub desktop_sessions: AtomicUsize,
+    /// Pages the extension offered to the media picker (`media.offer`).
+    pub offers: crate::offers::Offers,
 }
 
 impl Shared {
@@ -291,6 +296,8 @@ async fn serve_claimed(
         stop: watch::Sender::new(false),
         pending_hellos,
         tracker: Tracker::default(),
+        desktop_sessions: AtomicUsize::new(0),
+        offers: crate::offers::Offers::default(),
     });
     let accept = tokio::spawn(accept_loop(listener, shared.clone(), accepting_rx));
     tracing::info!(%addr, data_dir = %data_dir.display(), "listening");

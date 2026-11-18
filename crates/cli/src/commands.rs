@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use whoosh_proto::{
+use wdm_proto::{
     AddParams, AddResult, Checksum, DownloadDetail, DownloadSummary, Durability, Header, IdParams,
     IdsParams, ListParams, PreconnectParams, RemoveParams, RequestContext, Settings, method,
 };
@@ -45,7 +45,7 @@ impl Ctx {
     pub fn print_json(&self, v: &impl Serialize) {
         match serde_json::to_string_pretty(v) {
             Ok(text) => println!("{text}"),
-            Err(e) => eprintln!("whoosh: cannot encode the result: {e}"),
+            Err(e) => eprintln!("wdm: cannot encode the result: {e}"),
         }
     }
 }
@@ -103,7 +103,7 @@ pub fn request_context(opts: &DownloadOpts) -> Result<Option<RequestContext>> {
     Ok((request != RequestContext::default()).then_some(request))
 }
 
-/// The URLs of `whoosh add`: the arguments, then `-i FILE`'s lines, with
+/// The URLs of `wdm add`: the arguments, then `-i FILE`'s lines, with
 /// blank entries and `#` comments skipped (a list pasted with empty lines
 /// between links must not add empty downloads).
 pub fn url_list(
@@ -217,6 +217,7 @@ pub fn add_params(
         checksum,
         connections: opts.connections,
         queue: opts.queue.clone(),
+        from_browser: false,
     })
 }
 
@@ -273,7 +274,7 @@ pub async fn add(ctx: &Ctx, urls: Vec<String>, opts: &DownloadOpts, paused: bool
             Err(e) => {
                 let e = CliError::from(e);
                 if !ctx.json {
-                    eprintln!("whoosh: {url}: {e}");
+                    eprintln!("wdm: {url}: {e}");
                 }
                 results.push(json!({ "url": url, "error": e.to_json()["error"] }));
                 first_error.get_or_insert(e);
@@ -334,7 +335,7 @@ pub async fn info(ctx: &Ctx, id: String) -> Result<u8> {
             },
         ),
     ];
-    if s.state == whoosh_proto::DownloadState::Downloading {
+    if s.state == wdm_proto::DownloadState::Downloading {
         let eta = s
             .eta_secs
             .map(|e| format!(", ETA {}", format::duration(e)))
@@ -480,6 +481,10 @@ pub async fn settings(ctx: &Ctx, action: Option<SettingsCmd>) -> Result<u8> {
                     Durability::ProcessSafe => "processSafe".to_owned(),
                 },
             ),
+            (
+                "confirmBrowserDownloads",
+                settings.confirm_browser_downloads.to_string(),
+            ),
         ] {
             println!("{k:<26} {v}");
         }
@@ -496,6 +501,7 @@ enum Key {
     Language,
     Theme,
     Durability,
+    ConfirmBrowserDownloads,
 }
 
 fn parse_pair(pair: &str) -> Result<(Key, String)> {
@@ -518,10 +524,12 @@ fn parse_pair(pair: &str) -> Result<(Key, String)> {
         "language" | "lang" => Key::Language,
         "theme" => Key::Theme,
         "durability" => Key::Durability,
+        "confirmbrowserdownloads" | "confirmbrowser" | "askbrowser" => Key::ConfirmBrowserDownloads,
         _ => {
             return Err(CliError::Usage(format!(
                 "unknown setting {key:?} (defaultDirectory, maxActiveDownloads, \
-                 maxConnectionsPerDownload, speedLimitBps, language, theme, durability)"
+                 maxConnectionsPerDownload, speedLimitBps, language, theme, durability, \
+                 confirmBrowserDownloads)"
             )));
         }
     };
@@ -558,6 +566,17 @@ fn apply(s: &mut Settings, key: Key, value: &str) -> Result<()> {
                 _ => {
                     return Err(CliError::Usage(format!(
                         "durability: {value:?} is not powerSafe or processSafe"
+                    )));
+                }
+            }
+        }
+        Key::ConfirmBrowserDownloads => {
+            s.confirm_browser_downloads = match value.to_ascii_lowercase().as_str() {
+                "true" | "on" | "yes" | "1" => true,
+                "false" | "off" | "no" | "0" => false,
+                _ => {
+                    return Err(CliError::Usage(format!(
+                        "confirmBrowserDownloads: {value:?} is not true or false"
                     )));
                 }
             }
@@ -606,7 +625,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                     }));
                 } else {
                     println!(
-                        "whoosh-daemon {} is running (pid {}, port {})",
+                        "wdm-daemon {} is running (pid {}, port {})",
                         hello.daemon_version, info.pid, info.port
                     );
                     println!("data dir:     {}", ctx.data_dir.display());
@@ -620,7 +639,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                         &json!({ "running": false, "reason": why, "dataDir": ctx.data_dir }),
                     );
                 } else {
-                    println!("whoosh-daemon is not running ({why})");
+                    println!("wdm-daemon is not running ({why})");
                 }
                 Ok(exit::DAEMON_UNAVAILABLE)
             }
@@ -632,7 +651,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                 if ctx.json {
                     ctx.print_json(&json!({ "stopped": true, "pid": pid }));
                 } else {
-                    println!("whoosh-daemon stopped");
+                    println!("wdm-daemon stopped");
                 }
                 Ok(exit::OK)
             }
@@ -642,7 +661,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                 if ctx.json {
                     ctx.print_json(&json!({ "stopped": false, "running": false, "reason": why }));
                 } else {
-                    println!("whoosh-daemon is not running ({why})");
+                    println!("wdm-daemon is not running ({why})");
                 }
                 Ok(exit::OK)
             }
@@ -656,7 +675,7 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
                     ctx.print_json(&json!({ "started": false, "running": true, "pid": info.pid, "port": info.port }));
                 } else {
                     println!(
-                        "whoosh-daemon is already running (pid {}, port {})",
+                        "wdm-daemon is already running (pid {}, port {})",
                         info.pid, info.port
                     );
                 }
@@ -671,21 +690,18 @@ pub async fn daemon(ctx: &Ctx, action: DaemonCmd) -> Result<u8> {
             if ctx.json {
                 ctx.print_json(&json!({ "started": true, "running": true, "pid": info.pid, "port": info.port }));
             } else {
-                println!(
-                    "whoosh-daemon started (pid {}, port {})",
-                    info.pid, info.port
-                );
+                println!("wdm-daemon started (pid {}, port {})", info.pid, info.port);
             }
             Ok(exit::OK)
         }
     }
 }
 
-/// `whoosh daemon autostart on|off|status`: the logon entry that runs
-/// `whoosh-autostart` (see [`whoosh_client::autostart`]). A data directory
+/// `wdm daemon autostart on|off|status`: the logon entry that runs
+/// `wdm-autostart` (see [`wdm_client::autostart`]). A data directory
 /// other than the default is passed on with `--data-dir`.
 fn autostart(ctx: &Ctx, action: AutostartCmd) -> Result<u8> {
-    use whoosh_client::autostart::{self, DAEMON_ENTRY, Status};
+    use wdm_client::autostart::{self, DAEMON_ENTRY, LEGACY_DAEMON_ENTRY, Status};
     let failed = |e: std::io::Error| match e.kind() {
         std::io::ErrorKind::Unsupported => CliError::Other(e.to_string()),
         _ => CliError::Other(format!("cannot read or change the logon entry: {e}")),
@@ -704,21 +720,25 @@ fn autostart(ctx: &Ctx, action: AutostartCmd) -> Result<u8> {
                 args.push(ctx.data_dir.clone().into_os_string());
             }
             autostart::enable(DAEMON_ENTRY, &launcher, &args).map_err(failed)?;
+            // An entry left from before the rename points at a launcher that
+            // is gone; best effort.
+            let _ = autostart::disable(LEGACY_DAEMON_ENTRY);
             let command = autostart::command_line(&launcher, &args);
             if ctx.json {
                 ctx.print_json(&json!({ "autostart": true, "command": command }));
             } else {
-                println!("whoosh-daemon will start when you log on ({command})");
+                println!("wdm-daemon will start when you log on ({command})");
             }
         }
         AutostartCmd::Off => {
             let removed = autostart::disable(DAEMON_ENTRY).map_err(failed)?;
+            let removed = autostart::disable(LEGACY_DAEMON_ENTRY).unwrap_or(false) || removed;
             if ctx.json {
                 ctx.print_json(&json!({ "autostart": false, "removed": removed }));
             } else if removed {
-                println!("whoosh-daemon will no longer start when you log on");
+                println!("wdm-daemon will no longer start when you log on");
             } else {
-                println!("whoosh-daemon was not set to start when you log on");
+                println!("wdm-daemon was not set to start when you log on");
             }
         }
         AutostartCmd::Status => {
@@ -736,14 +756,14 @@ fn autostart(ctx: &Ctx, action: AutostartCmd) -> Result<u8> {
                 }));
             } else {
                 match status {
-                    Status::Off => println!("whoosh-daemon does not start when you log on"),
+                    Status::Off => println!("wdm-daemon does not start when you log on"),
                     Status::On { command } => {
-                        println!("whoosh-daemon starts when you log on ({command})")
+                        println!("wdm-daemon starts when you log on ({command})")
                     }
                     Status::DisabledByUser { command } => println!(
-                        "whoosh-daemon is set to start when you log on, but that is switched \
+                        "wdm-daemon is set to start when you log on, but that is switched \
                          off in Task Manager > Startup apps ({command}); \
-                         `whoosh daemon autostart on` switches it back on"
+                         `wdm daemon autostart on` switches it back on"
                     ),
                 }
             }
@@ -890,7 +910,7 @@ mod tests {
 
     #[test]
     fn cookie_and_header_files() {
-        let dir = std::env::temp_dir().join(format!("whoosh-cli-files-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("wdm-cli-files-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cookie = dir.join("cookie");
         std::fs::write(&cookie, "session=abc; theme=dark\n").unwrap();
@@ -931,6 +951,7 @@ mod tests {
             theme: "system".into(),
             durability: Default::default(),
             speed_schedule: Vec::new(),
+            confirm_browser_downloads: true,
         };
         for pair in [
             "max_active_downloads=5",
@@ -945,6 +966,11 @@ mod tests {
         assert_eq!(s.max_connections_per_download, 16);
         assert_eq!(s.speed_limit_bps, Some(10 << 20));
         assert_eq!(s.theme, "dark");
+        let (k, v) = parse_pair("confirm-browser-downloads=off").unwrap();
+        apply(&mut s, k, &v).unwrap();
+        assert!(!s.confirm_browser_downloads);
+        let (k, v) = parse_pair("confirmBrowserDownloads=maybe").unwrap();
+        assert!(apply(&mut s, k, &v).is_err());
         let (k, v) = parse_pair("speedLimitBps=none").unwrap();
         apply(&mut s, k, &v).unwrap();
         assert_eq!(s.speed_limit_bps, None);
@@ -959,7 +985,7 @@ mod tests {
 
     #[test]
     fn url_lists_skip_blank_lines_and_comments() {
-        let dir = std::env::temp_dir().join(format!("whoosh-cli-urls-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("wdm-cli-urls-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("links.txt");
         // Pasted with empty lines between links, a comment and CRLF endings.

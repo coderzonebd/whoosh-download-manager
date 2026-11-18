@@ -8,14 +8,14 @@
 //!   from another computer" prompt read it. Needs NTFS or ReFS; FAT and
 //!   exFAT have no streams.
 //! - **macOS:** the `com.apple.quarantine` extended attribute, which
-//!   Gatekeeper checks on first open: `0081;<hex Unix time>;Whoosh;`.
+//!   Gatekeeper checks on first open: `0081;<hex Unix time>;Whoosh Download Manager;`.
 //! - **Linux:** no OS protection reads a mark, but file managers show the
 //!   freedesktop.org attributes `user.xdg.origin.url` and
 //!   `user.xdg.referrer.url`, so they are written where the filesystem
 //!   allows user attributes.
 //!
 //! The marks move with a rename on the same filesystem, so the engine marks
-//! the in-progress file before its final move ([`whoosh_core::Storage::
+//! the in-progress file before its final move ([`wdm_core::Storage::
 //! mark_origin`]) and the finished file is never seen without one.
 //!
 //! **What is recorded of the URLs:** scheme, host, port and path. User
@@ -71,7 +71,7 @@ pub(crate) fn zone_identifier(origin: &Origin) -> String {
 /// event id (no entry in the QuarantineEvents database).
 #[cfg_attr(not(target_vendor = "apple"), allow(dead_code))]
 pub(crate) fn quarantine_value(unix_secs: u64) -> String {
-    format!("0081;{unix_secs:08x};Whoosh;")
+    format!("0081;{unix_secs:08x};Whoosh Download Manager;")
 }
 
 /// `scheme://host[:port]/path`, without user info, query or fragment; `None`
@@ -225,7 +225,10 @@ mod tests {
 
     #[test]
     fn quarantine_value_has_flags_time_and_agent() {
-        assert_eq!(quarantine_value(0x6000_0000), "0081;60000000;Whoosh;");
+        assert_eq!(
+            quarantine_value(0x6000_0000),
+            "0081;60000000;Whoosh Download Manager;"
+        );
     }
 
     /// The mark lands on the file and survives a rename, which is how the
@@ -233,7 +236,7 @@ mod tests {
     #[test]
     fn the_mark_moves_with_a_rename() {
         let d = tempfile::tempdir().unwrap();
-        let part = d.path().join("f.bin.whoosh-part");
+        let part = d.path().join("f.bin.wdm-part");
         std::fs::write(&part, b"data").unwrap();
         let o = Origin::new(
             "https://cdn.example.com/f.bin?t=1",
@@ -279,7 +282,7 @@ mod tests {
 
     #[cfg(target_vendor = "apple")]
     fn expected(_: &Origin) -> String {
-        "0081;*;Whoosh;".into()
+        "0081;*;Whoosh Download Manager;".into()
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]

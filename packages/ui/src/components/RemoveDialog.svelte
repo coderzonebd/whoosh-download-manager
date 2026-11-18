@@ -25,7 +25,7 @@
 <Dialog
   role="alertdialog"
   size="sm"
-  title={t("remove.title", { count: ids.length, name })}
+  title={ids.length === 1 ? t("remove.titleOne", { name }) : t("remove.title", { count: ids.length })}
   description={t("remove.body")}
   closeLabel={t("action.close")}
   {onclose}

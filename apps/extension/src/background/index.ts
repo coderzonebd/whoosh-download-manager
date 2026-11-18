@@ -4,6 +4,7 @@
 // Every listener is registered synchronously at the top level so the browser
 // can wake the script for it.
 
+import { t } from "../shared/i18n";
 import { PreconnectThrottle, selectLinks } from "../shared/links";
 import {
   asContentMessage,
@@ -16,11 +17,11 @@ import {
 } from "../shared/messages";
 import { blockedByStorePolicy } from "../shared/policy";
 import { loadSettings, normalizeSettings, SETTINGS_KEY, updateSettings, type Settings } from "../shared/settings";
-import { hostMatches, hostOf, isSiteExcluded, normalizeSitePattern } from "../shared/url";
+import { frameUrl, hostMatches, hostOf, isHttpUrl, isSiteExcluded, normalizeSitePattern } from "../shared/url";
 import { NativeMessagingTransport, type NativePort } from "../transport/native";
 import { isUnavailable } from "../transport/rpc";
 import { canHoldDownloads, downloadControl, getApi, isFirefox, toCandidate } from "./browser";
-import { buildAddParams, cookiesFor, privateCookieStore } from "./capture/context";
+import { buildAddParams, buildRequestContext, cookiesFor, privateCookieStore } from "./capture/context";
 import { CaptureController, type CaptureResult } from "./capture/controller";
 import type { CandidateDownload } from "./capture/rules";
 import { BypassTracker, RecentClicks, RequestMethodTracker } from "./capture/trackers";
@@ -28,7 +29,8 @@ import { Coalescer, listUnfinished, RisingEdge } from "./catch-up";
 import { createPageReader, openPage } from "./healing/pages";
 import { collectLinks, createMenus, MENU } from "./menus";
 import { LinkHealer, type HealAsk, type Provenance } from "./self-healing";
-import { classifyMedia, header, sizeFromHeaders, TabMediaStore } from "./sniffer";
+import { offerPage } from "./offer";
+import { classifyMedia, header, sizeFromHeaders, TabMediaStore, worthListing } from "./sniffer";
 
 const api = getApi();
 const firefox = isFirefox(api);
@@ -75,7 +77,7 @@ async function updateBadge(s: Settings): Promise<void> {
     return;
   }
   await api.action.setBadgeBackgroundColor({ color: "#6b7280" });
-  await api.action.setBadgeText({ text: s.captureEnabled ? "" : "off" });
+  await api.action.setBadgeText({ text: s.captureEnabled ? "" : t("badgeOff") });
 }
 
 // ------------------------------------------------------------------ self-healing
@@ -97,7 +99,7 @@ const healer = new LinkHealer({
 });
 
 function remember(provenance: Provenance): void {
-  void healer.remember(provenance).catch((e: unknown) => console.warn("whoosh: could not remember a download", e));
+  void healer.remember(provenance).catch((e: unknown) => console.warn("wdm: could not remember a download", e));
 }
 
 // Catch up on what happened while no port was open: downloads that finished
@@ -107,13 +109,16 @@ const catchUp = new Coalescer(
     if ((await healer.ids()).length === 0) return;
     const summaries = await listUnfinished(transport);
     const outcomes = await healer.sync(summaries);
-    for (const outcome of outcomes) console.debug("whoosh: self-healing (catch-up)", outcome.status);
+    for (const outcome of outcomes) console.debug("wdm: self-healing (catch-up)", outcome.status);
   },
-  (error) => console.debug("whoosh: catch-up skipped:", error instanceof Error ? error.message : String(error)),
+  (error) => console.debug("wdm: catch-up skipped:", error instanceof Error ? error.message : String(error)),
 );
 const daemonUp = new RisingEdge();
+/** The daemon's state as last reported (undefined until the first report: treated as down). */
+let daemonRunning: boolean | undefined;
 transport.onOpen(() => void catchUp.trigger());
 transport.onStatus((status) => {
+  daemonRunning = status.daemonRunning;
   if (daemonUp.update(status.daemonRunning)) void catchUp.trigger();
 });
 
@@ -133,17 +138,17 @@ const clicks = new RecentClicks();
 let lastCapture: PopupState["lastCapture"];
 
 function describe(result: CaptureResult): string {
-  if (result.outcome === "sent") return "sent to whoosh";
-  if (result.outcome === "healed") return "continued an expired whoosh download";
-  if (result.outcome === "skipped") return `left to the browser (${result.reason})`;
-  return `kept by the browser (${result.reason})`;
+  if (result.outcome === "sent") return t("outcomeSent");
+  if (result.outcome === "healed") return t("outcomeHealed");
+  if (result.outcome === "skipped") return t("outcomeSkipped", result.reason);
+  return t("outcomeKept", result.reason);
 }
 
 function report(candidate: CandidateDownload, result: CaptureResult): void {
   if (result.outcome !== "skipped") {
     lastCapture = { url: candidate.url, outcome: describe(result), at: Date.now() };
   }
-  console.debug("whoosh: download", candidate.id, describe(result));
+  console.debug("wdm: download", candidate.id, result.outcome, "reason" in result ? result.reason : "");
   if (result.outcome === "sent" && !candidate.incognito) {
     // Private-window downloads are never remembered.
     const now = Date.now();
@@ -157,7 +162,7 @@ function report(candidate: CandidateDownload, result: CaptureResult): void {
     if (text) provenance.linkText = text;
     remember(provenance);
   } else if (result.outcome === "kept" && "late" in result && result.late) {
-    void result.late.then((late) => console.debug("whoosh: late answer for download", candidate.id, late.outcome));
+    void result.late.then((late) => console.debug("wdm: late answer for download", candidate.id, late.outcome));
   }
 }
 
@@ -175,6 +180,8 @@ const capture = new CaptureController({
   isFirefox: firefox,
   now: () => Date.now(),
   report,
+  // A closed app is started by the native host; the hand-over then waits for it.
+  daemonUp: () => daemonRunning === true,
 });
 
 if (canHoldDownloads(api)) {
@@ -211,7 +218,7 @@ api.webRequest.onBeforeRequest.addListener(
 
 interface SendOptions {
   referrer?: string | undefined;
-  /** For a single explicit link: if whoosh cannot take it, let the browser download it. */
+  /** For a single explicit link: if wdm cannot take it, let the browser download it. */
   fallbackToBrowser: boolean;
   incognito?: boolean | undefined;
   cookieStoreId?: string | undefined;
@@ -219,7 +226,7 @@ interface SendOptions {
 
 async function sendLinks(urls: readonly string[], opts: SendOptions): Promise<ActionReply> {
   if (blockedByStorePolicy(opts.referrer, ...urls)) {
-    return { ok: false, error: "Whoosh from the browser store does not download from this site." };
+    return { ok: false, error: t("errorStoreBlocked") };
   }
   const storeId = opts.cookieStoreId ?? (opts.incognito ? privateCookieStore(firefox) : undefined);
   let failed = 0;
@@ -252,7 +259,7 @@ async function sendLinks(urls: readonly string[], opts: SendOptions): Promise<Ac
   if (urls.length > 0) {
     lastCapture = {
       url: urls[0] ?? "",
-      outcome: failed === 0 ? `sent ${urls.length} link(s) to whoosh` : `failed: ${lastError}`,
+      outcome: failed === 0 ? t("outcomeLinksSent", String(urls.length)) : t("outcomeFailed", lastError),
       at: Date.now(),
     };
   }
@@ -284,7 +291,7 @@ async function onMenu(info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Ta
     cookieStoreId: tabStore,
   };
   if (blockedByStorePolicy(info.pageUrl, info.frameUrl, info.linkUrl)) {
-    lastCapture = { url: info.linkUrl ?? info.pageUrl ?? "", outcome: "not available on this site", at: Date.now() };
+    lastCapture = { url: info.linkUrl ?? info.pageUrl ?? "", outcome: t("outcomeBlocked"), at: Date.now() };
     return;
   }
   if (info.menuItemId === MENU.link && info.linkUrl) {
@@ -298,7 +305,7 @@ async function onMenu(info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Ta
       const urls = selectLinks(links, scope, (await settings()).fileTypes);
       await sendLinks(urls, { ...base, fallbackToBrowser: false });
     } catch (error) {
-      lastCapture = { url: tab.url ?? "", outcome: `could not read links: ${String(error)}`, at: Date.now() };
+      lastCapture = { url: tab.url ?? "", outcome: t("outcomeNoLinks", String(error)), at: Date.now() };
     }
   }
 }
@@ -340,21 +347,33 @@ api.tabs.onRemoved.addListener((tabId) => media.clear(tabId));
 // ------------------------------------------------------------------ messages
 
 const preconnect = new PreconnectThrottle();
+const offerDeps = {
+  daemon: transport,
+  settings,
+  blocked: blockedByStorePolicy,
+  request: async (url: string, referrer: string | undefined, storeId: string | undefined) =>
+    buildRequestContext({ cookies: await cookiesFor(cookieSource, url, storeId), referrer, userAgent: navigator.userAgent }),
+};
+/** A tab's cookie store: its container, or the private one in a private window. */
+function storeOf(tab: chrome.tabs.Tab | undefined): string | undefined {
+  return (tab as { cookieStoreId?: string } | undefined)?.cookieStoreId ?? (tab?.incognito ? privateCookieStore(firefox) : undefined);
+}
 
 async function onContentMessage(message: ContentMessage): Promise<void> {
   const now = Date.now();
-  if (message.type === "whoosh/bypass-next") {
+  if (message.type === "wdm/bypass-next") {
     bypass.arm(now);
     return;
   }
-  if (message.type === "whoosh/force-next") {
+  if (message.type === "wdm/force-next") {
     force.arm(now);
     return;
   }
-  if (message.type === "whoosh/link-click") {
+  if (message.type === "wdm/link-click") {
     clicks.record(message.url, message.text, now);
     return;
   }
+  if (message.type === "wdm/offer-video") return; // answered in the listener
   const s = await settings();
   if (!s.preconnect || !transport.healthy || blockedByStorePolicy(message.url)) return;
   const origin = preconnect.allow(message.url, now);
@@ -363,12 +382,12 @@ async function onContentMessage(message: ContentMessage): Promise<void> {
 
 async function onPopupMessage(message: PopupMessage): Promise<PopupState | ActionReply> {
   switch (message.type) {
-    case "whoosh/popup-state":
+    case "wdm/popup-state":
       return popupState(message.tabId, message.pageUrl);
-    case "whoosh/set-capture":
+    case "wdm/set-capture":
       await changeSettings({ captureEnabled: message.enabled });
       return { ok: true };
-    case "whoosh/set-site-excluded": {
+    case "wdm/set-site-excluded": {
       const host = normalizeSitePattern(message.host);
       if (!host) return { ok: false, error: "not a host name" };
       const current = (await settings()).excludedSites;
@@ -378,12 +397,17 @@ async function onPopupMessage(message: PopupMessage): Promise<PopupState | Actio
       await changeSettings({ excludedSites });
       return { ok: true };
     }
-    case "whoosh/download-media":
+    case "wdm/download-media":
       return sendLinks([message.url], { referrer: message.pageUrl, fallbackToBrowser: false });
-    case "whoosh/heal-answer": {
+    case "wdm/offer-page": {
+      // The tab's own address and title when we can read them, else what the popup saw.
+      const tab = message.tabId === undefined ? undefined : await api.tabs.get(message.tabId).catch(() => undefined);
+      return offerPage(offerDeps, { url: tab?.url ?? message.url, title: tab?.title ?? message.title, fromButton: false, cookieStoreId: storeOf(tab) });
+    }
+    case "wdm/heal-answer": {
       const outcome = await healer.act(message.id, message.answer);
       if (outcome?.status === "failed" && outcome.reason === "daemon-refused") {
-        return { ok: false, error: "Whoosh did not accept that address." };
+        return { ok: false, error: t("errorRefused") };
       }
       return { ok: true };
     }
@@ -397,9 +421,11 @@ async function popupState(tabId: number | undefined, pageUrl: string | undefined
     status,
     captureEnabled: s.captureEnabled,
     siteExcluded: false,
-    media: tabId === undefined || pageBlocked ? [] : media.list(tabId),
+    // Page sounds and previews (small audio/video files) are left out.
+    media: tabId === undefined || pageBlocked ? [] : media.list(tabId).filter(worthListing),
     heals,
     pageBlocked,
+    canOffer: isHttpUrl(pageUrl) && !pageBlocked,
     altClick: s.altClick,
   };
   if (status.daemonRunning) {
@@ -426,6 +452,19 @@ api.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (sender.id !== api.runtime.id) return false;
 
   const content = asContentMessage(message);
+  if (content?.type === "wdm/offer-video") {
+    // The frame the button was clicked in: its origin as the browser reports it, its current
+    // address (single-page sites change it without reloading) as the page says.
+    const tabUrl = sender.tab?.url;
+    void offerPage(offerDeps, {
+      url: frameUrl(sender.url, content.url) ?? content.url,
+      title: content.title,
+      tabUrl,
+      fromButton: true,
+      cookieStoreId: storeOf(sender.tab),
+    }).then(sendResponse);
+    return true;
+  }
   if (content) {
     void onContentMessage(content);
     return false;
@@ -448,9 +487,9 @@ api.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 transport.on("event.download.state", (event) => {
   void healer.onState(event).then(
     (outcome) => {
-      if (outcome) console.debug("whoosh: self-healing", event.id, outcome.status);
+      if (outcome) console.debug("wdm: self-healing", event.id, outcome.status);
     },
-    (error: unknown) => console.warn("whoosh: self-healing failed", event.id, error),
+    (error: unknown) => console.warn("wdm: self-healing failed", event.id, error),
   );
 });
 transport.on("event.download.removed", (event) => {

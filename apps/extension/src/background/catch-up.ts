@@ -6,7 +6,7 @@
 // for the current state of the downloads it cares about instead of relying
 // on events it may have missed.
 
-import type { DownloadState, DownloadSummary } from "@whoosh/api-client";
+import type { DownloadState, DownloadSummary } from "@wdm/api-client";
 
 import type { DaemonCalls } from "./capture/handoff";
 

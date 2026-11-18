@@ -1,0 +1,6 @@
+# Weblate's command-line client (wlc) for this project: `wlc stats`,
+# `wlc lock`, `wlc pull`. See docs/translating.md. API keys belong in
+# ~/.config/weblate, never here.
+[weblate]
+url = https://hosted.weblate.org/api/
+translation = whoosh-download-manager/ui

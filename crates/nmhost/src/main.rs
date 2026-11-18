@@ -1,4 +1,4 @@
-//! `whoosh-nmhost` — see the crate docs and README.
+//! `wdm-nmhost` — see the crate docs and README.
 //!
 //! Browsers start it with their own arguments (Chrome: the caller's origin,
 //! plus `--parent-window=…` on Windows; Firefox: the manifest path and the
@@ -8,44 +8,59 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use whoosh_nmhost::register::{self, Browser};
-use whoosh_nmhost::relay::{self, Config};
-use whoosh_nmhost::runtime::{self, Env, Os};
-use whoosh_nmhost::{DEV_CHROMIUM_EXTENSION_ID, FIREFOX_EXTENSION_ID, HOST_NAME, log};
-use whoosh_proto::ClientInfo;
+use wdm_nmhost::register::{self, Browser};
+use wdm_nmhost::relay::{self, Config};
+use wdm_nmhost::runtime::{self, Env, Os};
+use wdm_nmhost::{DEV_CHROMIUM_EXTENSION_ID, FIREFOX_EXTENSION_ID, HOST_NAME, log};
+use wdm_nmhost::{external, ids};
+use wdm_proto::ClientInfo;
 
 const USAGE: &str = "\
-whoosh-nmhost — native messaging host for the whoosh browser extension
+wdm-nmhost — native messaging host for the wdm browser extension
 
 USAGE:
-    whoosh-nmhost                     run as a host (browsers start it like this)
-    whoosh-nmhost --register [OPTIONS]
-    whoosh-nmhost --unregister
-    whoosh-nmhost --print-manifest <chromium|firefox> [OPTIONS]
-    whoosh-nmhost --version | --help
+    wdm-nmhost                     run as a host (browsers start it like this)
+    wdm-nmhost --register [OPTIONS]
+    wdm-nmhost --unregister
+    wdm-nmhost --print-manifest <chromium|firefox> [OPTIONS]
+    wdm-nmhost --version | --help
 
 OPTIONS (for --register and --print-manifest):
     --browser <NAME>        chrome, chromium, brave, edge, vivaldi, firefox or all;
                             repeatable (default: every browser this user has used)
     --extension-id <ID>     also allow this Chromium extension ID; repeatable
     --firefox-id <ID>       also allow this Firefox extension ID; repeatable
-    --no-dev-id             do not allow the development Chromium extension ID
+    --no-dev-id             do not allow the GitHub/development Chromium extension ID
     --host-path <FILE>      executable to put in the manifests (default: this one)
+    --offer-extension       (--register only) also ask the browsers to offer the
+                            extension from their store (Edge Add-ons; the Chrome
+                            Web Store once switched on); --unregister removes it
+
+The store IDs of this build are always allowed: {STORE_IDS}
 
 ENVIRONMENT:
-    WHOOSH_DATA_DIR           daemon data directory (holds runtime.json)
-    WHOOSH_NMHOST_LOG=debug   verbose logging on stderr
+    WDM_DATA_DIR           daemon data directory (holds runtime.json)
+    WDM_NMHOST_LOG=debug   verbose logging on stderr
+    WDM_NMHOST_NO_LAUNCH=1 never start the desktop app (it is started when a
+                              browser download waits for confirmation, or a
+                              video page is offered, and no app window is open)
 ";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("--help" | "-h") => {
-            print!("{USAGE}");
+            let store = ids::ids().store_chromium_ids();
+            let store = if store.is_empty() {
+                "none yet".to_owned()
+            } else {
+                store.join(", ")
+            };
+            print!("{}", USAGE.replace("{STORE_IDS}", &store));
             ExitCode::SUCCESS
         }
         Some("--version" | "-V") => {
-            println!("whoosh-nmhost {}", env!("CARGO_PKG_VERSION"));
+            println!("wdm-nmhost {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         Some("--register") => cli(|| do_register(&args[1..])),
@@ -59,7 +74,7 @@ fn cli(f: impl FnOnce() -> Result<(), String>) -> ExitCode {
     match f() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("whoosh-nmhost: {e}");
+            eprintln!("wdm-nmhost: {e}");
             ExitCode::from(2)
         }
     }
@@ -80,8 +95,9 @@ fn run_host(args: &[String]) -> ExitCode {
         name: name.to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     };
-    let runtime_file = match runtime::runtime_file(Os::current(), &Env::from_process()) {
-        Ok(path) => path,
+    // After moving a data directory left under the old name (once).
+    let runtime_file = match runtime::default_data_dir() {
+        Ok(dir) => dir.join(runtime::RUNTIME_FILE),
         Err(e) => {
             log::warn(&e.to_string());
             // Still serve nm.status; every relayed call will report the daemon
@@ -100,11 +116,11 @@ fn run_host(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let result = rt.block_on(relay::run(
-        tokio::io::stdin(),
-        tokio::io::stdout(),
-        Config::new(runtime_file, client),
-    ));
+    let mut config = Config::new(runtime_file, client);
+    if std::env::var_os("WDM_NMHOST_NO_LAUNCH").is_some_and(|v| !v.is_empty()) {
+        config.launcher = relay::Launcher(std::sync::Arc::new(|| {}));
+    }
+    let result = rt.block_on(relay::run(tokio::io::stdin(), tokio::io::stdout(), config));
     let code = match result {
         Ok(()) => 0,
         Err(e) => {
@@ -123,6 +139,7 @@ struct Flags {
     chromium_ids: Vec<String>,
     firefox_ids: Vec<String>,
     no_dev_id: bool,
+    offer_extension: bool,
     host_path: Option<PathBuf>,
     positional: Vec<String>,
 }
@@ -151,6 +168,7 @@ fn parse_flags(args: &[String]) -> Result<Flags, String> {
             "--extension-id" => flags.chromium_ids.push(value("--extension-id")?),
             "--firefox-id" => flags.firefox_ids.push(value("--firefox-id")?),
             "--no-dev-id" => flags.no_dev_id = true,
+            "--offer-extension" => flags.offer_extension = true,
             "--host-path" => flags.host_path = Some(PathBuf::from(value("--host-path")?)),
             other if other.starts_with('-') => return Err(format!("unknown option {other}")),
             other => flags.positional.push(other.to_owned()),
@@ -178,6 +196,7 @@ fn options(flags: Flags) -> Result<register::Options, String> {
     if !flags.no_dev_id {
         chromium_ids.push(DEV_CHROMIUM_EXTENSION_ID.to_owned());
     }
+    chromium_ids.extend(ids::ids().store_chromium_ids());
     chromium_ids.extend(flags.chromium_ids);
     let mut firefox_ids = vec![FIREFOX_EXTENSION_ID.to_owned()];
     firefox_ids.extend(flags.firefox_ids);
@@ -201,9 +220,14 @@ fn do_register(args: &[String]) -> Result<(), String> {
     if let Some(extra) = flags.positional.first() {
         return Err(format!("unexpected argument {extra:?}"));
     }
+    let offer = flags.offer_extension;
+    let all_browsers = flags
+        .browsers
+        .as_ref()
+        .is_some_and(|b| b.len() == Browser::ALL.len());
     let opts = options(flags)?;
-    let changes = register::register(Os::current(), &Env::from_process(), &opts)
-        .map_err(|e| e.to_string())?;
+    let env = Env::from_process();
+    let changes = register::register(Os::current(), &env, &opts).map_err(|e| e.to_string())?;
     println!("Registered {HOST_NAME} -> {}", opts.host_path.display());
     for change in &changes {
         println!("  {:<9} {}", change.browser.name(), change.location);
@@ -220,6 +244,16 @@ fn do_register(args: &[String]) -> Result<(), String> {
         "Allowed Firefox extensions: {}",
         opts.firefox_ids.join(", ")
     );
+    if offer {
+        let offers = external::offer(Os::current(), &env, ids::ids(), all_browsers)
+            .map_err(|e| e.to_string())?;
+        if offers.is_empty() {
+            println!("No store offers to make (no store IDs yet, or no such browser).");
+        }
+        for o in offers {
+            println!("Offered {} to {:<9} {}", o.id, o.browser.name(), o.location);
+        }
+    }
     Ok(())
 }
 
@@ -227,14 +261,21 @@ fn do_unregister(args: &[String]) -> Result<(), String> {
     if let Some(extra) = args.first() {
         return Err(format!("unexpected argument {extra:?}"));
     }
-    let changes =
-        register::unregister(Os::current(), &Env::from_process()).map_err(|e| e.to_string())?;
+    let env = Env::from_process();
+    let changes = register::unregister(Os::current(), &env).map_err(|e| e.to_string())?;
     let removed: Vec<_> = changes.iter().filter(|c| c.done).collect();
     if removed.is_empty() {
         println!("Nothing to remove: {HOST_NAME} was not registered.");
     }
     for change in removed {
         println!("Removed {:<9} {}", change.browser.name(), change.location);
+    }
+    for o in external::withdraw(Os::current(), &env, ids::ids()).map_err(|e| e.to_string())? {
+        println!(
+            "Withdrew the offer to {:<9} {}",
+            o.browser.name(),
+            o.location
+        );
     }
     Ok(())
 }

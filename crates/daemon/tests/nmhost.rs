@@ -1,6 +1,6 @@
-//! Compatibility with the real `whoosh-nmhost`: the browser extension's path to
+//! Compatibility with the real `wdm-nmhost`: the browser extension's path to
 //! the daemon (PROTOCOL.md §1, native messaging). The host is built from the
-//! workspace (or taken from `$WHOOSH_NMHOST_BIN`), pointed at the daemon through
+//! workspace (or taken from `$WDM_NMHOST_BIN`), pointed at the daemon through
 //! the environment alone, and driven with native-messaging frames.
 
 mod common;
@@ -14,12 +14,12 @@ use std::time::Duration;
 
 use common::*;
 use serde_json::{Value, json};
-use whoosh_daemon::mock::{MockOptions, MockService, Scenario};
-use whoosh_daemon::paths;
+use wdm_daemon::mock::{MockOptions, MockService, Scenario};
+use wdm_daemon::paths;
 
 fn nmhost() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
-    BIN.get_or_init(|| workspace_bin("whoosh-nmhost", "whoosh-nmhost", "WHOOSH_NMHOST_BIN"))
+    BIN.get_or_init(|| workspace_bin("wdm-nmhost", "wdm-nmhost", "WDM_NMHOST_BIN"))
 }
 
 fn mock() -> std::sync::Arc<MockService> {
@@ -43,12 +43,15 @@ impl Host {
     fn spawn(env: &[(&str, &Path)]) -> Self {
         let mut cmd = Command::new(nmhost());
         cmd.arg("chrome-extension://clhjgofaikdmabdnebgcmdffdjenagfl/");
-        for var in ["WHOOSH_DATA_DIR", "XDG_DATA_HOME", "LOCALAPPDATA"] {
+        for var in ["WDM_DATA_DIR", "XDG_DATA_HOME", "LOCALAPPDATA"] {
             cmd.env_remove(var);
         }
         for (k, v) in env {
             cmd.env(k, v);
         }
+        // A browser download waits for confirmation here, with no desktop
+        // window: the host must not start the real app.
+        cmd.env("WDM_NMHOST_NO_LAUNCH", "1");
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -131,7 +134,7 @@ impl Host {
 async fn the_native_host_relays_to_this_daemon_end_to_end() {
     let dir = TempDir::new("nmhost");
     let d = start(mock(), dir.path()).await;
-    let mut host = tokio::task::block_in_place(|| Host::spawn(&[("WHOOSH_DATA_DIR", dir.path())]));
+    let mut host = tokio::task::block_in_place(|| Host::spawn(&[("WDM_DATA_DIR", dir.path())]));
     let mut events = Vec::new();
 
     tokio::task::block_in_place(|| {
@@ -139,7 +142,7 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
         // completed session.hello with its token.
         let status = host.status(1, &mut events);
         assert_eq!(status["daemonRunning"], true, "{status}");
-        assert_eq!(status["daemonVersion"], whoosh_daemon::VERSION);
+        assert_eq!(status["daemonVersion"], wdm_daemon::VERSION);
 
         // A method call, relayed verbatim both ways.
         host.send(json!({"jsonrpc": "2.0", "id": 2, "method": "download.add",
@@ -147,6 +150,17 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
                        "request": {"referer": "https://example.com/pkg/"}}}));
         let added = host.response(2, &mut events);
         let id = added["result"]["id"].as_str().expect("an id").to_owned();
+        // From the browser, so it waits for the user ("Ask before
+        // downloading from the browser" is on by default), and no desktop
+        // window is connected to ask.
+        assert_eq!(added["result"]["awaitingConfirmation"], true, "{added}");
+        assert_eq!(added["result"]["needsApp"], true, "{added}");
+        host.send(
+            json!({"jsonrpc": "2.0", "id": 20, "method": "download.confirm",
+            "params": {"id": id, "start": true}}),
+        );
+        let confirmed = host.response(20, &mut events);
+        assert_eq!(confirmed["result"], Value::Null, "{confirmed}");
 
         // Events reach the extension.
         let ev = host.wait_event(&mut events, |m| m["method"] == "event.download.added");
@@ -190,7 +204,7 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
         let up = host.wait_event(&mut events, |m| {
             m["method"] == "event.nm.status" && m["params"]["daemonRunning"] == true
         });
-        assert_eq!(up["params"]["daemonVersion"], whoosh_daemon::VERSION);
+        assert_eq!(up["params"]["daemonVersion"], wdm_daemon::VERSION);
         host.send(json!({"jsonrpc": "2.0", "id": 6, "method": "stats.get"}));
         assert!(host.response(6, &mut events)["result"]["active"].is_number());
         host.finish();
@@ -198,9 +212,9 @@ async fn the_native_host_relays_to_this_daemon_end_to_end() {
     d.shutdown().await;
 }
 
-/// Without `WHOOSH_DATA_DIR`, both sides must derive the same directory from
-/// the platform rule: `$XDG_DATA_HOME/whoosh` on Linux, `~/Library/Application
-/// Support/whoosh` on macOS, `%LOCALAPPDATA%\whoosh` on Windows.
+/// Without `WDM_DATA_DIR`, both sides must derive the same directory from
+/// the platform rule: `$XDG_DATA_HOME/wdm` on Linux, `~/Library/Application
+/// Support/wdm` on macOS, `%LOCALAPPDATA%\wdm` on Windows.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_native_host_and_the_daemon_agree_on_the_platform_data_dir() {
     let base = TempDir::new("nmhost-platform");
@@ -214,9 +228,9 @@ async fn the_native_host_and_the_daemon_agree_on_the_platform_data_dir() {
     };
     let data_dir = paths::data_dir(paths::Os::current(), &env).unwrap();
     let expected = match paths::Os::current() {
-        paths::Os::Linux => base.path().join("whoosh"),
-        paths::Os::MacOs => home.join("Library/Application Support/whoosh"),
-        paths::Os::Windows => local.join("whoosh"),
+        paths::Os::Linux => base.path().join("wdm"),
+        paths::Os::MacOs => home.join("Library/Application Support/wdm"),
+        paths::Os::Windows => local.join("wdm"),
     };
     assert_eq!(data_dir, expected);
     let d = start(mock(), &data_dir).await;
@@ -237,16 +251,16 @@ async fn the_native_host_and_the_daemon_agree_on_the_platform_data_dir() {
     d.shutdown().await;
 }
 
-/// Every client's reader (`whoosh_proto::runtime`, with its ownership and
+/// Every client's reader (`wdm_proto::runtime`, with its ownership and
 /// permission checks) accepts the file the daemon writes.
 #[tokio::test]
 async fn clients_accept_our_runtime_file() {
     let dir = TempDir::new("nmhost-rt");
     let d = start(mock(), dir.path()).await;
-    let info = whoosh_proto::runtime::read_runtime(&d.runtime_file()).unwrap();
+    let info = wdm_proto::runtime::read_runtime(&d.runtime_file()).unwrap();
     assert_eq!(info.port, d.port());
     assert_eq!(info.token, d.runtime_info().token);
     assert_eq!(info.pid, std::process::id());
-    assert_eq!(info.version, whoosh_daemon::VERSION);
+    assert_eq!(info.version, wdm_daemon::VERSION);
     d.shutdown().await;
 }

@@ -6,12 +6,15 @@
   immediately because they never reach the daemon.
 -->
 <script lang="ts">
-  import type { Settings, SpeedWindow } from "@whoosh/api-client";
+  import type { Settings, SpeedWindow } from "@wdm/api-client";
   import type { DesktopPrefs } from "../lib/host.ts";
+  import { dirOf } from "../lib/i18n/i18n.svelte.ts";
+  import { translateUrl } from "../lib/i18n/languages.ts";
   import { normalizeDays, windowProblem } from "../lib/schedule.ts";
   import { getApp } from "../lib/state/app.svelte.ts";
   import DaysPicker from "./DaysPicker.svelte";
   import Icon from "./Icon.svelte";
+  import MediaToolsSection from "./MediaToolsSection.svelte";
 
   const app = getApp();
   const { i18n, prefs } = app;
@@ -35,6 +38,8 @@
     limitValue: string;
     limitUnit: Unit;
     windows: WindowDraft[];
+    /** undefined: the daemon has no such setting (older daemons never ask). */
+    confirmBrowser: boolean | undefined;
   }
 
   const UNIT: Record<Unit, number> = { KB: 1024, MB: 1024 * 1024 };
@@ -64,6 +69,7 @@
       limitValue: bps === undefined ? "1" : valueIn(bps, unit),
       limitUnit: unit,
       windows: (s.speedSchedule ?? []).map(toWindow),
+      confirmBrowser: s.confirmBrowserDownloads,
     };
   }
 
@@ -114,6 +120,15 @@
     if (draft.limitOn && !(Number.isFinite(lv) && lv > 0 && lv <= 1_000_000)) e.limitValue = t("settings.range", { min: i18n.number(1), max: i18n.number(1_000_000) });
     return e;
   });
+  /** The picked language, when it was translated by machine: the picker says so in that language. */
+  const machineLang = $derived(i18n.available.find((l) => l.tag === draft?.language && l.machine)?.tag);
+
+  function openTranslate(e: MouseEvent, url: string): void {
+    if (!app.host.openUrl) return; // a browser tab follows the link itself
+    e.preventDefault();
+    void app.host.openUrl(url).catch((err: unknown) => app.report(err));
+  }
+
   const valid = $derived(Object.keys(errors).length === 0 && windowErrors.every((w) => !w.time && !w.limit));
 
   function build(d: Draft): Settings | undefined {
@@ -132,6 +147,7 @@
       return out;
     });
     if (windows.length > 0) s.speedSchedule = windows;
+    if (d.confirmBrowser !== undefined) s.confirmBrowserDownloads = d.confirmBrowser;
     return s;
   }
 
@@ -182,6 +198,42 @@
 
   const host = app.host;
   const hasDesktop = host.desktopPrefs !== undefined || host.launchAtLogin !== undefined;
+  const updates = host.updates;
+  /** Set when a package manager updates this copy: no checking or installing here then. */
+  let updatesFrom = $state<{ manager: string; command: string } | undefined>(undefined);
+  $effect(() => {
+    host.updatesFrom?.().then(
+      (v) => (updatesFrom = v),
+      () => {},
+    );
+  });
+
+  type UpdateState = { kind: "idle" | "checking" | "current" | "installing" } | { kind: "available"; version: string };
+  let update = $state<UpdateState>({ kind: "idle" });
+
+  async function checkUpdate(): Promise<void> {
+    if (!updates) return;
+    update = { kind: "checking" };
+    try {
+      const found = await updates.check();
+      update = found ? { kind: "available", version: found.version } : { kind: "current" };
+    } catch (e) {
+      update = { kind: "idle" };
+      app.toasts.push({ tone: "error", message: t("settings.updateFailed", { message: app.describe(e) }) });
+    }
+  }
+
+  async function installUpdate(): Promise<void> {
+    if (!updates) return;
+    const before = update;
+    update = { kind: "installing" };
+    try {
+      await updates.install(); // restarts the app
+    } catch (e) {
+      update = before;
+      app.toasts.push({ tone: "error", message: t("settings.installFailed", { message: app.describe(e) }) });
+    }
+  }
   let desktop = $state<DesktopPrefs | undefined>(undefined);
   let atLogin = $state<boolean | undefined>(undefined);
 
@@ -204,6 +256,31 @@
       desktop = await host.desktopPrefs.set(desktop);
     } catch (e) {
       desktop = before;
+      app.toasts.push({ tone: "error", message: t("settings.saveFailed", { message: app.describe(e) }) });
+    }
+  }
+
+  // ------------------------------------------------------------ privacy
+
+  /** undefined: unknown yet, or this build has no crash reports. */
+  let crash = $state<boolean | undefined>(undefined);
+  $effect(() => {
+    host.crashReports
+      ?.get()
+      .then((s) => (crash = s?.enabled))
+      .catch(() => (crash = undefined));
+  });
+
+  async function setCrash(on: boolean): Promise<void> {
+    if (!host.crashReports) return;
+    const before = crash;
+    crash = on;
+    // Choosing here counts as having seen the first-run notice.
+    app.crashNotice = false;
+    try {
+      await host.crashReports.set(on);
+    } catch (e) {
+      crash = before;
       app.toasts.push({ tone: "error", message: t("settings.saveFailed", { message: app.describe(e) }) });
     }
   }
@@ -254,11 +331,21 @@
         <div class="grid">
           <div class="vy-field">
             <label class="vy-label" for="vy-set-lang">{t("settings.language")}</label>
-            <select id="vy-set-lang" class="vy-select" bind:value={draft.language}>
+            <select id="vy-set-lang" class="vy-select" bind:value={draft.language} aria-describedby={machineLang ? "vy-set-lang-mt" : undefined}>
               {#each i18n.available as l (l.tag)}
-                <option value={l.tag} lang={l.tag}>{l.nativeName}</option>
+                <option value={l.tag} lang={l.tag} dir={dirOf(l.tag)}>{l.nativeName}</option>
               {/each}
             </select>
+            {#if machineLang}
+              {@const url = translateUrl(machineLang)}
+              <span id="vy-set-lang-mt" class="vy-hint machine" lang={machineLang} dir={dirOf(machineLang)}>
+                <Icon name="globe" size={14} />
+                <span>
+                  {i18n.tIn(machineLang, "settings.machineTranslated")}
+                  <a href={url} target="_blank" rel="noopener noreferrer" onclick={(e) => openTranslate(e, url)}>{i18n.tIn(machineLang, "settings.helpTranslate")}</a>
+                </span>
+              </span>
+            {/if}
           </div>
           <fieldset class="vy-field">
             <legend class="vy-label">{t("settings.theme")}</legend>
@@ -271,6 +358,7 @@
               {/each}
             </div>
           </fieldset>
+          {#if host.platform !== "android"}
           <fieldset class="vy-field">
             <legend class="vy-label">{t("settings.layout")}</legend>
             <div class="choice">
@@ -284,6 +372,7 @@
               </label>
             </div>
           </fieldset>
+          {/if}
           <div class="vy-field">
             <label class="vy-check">
               <input type="checkbox" bind:checked={prefs.highContrast} aria-describedby="vy-set-hc-hint" />
@@ -297,6 +386,7 @@
       <section aria-labelledby="vy-set-downloads">
         <h2 id="vy-set-downloads">{t("settings.downloads")}</h2>
         <div class="grid">
+          {#if host.platform !== "android"}
           <div class="vy-field wide">
             <label class="vy-label" for="vy-set-dir">{t("settings.defaultDirectory")}</label>
             <div class="folder-row">
@@ -309,13 +399,14 @@
                 aria-describedby={errors.defaultDirectory ? "vy-set-dir-err" : undefined}
               />
               {#if host.pickFolder}
-                <button type="button" class="vy-btn" disabled={picking} onclick={chooseFolder}>
+                <button type="button" class="vy-btn vy-btn--secondary" disabled={picking} onclick={chooseFolder}>
                   <Icon name="folder" size={15} />{t("action.browse")}
                 </button>
               {/if}
             </div>
             {#if errors.defaultDirectory}<span id="vy-set-dir-err" class="vy-error">{errors.defaultDirectory}</span>{/if}
           </div>
+          {/if}
           <div class="vy-field">
             <label class="vy-label" for="vy-set-active">{t("settings.maxActive")}</label>
             <input
@@ -431,7 +522,7 @@
             </div>
           {/each}
           <div>
-            <button id="vy-win-add" type="button" class="vy-btn" onclick={addWindow}>
+            <button id="vy-win-add" type="button" class="vy-btn vy-btn--secondary" onclick={addWindow}>
               <Icon name="plus" size={15} />{t("speedSchedule.add")}
             </button>
           </div>
@@ -472,11 +563,90 @@
         </section>
       {/if}
 
+      {#if host.browsers || draft.confirmBrowser !== undefined}
+        <section aria-labelledby="vy-set-browsers">
+          <h2 id="vy-set-browsers">{t("settings.browsers")}</h2>
+          {#if draft.confirmBrowser !== undefined}
+            <div class="vy-field">
+              <label class="vy-check">
+                <input id="vy-set-confirm" type="checkbox" bind:checked={draft.confirmBrowser} aria-describedby="vy-set-confirm-hint" />
+                {t("settings.confirmBrowser")}
+              </label>
+              <span id="vy-set-confirm-hint" class="vy-hint">{t("settings.confirmBrowserHint")}</span>
+            </div>
+          {/if}
+          {#if host.browsers}
+            <p class="vy-hint">{t("settings.browsersHint")}</p>
+            <div>
+              <button type="button" class="vy-btn vy-btn--secondary" onclick={() => (app.view = "browsers")}>{t("settings.browsersOpen")}</button>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if updates}
+        <section aria-labelledby="vy-set-updates">
+          <h2 id="vy-set-updates">{t("settings.updates")}</h2>
+          {#if updatesFrom}
+            <p class="vy-hint">{t("settings.updatesFrom", { manager: updatesFrom.manager })}</p>
+            {#if updatesFrom.command}<p class="vy-hint">{t("settings.updatesFromCommand", { command: "" })}<code dir="ltr">{updatesFrom.command}</code></p>{/if}
+          {:else}
+          {#if host.desktopPrefs}
+            <div class="vy-field">
+              <label class="vy-check">
+                <input type="checkbox" checked={desktop?.autoUpdateCheck === true} disabled={!desktop} onchange={(e) => setDesktop("autoUpdateCheck", e.currentTarget.checked)} aria-describedby="vy-set-autoupdate-hint" />
+                {t("settings.autoUpdateCheck")}
+              </label>
+              <span id="vy-set-autoupdate-hint" class="vy-hint">{t("settings.autoUpdateCheckHint")}</span>
+            </div>
+          {/if}
+          <div class="update-row">
+            {#if update.kind === "available" || update.kind === "installing"}
+              <button type="button" class="vy-btn vy-btn--primary" disabled={update.kind === "installing"} onclick={installUpdate}>
+                {#if update.kind === "installing"}<span class="vy-spinner" aria-hidden="true"></span>{t("settings.installing")}{:else}{t("settings.installUpdate")}{/if}
+              </button>
+            {:else}
+              <button type="button" class="vy-btn vy-btn--secondary" disabled={update.kind === "checking"} onclick={checkUpdate}>
+                {#if update.kind === "checking"}<span class="vy-spinner" aria-hidden="true"></span>{t("settings.checking")}{:else}{t("settings.checkNow")}{/if}
+              </button>
+            {/if}
+            <span role="status">
+              {#if update.kind === "current"}{t("settings.upToDate")}{:else if update.kind === "available"}{t("settings.updateAvailable", { version: update.version })}{/if}
+            </span>
+          </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if crash !== undefined}
+        <section aria-labelledby="vy-set-privacy">
+          <h2 id="vy-set-privacy">{t("settings.privacy")}</h2>
+          <div class="checks">
+            <div class="vy-field">
+              <label class="vy-check">
+                <input id="vy-set-crash" type="checkbox" checked={crash} onchange={(e) => setCrash(e.currentTarget.checked)} aria-describedby="vy-set-crash-hint" />
+                {t("settings.crashReports")}
+              </label>
+              <span id="vy-set-crash-hint" class="vy-hint">{t("settings.crashReportsHint")}</span>
+            </div>
+          </div>
+        </section>
+      {/if}
+
+      {#if app.media.enabled}
+        <MediaToolsSection />
+      {/if}
     </form>
   {/if}
 </div>
 
 <style>
+  .update-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vy-space-3);
+  }
   .settings {
     flex: 1;
     overflow-y: auto;
@@ -520,6 +690,19 @@
   }
   .wide {
     grid-column: 1 / -1;
+  }
+  .machine {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vy-space-1-5);
+    margin-block-start: var(--vy-space-1-5);
+  }
+  .machine :global(svg) {
+    flex: none;
+    margin-block-start: 2px;
+  }
+  .machine a {
+    color: var(--vy-color-accent-text, var(--vy-color-accent));
   }
   fieldset {
     margin: 0;

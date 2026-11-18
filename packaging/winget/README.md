@@ -5,18 +5,24 @@ NSIS installer (per-user) and the MSI (per-machine) that `release.yml` builds.
 
 ## Per release
 
+Each release carries `wdm-<version>-package-manifests.tar.gz`, whose
+`winget/` folder holds these three files filled in (version, URLs,
+`ReleaseDate`, `InstallerSha256`). Copy them into
+`manifests/c/CoderZoneBD/WDM/<version>/` of a winget-pkgs fork, validate
+and open the PR. Or:
+
 The simplest path is [wingetcreate](https://github.com/microsoft/winget-create),
 which downloads the installers, computes the hashes and opens the PR:
 
 ```powershell
-wingetcreate update CoderZoneBD.Whoosh --version 0.1.0 `
-  --urls https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh_0.1.0_x64-setup.exe `
-         https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh_0.1.0_x64_en-US.msi `
+wingetcreate update CoderZoneBD.WDM --version 0.1.0 `
+  --urls https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh-Download-Manager_0.1.0_x64-setup.exe `
+         https://github.com/coderzonebd/whoosh-download-manager/releases/download/v0.1.0/Whoosh-Download-Manager_0.1.0_x64_en-US.msi `
   --submit
 ```
 
 For the very first submission use `wingetcreate new` or copy these three files
-into `manifests/c/CoderZoneBD/Whoosh/<version>/`, replace the version, URLs,
+into `manifests/c/CoderZoneBD/WDM/<version>/`, replace the version, URLs,
 `ReleaseDate` and `InstallerSha256` (from `SHA256SUMS`), then
 `winget validate <dir>` and `winget install --manifest <dir>` in a Windows
 Sandbox before opening the PR. Automating this from `release.yml` needs a
@@ -25,10 +31,11 @@ fine-grained token with `public_repo` on a fork of winget-pkgs
 
 ## Placeholders until the name and signing are settled
 
-- `PackageIdentifier` `CoderZoneBD.Whoosh`, `PackageName`, `Moniker` and every
+- `PackageIdentifier` `CoderZoneBD.WDM`, `PackageName`, `Moniker` and every
   `github.com/coderzonebd/whoosh-download-manager` URL.
 - Zeroed `InstallerSha256` values and version `0.0.1`.
 - **Wait for signed installers.** winget-pkgs runs malware scans on every
   submission and users see SmartScreen warnings for unsigned installers;
   submit once SignPath signing is live (docs/release.md).
-- ARM64 entries come when `release.yml` builds Windows ARM64.
+- ARM64: the generated installer manifest lists the ARM64 NSIS installer
+  next to the x64 ones (there is no ARM64 MSI).

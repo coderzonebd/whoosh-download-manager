@@ -15,9 +15,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use whoosh_proto::{
-    ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, auth, method,
-};
+use wdm_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, auth, method};
 
 use crate::error::ClientError;
 

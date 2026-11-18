@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  yt-dlp_macos is a PyInstaller program: it unpacks a Python runtime and
+  its libraries (signed by the yt-dlp project, not by us) and loads them.
+  Under the hardened runtime (Developer ID signing) that needs library
+  validation off. Used by release.yml only when Developer ID signing is
+  configured; untested until then.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>

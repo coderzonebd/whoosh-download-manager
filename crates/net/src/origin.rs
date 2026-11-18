@@ -2,7 +2,7 @@ use std::fmt;
 use std::net::IpAddr;
 
 use url::Url;
-use whoosh_core::SourceError;
+use wdm_core::SourceError;
 
 /// Scheme, host and port: the unit of connection pooling and `Alt-Svc`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

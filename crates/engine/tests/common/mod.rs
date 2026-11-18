@@ -16,14 +16,14 @@ use bytes::Bytes;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use tokio::time::Instant;
-use whoosh_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
-use whoosh_core::{
+use wdm_core::testing::{MemJournal, MemSourceFactory, MemStateStore, MemStorageProvider};
+use wdm_core::{
     ByteStream, OpenRequest, Protocol, RangeSource, RemoteMeta, SourceError, Storage,
     StorageProvider, Validators,
 };
-use whoosh_engine::{Engine, EngineConfig, EngineDeps};
-use whoosh_proto::service::Service;
-use whoosh_proto::{AddParams, DownloadDetail, DownloadState, IdParams};
+use wdm_engine::{Engine, EngineConfig, EngineDeps};
+use wdm_proto::service::Service;
+use wdm_proto::{AddParams, DownloadDetail, DownloadState, IdParams};
 
 pub const KIB: u64 = 1024;
 pub const MIB: u64 = 1024 * 1024;
@@ -80,6 +80,10 @@ pub enum Cap {
     Throttle(Option<Duration>),
     /// Excess connections are reset.
     Reset,
+    /// Excess connections get their headers, then this many bytes per
+    /// second (a tenth of it every 100 ms) and hold no slot (labserver's
+    /// `refuse = "trickle"`).
+    Trickle(u64),
 }
 
 #[derive(Clone)]
@@ -146,6 +150,8 @@ pub struct SrcState {
     pub active: usize,
     pub peak: usize,
     pub opens: u64,
+    /// Responses over the cap that were trickled (`Cap::Trickle`).
+    pub trickled: u64,
     pub expired: bool,
     pub ranges: Vec<Option<(u64, u64)>>,
     pub probe_failures: VecDeque<SourceError>,
@@ -243,6 +249,10 @@ impl FaultSource {
         lock(&self.st).starts
     }
 
+    pub fn trickled(&self) -> u64 {
+        lock(&self.st).trickled
+    }
+
     pub fn peak(&self) -> usize {
         lock(&self.st).peak
     }
@@ -301,7 +311,7 @@ struct Body {
     expire_after: Option<u64>,
     versions: usize,
     done: bool,
-    _guard: ActiveGuard,
+    _guard: Option<ActiveGuard>,
 }
 
 async fn next_chunk(mut b: Body) -> Option<(Result<Bytes, SourceError>, Body)> {
@@ -455,16 +465,25 @@ impl FaultSource {
                         self.cfg.accepts_ranges && self.cfg.honours_ranges,
                     );
                 }
+                let mut trickle = None;
                 if let Some((max, cap)) = self.cfg.cap
                     && s.active >= max
                 {
-                    return Err(match cap {
-                        Cap::Throttle(ra) => SourceError::Throttled {
-                            message: "503".into(),
-                            retry_after: ra,
-                        },
-                        Cap::Reset => SourceError::Transient("connection reset".into()),
-                    });
+                    match cap {
+                        Cap::Throttle(ra) => {
+                            return Err(SourceError::Throttled {
+                                message: "503".into(),
+                                retry_after: ra,
+                            });
+                        }
+                        Cap::Reset => {
+                            return Err(SourceError::Transient("connection reset".into()));
+                        }
+                        Cap::Trickle(rate) => {
+                            s.trickled += 1;
+                            trickle = Some(rate);
+                        }
+                    }
                 }
                 let v = s.version;
                 if req.expect.conflicts_with(&self.validators_of(v)) {
@@ -483,10 +502,13 @@ impl FaultSource {
                     }
                     None => data.clone(),
                 };
-                s.active += 1;
-                s.peak = s.peak.max(s.active);
-                body
+                if trickle.is_none() {
+                    s.active += 1;
+                    s.peak = s.peak.max(s.active);
+                }
+                (body, trickle)
             };
+            let (body, trickle) = body;
             let b = Body {
                 data: body,
                 pos: 0,
@@ -494,9 +516,13 @@ impl FaultSource {
                 ramp: self.cfg.ramp,
                 noise: self.cfg.noise,
                 rng: fastrand::Rng::with_seed(n),
-                chunk: self.cfg.chunk,
-                rate: plan.rate.or(self.cfg.per_conn_bps),
-                global: self.global.clone(),
+                chunk: trickle.map_or(self.cfg.chunk, |r| (r as usize / 10).max(1)),
+                rate: trickle.or(plan.rate).or(self.cfg.per_conn_bps),
+                global: if trickle.is_some() {
+                    None
+                } else {
+                    self.global.clone()
+                },
                 plan,
                 stalled: false,
                 shared: self.st.clone(),
@@ -504,7 +530,7 @@ impl FaultSource {
                 expire_after: self.cfg.expire_after,
                 versions: self.versions.len(),
                 done: false,
-                _guard: ActiveGuard(self.st.clone()),
+                _guard: trickle.is_none().then(|| ActiveGuard(self.st.clone())),
             };
             Ok((meta, futures::stream::unfold(b, next_chunk).boxed()))
         }
@@ -869,6 +895,7 @@ pub fn add_params(url: &str) -> AddParams {
         checksum: None,
         connections: None,
         queue: None,
+        from_browser: false,
     }
 }
 
@@ -936,7 +963,7 @@ pub fn assert_same(got: &[u8], want: &[u8]) {
     }
 }
 
-/// Log to the test output (`RUST_LOG=whoosh_engine=debug`).
+/// Log to the test output (`RUST_LOG=wdm_engine=debug`).
 pub fn trace() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -970,13 +997,13 @@ impl SlowState {
     }
 }
 
-impl whoosh_core::StateStore for SlowState {
-    fn load_downloads(&self) -> BoxFuture<'_, io::Result<Vec<whoosh_core::DownloadRecord>>> {
+impl wdm_core::StateStore for SlowState {
+    fn load_downloads(&self) -> BoxFuture<'_, io::Result<Vec<wdm_core::DownloadRecord>>> {
         self.inner.load_downloads()
     }
     fn save_download<'a>(
         &'a self,
-        record: &'a whoosh_core::DownloadRecord,
+        record: &'a wdm_core::DownloadRecord,
     ) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let d = *lock(&self.save_delay);
@@ -998,7 +1025,7 @@ impl whoosh_core::StateStore for SlowState {
     fn host_profile<'a>(
         &'a self,
         host: &'a str,
-    ) -> BoxFuture<'a, io::Result<Option<whoosh_core::HostProfile>>> {
+    ) -> BoxFuture<'a, io::Result<Option<wdm_core::HostProfile>>> {
         self.inner.host_profile(host)
     }
     fn sync(&self) -> BoxFuture<'_, io::Result<()>> {
@@ -1010,7 +1037,7 @@ impl whoosh_core::StateStore for SlowState {
                 .load_downloads()
                 .await?
                 .iter()
-                .any(|r| r.state == whoosh_proto::DownloadState::Completed);
+                .any(|r| r.state == wdm_proto::DownloadState::Completed);
             if completed {
                 self.syncs_after_completed.fetch_add(1, Relaxed);
             }
@@ -1022,7 +1049,7 @@ impl whoosh_core::StateStore for SlowState {
     }
     fn save_host_profile<'a>(
         &'a self,
-        profile: &'a whoosh_core::HostProfile,
+        profile: &'a wdm_core::HostProfile,
     ) -> BoxFuture<'a, io::Result<()>> {
         Box::pin(async move {
             let d = *lock(&self.profile_delay);
@@ -1094,7 +1121,7 @@ pub struct FakeClock {
 }
 
 impl FakeClock {
-    pub fn at(start: whoosh_engine::LocalTime) -> Arc<Self> {
+    pub fn at(start: wdm_engine::LocalTime) -> Arc<Self> {
         Arc::new(Self {
             origin: Instant::now(),
             start_ms: start.minutes() * 60_000,
@@ -1114,31 +1141,31 @@ impl FakeClock {
     }
 }
 
-impl whoosh_engine::Clock for FakeClock {
+impl wdm_engine::Clock for FakeClock {
     fn now_ms(&self) -> i64 {
         self.start_ms + self.origin.elapsed().as_millis() as i64 + *lock(&self.skew_ms)
     }
 
-    fn local(&self) -> whoosh_engine::LocalTime {
+    fn local(&self) -> wdm_engine::LocalTime {
         let utc_min = self.now_ms().div_euclid(60_000);
-        whoosh_engine::LocalTime::from_minutes(utc_min + *lock(&self.offset_min))
+        wdm_engine::LocalTime::from_minutes(utc_min + *lock(&self.offset_min))
     }
 }
 
 /// Records after-done actions instead of running them.
 #[derive(Debug, Default)]
 pub struct FakePower {
-    pub ran: Mutex<Vec<(whoosh_proto::AfterDone, Instant)>>,
+    pub ran: Mutex<Vec<(wdm_proto::AfterDone, Instant)>>,
 }
 
 impl FakePower {
-    pub fn actions(&self) -> Vec<whoosh_proto::AfterDone> {
+    pub fn actions(&self) -> Vec<wdm_proto::AfterDone> {
         lock(&self.ran).iter().map(|(a, _)| *a).collect()
     }
 }
 
-impl whoosh_engine::PowerControl for FakePower {
-    fn run(&self, action: whoosh_proto::AfterDone) -> BoxFuture<'static, io::Result<()>> {
+impl wdm_engine::PowerControl for FakePower {
+    fn run(&self, action: wdm_proto::AfterDone) -> BoxFuture<'static, io::Result<()>> {
         lock(&self.ran).push((action, Instant::now()));
         Box::pin(async { Ok(()) })
     }

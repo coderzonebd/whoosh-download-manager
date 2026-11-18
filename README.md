@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/desktop/src-tauri/icons/whoosh.svg" width="112" alt="Whoosh logo">
+<img src="apps/desktop/src-tauri/icons/wdm.svg" width="112" alt="Whoosh Download Manager logo">
 
 # Whoosh Download Manager
 
@@ -13,19 +13,19 @@ Open-source, crash-proof, and measured against every competitor in public.
 [![Platforms](https://img.shields.io/badge/targets-Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-6a4bd8)](MASTER-PLAN.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome%20(into%20dev)-2f74ec)](CONTRIBUTING.md)
 
-[Benchmarks](#measured-not-claimed) · [Features](#what-the-engine-does-today) · [Quick start](#quick-start) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh)
+[Benchmarks](#measured-not-claimed) · [Features](#what-the-engine-does-today) · [Quick start](#quick-start) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh-download-manager)
 
 </div>
 
 ---
 
-> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux, macOS and Windows and can be built from source (on Windows the whole test suite runs in CI; see [docs/windows.md](docs/windows.md)). The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `whoosh`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
+> **Status: pre-release. Phase 1 (the engine) is done; there is no public release yet.** The engine, daemon and CLI work today on Linux, macOS and Windows and can be built from source (on Windows the whole test suite runs in CI; see [docs/windows.md](docs/windows.md)). The first release comes once the desktop app and the browser extension are built (Phase 2, v1.0). Its command is `wdm`. Benchmark runs recorded before the rename call it by its old codename, `vayu`.
 
 ## Measured, not claimed
 
-Every number below comes from [`whoosh-bench`](crates/bench). It runs Whoosh and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
+Every number below comes from [`wdm-bench`](crates/bench). It runs Whoosh Download Manager and nine other downloaders against [`labserver`](crates/labserver), a test server that throttles, drops, stalls, lies about ranges, rotates files and redirects. Each case is run 7 times, compared with a Mann-Whitney U test, and timed **until the file is safely on disk**. Raw data for every run is committed in [`docs/bench/data`](docs/bench/data).
 
-| | Whoosh | Best competitor |
+| | WDM | Best competitor |
 |---|---|---|
 | **Correct files** | **175 / 175 runs byte-exact**, 0 wrong names | Gopeed: 14 corrupt files · Surge: 1 corrupt file |
 | **Crash test**: 1,000 × `kill -9` mid-download | **0 corrupt, 0 duplicates** (1,584 downloads) | not measured by anyone else |
@@ -37,7 +37,7 @@ Every number below comes from [`whoosh-bench`](crates/bench). It runs Whoosh and
 
 <sub>Run sets <a href="docs/bench/data/2026-11-13-pop-os-phase1-gate4/report.md">2026-11-13-pop-os-phase1-gate4</a>, <a href="docs/bench/data/2026-11-13-pop-os-phase1-hardkill-9665f1b">hardkill-9665f1b</a> and <a href="docs/bench/data/2026-11-13-pop-os-phase1-cdn3/report.md">cdn3</a>: Pop!_OS laptop, loopback and real internet. Times are to the file being safely on disk. Competitors: curl, wget, aria2c, aria2-next, Mister DM, Surge, Gopeed. Lower is better.</sub>
 
-Whoosh doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
+Whoosh Download Manager doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
 
 ## What the engine does today
 
@@ -59,23 +59,42 @@ Whoosh doesn't call a download done until the bytes are synced to disk, so a pow
   - Bangla and other Unicode file names (RFC 5987), with path-traversal protection.
 - **Download manager basics:** queues, categories, a global speed limit, pause and resume, checksums, mirrors.
 - **One daemon, many clients:**
-  - `whoosh-daemon` with a local, token-protected JSON-RPC/WebSocket API ([protocol](docs/api/PROTOCOL.md));
-  - the `whoosh` CLI;
+  - `wdm-daemon` with a local, token-protected JSON-RPC/WebSocket API ([protocol](docs/api/PROTOCOL.md));
+  - the `wdm` CLI;
   - a native-messaging host for the browser extension.
 
-## Quick start
+## Install
+
+One command per system; each checks what it downloads and the app keeps itself up to date afterwards.
+
+| System | Command |
+|---|---|
+| Windows | `winget install --id CoderZoneBD.WDM -e` |
+| macOS (Homebrew) | `brew install --cask coderzonebd/tap/whoosh-download-manager` |
+| Any system, one script: Linux and macOS | `curl -fsSL https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install \| sh` |
+| Any system, one script: Windows (PowerShell) | `irm https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/packaging/install/install \| iex` |
+| Arch Linux | `yay -S wdm` (AUR) |
+
+The script is the same file for every system: it works out which one it runs on. On Windows it uses winget, else the per-user installer; on macOS Homebrew, else the `.dmg`; on Linux it uses apt (Debian, Ubuntu, Mint), dnf or zypper (Fedora, openSUSE) through the signed WDM repository, else the AppImage. The installers are also on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases). How each channel updates: [docs/release.md](docs/release.md#package-channels).
+
+The browser extension: [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/whoosh-download-manager/) and [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/lbcnfampnnfcbfacehkdjlggmbigpbdh); for Chrome, Brave and other Chromium browsers, the zip on the releases page. The app's *Connect your browser* page links the right one.
+
+The apt and rpm repository is hosted by [Cloudsmith](https://cloudsmith.com), free for open source:
+[![Hosted By: Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
+
+## Quick start (from source)
 
 ```bash
 # build (Rust toolchain pinned in rust-toolchain.toml)
-cargo build --release -p whoosh-cli -p whoosh-daemon
+cargo build --release -p wdm-cli -p wdm-daemon
 
 # download: the daemon starts on first use and keeps running
-target/release/whoosh get https://example.com/big.iso -o ~/Downloads
+target/release/wdm get https://example.com/big.iso -o ~/Downloads
 
 # queue a few, watch them, inspect one
-target/release/whoosh add https://example.com/a.zip https://example.com/b.zip --queue night
-target/release/whoosh watch
-target/release/whoosh info <id>
+target/release/wdm add https://example.com/a.zip https://example.com/b.zip --queue night
+target/release/wdm watch
+target/release/wdm info <id>
 ```
 
 All commands are listed in [`crates/cli`](crates/cli/README.md). To benchmark on your own machine, see [`docs/bench`](docs/bench/README.md).
@@ -84,19 +103,20 @@ All commands are listed in [`crates/cli`](crates/cli/README.md). To benchmark on
 
 ```mermaid
 flowchart LR
-  ext[Browser extension] -- native messaging --> nm[whoosh-nmhost]
-  cli[whoosh CLI] -- JSON-RPC / WebSocket --> d
+  ext[Browser extension] -- native messaging --> nm[wdm-nmhost]
+  cli[wdm CLI] -- JSON-RPC / WebSocket --> d
   ui[Desktop app · Phase 2] -- JSON-RPC / WebSocket --> d
-  nm --> d[whoosh-daemon]
-  d --> e[whoosh-engine<br/>scheduler · tuner · journal]
-  e --> n[whoosh-net<br/>H1 · H2 · H3 · TLS]
-  e --> s[whoosh-store<br/>files · journal · SQLite]
+  nm --> d[wdm-daemon]
+  d --> e[wdm-engine<br/>scheduler · tuner · journal]
+  e --> n[wdm-net<br/>H1 · H2 · H3 · TLS]
+  e --> s[wdm-store<br/>files · journal · SQLite]
 ```
 
 | Path | What |
 |---|---|
 | [`crates/core`](crates/core) | engine types and traits (ranges, sources, storage, journal) |
 | [`crates/net`](crates/net) · [`engine`](crates/engine) · [`store`](crates/store) | network, scheduling, durable storage |
+| [`crates/media`](crates/media) | video and audio sites: yt-dlp and ffmpeg as separate programs, shipped with the desktop app (else fetched on first use), downloads through the engine |
 | [`crates/daemon`](crates/daemon) · [`cli`](crates/cli) · [`nmhost`](crates/nmhost) | the service and its clients |
 | [`crates/proto`](crates/proto) · [`packages/api-client`](packages/api-client) | the local API, in Rust and TypeScript |
 | [`crates/labserver`](crates/labserver) · [`bench`](crates/bench) | fault-injecting test server and benchmark harness |
@@ -108,7 +128,7 @@ flowchart LR
 |---|---|---|
 | **0 · Foundations** | monorepo, CI, design system, labserver, bench, baseline report | ✅ done |
 | **1 · Engine** | H1/H2/H3 engine, daemon, CLI, crash-proof journal; [public gate](MASTER-PLAN.md#phase-1--engine-months-13) | ✅ done |
-| **2 · v1.0** | desktop app (Windows, macOS, Linux), extension Pro mode, self-healing links, yt-dlp, signed installers, Bangla + English | next |
+| **2 · v1.0** | desktop app (Windows, macOS, Linux), extension Pro mode, self-healing links, yt-dlp, signed installers, Bangla + English and ten machine-seeded languages on Weblate | next |
 | **3 · v1.5** | BitTorrent, FTP/SFTP, HLS/DASH, multi-source + LAN peers, BDIX mode, Docker, web remote | planned |
 | **4 · v2.0** | extension Lite mode (WASM), Android, iOS companion, send-to-device, plugins | planned |
 
@@ -125,9 +145,9 @@ feat/your-change ──PR──▶ dev ──release PR──▶ pub ──tag�
 
 Setup, rules and commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Please report security issues privately, as described in [SECURITY.md](SECURITY.md).
 
-## Support Whoosh
+## Support Whoosh Download Manager
 
-Whoosh is free and has no ads or telemetry. If it saves you time, you can help keep it going:
+Whoosh Download Manager is free and has no ads or telemetry. If it saves you time, you can help keep it going:
 
 - [GitHub Sponsors](https://github.com/sponsors/coderzonebd)
 - [Buy Me a Coffee](https://buymeacoffee.com/devrkb21)

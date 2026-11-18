@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // System notifications: a download finished or failed while the window was
 // not in front (in front, the UI's own toast says it), and the one-time
-// notice that closing the window left Whoosh running in the tray.
-import type { WhooshClient } from "@whoosh/api-client";
-import type { AppState } from "@whoosh/ui";
+// notice that closing the window left WDM running in the tray.
+import type { WdmClient } from "@wdm/api-client";
+import type { AppState } from "@wdm/ui";
 
 type Notify = (title: string, body: string) => void;
 
@@ -23,7 +23,7 @@ function inFront(): boolean {
   return !document.hidden && document.hasFocus();
 }
 
-export function startNotifications(client: WhooshClient, app: AppState): void {
+export function startNotifications(client: WdmClient, app: AppState): void {
   let notify: Notify | undefined;
   void notifier().then((n) => (notify = n));
   const { t } = app.i18n;
@@ -35,6 +35,23 @@ export function startNotifications(client: WhooshClient, app: AppState): void {
     const title = t("app.name");
     notify(title, t(e.state === "completed" ? "toast.completed" : "toast.failed", { name }));
   });
+
+  // Launch at login was just turned on (first start of an installed build):
+  // say so once, with the way to Settings, where it can be turned off.
+  void import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke<boolean>("take_login_notice"))
+    .then((first) => {
+      if (!first) return;
+      app.toasts.push(
+        {
+          tone: "info",
+          message: t("desktop.loginNotice"),
+          action: { label: t("desktop.loginNoticeAction"), run: () => (app.view = "settings") },
+        },
+        12_000,
+      );
+    })
+    .catch(() => {});
 
   void import("@tauri-apps/api/event").then(({ listen }) =>
     listen<{ first: boolean }>("desktop://hidden-to-tray", (ev) => {

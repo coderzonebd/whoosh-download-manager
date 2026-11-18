@@ -2,16 +2,16 @@
 //! `sync` (what completing a download costs).
 //!
 //! ```text
-//! cargo run --release -p whoosh-store --example state_bench -- [--dir DIR] [--downloads 10000]
+//! cargo run --release -p wdm-store --example state_bench -- [--dir DIR] [--downloads 10000]
 //! ```
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use futures::future::join_all;
-use whoosh_core::{DownloadRecord, StateStore};
-use whoosh_proto::{DownloadState, Header, RequestContext};
-use whoosh_store::SqliteStateStore;
+use wdm_core::{DownloadRecord, StateStore};
+use wdm_proto::{DownloadState, Header, RequestContext};
+use wdm_store::SqliteStateStore;
 
 fn record(i: u64) -> DownloadRecord {
     DownloadRecord {
@@ -42,6 +42,8 @@ fn record(i: u64) -> DownloadRecord {
         added_at: 1_762_780_000_000 + i as i64,
         completed_at: None,
         error: None,
+        awaiting_confirmation: false,
+        active_ms: None,
     }
 }
 
@@ -67,7 +69,7 @@ fn main() {
         .unwrap();
     rt.block_on(async {
         let tmp = tempfile::Builder::new()
-            .prefix("whoosh-state-bench-")
+            .prefix("wdm-state-bench-")
             .tempdir_in(&dir)
             .unwrap();
         let path = tmp.path().join("state.db");

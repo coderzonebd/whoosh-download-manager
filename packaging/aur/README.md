@@ -1,21 +1,28 @@
-# AUR package `whoosh` (template)
+# AUR package `whoosh-download-manager` (template)
 
 `PKGBUILD` builds from the source archive that `release.yml` attaches to
-every release (`whoosh-<version>-source.tar.gz`, a `git archive` of the tag),
+every release (`wdm-<version>-source.tar.gz`, a `git archive` of the tag),
 following the Arch [Rust](https://wiki.archlinux.org/title/Rust_package_guidelines)
 and [Node.js](https://wiki.archlinux.org/title/Node.js_package_guidelines)
 package guidelines: dependencies are fetched in `prepare()`, `build()` runs
 offline (`--frozen`), Arch's stable Rust is used (`RUSTUP_TOOLCHAIN=stable`)
 instead of the toolchain pinned in `rust-toolchain.toml`.
 
-It installs `whoosh-desktop`, `whoosh-nmhost`, the desktop entry, AppStream
-metainfo and icons from [`../linux`](../linux), and system-wide native
-messaging manifests for Firefox, Chromium and Google Chrome.
+It installs `wdm-desktop`, `wdm-daemon`, the command line `wdm`,
+`wdm-nmhost`, the desktop entry, AppStream metainfo and icons from
+[`../linux`](../linux), and the same system-wide native messaging manifests
+(with the store extension IDs) and store offers as the `.deb`, listed in
+`apps/desktop/src-tauri/installer/linux/files.txt` (see
+[`../browsers`](../browsers)).
 
 ## Per release
 
+The release's `wdm-<version>-package-manifests.tar.gz` has `aur/PKGBUILD`
+and `aur/.SRCINFO` filled in (version, checksum of the source archive). Copy
+both into the AUR clone, test-build, and push:
+
 ```bash
-# in a clone of ssh://aur@aur.archlinux.org/whoosh.git
+# in a clone of ssh://aur@aur.archlinux.org/wdm.git
 cp /path/to/repo/packaging/aur/PKGBUILD .
 updpkgsums                     # or paste the hash from SHA256SUMS
 makepkg -sci                   # build, check, install in a clean chroot ideally (extra-x86_64-build)
@@ -24,7 +31,7 @@ makepkg --printsrcinfo > .SRCINFO
 git commit -am "Update to <version>" && git push
 ```
 
-A binary package (`whoosh-bin`, repackaging the release `.deb`) can follow if
+A binary package (`wdm-bin`, repackaging the release `.deb`) can follow if
 build times on user machines become a complaint. Pushing from CI would need an
 `AUR_SSH_KEY` secret (not used yet).
 

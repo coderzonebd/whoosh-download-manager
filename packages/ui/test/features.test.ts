@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Queues, the scheduler, history and the desktop extras, driven through the
 // whole shell on the mock daemon.
-import type { WhooshClient } from "@whoosh/api-client";
-import { createMockClient, type MockWhooshClient } from "@whoosh/api-client/mock";
+import type { WdmClient } from "@wdm/api-client";
+import { createMockClient, type MockWdmClient } from "@wdm/api-client/mock";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/components/App.svelte";
-import type { DesktopPrefs, Host } from "../src/lib/host.ts";
+import type { BrowserId, BrowserState, DesktopPrefs, Host, UpdateInfo } from "../src/lib/host.ts";
 import type { AppState } from "../src/lib/state/app.svelte.ts";
 import { withEvents, withoutQueues } from "./helpers.ts";
 
@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 /** Records every call so tests can assert what reached the daemon. */
-function spy<C extends WhooshClient>(client: C): C & { log: { method: string; params: unknown }[] } {
+function spy<C extends WdmClient>(client: C): C & { log: { method: string; params: unknown }[] } {
   const log: { method: string; params: unknown }[] = [];
   const call = client.call.bind(client) as (m: string, p: unknown) => Promise<unknown>;
   return Object.assign(Object.create(client) as C, {
@@ -37,8 +37,8 @@ function spy<C extends WhooshClient>(client: C): C & { log: { method: string; pa
   });
 }
 
-async function setup(opts: { client?: WhooshClient; host?: Host; locale?: string } = {}) {
-  const mock: MockWhooshClient = createMockClient({ autoTick: false });
+async function setup(opts: { client?: WdmClient; host?: Host; locale?: string } = {}) {
+  const mock: MockWdmClient = createMockClient({ autoTick: false });
   const client = spy(opts.client ?? mock);
   closeClient = () => client.close();
   let app: AppState | undefined;
@@ -286,7 +286,7 @@ describe("settings", () => {
   });
 
   it("applies desktop settings right away and fills the folder from the picker", async () => {
-    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false };
+    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: true };
     let atLogin = false;
     const host: Host = {
       pickFolder: vi.fn(async () => "/home/me/Videos"),
@@ -302,20 +302,79 @@ describe("settings", () => {
     const { user } = await setup({ host });
     await user.click(within(nav()).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "This computer" })).toBeInTheDocument();
-    const login = await screen.findByRole("checkbox", { name: "Start Whoosh when I log in" });
+    const login = await screen.findByRole("checkbox", { name: "Start Whoosh Download Manager when I log in" });
     await waitFor(() => expect(login).toBeEnabled());
     expect(login).not.toBeChecked(); // off by default
     await user.click(login);
     expect(host.launchAtLogin?.set).toHaveBeenCalledWith(true);
-    const tray = screen.getByRole("checkbox", { name: "Closing the window keeps Whoosh in the tray" });
+    const tray = screen.getByRole("checkbox", { name: "Closing the window keeps Whoosh Download Manager in the tray" });
     expect(tray).toBeChecked();
     await user.click(tray);
     await user.click(screen.getByRole("checkbox", { name: "Quitting also stops downloads" }));
-    expect(prefs).toEqual({ closeToTray: false, stopDaemonOnQuit: true });
+    expect(prefs).toEqual({ closeToTray: false, stopDaemonOnQuit: true, autoUpdateCheck: true });
 
     await user.click(screen.getByRole("button", { name: "Browse…" }));
     expect(screen.getByRole("textbox", { name: "Default folder" })).toHaveValue("/home/me/Videos");
     expect(host.pickFolder).toHaveBeenCalledWith({ title: "Choose the default download folder", defaultPath: "~/Downloads" });
+  });
+
+  it("sends crash reports by default, with a switch to turn them off", async () => {
+    const state = { enabled: true, noticeShown: true };
+    const host: Host = {
+      crashReports: {
+        get: async () => ({ ...state }),
+        set: vi.fn(async (v: boolean) => void (state.enabled = v)),
+        dismissNotice: vi.fn(async () => {}),
+      },
+    };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Privacy" })).toBeInTheDocument();
+    const box = await screen.findByRole("checkbox", { name: "Send crash reports" });
+    await waitFor(() => expect(box).toBeChecked()); // on by default
+    expect(box).toHaveAccessibleDescription(/anonymous crash reports.*No file names, links or user name/);
+    await user.click(box);
+    expect(host.crashReports?.set).toHaveBeenCalledWith(false);
+    expect(state.enabled).toBe(false);
+  });
+
+  it("tells the user once about crash reports, with a link to the switch", async () => {
+    const state = { enabled: true, noticeShown: false };
+    const host: Host = {
+      crashReports: {
+        get: async () => ({ ...state }),
+        set: vi.fn(async (v: boolean) => void (state.enabled = v)),
+        dismissNotice: vi.fn(async () => void (state.noticeShown = true)),
+      },
+    };
+    const { user } = await setup({ host });
+    const text = await screen.findByText("Whoosh Download Manager sends anonymous crash reports to help fix bugs. No file names or links. Turn off in Settings.");
+    // Non-blocking: the list is still usable behind it.
+    expect(screen.getByRole("grid", { name: "Downloads" })).not.toHaveAttribute("inert");
+    await user.click(screen.getByRole("button", { name: "Open Settings" }));
+    expect(host.crashReports?.dismissNotice).toHaveBeenCalled();
+    expect(text).not.toBeInTheDocument();
+    const box = await screen.findByRole("checkbox", { name: "Send crash reports" });
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+
+  it("does not show the crash notice again once dismissed", async () => {
+    const dismissNotice = vi.fn(async () => {});
+    const host: Host = { crashReports: { get: async () => ({ enabled: true, noticeShown: false }), set: vi.fn(async () => {}), dismissNotice } };
+    const { user } = await setup({ host });
+    const text = await screen.findByText(/anonymous crash reports/);
+    await user.click(within(text.closest("[role=status]") as HTMLElement).getByRole("button", { name: "Dismiss" }));
+    expect(dismissNotice).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/anonymous crash reports/)).not.toBeInTheDocument();
+  });
+
+  it("hides crash reports in a build without a crash-report address", async () => {
+    const host: Host = { crashReports: { get: async () => undefined, set: vi.fn(async () => {}), dismissNotice: vi.fn(async () => {}) } };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    await screen.findByRole("heading", { name: "Settings" });
+    expect(screen.queryByRole("checkbox", { name: "Send crash reports" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/anonymous crash reports/)).not.toBeInTheDocument();
   });
 
   it("offers the folder picker in the add dialog", async () => {
@@ -329,6 +388,38 @@ describe("settings", () => {
     await user.click(within(dialog).getByRole("button", { name: "Download" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(client.log.find((c) => c.method === "download.add")?.params).toMatchObject({ directory: "/data/iso" });
+  });
+});
+
+describe("clipboard", () => {
+  it("fills in a download link from the clipboard when the add dialog opens empty", async () => {
+    const host: Host = { readClipboard: async () => "  https://example.com/from-clipboard.iso\n" };
+    const { user } = await setup({ host });
+    await user.click(screen.getByRole("button", { name: "Add download" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a download" });
+    const address = within(dialog).getByRole("textbox", { name: "Address" });
+    await waitFor(() => expect(address).toHaveValue("https://example.com/from-clipboard.iso"));
+    // Selected, so typing replaces it.
+    await waitFor(() => expect((address as HTMLInputElement).selectionEnd).toBe("https://example.com/from-clipboard.iso".length));
+    expect((address as HTMLInputElement).selectionStart).toBe(0);
+  }, 20_000);
+
+  it("leaves the address empty when the clipboard holds no link", async () => {
+    const readClipboard = vi.fn(async () => "just some words");
+    const { user } = await setup({ host: { readClipboard } });
+    await user.click(screen.getByRole("button", { name: "Add download" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a download" });
+    await waitFor(() => expect(readClipboard).toHaveBeenCalled());
+    expect(within(dialog).getByRole("textbox", { name: "Address" })).toHaveValue("");
+  });
+
+  it("does not read the clipboard when the dialog opens with a link", async () => {
+    const readClipboard = vi.fn(async () => "https://example.com/other.zip");
+    const { app } = await setup({ host: { readClipboard } });
+    act(() => app.openAdd("https://example.com/from-link.zip"));
+    const dialog = await screen.findByRole("dialog", { name: "Add a download" });
+    expect(within(dialog).getByRole("textbox", { name: "Address" })).toHaveValue("https://example.com/from-link.zip");
+    expect(readClipboard).not.toHaveBeenCalled();
   });
 });
 
@@ -352,4 +443,86 @@ describe("Bangla", () => {
     await user.click(within(nav()).getByRole("button", { name: "ইতিহাস" }));
     expect(await screen.findByRole("heading", { name: "ইতিহাস" })).toBeInTheDocument();
   });
+});
+
+describe("connect your browser and updates (desktop)", () => {
+  function browsersHost(first = false) {
+    let rows: BrowserState[] = [
+      { browser: "chrome", inUse: true, hostRegistered: false, extensionFound: false, store: "github" },
+      { browser: "edge", inUse: true, hostRegistered: true, extensionFound: false, store: "edgeAddOns" },
+      { browser: "firefox", inUse: true, hostRegistered: true, extensionFound: true, store: "github" },
+      { browser: "vivaldi", inUse: false, hostRegistered: false, extensionFound: false, store: "github" },
+    ];
+    const browsers = {
+      status: vi.fn(async () => rows),
+      connect: vi.fn(async (b?: BrowserId) => {
+        rows = rows.map((r) => (r.browser === b ? { ...r, hostRegistered: true } : r));
+      }),
+      openStore: vi.fn(async (_b: BrowserId) => {}),
+      firstRun: vi.fn(async () => first),
+    };
+    return browsers;
+  }
+
+  it("lists the browsers in use with the next step for each", async () => {
+    const browsers = browsersHost();
+    const { user } = await setup({ host: { browsers } });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    await user.click(await screen.findByRole("button", { name: "Connect your browser…" }));
+    expect(await screen.findByRole("heading", { name: "Connect your browser" })).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: "Connect your browser" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items.map((i) => within(i).getByText(/^(Google Chrome|Microsoft Edge|Firefox)$/).textContent)).toEqual(["Google Chrome", "Microsoft Edge", "Firefox"]);
+    expect(screen.getByText("Not found on this computer: Vivaldi.")).toBeInTheDocument();
+    expect(within(items[2]!).getByText("Ready: downloads from this browser come to Whoosh Download Manager")).toBeInTheDocument();
+
+    await user.click(within(items[1]!).getByRole("button", { name: "Get it from Edge Add-ons" }));
+    expect(browsers.openStore).toHaveBeenCalledWith("edge");
+
+    await user.click(within(items[0]!).getByRole("button", { name: "Link to WDM" }));
+    expect(browsers.connect).toHaveBeenCalledWith("chrome");
+    expect((await screen.findAllByText("Google Chrome is linked to Whoosh Download Manager.")).length).toBeGreaterThan(0);
+    const chrome = within(await screen.findByRole("list", { name: "Connect your browser" })).getAllByRole("listitem")[0]!;
+    expect(await within(chrome).findByRole("button", { name: "Download the extension" })).toBeInTheDocument();
+    expect(within(chrome).getByText(/not in this browser's store yet/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(await screen.findByRole("grid")).toBeInTheDocument();
+  }, 20_000);
+
+  it("opens by itself on the first run", async () => {
+    const browsers = browsersHost(true);
+    const client = createMockClient({ autoTick: false });
+    closeClient = () => client.close();
+    render(App, { props: { client, mode: "mock", storage: null, locale: "en", host: { browsers } } });
+    expect(await screen.findByRole("heading", { name: "Connect your browser" })).toBeInTheDocument();
+    expect(browsers.firstRun).toHaveBeenCalledTimes(1);
+  }, 20_000);
+
+  it("checks for an update and installs it", async () => {
+    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: true };
+    const updates = {
+      check: vi.fn(async (): Promise<UpdateInfo | undefined> => undefined),
+      install: vi.fn(async () => {}),
+    };
+    const host: Host = {
+      desktopPrefs: { get: async () => prefs, set: vi.fn(async (p: DesktopPrefs) => (prefs = p)) },
+      updates,
+    };
+    const { user } = await setup({ host });
+    await user.click(within(nav()).getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Updates" })).toBeInTheDocument();
+    const daily = await screen.findByRole("checkbox", { name: "Keep Whoosh Download Manager up to date by itself" });
+    await waitFor(() => expect(daily).toBeChecked());
+    await user.click(daily);
+    expect(prefs.autoUpdateCheck).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Check for a new version" }));
+    expect(await screen.findByText("You have the newest version.")).toBeInTheDocument();
+    updates.check.mockResolvedValueOnce({ version: "1.2.0", currentVersion: "1.1.0" });
+    await user.click(screen.getByRole("button", { name: "Check for a new version" }));
+    expect(await screen.findByText("Version 1.2.0 is available.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Install and restart" }));
+    expect(updates.install).toHaveBeenCalledTimes(1);
+  }, 20_000);
 });

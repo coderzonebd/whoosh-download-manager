@@ -10,8 +10,13 @@ dist/
 .vite/
 
 # Tauri
-apps/*/src-tauri/gen/
+apps/desktop/src-tauri/gen/
+# The Android project (gen/android) is kept: its manifest, Gradle files and
+# launcher icons are ours; its own .gitignore leaves out the build output.
+apps/mobile/src-tauri/gen/schemas/
 apps/desktop/src-tauri/binaries/
+# yt-dlp and ffmpeg for the installers (release workflow, wdm-media-bundle)
+apps/desktop/src-tauri/media-tools/
 
 # Bench / labserver output
 /bench-results/

@@ -6,7 +6,7 @@
   be renamed and has no schedule (PROTOCOL.md).
 -->
 <script lang="ts">
-  import { MAIN_QUEUE, type AfterDone, type QueueConfig, type Schedule } from "@whoosh/api-client";
+  import { MAIN_QUEUE, type AfterDone, type QueueConfig, type Schedule } from "@wdm/api-client";
   import { untrack } from "svelte";
   import { isClock, normalizeDays } from "../lib/schedule.ts";
   import { getApp, type QueueDialog } from "../lib/state/app.svelte.ts";

@@ -10,9 +10,47 @@ export interface DesktopPrefs {
   closeToTray: boolean;
   /** Quit also stops the daemon. */
   stopDaemonOnQuit: boolean;
+  /** Look for a new version once a day (never installs on its own). */
+  autoUpdateCheck: boolean;
+}
+
+/** Browsers the "Connect your browser" page knows. */
+export type BrowserId = "chrome" | "chromium" | "brave" | "edge" | "vivaldi" | "firefox";
+
+/** Where the extension for a browser comes from. */
+export type ExtensionStore = "edgeAddOns" | "chromeWebStore" | "amo" | "github";
+
+/** One browser on the "Connect your browser" page. */
+export interface BrowserState {
+  browser: BrowserId;
+  /** This user has used the browser (its profile exists). */
+  inUse: boolean;
+  /** The native messaging host is registered for it. */
+  hostRegistered: boolean;
+  /** The extension appears in one of its profiles. */
+  extensionFound: boolean;
+  store: ExtensionStore;
+}
+
+/** A newer version the app can install. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes?: string | null;
+}
+
+export interface CrashReportsState {
+  enabled: boolean;
+  /** The first-run notice was dismissed, or the user chose in Settings. */
+  noticeShown: boolean;
 }
 
 export interface Host {
+  /**
+   * "android": the phone app. Settings leave out what makes no sense there
+   * (the list layout, typing a download folder path).
+   */
+  platform?: "android";
   /** Ask the user for a folder; undefined when they cancel. */
   pickFolder?: (opts: { title: string; defaultPath?: string | undefined }) => Promise<string | undefined>;
   /** Desktop-only settings, shown in Settings → This computer. */
@@ -20,10 +58,74 @@ export interface Host {
     get(): Promise<DesktopPrefs>;
     set(prefs: DesktopPrefs): Promise<DesktopPrefs>;
   };
+  /**
+   * Open a web page in the user's browser (the app's own webview must not
+   * navigate away). Without it, links open the usual way.
+   */
+  openUrl?: (url: string) => Promise<void>;
+  /**
+   * "Send crash reports": on by default, can be turned off. `get` resolves
+   * undefined when this build cannot send any (no crash-report address):
+   * then the switch and the first-run notice are hidden.
+   */
+  crashReports?: {
+    get(): Promise<CrashReportsState | undefined>;
+    set(on: boolean): Promise<void>;
+    /** The first-run notice was dismissed; it is not shown again. */
+    dismissNotice(): Promise<void>;
+  };
   /** Start the app when the user logs in. */
   launchAtLogin?: {
     get(): Promise<boolean>;
     set(on: boolean): Promise<void>;
+  };
+  /** The "Connect your browser" page (desktop app). */
+  browsers?: {
+    status(): Promise<BrowserState[]>;
+    /** Register the native messaging host for one browser, or every browser in use. */
+    connect(browser?: BrowserId): Promise<void>;
+    /** Open the page that installs the extension in this browser. */
+    openStore(browser: BrowserId): Promise<void>;
+    /** True once, on the first run: the page opens by itself. */
+    firstRun(): Promise<boolean>;
+  };
+  /** Bring the app window to the front, also when it is hidden in the tray (desktop app). */
+  showWindow?: () => Promise<void>;
+  /**
+   * Open the small prompt window (desktop app), or bring it to the front when it is open: a
+   * download from the browser waits for confirmation, or the extension offered a video page.
+   * The shell owns the one prompt window, whichever UI asks. With it, the main UI never asks
+   * about these itself.
+   */
+  openPrompt?: () => Promise<void>;
+  /** The prompt window has nothing left to ask: close it (prompt mode only). */
+  closePrompt?: () => Promise<void>;
+  /**
+   * The clipboard's text, for the add dialog: opened empty, it fills in a
+   * download link found there. Undefined when there is none.
+   */
+  readClipboard?: () => Promise<string | undefined>;
+  /**
+   * Open a completed download's file, or (`reveal`) show it in its folder (desktop app). The
+   * shell asks the daemon where the file is: the UI names the download, never a path.
+   */
+  openDownload?: (id: string, reveal: boolean) => Promise<void>;
+  /**
+   * The downloads the prompt window follows, for the shell: it brings the prompt window back
+   * when one ends, also while the main window sleeps in the tray (desktop app).
+   */
+  setFollowed?: (ids: string[]) => Promise<void>;
+  /**
+   * A package manager that updates this copy instead of the app (Flatpak, Scoop, an AUR build):
+   * its name and the command that updates now (may be empty). undefined: the app updates itself.
+   */
+  updatesFrom?: () => Promise<{ manager: string; command: string } | undefined>;
+  /** Signed in-app updates (desktop app). */
+  updates?: {
+    /** undefined when this is the newest version. */
+    check(): Promise<UpdateInfo | undefined>;
+    /** Download, install and restart. */
+    install(): Promise<void>;
   };
 }
 

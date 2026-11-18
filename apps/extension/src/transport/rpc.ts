@@ -3,7 +3,7 @@
 // Transport-independent JSON-RPC 2.0 bookkeeping: ids, pending requests,
 // timeouts, notifications.
 
-import { ErrorCode } from "@whoosh/api-client";
+import { ErrorCode } from "@wdm/api-client";
 
 export type JsonRpcId = number | string;
 
@@ -122,7 +122,7 @@ export class RpcPeer {
         try {
           handler(m["params"]);
         } catch (e) {
-          console.error("whoosh: notification handler failed", e);
+          console.error("wdm: notification handler failed", e);
         }
       }
       return;

@@ -2,6 +2,7 @@
 //! responses and notifications out.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use futures::stream::{BoxStream, SplitSink};
@@ -14,8 +15,11 @@ use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
-use whoosh_proto::service::Notification;
-use whoosh_proto::{HelloParams, HelloResult, PROTOCOL_VERSION, auth, method};
+use wdm_proto::service::{Notification, ServiceError};
+use wdm_proto::{
+    HelloParams, HelloResult, IdParams, MediaOfferParams, MediaOfferResult, PROTOCOL_VERSION, auth,
+    error_code, method,
+};
 
 use crate::limit::{Budget, is_over_budget};
 use crate::outbox::{Item, Outbox, Pushed};
@@ -32,13 +36,172 @@ pub mod close {
     pub const TOO_BIG: u16 = 1009;
     /// Something other than `session.hello` first, a wrong token, or a
     /// missing or malformed nonce.
-    pub const UNAUTHORIZED: u16 = whoosh_proto::close_code::UNAUTHORIZED;
+    pub const UNAUTHORIZED: u16 = wdm_proto::close_code::UNAUTHORIZED;
     /// No `session.hello` within the hello timeout.
-    pub const HELLO_TIMEOUT: u16 = whoosh_proto::close_code::HELLO_TIMEOUT;
+    pub const HELLO_TIMEOUT: u16 = wdm_proto::close_code::HELLO_TIMEOUT;
     /// `session.hello` with a protocol version this daemon does not speak.
-    pub const PROTOCOL: u16 = whoosh_proto::close_code::PROTOCOL_MISMATCH;
+    pub const PROTOCOL: u16 = wdm_proto::close_code::PROTOCOL_MISMATCH;
     /// The client fell too far behind on lossless notifications.
-    pub const TOO_SLOW: u16 = whoosh_proto::close_code::TOO_SLOW;
+    pub const TOO_SLOW: u16 = wdm_proto::close_code::TOO_SLOW;
+}
+
+/// Who is on the other end, as far as the daemon treats them differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClientKind {
+    /// The desktop window: it asks the user about downloads that wait and
+    /// shows the pages the extension offers.
+    Desktop,
+    /// The browser extension, through `wdm-nmhost`: its downloads may
+    /// wait for confirmation (`AddParams::from_browser`), and only it may
+    /// offer pages (`media.offer`).
+    Browser,
+    Other,
+}
+
+impl ClientKind {
+    fn of(name: &str) -> Self {
+        if name == "desktop" {
+            Self::Desktop
+        } else if name.starts_with("extension") {
+            Self::Browser
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// Holds one count in `counter` while alive.
+struct Counted<'a>(&'a AtomicUsize);
+
+impl<'a> Counted<'a> {
+    fn new(counter: &'a AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter)
+    }
+}
+
+impl Drop for Counted<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// `download.add`: only the daemon says whether a download came from the
+/// browser, so `fromBrowser` is set for the extension's session and
+/// cleared for everyone else.
+fn mark_origin(req: &mut rpc::Request, kind: ClientKind) {
+    if req.method != method::DOWNLOAD_ADD {
+        return;
+    }
+    if let Some(Value::Object(params)) = &mut req.params {
+        if kind == ClientKind::Browser {
+            params.insert("fromBrowser".into(), Value::Bool(true));
+        } else {
+            params.remove("fromBrowser");
+        }
+    }
+}
+
+/// A browser download that waits for confirmation: say whether a desktop
+/// window is there to ask, or the native host must start the app.
+fn mark_needs_app(method_name: &str, result: &mut Value, shared: &Shared) {
+    if method_name != method::DOWNLOAD_ADD {
+        return;
+    }
+    if result.get("awaitingConfirmation") == Some(&Value::Bool(true))
+        && shared.desktop_sessions.load(Ordering::SeqCst) == 0
+        && let Value::Object(r) = result
+    {
+        r.insert("needsApp".into(), Value::Bool(true));
+    }
+}
+
+/// A window's `media.probe` or `media.add` for a page the extension offered,
+/// sent without a browser request: the one the offer carried (its cookies
+/// for a site that shows the video only when signed in). Returns the page
+/// URL when a probe was filled in, so its canonical address can share it.
+fn fill_page_request(req: &mut rpc::Request, kind: ClientKind, shared: &Shared) -> Option<String> {
+    let name = req.method.as_str();
+    if kind == ClientKind::Browser || (name != method::MEDIA_PROBE && name != method::MEDIA_ADD) {
+        return None;
+    }
+    let Some(Value::Object(params)) = req.params.as_mut() else {
+        return None;
+    };
+    if params.get("request").is_some_and(|r| !r.is_null()) {
+        return None;
+    }
+    let url = params.get("url").and_then(Value::as_str)?.to_owned();
+    let request = shared.offers.request_for(&url, crate::offers::now_ms())?;
+    params.insert("request".into(), serde_json::to_value(request).ok()?);
+    (name == method::MEDIA_PROBE).then_some(url)
+}
+
+/// The daemon's own `media.offer`, `media.offers` and `media.takeOffer`
+/// (crate::offers); `None` for every other method.
+fn offer_method(
+    req: &rpc::Request,
+    kind: ClientKind,
+    shared: &Shared,
+) -> Option<Result<Value, ServiceError>> {
+    let name = req.method.as_str();
+    if ![
+        method::MEDIA_OFFER,
+        method::MEDIA_OFFERS,
+        method::MEDIA_TAKE_OFFER,
+    ]
+    .contains(&name)
+    {
+        return None;
+    }
+    let params = || req.params.clone().unwrap_or(Value::Null);
+    let parse = |e: serde_json::Error| ServiceError::invalid_params(e.to_string());
+    let browser_only = name == method::MEDIA_OFFER;
+    if browser_only != (kind == ClientKind::Browser) {
+        let message = if browser_only {
+            "only the browser extension offers pages"
+        } else {
+            "offered pages are for the app's windows"
+        };
+        return Some(Err(ServiceError::new(error_code::UNAUTHORIZED, message)));
+    }
+    let now = crate::offers::now_ms();
+    Some(match name {
+        method::MEDIA_OFFER => serde_json::from_value::<MediaOfferParams>(params())
+            .map_err(parse)
+            .and_then(|p| shared.offers.offer(p, now))
+            .map(|offer| {
+                let result = MediaOfferResult {
+                    id: offer.id,
+                    needs_app: shared.desktop_sessions.load(Ordering::SeqCst) == 0,
+                };
+                serde_json::to_value(result).unwrap_or(Value::Null)
+            }),
+        method::MEDIA_OFFERS => {
+            Ok(serde_json::to_value(shared.offers.list(now)).unwrap_or(Value::Null))
+        }
+        _ => serde_json::from_value::<IdParams>(params())
+            .map_err(parse)
+            .and_then(|p| shared.offers.take(&p.id, now))
+            .map(|offer| serde_json::to_value(offer).unwrap_or(Value::Null)),
+    })
+}
+
+/// The offers broadcast as notifications; a receiver that fell behind skips
+/// what it missed (a window asks with `media.offers` anyway).
+fn offer_events(
+    rx: tokio::sync::broadcast::Receiver<wdm_proto::MediaOffer>,
+) -> BoxStream<'static, Notification> {
+    futures::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(offer) => return Some((Notification::MediaOffered(offer), rx)),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    })
+    .boxed()
 }
 
 enum HandshakeEnd {
@@ -74,6 +237,13 @@ pub(crate) async fn run<S>(
     // Subscribe before answering hello, so no event falls in between; the
     // events are only sent after the hello result.
     let events = shared.service.subscribe();
+    // Offered pages go to the app's sessions, never back to the extension.
+    let offers = (ClientKind::of(&hello.client.name) != ClientKind::Browser)
+        .then(|| offer_events(shared.offers.subscribe()));
+    let events = match offers {
+        Some(offers) => futures::stream::select(events, offers).boxed(),
+        None => events,
+    };
     let result = HelloResult {
         daemon_version: shared.config.version.clone(),
         protocol: PROTOCOL_VERSION,
@@ -88,6 +258,8 @@ pub(crate) async fn run<S>(
         return;
     }
     tracing::info!(client = ?hello.client.name, version = ?hello.client.version, "session started");
+    let kind = ClientKind::of(&hello.client.name);
+    let _desktop = (kind == ClientKind::Desktop).then(|| Counted::new(&shared.desktop_sessions));
 
     let cfg = &shared.config;
     let (sink, mut stream) = ws.split();
@@ -147,7 +319,7 @@ pub(crate) async fn run<S>(
                 match msg {
                     Message::Text(text) => {
                         let p = permit.take();
-                        on_text(text.as_str(), p, &shared, &outbox, &mut tasks);
+                        on_text(text.as_str(), p, &shared, &outbox, &mut tasks, kind);
                     }
                     Message::Binary(_) => {
                         let reply = rpc::error_response(
@@ -303,8 +475,9 @@ fn on_text(
     shared: &Arc<Shared>,
     outbox: &Arc<Outbox>,
     tasks: &mut JoinSet<()>,
+    kind: ClientKind,
 ) {
-    let req = match rpc::parse(text) {
+    let mut req = match rpc::parse(text) {
         Incoming::Request(req) => req,
         Incoming::Invalid(reply) => {
             outbox.push_response(reply.to_string(), permit);
@@ -349,12 +522,35 @@ fn on_text(
     }
     // Method names only: params can carry cookies and must never be logged.
     tracing::debug!(method = ?req.method, notification = req.id.is_none(), "request");
-    let service = shared.service.clone();
+    if let Some(result) = offer_method(&req, kind, shared) {
+        if let Some(id) = req.id {
+            let reply = match result {
+                Ok(value) => rpc::result_response(id, value),
+                Err(e) => rpc::error_response(id, e.code, &e.message),
+            };
+            outbox.push_response(reply.to_string(), permit);
+        }
+        return;
+    }
+    mark_origin(&mut req, kind);
+    let page_request = fill_page_request(&mut req, kind, shared);
+    let shared = shared.clone();
     let outbox = outbox.clone();
     tasks.spawn(async move {
         let id = req.id.clone();
         let method = req.method.clone();
-        let result = rpc::dispatch(&service, req).await;
+        let result = rpc::dispatch(&shared.service, req).await.map(|mut v| {
+            mark_needs_app(&method, &mut v, &shared);
+            // The probe names the page's canonical address; its media.add uses that one.
+            if let Some(from) = &page_request
+                && let Some(to) = v.get("url").and_then(Value::as_str)
+            {
+                shared
+                    .offers
+                    .alias_request(from, to, crate::offers::now_ms());
+            }
+            v
+        });
         let Some(id) = id else {
             if let Err(e) = result {
                 tracing::debug!(method = ?method, code = e.code, "notification failed");

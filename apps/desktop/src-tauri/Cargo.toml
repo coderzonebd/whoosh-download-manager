@@ -1,6 +1,6 @@
 [package]
-name = "whoosh-desktop"
-description = "Whoosh desktop app: the shared Svelte UI over the whoosh daemon"
+name = "wdm-desktop"
+description = "WDM desktop app: the shared Svelte UI over the wdm daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,11 +9,11 @@ publish.workspace = true
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "whoosh_desktop_lib"
+name = "wdm_desktop_lib"
 path = "src/lib.rs"
 
 [[bin]]
-name = "whoosh-desktop"
+name = "wdm-desktop"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -22,16 +22,29 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+# The add dialog fills in a download link from the clipboard.
+tauri-plugin-clipboard-manager = "2"
 tauri-plugin-deep-link = "2"
-tauri-plugin-dialog = "2"
+# The folder picker. On Linux through the desktop portal (the system's own dialog, outside our
+# process): GTK's in-process file chooser loads themed icons through the system image loader,
+# whose sandbox can fail inside the app (Ubuntu 26.10 + Papirus) and abort it.
+tauri-plugin-dialog = { version = "2", default-features = false, features = ["xdg-portal"] }
 tauri-plugin-notification = "2"
 # `deep-link`: a second launch with a whoosh:// URL hands it to the first.
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# Signed in-app updates from GitHub Releases (`updates.rs`).
+tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 serde.workspace = true
 serde_json.workspace = true
-whoosh-client.workspace = true
-whoosh-proto.workspace = true
+# The shell's watch on the daemon (`watch.rs`) waits between reconnects.
+tokio = { workspace = true, features = ["time"] }
+wdm-client.workspace = true
+# Host registration and browser detection for "Connect your browser".
+wdm-nmhost = { path = "../../../crates/nmhost" }
+# Crash reports (on by default, can be turned off; inert without WDM_CRASH_DSN).
+wdm-crash.workspace = true
+wdm-proto.workspace = true
 
 [lints]
 workspace = true

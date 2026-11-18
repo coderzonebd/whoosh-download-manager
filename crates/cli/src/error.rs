@@ -1,7 +1,7 @@
 //! Errors and exit codes. The table is documented in the README and in
-//! `whoosh --help`; scripts (and the benchmark harness) rely on it.
+//! `wdm --help`; scripts (and the benchmark harness) rely on it.
 
-use whoosh_proto::error_code;
+use wdm_proto::error_code;
 
 pub mod exit {
     pub const OK: u8 = 0;
@@ -95,9 +95,9 @@ impl CliError {
     }
 }
 
-impl From<whoosh_client::ClientError> for CliError {
-    fn from(e: whoosh_client::ClientError) -> Self {
-        use whoosh_client::ClientError as E;
+impl From<wdm_client::ClientError> for CliError {
+    fn from(e: wdm_client::ClientError) -> Self {
+        use wdm_client::ClientError as E;
         match e {
             E::DaemonUnavailable(m) => Self::DaemonUnavailable(m),
             E::Rejected(m) => Self::Rejected(m),

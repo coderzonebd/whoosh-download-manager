@@ -9,7 +9,7 @@
 //! - the current user (the SID in this process's token);
 //! - `SYSTEM` (`S-1-5-18`) and `BUILTIN\Administrators` (`S-1-5-32-544`):
 //!   they can take any file anyway, as root can on Unix, and Windows itself
-//!   (backup, the indexer, an elevated `whoosh`) runs as them. A file an
+//!   (backup, the indexer, an elevated `wdm`) runs as them. A file an
 //!   elevated process creates is owned by the Administrators group;
 //! - `CREATOR OWNER` (`S-1-3-0`) and `OWNER RIGHTS` (`S-1-3-4`), which stand
 //!   for the owner.
@@ -503,7 +503,7 @@ mod tests {
     impl TempDir {
         fn new(tag: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "whoosh-winacl-{tag}-{}-{:?}",
+                "wdm-winacl-{tag}-{}-{:?}",
                 std::process::id(),
                 std::thread::current().id()
             ));

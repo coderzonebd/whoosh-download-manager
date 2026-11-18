@@ -21,7 +21,7 @@ const root = join(import.meta.dirname, "..");
 const extensionDir = join(root, "dist", "chromium");
 
 function findChrome(): string | undefined {
-  const fromEnv = process.env["WHOOSH_E2E_CHROME"];
+  const fromEnv = process.env["WDM_E2E_CHROME"];
   if (fromEnv) return fromEnv;
   // Playwright's browser cache: ~/.cache on Linux, ~/Library/Caches on macOS.
   const cache =
@@ -46,7 +46,7 @@ function findChrome(): string | undefined {
 
 const chromePath = process.platform === "linux" || process.platform === "darwin" ? findChrome() : undefined;
 if (!chromePath) {
-  console.warn("e2e: no Chrome for Testing found (set WHOOSH_E2E_CHROME); skipping");
+  console.warn("e2e: no Chrome for Testing found (set WDM_E2E_CHROME); skipping");
 }
 
 interface LogEntry {
@@ -65,7 +65,7 @@ async function waitFor<T>(what: string, probe: () => Promise<T | undefined> | T 
 }
 
 describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
-  const work = mkdtempSync(join(tmpdir(), "whoosh-e2e-"));
+  const work = mkdtempSync(join(tmpdir(), "wdm-e2e-"));
   const profile = join(work, "profile");
   const downloads = join(work, "downloads");
   const hostLog = join(work, "host.jsonl");
@@ -143,6 +143,15 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
         );
         return;
       }
+      if (url.pathname === "/video") {
+        // A player of a reasonable size; its source never loads (no codec needed), but it has one.
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(
+          `<!doctype html><title>A talk about downloads</title><style>body{margin:0}video{display:block;margin:40px;background:#000}</style>` +
+            `<video id="v" width="640" height="360" src="/files/talk.mp4"></video>`,
+        );
+        return;
+      }
       if (url.pathname.startsWith("/files/")) {
         const name = url.pathname.slice("/files/".length);
         const body = Buffer.alloc(64 * 1024, 7);
@@ -177,7 +186,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
         "about:blank",
       ],
       {
-        env: { ...process.env, WHOOSH_FAKE_HOST_LOG: hostLog, WHOOSH_FAKE_HOST_CONTROL: control },
+        env: { ...process.env, WDM_FAKE_HOST_LOG: hostLog, WDM_FAKE_HOST_CONTROL: control },
         stdio: "ignore",
       },
     );
@@ -200,7 +209,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     await browser?.close().catch(() => {});
     chromeProcess?.kill();
     await new Promise<void>((resolve) => server?.close(() => resolve()));
-    if (process.env["WHOOSH_E2E_KEEP"]) {
+    if (process.env["WDM_E2E_KEEP"]) {
       writeFileSync(join(work, "sw-console.log"), swConsole.join("\n"));
       console.log(`e2e: kept ${work}`);
     } else {
@@ -248,7 +257,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     await expect
       .poll(async () => `${await page.textContent("#status")}: ${await page.textContent("#detail")}`, { timeout: 10_000 })
       .toMatch(/^Connected/);
-    expect(await page.textContent("#detail")).toBe("whoosh e2e");
+    expect(await page.textContent("#detail")).toBe("WDM e2e");
     expect(await page.textContent("#active")).toBe("3");
     expect(hostCalls("nm.status").length).toBeGreaterThan(0);
     // Chrome passes the caller's origin to the host.
@@ -290,6 +299,26 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     );
     // Only the origin is shared, never the full link.
     expect(call.msg?.params).toEqual({ url: `${hoverOrigin}/` });
+    await page.close();
+  });
+
+  it("the button over a video hands the page to the app's media picker", async () => {
+    const page = await context.newPage();
+    await page.goto(`${origin}/video`);
+    // Point at the video: the button comes up at its top-right corner (in a closed shadow root,
+    // so it is clicked where it shows).
+    await page.mouse.move(360, 220);
+    await page.mouse.move(380, 230);
+    await expect.poll(() => page.evaluate(() => document.querySelector("wdm-video-button") !== null), { timeout: 5_000 }).toBe(true);
+    const box = await page.locator("#v").boundingBox();
+    if (!box) throw new Error("no video box");
+    await page.mouse.click(box.x + box.width - 8 - 16, box.y + 8 + 16);
+    const call = await waitFor("media.offer", () => hostCalls("media.offer").find((e) => e.msg?.params?.["url"] === `${origin}/video`));
+    // With what the browser sends to the page (its user agent; cookies when the site set any).
+    expect(call.msg?.params).toMatchObject({ url: `${origin}/video`, title: "A talk about downloads" });
+    expect((call.msg?.params?.["request"] as { userAgent?: string } | undefined)?.userAgent).toMatch(/Chrome/);
+    // Nothing was downloaded by itself.
+    expect(hostCalls("download.add").some((e) => String(e.msg?.params?.["url"]).includes("talk.mp4"))).toBe(false);
     await page.close();
   });
 
@@ -398,7 +427,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${EXTENSION_ID}/options.html`);
     await expect.poll(() => page.isChecked("#captureEnabled"), { timeout: 10_000 }).toBe(true);
-    expect(await page.textContent("h1")).toBe("Whoosh settings");
+    expect(await page.textContent("h1")).toBe("Whoosh Download Manager settings");
     expect(await page.isHidden("#store-note")).toBe(true);
     expect(await page.inputValue("#fileTypes")).toContain("zip");
 
@@ -406,7 +435,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     await page.selectOption("#minSizeUnit", "MB");
     await page.fill("#excludedSites", "Example.org\nhttps://cdn.example.net/x");
     await page.locator("#excludedSites").blur();
-    await page.check("#altClick-whoosh");
+    await page.check("#altClick-wdm");
     await page.uncheck("#sniffMedia");
     await expect.poll(() => page.textContent("#status")).toBe("Saved.");
 
@@ -414,7 +443,7 @@ describe.skipIf(!chromePath)("Chromium extension ⇄ native host", () => {
     expect(stored).toMatchObject({
       minSizeBytes: 2 * 1024 * 1024,
       excludedSites: ["example.org", "cdn.example.net"],
-      altClick: "whoosh",
+      altClick: "wdm",
       sniffMedia: false,
     });
 

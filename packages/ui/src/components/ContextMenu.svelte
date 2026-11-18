@@ -31,7 +31,7 @@
     const resumable = app.resumableIds(sel);
     if (resumable.length) out.push({ icon: "play", label: t("action.resume"), run: () => app.resume(resumable) });
     if (pausable.length) out.push({ icon: "pause", label: t("action.pause"), run: () => app.pause(pausable) });
-    if (d?.data.state === "needs_refresh") out.push({ icon: "refresh", label: t("action.refreshLink"), run: () => (app.refreshId = id) });
+    if (d?.data.state === "needs_refresh") out.push({ icon: "refresh", label: t("action.refreshLink"), run: () => app.refreshLink(id) });
     out.push({ icon: "panel", label: t("action.details"), run: () => app.reveal(id) });
     // Moving only means something once there is a queue to move to.
     const movable = sel.filter((s) => s.data.state !== "completed").map((s) => s.id);
@@ -52,8 +52,10 @@
     if (!el) return;
     returnTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const r = el.getBoundingClientRect();
+    // The menu opens toward the reading direction: right of the pointer, or left of it in RTL.
+    const rtl = getComputedStyle(el).direction === "rtl";
     pos = {
-      left: Math.max(4, Math.min(x, window.innerWidth - r.width - 4)),
+      left: Math.max(4, Math.min(rtl ? x - r.width : x, window.innerWidth - r.width - 4)),
       top: Math.max(4, Math.min(y, window.innerHeight - r.height - 4)),
     };
     el.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
@@ -133,6 +135,9 @@
     transition:
       opacity var(--vy-duration-fast) var(--vy-ease-out),
       transform var(--vy-duration-fast) var(--vy-ease-out);
+  }
+  :global([dir="rtl"]) .menu {
+    transform-origin: top right;
   }
   @starting-style {
     .menu {

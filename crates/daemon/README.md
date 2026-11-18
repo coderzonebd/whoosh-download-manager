@@ -1,39 +1,43 @@
-# whoosh-daemon
+# wdm-daemon
 
-The Whoosh daemon: it owns every download and serves the local API — JSON-RPC 2.0 over WebSocket on `127.0.0.1`, exactly as [`docs/api/PROTOCOL.md`](../../docs/api/PROTOCOL.md) describes — to the desktop window, the CLI, the browser extension (through `whoosh-nmhost`) and future clients. License: Apache-2.0.
+The WDM daemon: it owns every download and serves the local API — JSON-RPC 2.0 over WebSocket on `127.0.0.1`, exactly as [`docs/api/PROTOCOL.md`](../../docs/api/PROTOCOL.md) describes — to the desktop window, the CLI, the browser extension (through `wdm-nmhost`) and future clients. License: Apache-2.0.
 
-The crate is a library plus the `whoosh-daemon` binary. The library serves **any** [`whoosh_proto::service::Service`](../proto/src/service.rs); the binary wires a service to it in a few lines. Until the engine is integrated (ADR 0005), the binary serves the built-in [`MockService`](#the-mock-service) with `--mock`.
+The crate is a library plus the `wdm-daemon` binary. The library serves **any** [`wdm_proto::service::Service`](../proto/src/service.rs); the binary wires a service to it in a few lines. Until the engine is integrated (ADR 0005), the binary serves the built-in [`MockService`](#the-mock-service) with `--mock`.
 
 ## Run it
 
 ```bash
-cargo build -p whoosh-daemon
-target/debug/whoosh-daemon --mock                 # realistic demo data, logs to stderr
-target/debug/whoosh-daemon --mock --mock-scenario empty --port 0
+cargo build -p wdm-daemon
+target/debug/wdm-daemon --mock                 # realistic demo data, logs to stderr
+target/debug/wdm-daemon --mock --mock-scenario empty --port 0
 ```
 
 | Flag | Env | Default | |
 |---|---|---|---|
-| `--mock` | `WHOOSH_DAEMON_MOCK=1` | off | serve the in-memory mock service |
-| `--mock-scenario demo\|empty` | `WHOOSH_DAEMON_MOCK_SCENARIO` | `demo` | the mock's initial downloads |
-| `--port N` | `WHOOSH_DAEMON_PORT` | `47210` | `0` = any free port; a taken port falls back to a free one |
-| `--data-dir DIR` | `WHOOSH_DATA_DIR` | platform rule below | holds `runtime.json`, `daemon.lock`, `logs/` |
-| `--detached` (hidden) | | off | used by `whoosh` when it starts the daemon: no stderr logging, SIGHUP ignored |
-| | `WHOOSH_LOG` | `info` | log filter (`tracing-subscriber` `EnvFilter` syntax) |
-| `--worker-threads N` | `WHOOSH_WORKER_THREADS` | `1` | async runtime worker threads (1–64) |
+| `--mock` | `WDM_DAEMON_MOCK=1` | off | serve the in-memory mock service |
+| `--mock-scenario demo\|empty` | `WDM_DAEMON_MOCK_SCENARIO` | `demo` | the mock's initial downloads |
+| `--port N` | `WDM_DAEMON_PORT` | `47210` | `0` = any free port; a taken port falls back to a free one |
+| `--data-dir DIR` | `WDM_DATA_DIR` | platform rule below | holds `runtime.json`, `daemon.lock`, `logs/` |
+| `--detached` (hidden) | | off | used by `wdm` when it starts the daemon: no stderr logging, SIGHUP ignored |
+| | `WDM_LOG` | `info` | log filter (`tracing-subscriber` `EnvFilter` syntax) |
+| `--worker-threads N` | `WDM_WORKER_THREADS` | `1` | async runtime worker threads (1–64) |
+| `--no-media` | `WDM_DAEMON_NO_MEDIA=1` | off | turn off video and audio sites (yt-dlp/ffmpeg) in a build that has them |
+| `--media-tools-dir <dir>` | `WDM_MEDIA_TOOLS_DIR` | none | yt-dlp and ffmpeg shipped with the desktop app (its `media-tools` resource directory, with `manifest.json`); copied into the data directory at start. Without it they are downloaded on first use. The desktop app passes it |
 
-Without `--mock` it serves `whoosh-engine` over `whoosh-net` and `whoosh-store`, with its state in the data directory (`state.db`, `journal/`).
+Without `--mock` it serves `wdm-engine` over `wdm-net` and `wdm-store`, with its state in the data directory (`state.db`, `journal/`).
+
+**Video and audio sites.** With the `media` cargo feature (on by default: desktop and GitHub builds) the engine is wrapped in [`wdm-media`](../media/README.md), which adds the `media.*` methods and the `media` capability, and keeps its tools and jobs in `<data dir>/media/`. Build with `--no-default-features` for a daemon without it; such a daemon answers `media.*` with `-32006`.
 
 **Exit codes:** `0` clean shutdown · `1` error · `2` usage · `3` another daemon already runs for this data directory · `130` forced (second signal).
 
 ## Use it as a library
 
 ```rust
-let service: Arc<dyn Service> = /* whoosh-engine, or MockService::new(MockOptions::default()) */;
-let config = whoosh_daemon::DaemonConfig::new(whoosh_daemon::paths::default_data_dir()?);
-let daemon = whoosh_daemon::serve(service, config).await?;   // -> RunningDaemon
+let service: Arc<dyn Service> = /* wdm-engine, or MockService::new(MockOptions::default()) */;
+let config = wdm_daemon::DaemonConfig::new(wdm_daemon::paths::default_data_dir()?);
+let daemon = wdm_daemon::serve(service, config).await?;   // -> RunningDaemon
 tokio::select! {
-    _ = whoosh_daemon::shutdown_signal() => {}                // SIGINT/SIGTERM, Ctrl-C/console close
+    _ = wdm_daemon::shutdown_signal() => {}                // SIGINT/SIGTERM, Ctrl-C/console close
     _ = daemon.stop_requested() => {}                       // a client called daemon.shutdown
 }
 daemon.shutdown().await;    // stop accepting, Service::shutdown, close sessions (1001), remove runtime.json
@@ -49,7 +53,7 @@ daemon.shutdown().await;    // stop accepting, Service::shutdown, close sessions
 - **Address:** `ws://127.0.0.1:<port>/rpc`, loopback only. Default port 47210, falling back to a free port.
 - **`runtime.json`** = `{ "port", "token", "pid", "version" }`. Created as a new temporary file with mode 0600 *in the `open` call* (so it is never readable by others, not even empty), written and renamed over `runtime.json`: readers never see a partial file. It is not fsynced: the rename alone makes it atomic, and after a crash or power loss the file is stale whatever it holds (readers treat a missing, empty or invalid one as "no daemon"); the two fsyncs cost 1–4 ms of startup. Removed on clean shutdown, but only if it still holds our pid and token. On Windows the file is created with an owner-only DACL in the create call (user, `SYSTEM`, `Administrators`; protected from inheritance), the counterpart of 0600 ([docs/windows.md](../../docs/windows.md)).
 - **Token:** 32 bytes from the OS RNG (`getrandom`), base64url without padding (43 characters), compared in constant time (`subtle`). New on every start. Never logged; `Debug` is redacted.
-- **Data dir:** `$WHOOSH_DATA_DIR`; else Linux `$XDG_DATA_HOME/whoosh` (relative values ignored, default `~/.local/share/whoosh`), macOS `~/Library/Application Support/whoosh`, Windows `%LOCALAPPDATA%\whoosh` — `whoosh_proto::runtime`, the one copy the CLI and `whoosh-nmhost` use too. The daemon makes the directory (and `logs/`) private if it owns it (0700 on Unix; on Windows an owner-only DACL, passed on to what inherits from it), and refuses to start in a symlink (or junction) or a directory owned by someone else. Clients read `runtime.json` through `whoosh_proto::runtime::read_runtime`, which refuses a symlink, a foreign owner, a file others can open (mode or DACL), or a directory others can write.
+- **Data dir:** `$WDM_DATA_DIR`; else Linux `$XDG_DATA_HOME/wdm` (relative values ignored, default `~/.local/share/wdm`), macOS `~/Library/Application Support/wdm`, Windows `%LOCALAPPDATA%\wdm` — `wdm_proto::runtime`, the one copy the CLI and `wdm-nmhost` use too. Without `$WDM_DATA_DIR`, a directory left under the old name (`whoosh` in the same place) is renamed to `wdm` by whichever of them starts first, and used as it is while it cannot be renamed (`runtime::migrate_data_dir`). On its first start in a data directory the daemon also renames the `<name>.whoosh-part` files of unfinished downloads to `.wdm-part` (`src/migrate.rs`). The daemon makes the directory (and `logs/`) private if it owns it (0700 on Unix; on Windows an owner-only DACL, passed on to what inherits from it), and refuses to start in a symlink (or junction) or a directory owned by someone else. Clients read `runtime.json` through `wdm_proto::runtime::read_runtime`, which refuses a symlink, a foreign owner, a file others can open (mode or DACL), or a directory others can write.
 
 ### HTTP layer
 | Request | Answer |
@@ -66,7 +70,7 @@ Allowed `Origin`: none (native clients), `tauri://localhost`, `http://tauri.loca
 
 ### Session
 - The first message must be `session.hello` within 10 s, else close **4408** (retryable). A wrong or missing token, a missing or malformed `nonce` (32–128 lower-case hex), or anything else first (another method, invalid JSON, a binary frame, a hello without an id) → close **4401**. Correct token and nonce but `protocol` ≠ 1 → close **4426**. Checked in that order. A hello right in all three but malformed otherwise (e.g. no `client`) gets `-32602` and may be retried.
-- `HelloResult` = `{ daemonVersion, protocol: 1, capabilities: Service::capabilities(), proof }` with `proof = whoosh_proto::auth::hello_proof(token, nonce)`, so the client can tell the real daemon from whatever holds the port of a stale runtime file. A second `session.hello` → `-32600`.
+- `HelloResult` = `{ daemonVersion, protocol: 1, capabilities: Service::capabilities(), proof }` with `proof = wdm_proto::auth::hello_proof(token, nonce)`, so the client can tell the real daemon from whatever holds the port of a stale runtime file. A second `session.hello` → `-32600`.
 - **Before hello** a connection may send at most 64 KiB in total: the upgraded socket is wrapped in a read budget, so a peer without the token can never make the daemon buffer or parse more (more → 1009 or a dropped connection), and at most 8 connections may wait for their hello at once (more → HTTP **503** with `Retry-After: 1`). A test streams four 16 MiB `[0,0,…` first frames and checks that peak memory grows by less than 48 MiB (without the limit it grew by 576 MiB).
 - **`daemon.shutdown`** (no params; anything else is `-32602`): answered with `null`, then the daemon stops as on SIGTERM — `RunningDaemon::stop_requested()` resolves and the binary runs the shutdown below.
 
@@ -107,19 +111,19 @@ One `Service::subscribe()` per connection, started before the hello result is se
 | 4429 | client too slow (lossless backlog) |
 
 ### Startup time
-The "whoosh-daemon ready" log line carries the startup phases (`startup_ms`, `logging_ms`, `runtime_ms`, `claim_ms`, `store_ms`, `service_ms`, `serve_ms`). Measured on the development machine (release build, under the load of parallel builds): with an existing data directory the whole startup takes about **1.2 ms** (store 0.6 ms, everything else 0.6 ms); exec to `runtime.json` about 1.7 ms. A fresh data directory adds the store creating its journal directory and SQLite database (about ten fsyncs, 8–140 ms depending on disk load), which is now almost all of a cold start. The journal and the database are opened concurrently.
+The "wdm-daemon ready" log line carries the startup phases (`startup_ms`, `logging_ms`, `runtime_ms`, `claim_ms`, `store_ms`, `service_ms`, `serve_ms`). Measured on the development machine (release build, under the load of parallel builds): with an existing data directory the whole startup takes about **1.2 ms** (store 0.6 ms, everything else 0.6 ms); exec to `runtime.json` about 1.7 ms. A fresh data directory adds the store creating its journal directory and SQLite database (about ten fsyncs, 8–140 ms depending on disk load), which is now almost all of a cold start. The journal and the database are opened concurrently.
 
 ### Logging
-`tracing` to `<data dir>/logs/whoosh-daemon.<YYYY-MM-DD>.log` (UTC days, 7 files kept), plus stderr unless `--detached`. A writer thread does the file I/O, with a queue of 4096 lines (more are dropped, never blocking a request; the library's default of 128 000 preallocates ~4 MB, 1 ms of startup). The files are written by the daemon's own writer, created 0600 whatever the umask (an older, wider file is tightened), in a 0700 directory. Request **params are never logged** (they carry cookies and headers), only method names; the token never is. The `log` crate is deliberately not bridged into `tracing` (the WebSocket library logs whole frames, hello included, at trace level through it), and `tungstenite` targets are filtered off as well. A test captures trace-level output across hello, cookies, headers and a bad token and checks no secret appears.
+`tracing` to `<data dir>/logs/wdm-daemon.<YYYY-MM-DD>.log` (UTC days, 7 files kept), plus stderr unless `--detached`. A writer thread does the file I/O, with a queue of 4096 lines (more are dropped, never blocking a request; the library's default of 128 000 preallocates ~4 MB, 1 ms of startup). The files are written by the daemon's own writer, created 0600 whatever the umask (an older, wider file is tightened), in a 0700 directory. Request **params are never logged** (they carry cookies and headers), only method names; the token never is. The `log` crate is deliberately not bridged into `tracing` (the WebSocket library logs whole frames, hello included, at trace level through it), and `tungstenite` targets are filtered off as well. A test captures trace-level output across hello, cookies, headers and a bad token and checks no secret appears.
 
 ### Shutdown and single instance
 - Unix: SIGINT or SIGTERM. Windows: Ctrl-C, Ctrl-Break, console close, log-off, system shutdown. A second signal exits immediately (130).
 - Shutdown order (signal or `daemon.shutdown`): stop accepting → `Service::shutdown()` (pause transfers, save state; connected clients still receive the resulting events) → close every session with 1001 after what is already queued for it (waiting up to 5 s) → remove `runtime.json`.
-- A second daemon for the same data directory exits with status 3 and `another whoosh-daemon is already running for this data directory (pid …, port …)`, leaving the first one's files alone. A crashed daemon's lock is released by the OS and its stale `runtime.json` is replaced.
+- A second daemon for the same data directory exits with status 3 and `another wdm-daemon is already running for this data directory (pid …, port …)`, leaving the first one's files alone. A crashed daemon's lock is released by the OS and its stale `runtime.json` is replaced.
 
 ## The mock service
 
-`whoosh_daemon::mock::MockService` is an in-memory `Service` that behaves like a daemon with a real engine, so UIs, the CLI and the extension can be built against `whoosh-daemon --mock` today. Nothing touches the network or the disk.
+`wdm_daemon::mock::MockService` is an in-memory `Service` that behaves like a daemon with a real engine, so UIs, the CLI and the extension can be built against `wdm-daemon --mock` today. Nothing touches the network or the disk.
 
 - Downloads move `queued → probing → downloading → (verifying →) completed` over time, split into up to 8 segments that are re-split when a connection finishes its range, with wobbling speeds; `maxActiveDownloads`, `maxConnectionsPerDownload` and `speedLimitBps` are honoured.
 - Events: `added`, `state` (on change), `progress` (≤ 4 per second; segments at most once per second per download; a download's last progress precedes its final state), `removed`, `stats` (1 per second), `settings`.
@@ -143,7 +147,7 @@ The URL decides how a mock download behaves:
 ## Tests
 
 ```bash
-scripts/cargo-slot.sh cargo test -p whoosh-daemon
+scripts/cargo-slot.sh cargo test -p wdm-daemon
 ```
 
 - `src/*` unit tests: token and base64url vectors, runtime-file permissions (0600 from creation), atomicity under a concurrent reader, the lock, tightening the data dir and refusing symlinks, private and pruned log files, the pre-hello read budget, JSON-RPC parsing, the outbox's coalescing, overflow and graceful close, the mock's state machine (connections, queues).
@@ -151,6 +155,6 @@ scripts/cargo-slot.sh cargo test -p whoosh-daemon
 - `tests/binary.rs`: the real executable — second instance exits 3, SIGTERM/SIGINT (Windows: Ctrl-Break to its process group) and `daemon.shutdown` stop it cleanly and remove `runtime.json`, logs land in `logs/` (owner-only, as is the directory) without the token, detached mode ignores SIGHUP (Unix).
 - `tests/memory.rs`: hostile 16 MiB first frames do not grow peak memory (Linux: peak RSS; Windows: peak working set; a binary of its own).
 - `tests/logging.rs`: no token, cookie or header value in trace-level logs.
-- `tests/nmhost.rs`: the real **`whoosh-nmhost`** (built from the workspace by the test, or `$WHOOSH_NMHOST_BIN`; it checks the hello proof) pointed at this daemon only through `WHOOSH_DATA_DIR` (and through the platform rule: `XDG_DATA_HOME`, `~/Library/Application Support`, `%LOCALAPPDATA%`): `nm.status`, `download.add`/`list`/`get`, error codes, `event.download.*` relayed, `event.nm.status` on daemon stop and restart (new port and token), clean exit on EOF. Plus: `whoosh_proto::runtime::read_runtime` accepts the file the daemon writes.
+- `tests/nmhost.rs`: the real **`wdm-nmhost`** (built from the workspace by the test, or `$WDM_NMHOST_BIN`; it checks the hello proof) pointed at this daemon only through `WDM_DATA_DIR` (and through the platform rule: `XDG_DATA_HOME`, `~/Library/Application Support`, `%LOCALAPPDATA%`): `nm.status`, `download.add`/`list`/`get`, error codes, `event.download.*` relayed, `event.nm.status` on daemon stop and restart (new port and token), clean exit on EOF. Plus: `wdm_proto::runtime::read_runtime` accepts the file the daemon writes.
 
 The suite runs on Linux, macOS and Windows in CI. Not covered: console close, log-off and shutdown events on Windows (only Ctrl-Break is sent in tests).

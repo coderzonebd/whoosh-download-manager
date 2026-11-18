@@ -17,6 +17,7 @@ export const Method = {
   DownloadRemove: "download.remove",
   DownloadRefreshUrl: "download.refreshUrl",
   DownloadSetQueue: "download.setQueue",
+  DownloadConfirm: "download.confirm",
   QueueList: "queue.list",
   QueueCreate: "queue.create",
   QueueUpdate: "queue.update",
@@ -30,7 +31,31 @@ export const Method = {
   SettingsGet: "settings.get",
   SettingsSet: "settings.set",
 } as const;
-export type MethodName = (typeof Method)[keyof typeof Method];
+export type MethodName = (typeof Method)[keyof typeof Method] | (typeof MediaMethod)[keyof typeof MediaMethod];
+
+/**
+ * Video and audio sites (yt-dlp/ffmpeg): only daemons advertising the
+ * `media` capability answer these; the others return -32006. Kept apart
+ * from `Method` so a client that never uses them (the store extension)
+ * does not carry their names.
+ */
+export const MediaMethod = {
+  Probe: "media.probe",
+  Add: "media.add",
+  Tools: "media.tools",
+  CheckUpdates: "media.checkUpdates",
+  UpdateTools: "media.updateTools",
+  Configure: "media.configure",
+  /** The browser extension hands a page to the app's media picker (only its session may call it). */
+  Offer: "media.offer",
+  /** Pages offered by the extension that no window has taken yet. */
+  Offers: "media.offers",
+  /** A window takes one offered page to show it. */
+  TakeOffer: "media.takeOffer",
+} as const;
+
+/** `HelloResult.capabilities` entry of daemons with media support. */
+export const MEDIA_CAPABILITY = "media";
 
 export const Event = {
   DownloadAdded: "event.download.added",
@@ -45,12 +70,16 @@ export const Event = {
   Queues: "event.queues",
   /** A queue finished and its after-done action is about to run. */
   QueueFinished: "event.queue.finished",
+  /** `MediaToolsStatus` after any change to the media tools. */
+  MediaTools: "event.media.tools",
+  /** `MediaOffer`: the extension offered a page (`media.offer`); never sent to the extension. */
+  MediaOffered: "event.media.offered",
 } as const;
 export type EventName = (typeof Event)[keyof typeof Event];
 
-/** Answered by `whoosh-nmhost` itself, never by the daemon (PROTOCOL.md §1). */
+/** Answered by `wdm-nmhost` itself, never by the daemon (PROTOCOL.md §1). */
 export const HostMethod = { NmStatus: "nm.status" } as const;
-/** Sent by `whoosh-nmhost` whenever its daemon connection goes up or down. */
+/** Sent by `wdm-nmhost` whenever its daemon connection goes up or down. */
 export const HostEvent = { NmStatus: "event.nm.status" } as const;
 /** Request ids starting with this prefix are reserved for the native host. */
 export const HOST_RESERVED_ID_PREFIX = "nmhost:";
@@ -149,6 +178,12 @@ export interface AddParams {
   connections?: number;
   /** A named queue (one download at a time); the main queue when absent. */
   queue?: string;
+  /**
+   * Caught in a web browser. The daemon sets it itself for requests that come through the
+   * native messaging host (and clears it for everyone else); with
+   * `Settings.confirmBrowserDownloads` such a download waits for the user.
+   */
+  fromBrowser?: boolean;
 }
 
 /** Upper bound of `AddParams.connections`. */
@@ -156,6 +191,29 @@ export const MAX_CONNECTIONS_PER_DOWNLOAD = 64;
 
 export interface AddResult {
   id: DownloadId;
+  /** Added, but waiting for the user to confirm it (`download.confirm`) instead of starting. */
+  awaitingConfirmation?: boolean;
+  /** With `awaitingConfirmation`: no desktop window is connected to ask, so the native host starts the app. */
+  needsApp?: boolean;
+}
+
+/**
+ * `download.confirm`: the user's answer for a download that waits for confirmation. The optional
+ * fields replace what the download had (the dialog lets the user edit them).
+ */
+export interface ConfirmParams {
+  id: DownloadId;
+  /**
+   * true: start now ("Start download"). false: keep it for later ("Download later"): it stays
+   * paused, or, in a named queue that is not running, waits with the rest of that queue.
+   */
+  start: boolean;
+  filename?: string;
+  /** Absolute. */
+  directory?: string;
+  category?: string;
+  /** A queue name; "" or "main" is the main queue. */
+  queue?: string;
 }
 
 export interface ListParams {
@@ -220,6 +278,15 @@ export interface DownloadSummary {
   addedAt: UnixMillis;
   completedAt?: UnixMillis;
   error?: ErrorInfo;
+  /** Present on media downloads (`media.add`); `url` is then the page. */
+  media?: MediaDownloadInfo;
+  /** Added from a browser and waiting for the user to confirm it (`download.confirm`); `state` is then "paused". */
+  awaitingConfirmation?: boolean;
+  /**
+   * How long the download has actually been transferring, in ms: the time its runs took, without
+   * the time it was paused, queued or waiting. Absent when unknown (records from older versions).
+   */
+  activeMs?: number;
 }
 
 export interface SegmentInfo {
@@ -256,11 +323,16 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   /**
    * "powerSafe" (default): data is forced to disk before a file is finished, so a power cut never
-   * damages a finished file. "processSafe": faster, survives a killed whoosh but not a power cut.
+   * damages a finished file. "processSafe": faster, survives a killed wdm but not a power cut.
    */
   durability?: Durability;
   /** Speed limits by time of day; while one applies it replaces `speedLimitBps`. */
   speedSchedule?: SpeedWindow[];
+  /**
+   * Downloads caught in a web browser wait for the user to confirm them before they start. The
+   * daemon always sends it (default true); older daemons don't, and never ask.
+   */
+  confirmBrowserDownloads?: boolean;
 }
 
 export type Durability = "powerSafe" | "processSafe";
@@ -370,6 +442,160 @@ export interface NmStatus {
   hostVersion: string;
 }
 
+// ------------------------------------------------------------ media (yt-dlp / ffmpeg)
+
+export interface MediaProbeParams {
+  /** The page (http/https). */
+  url: string;
+  /** Only `cookie`, `referer` and `userAgent` are used; a cookie only if the extension captured it for this URL. */
+  request?: RequestContext;
+}
+
+export type MediaFormatKind = "videoAudio" | "videoOnly" | "audioOnly";
+
+export interface MediaFormat {
+  /** yt-dlp's format id, for `MediaChoice` `formats`. */
+  id: string;
+  kind: MediaFormatKind;
+  ext: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  vcodec?: string;
+  acodec?: string;
+  abrKbps?: number;
+  /** Exact, or an estimate when `sizeApproximate`. */
+  sizeBytes?: number;
+  sizeApproximate?: boolean;
+  note?: string;
+  /** WDM's engine downloads it (multi-connection, resumable); otherwise yt-dlp does (HLS, DASH, …). */
+  direct: boolean;
+}
+
+export interface MediaSubtitle {
+  lang: string;
+  name?: string;
+  /** Generated by the site, not written by people. */
+  automatic?: boolean;
+}
+
+export interface MediaProbeResult {
+  url: string;
+  title: string;
+  extractor: string;
+  thumbnail?: string;
+  durationSecs?: number;
+  uploader?: string;
+  live?: boolean;
+  /** Worst first, best last. Empty when the page is only a playlist. */
+  formats: MediaFormat[];
+  subtitles: MediaSubtitle[];
+  /** The playlist the page belongs to (YouTube's `list=`) or is: one `media.add` per entry. */
+  playlist?: MediaPlaylist;
+}
+
+export interface MediaPlaylist {
+  title: string;
+  /** In playlist order; at most 1000. */
+  entries: { url: string; title: string; durationSecs?: number }[];
+}
+
+export type MediaChoice =
+  | { kind: "best"; maxHeight?: number }
+  | { kind: "audio"; convert?: "original" | "mp3" }
+  | { kind: "formats"; ids: string[] };
+
+export interface MediaAddParams {
+  url: string;
+  request?: RequestContext;
+  choice: MediaChoice;
+  /** Subtitle languages saved next to the file. */
+  subtitles?: string[];
+  /** File name without extension; defaults to the title. */
+  filename?: string;
+  directory?: string;
+  category?: string;
+  queue?: string;
+  /** Defaults to true. */
+  start?: boolean;
+}
+
+export type MediaVia = "engine" | "ytDlp";
+export type MediaStep = "preparingTools" | "refreshing" | "downloading" | "subtitles" | "merging" | "converting";
+
+export interface MediaDownloadInfo {
+  title: string;
+  /** e.g. "1080p mp4", "audio m4a". */
+  format: string;
+  via: MediaVia;
+  step?: MediaStep;
+}
+
+export type MediaToolState = "missing" | "installing" | "ready";
+export type MediaToolSource = "managed" | "system";
+
+export interface MediaTool {
+  name: "yt-dlp" | "ffmpeg" | string;
+  state: MediaToolState;
+  source?: MediaToolSource;
+  version?: string;
+  path?: string;
+  latestVersion?: string;
+  updateAvailable?: boolean;
+  upstream: string;
+  license: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  error?: string;
+}
+
+export interface MediaToolsStatus {
+  tools: MediaTool[];
+  autoUpdate: boolean;
+  lastCheckAt?: UnixMillis;
+}
+
+export interface MediaUpdateParams {
+  /** Tool names; every tool when empty or absent. */
+  tools?: string[];
+}
+
+export interface MediaConfigureParams {
+  autoUpdate: boolean;
+}
+
+/**
+ * `media.offer`: a page the user wants video or audio from ("Download with WDM" on a video in the
+ * browser). The daemon downloads nothing: it keeps the page until a desktop window takes it and
+ * opens the add dialog for it, which probes the page and lets the user choose.
+ */
+export interface MediaOfferParams {
+  /** http(s); for a player embedded in a frame, the frame's address. */
+  url: string;
+  /** The page's title, a hint until the probe answers. */
+  title?: string;
+  /**
+   * What the browser sends to the page (its cookies for the site, the user agent), for a video only
+   * a signed-in browser can see. Kept in the daemon's memory, never shown to the app's windows.
+   */
+  request?: RequestContext;
+}
+
+export interface MediaOfferResult {
+  /** The offer's id; the same again when this page was already waiting. */
+  id: string;
+  /** No desktop window is connected to show it: the native host starts the app. */
+  needsApp?: boolean;
+}
+
+/** A page waiting for a desktop window (`media.offers`, `event.media.offered`, `media.takeOffer`). */
+export interface MediaOffer {
+  id: string;
+  url: string;
+  title?: string;
+  offeredAt: UnixMillis;
+}
+
 // ------------------------------------------------------------ typed method map
 
 export interface MethodMap {
@@ -388,6 +614,7 @@ export interface MethodMap {
   "settings.get": { params: undefined; result: Settings };
   "settings.set": { params: Settings; result: Settings };
   "download.setQueue": { params: SetQueueParams; result: null };
+  "download.confirm": { params: ConfirmParams; result: null };
   "queue.list": { params: undefined; result: Queue[] };
   "queue.create": { params: QueueConfig; result: Queue };
   "queue.update": { params: QueueConfig; result: Queue };
@@ -396,6 +623,15 @@ export interface MethodMap {
   "queue.start": { params: QueueNameParams; result: null };
   "queue.stop": { params: QueueNameParams; result: null };
   "queue.cancelAction": { params: QueueNameParams; result: null };
+  "media.probe": { params: MediaProbeParams; result: MediaProbeResult };
+  "media.add": { params: MediaAddParams; result: AddResult };
+  "media.tools": { params: undefined; result: MediaToolsStatus };
+  "media.checkUpdates": { params: undefined; result: MediaToolsStatus };
+  "media.updateTools": { params: MediaUpdateParams; result: MediaToolsStatus };
+  "media.configure": { params: MediaConfigureParams; result: MediaToolsStatus };
+  "media.offer": { params: MediaOfferParams; result: MediaOfferResult };
+  "media.offers": { params: undefined; result: MediaOffer[] };
+  "media.takeOffer": { params: { id: string }; result: MediaOffer };
 }
 
 export interface EventMap {
@@ -409,6 +645,8 @@ export interface EventMap {
   "event.settings": Settings;
   "event.queues": Queue[];
   "event.queue.finished": QueueFinishedEvent;
+  "event.media.tools": MediaToolsStatus;
+  "event.media.offered": MediaOffer;
 }
 
 /** Extra methods and events available only through the native messaging host. */
@@ -421,7 +659,7 @@ export interface HostEventMap {
 }
 
 /** The transport-agnostic client every UI codes against (WebSocket, native messaging, or mock). */
-export interface WhooshClient {
+export interface WdmClient {
   call<M extends keyof MethodMap>(method: M, params: MethodMap[M]["params"]): Promise<MethodMap[M]["result"]>;
   on<E extends keyof EventMap>(event: E, handler: (payload: EventMap[E]) => void): () => void;
   close(): void;

@@ -1,4 +1,4 @@
-import type { DownloadSummary, ListParams } from "@whoosh/api-client";
+import type { DownloadSummary, ListParams } from "@wdm/api-client";
 import { describe, expect, it } from "vitest";
 
 import { Coalescer, listUnfinished, RisingEdge, UNFINISHED_STATES } from "../src/background/catch-up";

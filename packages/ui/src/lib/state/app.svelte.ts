@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-// Everything the shell needs, built from one WhooshClient. Components get it
+// Everything the shell needs, built from one WdmClient. Components get it
 // from context (`getApp()`), so the same tree runs on the mock, the real
 // WebSocket client or (in the extension) a native-messaging client.
 
-import { MAIN_QUEUE, type AddParams, type DownloadSummary, type Queue, type QueueConfig, type Settings, type Stats, type WhooshClient } from "@whoosh/api-client";
-import { isWhooshConnectionError, isWhooshRpcError } from "@whoosh/api-client/errors";
+import { MAIN_QUEUE, type AddParams, type ConfirmParams, type DownloadSummary, type MediaAddParams, type MediaOffer, type Queue, type QueueConfig, type Settings, type Stats, type WdmClient } from "@wdm/api-client";
+import { isWdmConnectionError, isWdmRpcError } from "@wdm/api-client/errors";
 import { getContext, setContext, untrack } from "svelte";
 import { I18n } from "../i18n/i18n.svelte.ts";
 import type { Host } from "../host.ts";
 import { DownloadStore, PAUSABLE, RESUMABLE, type Download } from "./downloads.svelte.ts";
+import { readFollowed, writeFollowed, type Followed } from "./followed.ts";
 import { Prefs } from "./prefs.svelte.ts";
 import { SegmentCache } from "./segments.svelte.ts";
 import { QUEUES_CAPABILITY, QueueStore, isUnsupported } from "./queues.svelte.ts";
+import { MEDIA_CAPABILITY, MediaStore, isMediaUnsupported } from "./media.svelte.ts";
 import { ToastStore } from "./toasts.svelte.ts";
 
 export type Connection = "demo" | "connecting" | "open" | "reconnecting" | "closed";
-export type MainView = "downloads" | "history" | "settings";
+export type MainView = "downloads" | "history" | "settings" | "browsers";
 export type Theme = "system" | "light" | "dark" | "high-contrast";
+
+/** How a followed download ended: the prompt window says so ("Download complete"). */
+export const ENDED: ReadonlySet<DownloadSummary["state"]> = new Set(["completed", "failed"]);
 
 export interface AppOptions {
   /** "mock" labels the status bar "Demo data". */
@@ -27,6 +32,11 @@ export interface AppOptions {
   locale?: string;
   /** What the host shell adds (folder picker, desktop settings…). */
   host?: Host;
+  /**
+   * The prompt window (`PromptApp`): it takes the pages the extension offers and asks about
+   * them and the browser downloads that wait, and nothing else (no first-run pages, notices).
+   */
+  prompt?: boolean;
 }
 
 /** The queue dialog: create a queue, or edit one (name, limit, schedule). */
@@ -48,13 +58,14 @@ function defaultStorage(): Storage | null {
 }
 
 export class AppState {
-  readonly client: WhooshClient;
+  readonly client: WdmClient;
   readonly i18n: I18n;
   readonly store = new DownloadStore();
   readonly toasts = new ToastStore();
   readonly prefs: Prefs;
   readonly segments: SegmentCache;
   readonly queues = new QueueStore();
+  readonly media = new MediaStore();
   readonly host: Host;
 
   settings = $state.raw<Settings | undefined>(undefined);
@@ -81,15 +92,70 @@ export class AppState {
   moveIds = $state.raw<string[] | undefined>(undefined);
   /** History entries awaiting the clear confirmation. */
   clearIds = $state.raw<string[] | undefined>(undefined);
+  /** Show the one-time crash-report notice (first run, builds that send them). */
+  crashNotice = $state(false);
+  /**
+   * Downloads caught in a browser that wait for the user ("Ask before downloading from the
+   * browser"), oldest first. The confirmation dialog asks about the first one.
+   */
+  readonly waiting: Download[] = $derived.by(() =>
+    this.store
+      .all()
+      .filter((d) => d.data.awaitingConfirmation === true && d.data.state === "paused")
+      .sort((a, b) => a.data.addedAt - b.data.addedAt || a.id.localeCompare(b.id)),
+  );
+  /**
+   * Pages the browser extension offered ("Download with WDM" on a video) that this UI took
+   * (`media.takeOffer`) and shows in the add dialog, one at a time, oldest first. Only the prompt
+   * window and a UI without one (no `Host.openPrompt`) take them.
+   */
+  offers = $state.raw<MediaOffer[]>([]);
+  /**
+   * Downloads started in the prompt window, which it follows: their progress while they run
+   * (unless hidden), then how they ended. Shared with the main window through storage.
+   */
+  followed = $state.raw<Followed[]>([]);
+  /**
+   * The followed download the prompt window shows: one that ended first (so "Download complete"
+   * is never kept waiting behind a running one), else the first running one not hidden.
+   */
+  readonly following: Download | undefined = $derived.by(() => {
+    if (!this.prompt) return undefined;
+    const known = this.followed.map((f) => ({ f, d: this.store.get(f.id) })).filter((x) => x.d !== undefined);
+    const ended = known.find((x) => ENDED.has(x.d!.data.state));
+    return (ended ?? known.find((x) => !x.f.hidden))?.d;
+  });
+  /** The download list (and the offered pages) loaded at least once; the prompt window closes only then. */
+  loaded = $state(false);
+  readonly prompt: boolean;
+  /**
+   * The main window of a host with a prompt window: what the browser hands over is asked about
+   * there (`Host.openPrompt`), never here.
+   */
+  readonly delegates: boolean;
   /** Capabilities from the last hello, when the client reports them. */
   #capabilities: string[] | undefined;
 
   readonly #off: (() => void)[] = [];
+  readonly #storage: Storage | null;
 
-  constructor(client: WhooshClient, opts: AppOptions = {}) {
+  constructor(client: WdmClient, opts: AppOptions = {}) {
     this.client = client;
     this.host = opts.host ?? {};
-    this.prefs = new Prefs(opts.storage === undefined ? defaultStorage() : opts.storage);
+    this.prompt = opts.prompt === true;
+    this.delegates = !this.prompt && typeof this.host.openPrompt === "function";
+    if (!this.prompt) {
+      this.host.crashReports
+        ?.get()
+        .then((s) => (this.crashNotice = s !== undefined && !s.noticeShown))
+        .catch(() => undefined);
+    }
+    this.#storage = opts.storage === undefined ? defaultStorage() : opts.storage;
+    this.prefs = new Prefs(this.#storage);
+    if (this.prompt) {
+      this.followed = readFollowed(this.#storage);
+      this.#tellShell();
+    }
     this.i18n = new I18n(opts.locale ?? (typeof navigator === "undefined" ? "en" : navigator.language));
     this.store.sort = this.prefs.initialSort;
     this.store.setCollationLocale(this.i18n.intlLocale);
@@ -101,7 +167,8 @@ export class AppState {
         client.onStatus((s) => {
           const st = s.state as Connection;
           if (s.hello) this.#capabilities = s.hello.capabilities ?? [];
-          const resync = st === "open" && this.connection === "reconnecting";
+          // The prompt window also loads again when its first load failed (the daemon was starting).
+          const resync = st === "open" && (this.connection === "reconnecting" || (this.prompt && !this.loaded));
           this.connection = st;
           if (resync) void this.reload(); // events were missed while away
         }),
@@ -118,6 +185,16 @@ export class AppState {
           const locale = this.i18n.intlLocale;
           untrack(() => this.store.setCollationLocale(locale));
         });
+        // A browser download waits for the user: open the prompt window (the shell's, which asks
+        // about it), or, without one, bring this window to the front (also from the tray).
+        let shown: string | undefined;
+        $effect(() => {
+          const id = this.waiting[0]?.id;
+          if (id === undefined || id === shown) return;
+          shown = id;
+          if (this.prompt) return;
+          untrack(() => this.#bringUp());
+        });
         // A queue view whose queue went away (removed elsewhere) falls back to the main queue.
         $effect(() => {
           const v = this.store.view;
@@ -130,6 +207,14 @@ export class AppState {
     );
     this.segments.start();
     void this.reload();
+    if (this.prompt) return;
+    // First run of the desktop app: "Connect your browser".
+    void this.host.browsers
+      ?.firstRun()
+      .then((first) => {
+        if (first && this.view === "downloads") this.view = "browsers";
+      })
+      .catch(() => {});
   }
 
   get theme(): Theme {
@@ -149,14 +234,104 @@ export class AppState {
       this.client.call("settings.get", undefined),
       this.client.call("stats.get", undefined),
     ]);
-    if (list.status === "fulfilled") this.store.replaceAll(list.value);
+    if (list.status === "fulfilled") {
+      this.store.replaceAll(list.value);
+      // Followed downloads removed while this window was away are forgotten.
+      if (this.prompt) this.#setFollowed(this.followed.filter((f) => list.value.some((d) => d.id === f.id)));
+    }
     else this.store.loadError = this.describe(list.reason);
     if (settings.status === "fulfilled") {
       this.settings = settings.value;
       this.i18n.setLocale(settings.value.language);
     }
     if (stats.status === "fulfilled") this.stats = stats.value;
-    await this.loadQueues();
+    await Promise.all([this.loadQueues(), this.loadMedia(), this.loadOffers()]);
+    // Only a list that loaded counts: the prompt window must not close on a daemon still starting.
+    if (list.status === "fulfilled") this.loaded = true;
+  }
+
+  /** The prompt window, or this window when there is none. */
+  #bringUp(): void {
+    const h = this.host;
+    if (this.delegates) h.openPrompt?.().catch(() => undefined);
+    else h.showWindow?.().catch(() => undefined);
+  }
+
+  /**
+   * Pages the extension offered while this UI was away. The main window of a host with a
+   * prompt window only opens it; otherwise they are taken and shown here.
+   */
+  async loadOffers(): Promise<void> {
+    let list: MediaOffer[];
+    try {
+      list = await this.client.call("media.offers", undefined);
+    } catch {
+      return; // an older daemon, or not allowed: nothing to show
+    }
+    if (list.length === 0) return;
+    if (this.delegates) this.#bringUp();
+    else for (const o of list) await this.#takeOffer(o.id);
+  }
+
+  async #takeOffer(id: string): Promise<void> {
+    if (this.offers.some((o) => o.id === id)) return;
+    try {
+      const offer = await this.client.call("media.takeOffer", { id });
+      if (this.offers.some((o) => o.id === offer.id)) return;
+      this.offers = [...this.offers, offer];
+      if (!this.prompt) this.#bringUp();
+    } catch {
+      // Taken by another window, or expired.
+    }
+  }
+
+  #setFollowed(list: Followed[]): void {
+    this.followed = list;
+    writeFollowed(this.#storage, list);
+    this.#tellShell();
+  }
+
+  #tellShell(): void {
+    this.host.setFollowed?.(this.followed.map((f) => f.id)).catch(() => undefined);
+  }
+
+  /** The prompt window started a download: follow it (its progress, then how it ended). */
+  follow(id: string): void {
+    if (!this.prompt) return;
+    this.#setFollowed([...this.followed.filter((f) => f.id !== id), { id, hidden: false }]);
+  }
+
+  /** "Hide": its progress goes away; the prompt window comes back when it ends. */
+  hideFollowed(id: string): void {
+    this.#setFollowed(this.followed.map((f) => (f.id === id ? { ...f, hidden: true } : f)));
+  }
+
+  /** Done with a followed download ("Close" on how it ended). */
+  unfollow(id: string): void {
+    this.#setFollowed(this.followed.filter((f) => f.id !== id));
+  }
+
+  /** Open a completed download's file, or show it in its folder (desktop app). */
+  openFile(id: string, reveal: boolean): void {
+    this.host.openDownload?.(id, reveal).catch((e: unknown) => this.report(e));
+  }
+
+  /** The add dialog for the first offered page closed (added, or not wanted). */
+  doneWithOffer(id: string): void {
+    this.offers = this.offers.filter((o) => o.id !== id);
+  }
+
+  /** Learn whether the daemon offers video and audio sites (yt-dlp). Never reports -32006. */
+  async loadMedia(): Promise<void> {
+    if (this.#capabilities && !this.#capabilities.includes(MEDIA_CAPABILITY)) {
+      this.media.disable();
+      return;
+    }
+    try {
+      this.media.replace(await this.client.call("media.tools", undefined));
+    } catch (e) {
+      if (isMediaUnsupported(e)) this.media.disable();
+    }
   }
 
   /** Learn whether the daemon has queues, and load them if it does. Never reports -32006. */
@@ -183,6 +358,9 @@ export class AppState {
       c.on("event.download.progress", (e) => this.store.applyProgress(e.items)),
       c.on("event.download.removed", (e) => {
         this.store.remove(e.ids);
+        if (this.prompt && this.followed.some((f) => e.ids.includes(f.id))) {
+          this.#setFollowed(this.followed.filter((f) => !e.ids.includes(f.id)));
+        }
         this.segments.forget(e.ids);
       }),
       c.on("event.stats", (s) => (this.stats = s)),
@@ -195,11 +373,18 @@ export class AppState {
         this.queues.replace(list);
       }),
       c.on("event.queue.finished", (e) => this.queues.finished(e)),
+      c.on("event.media.tools", (s) => this.media.replace(s)),
+      c.on("event.media.offered", (o) => {
+        if (this.delegates) this.#bringUp();
+        else void this.#takeOffer(o.id);
+      }),
       c.on("event.download.state", (e) => {
         const prev = this.store.applyState(e);
         const d = this.store.get(e.id);
         if (!d || prev === undefined || prev === e.state) return;
         if (e.state === "completed") this.segments.forget([e.id]);
+        // A download the prompt window follows ended: bring it back to say so.
+        if (this.delegates && ENDED.has(e.state) && readFollowed(this.#storage).some((f) => f.id === e.id)) this.#bringUp();
         this.#announce(d, e.state);
       }),
     );
@@ -215,17 +400,50 @@ export class AppState {
       this.toasts.push({
         tone: "warning",
         message: t("toast.expired", { name }),
-        action: { label: t("action.refreshLink"), run: () => (this.refreshId = d.id) },
+        action: { label: t("action.refreshLink"), run: () => this.refreshLink(d.id) },
       });
     }
   }
 
   // ---------------------------------------------------------------- actions
 
+  /**
+   * A link expired. A media download asks the daemon to get fresh links from
+   * its page (yt-dlp) by itself; anything else needs a new address from the
+   * user.
+   */
+  refreshLink(id: string): void {
+    const d = this.store.get(id);
+    if (d?.data.media) {
+      this.client.call("download.refreshUrl", { id, url: d.data.url }).catch((e: unknown) => this.report(e));
+      return;
+    }
+    this.refreshId = id;
+  }
+
   /** Open the add dialog, optionally with an address filled in. */
+  /** Hide the crash-report notice for good. */
+  dismissCrashNotice(): void {
+    if (!this.crashNotice) return;
+    this.crashNotice = false;
+    this.host.crashReports?.dismissNotice().catch((e: unknown) => this.report(e));
+  }
+
+  /** The notice's link: Settings, with focus on the crash-report switch. */
+  openCrashSetting(): void {
+    this.dismissCrashNotice();
+    this.view = "settings";
+    const focus = (tries: number): void => {
+      const el = document.getElementById("vy-set-crash");
+      if (el) el.focus();
+      else if (tries > 0) setTimeout(() => focus(tries - 1), 50);
+    };
+    setTimeout(() => focus(40), 0);
+  }
+
   openAdd(url = ""): void {
     this.addUrl = url;
-    this.view = this.view === "settings" ? "downloads" : this.view;
+    this.view = this.view === "settings" || this.view === "browsers" ? "downloads" : this.view;
     this.addOpen = true;
   }
 
@@ -242,7 +460,7 @@ export class AppState {
   }
 
   describe(err: unknown): string {
-    if (isWhooshRpcError(err) || isWhooshConnectionError(err)) return err.message;
+    if (isWdmRpcError(err) || isWdmConnectionError(err)) return err.message;
     return err instanceof Error ? err.message : String(err);
   }
 
@@ -283,7 +501,7 @@ export class AppState {
     if (pausable.length > 0) return this.pause(pausable);
     const needsRefresh = sel.find((d) => d.data.state === "needs_refresh");
     if (needsRefresh && sel.length === 1) {
-      this.refreshId = needsRefresh.id;
+      this.refreshLink(needsRefresh.id);
       return;
     }
     return this.resume(this.resumableIds(sel));
@@ -298,10 +516,34 @@ export class AppState {
     const name = this.store.get(ids[0])?.data.filename ?? "";
     try {
       await this.client.call("download.remove", { ids, deleteFiles });
-      this.toasts.push({ tone: "info", message: t("remove.done", { count: ids.length, name }) });
+      this.toasts.push({ tone: "info", message: ids.length === 1 ? t("remove.doneOne", { name }) : t("remove.done", { count: ids.length }) });
     } catch (e) {
       this.report(e);
     }
+  }
+
+  /**
+   * Answer a download that waits for confirmation: start it now, or keep it for later
+   * (`download.confirm`). Throws, so the dialog can show what went wrong.
+   */
+  async confirmDownload(params: ConfirmParams): Promise<void> {
+    await this.client.call("download.confirm", params);
+    // The daemon's `updated` event follows; leave the dialog right away.
+    const d = this.store.get(params.id);
+    if (d?.data.awaitingConfirmation) {
+      const next: DownloadSummary = { ...d.data };
+      delete next.awaitingConfirmation;
+      this.store.upsert(next);
+    }
+  }
+
+  /**
+   * "Cancel" in the confirmation dialog (nothing was fetched yet) and in the prompt window's
+   * progress: the download goes away with its partial file.
+   */
+  async cancelWaiting(id: string): Promise<void> {
+    await this.client.call("download.remove", { ids: [id], deleteFiles: true });
+    this.store.remove([id]);
   }
 
   async refreshUrl(id: string, url: string): Promise<void> {
@@ -310,6 +552,18 @@ export class AppState {
 
   async add(params: AddParams): Promise<string> {
     const { id } = await this.client.call("download.add", params);
+    await this.#ensureRow(id);
+    return id;
+  }
+
+  /** A video or audio download from a page (`media.add`). */
+  async addMedia(params: MediaAddParams): Promise<string> {
+    const { id } = await this.client.call("media.add", params);
+    await this.#ensureRow(id);
+    return id;
+  }
+
+  async #ensureRow(id: string): Promise<void> {
     // The added event usually arrives first; make sure the row exists either way.
     if (!this.store.get(id)) {
       try {
@@ -318,7 +572,6 @@ export class AppState {
         // the event will bring it
       }
     }
-    return id;
   }
 
   async copyLink(id: string): Promise<void> {
@@ -419,7 +672,7 @@ export class AppState {
       this.store.upsert(next);
     }
     const name = queue === MAIN_QUEUE ? this.i18n.t("queue.main") : queue;
-    this.toasts.push({ tone: "success", message: this.i18n.t("move.done", { count: ids.length, queue: name }) }, 3000);
+    this.toasts.push({ tone: "success", message: ids.length === 1 ? this.i18n.t("move.doneOne", { queue: name }) : this.i18n.t("move.done", { count: ids.length, queue: name }) }, 3000);
     return true;
   }
 
@@ -456,7 +709,7 @@ export class AppState {
   }
 }
 
-const KEY = Symbol("whoosh.app");
+const KEY = Symbol("wdm.app");
 
 export function provideApp(app: AppState): AppState {
   return setContext(KEY, app);

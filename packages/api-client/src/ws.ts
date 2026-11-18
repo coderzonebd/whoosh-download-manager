@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// WhooshClient over JSON-RPC 2.0 / WebSocket, per docs/api/PROTOCOL.md:
+// WdmClient over JSON-RPC 2.0 / WebSocket, per docs/api/PROTOCOL.md:
 // - `session.hello` is always the first frame on every (re)connection;
 // - requests are correlated by numeric id; responses may arrive in any order;
 // - notifications (`event.*`) are dispatched to `on()` handlers;
@@ -16,17 +16,28 @@
 // runtime file on every attempt (the daemon may restart on another port).
 
 import { newNonce, verifyHelloProof } from "./auth";
-import { CloseCode, WhooshConnectionError, WhooshRpcError, type ConnectionErrorReason } from "./errors";
+import { CloseCode, WdmConnectionError, WdmRpcError, type ConnectionErrorReason } from "./errors";
 import {
   PROTOCOL_VERSION,
   type ClientInfo,
   type EventMap,
   type HelloResult,
   type MethodMap,
-  type WhooshClient,
+  type WdmClient,
 } from "./types";
 
 /** The subset of the WHATWG WebSocket API this client needs (browser, Node ≥ 22, Tauri webview). */
+
+/**
+ * Methods that run yt-dlp and may take longer than the usual request timeout: a YouTube page
+ * with the managed QuickJS takes 20–30 s, a slow site more. The daemon gives up on its own after
+ * 180 s (crates/media, PROBE_TIMEOUT), so the client waits a little longer than that.
+ */
+const SLOW_METHODS: Partial<Record<string, number>> = {
+  "media.probe": 200_000,
+  "media.add": 200_000,
+};
+
 export interface WebSocketLike {
   readonly readyState: number;
   send(data: string): void;
@@ -88,7 +99,7 @@ interface Pending {
 
 const OPEN = 1;
 
-export class WsWhooshClient implements WhooshClient {
+export class WsWdmClient implements WdmClient {
   readonly #opts: WsClientOptions;
   readonly #protocol: number;
   readonly #handlers = new Map<string, Set<(p: unknown) => void>>();
@@ -131,7 +142,7 @@ export class WsWhooshClient implements WhooshClient {
   ready(): Promise<HelloResult> {
     const s = this.#status;
     if (s.state === "open") return Promise.resolve(s.hello);
-    if (s.state === "closed") return Promise.reject(new WhooshConnectionError(s.reason));
+    if (s.state === "closed") return Promise.reject(new WdmConnectionError(s.reason));
     return new Promise((resolve, reject) => {
       const off = this.onStatus((st) => {
         if (st.state === "open") {
@@ -139,7 +150,7 @@ export class WsWhooshClient implements WhooshClient {
           resolve(st.hello);
         } else if (st.state === "closed") {
           queueMicrotask(off);
-          reject(new WhooshConnectionError(st.reason));
+          reject(new WdmConnectionError(st.reason));
         }
       });
     });
@@ -148,7 +159,7 @@ export class WsWhooshClient implements WhooshClient {
   call<M extends keyof MethodMap>(method: M, params: MethodMap[M]["params"]): Promise<MethodMap[M]["result"]> {
     if (this.#final) {
       const reason = this.#status.state === "closed" ? this.#status.reason : "closed";
-      return Promise.reject(new WhooshConnectionError(reason));
+      return Promise.reject(new WdmConnectionError(reason));
     }
     if (method === "session.hello") {
       return Promise.reject(new Error("session.hello is sent by the client itself on every connection"));
@@ -158,12 +169,12 @@ export class WsWhooshClient implements WhooshClient {
       const msg: Record<string, unknown> = { jsonrpc: "2.0", id, method };
       if (params !== undefined) msg.params = params;
       const p: Pending = { id, method, frame: JSON.stringify(msg), resolve: resolve as (v: unknown) => void, reject, timer: undefined };
-      const timeout = this.#opts.requestTimeoutMs ?? 30_000;
+      const timeout = SLOW_METHODS[method] ?? this.#opts.requestTimeoutMs ?? 30_000;
       if (timeout > 0) {
         p.timer = setTimeout(() => {
           this.#inflight.delete(id);
           this.#outbox = this.#outbox.filter((q) => q !== p);
-          reject(new WhooshConnectionError("timeout", `${method} timed out after ${timeout} ms`));
+          reject(new WdmConnectionError("timeout", `${method} timed out after ${timeout} ms`));
         }, timeout);
       }
       if (this.#status.state === "open" && this.#socket?.readyState === OPEN) this.#send(p);
@@ -195,7 +206,7 @@ export class WsWhooshClient implements WhooshClient {
       try {
         h(s);
       } catch (err) {
-        console.error("[whoosh ws] status handler threw", err);
+        console.error("[wdm ws] status handler threw", err);
       }
     }
   }
@@ -239,7 +250,7 @@ export class WsWhooshClient implements WhooshClient {
       try {
         msg = JSON.parse(ev.data);
       } catch {
-        console.warn("[whoosh ws] dropping a frame that is not JSON");
+        console.warn("[wdm ws] dropping a frame that is not JSON");
         return;
       }
       for (const m of Array.isArray(msg) ? msg : [msg]) {
@@ -293,7 +304,7 @@ export class WsWhooshClient implements WhooshClient {
         try {
           h(msg.params);
         } catch (err) {
-          console.error(`[whoosh ws] ${msg.method} handler threw`, err);
+          console.error(`[wdm ws] ${msg.method} handler threw`, err);
         }
       }
       return;
@@ -331,7 +342,7 @@ export class WsWhooshClient implements WhooshClient {
     if (p.timer) clearTimeout(p.timer);
     if (error) {
       p.reject(
-        new WhooshRpcError(
+        new WdmRpcError(
           typeof error.code === "number" ? error.code : -32603,
           typeof error.message === "string" ? error.message : "unknown error",
           error.data,
@@ -361,7 +372,7 @@ export class WsWhooshClient implements WhooshClient {
   #failInflight(): void {
     for (const p of this.#inflight.values()) {
       if (p.timer) clearTimeout(p.timer);
-      p.reject(new WhooshConnectionError("connection_lost", `connection lost during ${p.method}`));
+      p.reject(new WdmConnectionError("connection_lost", `connection lost during ${p.method}`));
     }
     this.#inflight.clear();
   }
@@ -400,7 +411,7 @@ export class WsWhooshClient implements WhooshClient {
         // already closing
       }
     }
-    const err = (p: Pending) => new WhooshConnectionError(reason, `${p.method}: ${reason}`);
+    const err = (p: Pending) => new WdmConnectionError(reason, `${p.method}: ${reason}`);
     for (const p of [...this.#inflight.values(), ...this.#outbox]) {
       if (p.timer) clearTimeout(p.timer);
       p.reject(err(p));
@@ -412,6 +423,6 @@ export class WsWhooshClient implements WhooshClient {
 }
 
 /** Create a client and start connecting. Calls made before the hello completes are queued. */
-export function connectWs(opts: WsClientOptions): WsWhooshClient {
-  return new WsWhooshClient(opts);
+export function connectWs(opts: WsClientOptions): WsWdmClient {
+  return new WsWdmClient(opts);
 }

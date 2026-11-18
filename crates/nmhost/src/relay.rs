@@ -10,9 +10,15 @@
 //!   token. When the daemon goes away the host fails in-flight requests,
 //!   tells the extension (`event.nm.status`) and keeps reconnecting, re-reading
 //!   the runtime file each time because the port and token may change.
+//! * When the daemon answers a `download.add` or a `media.offer` with
+//!   `needsApp` (a download waits for the user, or a page waits for the
+//!   media picker, and no desktop window is there to show it), the host
+//!   starts the desktop app with its prompt window ([`crate::launch`]).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
@@ -25,7 +31,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::{self, Message, Utf8Bytes};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use whoosh_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, method};
+use wdm_proto::{ClientInfo, HelloParams, HelloResult, PROTOCOL_VERSION, RPC_PATH, method};
 
 use crate::framing::{self, FrameError, Inbound, MAX_FROM_BROWSER, MAX_TO_BROWSER};
 use crate::log;
@@ -73,7 +79,33 @@ pub struct Config {
     /// Browser → host frames above this size are discarded and answered with
     /// an error.
     pub max_from_browser: usize,
+    /// Starts the desktop app (`needsApp`); at most once per `launch_gap`.
+    pub launcher: Launcher,
+    pub launch_gap: Duration,
+    /// A download handed over while no daemon runs starts the app, and its answer waits this
+    /// long for the app's daemon to come up (the extension waits a little longer).
+    pub app_start_wait: Duration,
 }
+
+/// What starts the desktop app: [`crate::launch::launch_app`], or a test
+/// double.
+#[derive(Clone)]
+pub struct Launcher(pub Arc<dyn Fn() + Send + Sync>);
+
+impl Launcher {
+    pub fn app() -> Self {
+        Self(Arc::new(crate::launch::launch_app))
+    }
+}
+
+impl fmt::Debug for Launcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Launcher")
+    }
+}
+
+/// While the app starts for a hand-over, how often the host looks for its daemon.
+const APP_START_POLL: Duration = Duration::from_millis(400);
 
 impl Config {
     pub fn new(runtime_file: PathBuf, client: ClientInfo) -> Self {
@@ -86,6 +118,9 @@ impl Config {
             retry_max: Duration::from_secs(5),
             on_demand_gap: Duration::from_millis(250),
             max_from_browser: MAX_FROM_BROWSER,
+            launcher: Launcher::app(),
+            launch_gap: crate::launch::MIN_GAP,
+            app_start_wait: Duration::from_secs(15),
         }
     }
 }
@@ -110,6 +145,19 @@ pub enum ConnectError {
     Impostor,
     #[error("connection task failed: {0}")]
     Task(String),
+}
+
+/// The part of a `download.add` or `media.offer` answer the host acts on.
+#[derive(Debug, Deserialize)]
+struct AddReply {
+    #[serde(default)]
+    result: Option<AddReplyResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AddReplyResult {
+    #[serde(default, rename = "needsApp")]
+    needs_app: bool,
 }
 
 /// Only what the relay needs to route a message; the rest is skipped.
@@ -164,8 +212,14 @@ impl Conn {
 /// A browser message that arrived while a connection attempt was running.
 #[derive(Debug)]
 enum Waiter {
-    Status { id: Value },
-    Forward { text: String, id: Option<Value> },
+    Status {
+        id: Value,
+    },
+    Forward {
+        text: String,
+        id: Option<Value>,
+        is_add: bool,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -261,6 +315,12 @@ struct Relay {
     /// Last daemon state the extension knows about. `None` until the first
     /// attempt finishes; that first result is not an "event".
     reported: Option<bool>,
+    /// Pending `download.add` and `media.offer` requests (keys of `pending`).
+    adds: HashSet<String>,
+    last_launch: Option<Instant>,
+    /// Set when this host started the app for a waiting hand-over: until then, a failed
+    /// connection keeps the requests waiting and tries again shortly.
+    starting_until: Option<Instant>,
 }
 
 impl Relay {
@@ -278,6 +338,9 @@ impl Relay {
             retry_delay,
             last_attempt: None,
             reported: None,
+            adds: HashSet::new(),
+            last_launch: None,
+            starting_until: None,
         }
     }
 
@@ -320,7 +383,7 @@ impl Relay {
                 self.reply_error(
                     id,
                     code::INVALID_REQUEST,
-                    "session.hello is performed by whoosh-nmhost; extensions must not send it",
+                    "session.hello is performed by wdm-nmhost; extensions must not send it",
                 )
                 .await;
             }
@@ -330,7 +393,9 @@ impl Relay {
                 self.reply_error(id, code::METHOD_NOT_FOUND, &msg).await;
             }
         } else {
-            self.forward(text, id).await;
+            // Both may answer `needsApp`.
+            let is_add = method == method::DOWNLOAD_ADD || method == method::MEDIA_OFFER;
+            self.forward(text, id, is_add).await;
         }
     }
 
@@ -349,23 +414,23 @@ impl Relay {
         }
     }
 
-    async fn forward(&mut self, text: String, id: Option<Value>) {
+    async fn forward(&mut self, text: String, id: Option<Value>, is_add: bool) {
         match self.conn {
-            Conn::Up(_) => self.send_to_daemon(text, id).await,
-            Conn::Connecting(_) => self.waiting.push(Waiter::Forward { text, id }),
+            Conn::Up(_) => self.send_to_daemon(text, id, is_add).await,
+            Conn::Connecting(_) => self.waiting.push(Waiter::Forward { text, id, is_add }),
             Conn::Down { .. } => {
                 if self.may_attempt_now() {
                     self.start_connecting();
-                    self.waiting.push(Waiter::Forward { text, id });
+                    self.waiting.push(Waiter::Forward { text, id, is_add });
                 } else if let Some(id) = id {
-                    self.reply_unavailable(id, "the whoosh daemon is not running")
+                    self.reply_unavailable(id, "the wdm daemon is not running")
                         .await;
                 }
             }
         }
     }
 
-    async fn send_to_daemon(&mut self, text: String, id: Option<Value>) {
+    async fn send_to_daemon(&mut self, text: String, id: Option<Value>, is_add: bool) {
         let Conn::Up(daemon) = &mut self.conn else {
             if let Some(id) = id {
                 self.reply_unavailable(id, "the connection to the daemon was lost")
@@ -375,6 +440,9 @@ impl Relay {
         };
         if let Some(id) = &id {
             self.pending.insert(id_key(id), id.clone());
+            if is_add {
+                self.adds.insert(id_key(id));
+            }
         }
         if let Err(e) = daemon.ws.send(Message::text(text)).await {
             log::warn(&format!("sending to the daemon failed: {e}"));
@@ -389,6 +457,7 @@ impl Relay {
             ConnEvent::RetryDue => self.start_connecting(),
             ConnEvent::Connected(Ok(daemon)) => {
                 log::debug(&format!("connected to daemon {}", daemon.version));
+                self.starting_until = None;
                 self.conn = Conn::Up(daemon);
                 self.retry_delay = self.cfg.retry_min;
                 self.report(true).await;
@@ -398,18 +467,27 @@ impl Relay {
                             let up = matches!(self.conn, Conn::Up(_));
                             self.reply_status(id, up).await;
                         }
-                        Waiter::Forward { text, id } => self.send_to_daemon(text, id).await,
+                        Waiter::Forward { text, id, is_add } => {
+                            self.send_to_daemon(text, id, is_add).await;
+                        }
                     }
                 }
             }
             ConnEvent::Connected(Err(e)) => {
                 log::debug(&format!("cannot reach the daemon: {e}"));
+                if self.waits_for_app_start() {
+                    // The app (and its daemon) is starting for a waiting hand-over: try again soon.
+                    self.conn = Conn::Down {
+                        retry_at: Instant::now() + APP_START_POLL,
+                    };
+                    return;
+                }
                 self.conn = Conn::Down {
                     retry_at: Instant::now() + self.retry_delay,
                 };
                 self.retry_delay = (self.retry_delay * 2).min(self.cfg.retry_max);
                 self.report(false).await;
-                let reason = format!("the whoosh daemon is not available: {e}");
+                let reason = format!("the wdm daemon is not available: {e}");
                 for waiter in std::mem::take(&mut self.waiting) {
                     match waiter {
                         Waiter::Status { id } => self.reply_status(id, false).await,
@@ -447,7 +525,11 @@ impl Relay {
         };
         let is_response = envelope.method.is_none();
         if is_response && let Some(id) = &envelope.id {
-            self.pending.remove(&id_key(id));
+            let key = id_key(id);
+            self.pending.remove(&key);
+            if self.adds.remove(&key) {
+                self.after_add(text.as_str());
+            }
         }
 
         if text.len() > MAX_TO_BROWSER {
@@ -471,6 +553,54 @@ impl Relay {
         self.send_raw(text.as_bytes()).await;
     }
 
+    /// No daemon answers and a hand-over (`download.add`, `media.offer`) waits: start the app,
+    /// which starts its daemon, once, and keep the hand-over waiting for it while
+    /// `app_start_wait` lasts. Whether to keep waiting now.
+    fn waits_for_app_start(&mut self) -> bool {
+        let now = Instant::now();
+        if let Some(until) = self.starting_until {
+            if now < until {
+                return true;
+            }
+            self.starting_until = None;
+            return false;
+        }
+        let hand_over = self
+            .waiting
+            .iter()
+            .any(|w| matches!(w, Waiter::Forward { is_add: true, .. }));
+        if !hand_over
+            || self
+                .last_launch
+                .is_some_and(|at| at.elapsed() < self.cfg.launch_gap)
+        {
+            return false;
+        }
+        log::debug("no daemon for a hand-over: starting the app");
+        self.last_launch = Some(now);
+        self.starting_until = Some(now + self.cfg.app_start_wait);
+        (self.cfg.launcher.0)();
+        true
+    }
+
+    /// A `download.add` or `media.offer` was answered: start the app if it waits
+    /// for a desktop window that is not there.
+    fn after_add(&mut self, text: &str) {
+        let needs_app = serde_json::from_str::<AddReply>(text)
+            .ok()
+            .and_then(|r| r.result)
+            .is_some_and(|r| r.needs_app);
+        if !needs_app
+            || self
+                .last_launch
+                .is_some_and(|at| at.elapsed() < self.cfg.launch_gap)
+        {
+            return;
+        }
+        self.last_launch = Some(Instant::now());
+        (self.cfg.launcher.0)();
+    }
+
     async fn on_lost(&mut self) {
         if let Conn::Up(daemon) = &mut self.conn {
             // Best effort; the socket is probably gone already.
@@ -480,6 +610,7 @@ impl Relay {
             retry_at: Instant::now() + self.cfg.retry_min,
         };
         self.retry_delay = (self.cfg.retry_min * 2).min(self.cfg.retry_max);
+        self.adds.clear();
         let pending: Vec<Value> = self.pending.drain().map(|(_, id)| id).collect();
         for id in pending {
             self.reply_unavailable(
@@ -592,7 +723,7 @@ async fn connect(cfg: &Config) -> Result<Box<Daemon>, ConnectError> {
     let url = format!("ws://127.0.0.1:{}{RPC_PATH}", info.port);
     let (mut ws, _response) = tokio_tungstenite::connect_async(url).await?;
 
-    let nonce = whoosh_proto::auth::new_nonce().map_err(|e| ConnectError::Task(e.to_string()))?;
+    let nonce = wdm_proto::auth::new_nonce().map_err(|e| ConnectError::Task(e.to_string()))?;
     let token = info.token;
     let hello = json!({
         "jsonrpc": "2.0",
@@ -628,7 +759,7 @@ async fn connect(cfg: &Config) -> Result<Box<Daemon>, ConnectError> {
         let result = reply.get("result").cloned().unwrap_or(Value::Null);
         let hello: HelloResult =
             serde_json::from_value(result).map_err(|e| ConnectError::BadHello(e.to_string()))?;
-        if !whoosh_proto::auth::verify_hello_proof(&token, &nonce, &hello.proof) {
+        if !wdm_proto::auth::verify_hello_proof(&token, &nonce, &hello.proof) {
             // Close without relaying anything: no request of the extension's
             // (cookies, headers) may reach an impostor.
             let _ = ws.close(None).await;

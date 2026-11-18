@@ -1,9 +1,9 @@
-# whoosh-nmhost
+# wdm-nmhost
 
-The native messaging host for the Whoosh browser extension (Pro mode). Browsers start it when the extension calls `runtime.connectNative("com.coderzonebd.whoosh")`; it relays the extension's JSON-RPC to the daemon.
+The native messaging host for the WDM browser extension (Pro mode). Browsers start it when the extension calls `runtime.connectNative("com.coderzonebd.whoosh")`; it relays the extension's JSON-RPC to the daemon.
 
 ```
-extension ──native messaging (stdio)──▶ whoosh-nmhost ──WebSocket + token──▶ whoosh daemon
+extension ──native messaging (stdio)──▶ wdm-nmhost ──WebSocket + token──▶ wdm daemon
 ```
 
 The extension never opens the daemon's WebSocket and never sees its token (ADR 0003). License: Apache-2.0.
@@ -14,6 +14,7 @@ The extension never opens the daemon's WebSocket and never sees its token (ADR 0
 - **`nm.status`** is answered by the host itself: `{ "daemonRunning": bool, "daemonVersion"?: string, "hostVersion": string }`. If the daemon is not connected, the host tries once before answering.
 - **Everything else is relayed verbatim.** The host reads `runtime.json` (`port`, `token`) from the data directory, connects to `ws://127.0.0.1:<port>/rpc`, sends `session.hello` itself, and then forwards the browser's exact text to the daemon and the daemon's exact text (responses and `event.*` notifications) to the browser.
 - **Daemon restarts:** when the connection drops, in-flight requests get an error, the host sends `event.nm.status` (`daemonRunning: false`) and reconnects with backoff (250 ms doubling to 5 s), re-reading `runtime.json` every time because the port and token may have changed. When it is back, it sends `event.nm.status` with `daemonRunning: true`.
+- **Starting the desktop app:** when the daemon answers a `download.add` with `needsApp: true` (the download waits for the user's confirmation and no app window is connected; PROTOCOL.md, "Downloads from the browser"), or a `media.offer` with `needsApp: true` (the extension's "Download with WDM" button handed over a video page and no app window is connected to show the media picker), the host starts the app with `--prompt`, at most once every 30 s (`src/launch.rs`). The app then keeps its main window hidden in the tray and opens only its small prompt window. macOS: `open <bundle> --args --prompt` on the `.app` bundle the host is in, or `open -b com.coderzonebd.whoosh --args --prompt` for a host outside a bundle (fails quietly when the app is not installed). Windows and Linux: `wdm-desktop --prompt` next to the host, started in its own process group (and, on Windows, outside the browser's job object when the browser allows it), so closing the browser does not close the app; a running app gets the argument through its single-instance hand-over and opens its prompt window. Nothing is started when there is no app next to the host: command-line-only installs, and AppImages, whose host runs from a copy in the data directory (the download or page then waits until the app is opened). `WDM_NMHOST_NO_LAUNCH=1` turns it off (the tests set it).
 - The host exits when the browser closes the port (EOF on stdin).
 
 ### Errors the host produces
@@ -34,21 +35,24 @@ Request ids beginning with `nmhost:` are reserved for the host's own `session.he
 
 ```bash
 export CARGO_BUILD_JOBS=2
-cargo build -p whoosh-nmhost --release
+cargo build -p wdm-nmhost --release
 ```
 
-The binary is `target/release/whoosh-nmhost`.
+The binary is `target/release/wdm-nmhost`.
 
 ## Register with your browsers (development)
 
 ```bash
-target/release/whoosh-nmhost --register
+target/release/wdm-nmhost --register
 ```
 
 writes a manifest for every browser this user has a profile for (Chrome, Chromium, Brave, Edge, Vivaldi, Firefox) pointing at the binary you ran, and allows:
 
-- the development Chromium extension ID `clhjgofaikdmabdnebgcmdffdjenagfl` (pinned by the `key` in `apps/extension/scripts/manifest.mjs`),
+- the GitHub/development Chromium extension ID `clhjgofaikdmabdnebgcmdffdjenagfl` (pinned by the `key` in `apps/extension/scripts/manifest.mjs`; the Chromium zip on GitHub Releases keeps that key, so an unpacked install of it has this ID),
+- the store IDs compiled in from [`packaging/browsers/extension-ids.json`](../../packaging/browsers/extension-ids.json) (Edge Add-ons, Chrome Web Store; none yet),
 - the Firefox extension ID `whoosh@coderzonebd.com`.
+
+The installers run it for you (the NSIS installer per user, the MSI and the `.deb`/`.rpm` with system-wide manifests), and the desktop app registers it for the user where no installer could (macOS, AppImage): see [`packaging/browsers/README.md`](../../packaging/browsers/README.md).
 
 Options:
 
@@ -56,14 +60,19 @@ Options:
 --browser <NAME>       chrome, chromium, brave, edge, vivaldi, firefox or all (repeatable)
 --extension-id <ID>    also allow another Chromium extension ID (e.g. a store ID)
 --firefox-id <ID>      also allow another Firefox extension ID
---no-dev-id            do not allow the development ID (release installs should pass this)
+--no-dev-id            do not allow the GitHub/development ID
 --host-path <FILE>     executable path to put in the manifests (default: this executable)
+--offer-extension      also ask the browsers to offer the extension from their store
+                       ("external extensions": Edge Add-ons once its ID exists; the
+                       Chrome Web Store once its ID exists and externalInstall is on)
 ```
+
+Store offers go to `HKCU\Software\Microsoft\Edge\Extensions\<id>` and `HKCU\Software\Google\Chrome\Extensions\<id>` (value `update_url`) on Windows, and to `~/Library/Application Support/<browser>/External Extensions/<id>.json` on macOS; Linux gets them from the packages. `--unregister` removes them too.
 
 Move the binary? Run `--register` again. Remove everything with:
 
 ```bash
-target/release/whoosh-nmhost --unregister
+target/release/wdm-nmhost --unregister
 ```
 
 `--print-manifest chromium|firefox` prints a manifest instead of installing it (for packagers).
@@ -80,7 +89,7 @@ target/release/whoosh-nmhost --unregister
 | | Firefox | `~/.mozilla/native-messaging-hosts/…` (and `$XDG_CONFIG_HOME/mozilla/native-messaging-hosts/` if that directory exists) |
 | macOS | Chrome / Chromium / Brave / Edge / Vivaldi | `~/Library/Application Support/<Google/Chrome, Chromium, BraveSoftware/Brave-Browser, Microsoft Edge, Vivaldi>/NativeMessagingHosts/…`; Brave also Chrome's `Google/Chrome/NativeMessagingHosts/…` |
 | | Firefox | `~/Library/Application Support/Mozilla/NativeMessagingHosts/…` |
-| Windows | all | manifest in `%LOCALAPPDATA%\whoosh\nmhost\com.coderzonebd.whoosh.{chromium,firefox}.json`; key `HKCU\Software\<Google\Chrome, Chromium, BraveSoftware\Brave-Browser, Microsoft\Edge, Vivaldi, Mozilla>\NativeMessagingHosts\com.coderzonebd.whoosh` (Brave: also Chrome's key) |
+| Windows | all | manifest in `%LOCALAPPDATA%\wdm\nmhost\com.coderzonebd.whoosh.{chromium,firefox}.json`; key `HKCU\Software\<Google\Chrome, Chromium, BraveSoftware\Brave-Browser, Microsoft\Edge, Vivaldi, Mozilla>\NativeMessagingHosts\com.coderzonebd.whoosh` (Brave: also Chrome's key) |
 
 `$XDG_CONFIG_HOME` is honoured on Linux. Browsers installed as Flatpak or Snap cannot start native hosts outside their sandbox without extra setup; that is out of scope here.
 
@@ -88,7 +97,7 @@ target/release/whoosh-nmhost --unregister
 
 **Tested:**
 - Linux: unit tests; Chrome for Testing and Firefox 159 end-to-end runs in `apps/extension`; Firefox 159 starting a host from the manifest that `--register --browser firefox` wrote (`~/.mozilla/native-messaging-hosts`).
-- macOS (Intel, macOS 26): unit tests for every location and a register/unregister run in a temporary home; Brave 1.99 with the real `--register --browser brave` in the user's home, connecting to `whoosh-daemon --mock` through this host, handing a download over and refreshing its expired link (then `--unregister`); Chrome for Testing 1248 the same way with the manifest in its profile directory; the extension's e2e suite.
+- macOS (Intel, macOS 26): unit tests for every location and a register/unregister run in a temporary home; Brave 1.99 with the real `--register --browser brave` in the user's home, connecting to `wdm-daemon --mock` through this host, handing a download over and refreshing its expired link (then `--unregister`); Chrome for Testing 1248 the same way with the manifest in its profile directory; the extension's e2e suite.
 
 **Not tested:** Windows, Edge, Vivaldi, Chromium and Firefox on macOS. On Windows the registry layout was checked against the Chrome, Edge and Firefox documentation (`HKCU\Software\<vendor>\NativeMessagingHosts\<name>`, default value = absolute manifest path; HKCU is not subject to 32/64-bit redirection) and the crate's unit tests run on Windows in CI (registering into a temporary home with Linux paths), but the registry writes have never run there. Vivaldi on Windows may read Chrome's key instead of its own.
 
@@ -96,22 +105,22 @@ target/release/whoosh-nmhost --unregister
 
 The daemon writes `runtime.json` (`{ "port", "token", "pid", "version" }`) to:
 
-- Linux: `$XDG_DATA_HOME/whoosh` (default `~/.local/share/whoosh`)
-- macOS: `~/Library/Application Support/whoosh`
-- Windows: `%LOCALAPPDATA%\whoosh`
+- Linux: `$XDG_DATA_HOME/wdm` (default `~/.local/share/wdm`)
+- macOS: `~/Library/Application Support/wdm`
+- Windows: `%LOCALAPPDATA%\wdm`
 
-`WHOOSH_DATA_DIR` overrides it (tests, portable installs); the daemon has to honour the same variable.
+`WDM_DATA_DIR` overrides it (tests, portable installs); the daemon has to honour the same variable.
 
 ## Logging
 
-Stdout is the protocol channel, so the host logs to stderr only. Warnings are always printed; set `WHOOSH_NMHOST_LOG=debug` for more. Chrome shows a host's stderr when started with `--enable-logging=stderr`; Firefox shows it in the Browser Console.
+Stdout is the protocol channel, so the host logs to stderr only. Warnings are always printed; set `WDM_NMHOST_LOG=debug` for more. Chrome shows a host's stderr when started with `--enable-logging=stderr`; Firefox shows it in the Browser Console.
 
 ## Tests
 
 ```bash
 export CARGO_BUILD_JOBS=2
-cargo test -p whoosh-nmhost
-cargo clippy -p whoosh-nmhost --all-targets -- -D warnings
+cargo test -p wdm-nmhost
+cargo clippy -p wdm-nmhost --all-targets -- -D warnings
 ```
 
 - `src/framing.rs`: framing unit tests (partial reads, truncation, oversize drain, the exact 1 MiB limit).

@@ -9,14 +9,15 @@ export type Layout = "classic" | "modern";
 export const COLUMN_IDS = ["name", "size", "progress", "status", "speed", "eta", "connections", "added"] as const;
 export type ColumnId = (typeof COLUMN_IDS)[number];
 
+/** Sum 990: the columns fit the list of a default 1240 px window (minus the 240 px sidebar); the name column takes any room left over. */
 export const DEFAULT_WIDTHS: Record<ColumnId, number> = {
-  name: 300,
-  size: 92,
-  progress: 168,
-  status: 132,
-  speed: 104,
-  eta: 124,
-  connections: 108,
+  name: 230,
+  size: 84,
+  progress: 148,
+  status: 112,
+  speed: 100,
+  eta: 104,
+  connections: 100,
   added: 112,
 };
 export const MIN_WIDTH = 56;
@@ -30,7 +31,7 @@ export interface PrefsData {
   detailOpen: boolean;
 }
 
-const KEY = "whoosh.ui.prefs.v1";
+const KEY = "wdm.ui.prefs.v1";
 const SORT_KEYS: readonly SortKey[] = ["name", "size", "progress", "status", "speed", "eta", "connections", "added"];
 
 function clampWidth(w: unknown, fallback: number): number {

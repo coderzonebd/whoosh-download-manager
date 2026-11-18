@@ -421,11 +421,18 @@ pub(crate) fn link_then_unlink(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
+/// Errors that mean "this filesystem has no hard links". Android's shared storage (FUSE, the
+/// Download folder) answers `EACCES` (SELinux denies `link` there); a real permission problem
+/// fails the fallback the same way, so nothing is hidden.
 #[cfg(unix)]
 fn no_hard_links(e: &io::Error) -> bool {
     use rustix::io::Errno;
     Errno::from_io_error(e).is_some_and(|e| {
-        e == Errno::PERM || e == Errno::OPNOTSUPP || e == Errno::NOTSUP || e == Errno::NOSYS
+        e == Errno::PERM
+            || e == Errno::ACCESS
+            || e == Errno::OPNOTSUPP
+            || e == Errno::NOTSUP
+            || e == Errno::NOSYS
     })
 }
 
@@ -556,7 +563,7 @@ pub(crate) enum DirMode {
     Default,
     /// Owner-only: 0700 on Unix; on Windows a protected DACL for the user,
     /// `SYSTEM` and `Administrators`, which files created inside inherit
-    /// (see `whoosh_proto::winacl`).
+    /// (see `wdm_proto::winacl`).
     Private,
 }
 
@@ -574,7 +581,7 @@ pub(crate) fn create_dirs(dir: &Path, mode: DirMode) -> io::Result<Vec<PathBuf>>
     }
     #[cfg(windows)]
     if mode == DirMode::Private {
-        whoosh_proto::winacl::create_private_dir(dir)?;
+        wdm_proto::winacl::create_private_dir(dir)?;
     }
     #[cfg(windows)]
     let done = mode == DirMode::Private;

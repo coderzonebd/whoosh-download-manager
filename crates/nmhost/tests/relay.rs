@@ -17,9 +17,9 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use whoosh_nmhost::framing::{self, Inbound, MAX_TO_BROWSER};
-use whoosh_nmhost::relay::{self, Config, RelayError};
-use whoosh_proto::ClientInfo;
+use wdm_nmhost::framing::{self, Inbound, MAX_TO_BROWSER};
+use wdm_nmhost::relay::{self, Config, RelayError};
+use wdm_proto::ClientInfo;
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -31,10 +31,8 @@ impl TempDir {
     fn new(tag: &str) -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "whoosh-nmhost-test-{tag}-{}-{n}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wdm-nmhost-test-{tag}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // The host refuses a runtime file in a directory others can write to.
@@ -151,7 +149,7 @@ impl FakeDaemon {
                         "daemonVersion": "9.9.9-fake",
                         "protocol": 1,
                         "capabilities": ["http"],
-                        "proof": whoosh_proto::auth::hello_proof(key, nonce),
+                        "proof": wdm_proto::auth::hello_proof(key, nonce),
                     },
                 });
                 ws.send(Message::text(reply.to_string())).await.unwrap();
@@ -237,6 +235,9 @@ fn test_config(runtime_file: PathBuf) -> Config {
     cfg.retry_min = Duration::from_millis(20);
     cfg.retry_max = Duration::from_millis(100);
     cfg.on_demand_gap = Duration::ZERO;
+    // No real app is started by the tests, and a missing daemon is given up on quickly.
+    cfg.launcher = relay::Launcher(Arc::new(|| {}));
+    cfg.app_start_wait = Duration::from_millis(300);
     cfg
 }
 
@@ -353,6 +354,148 @@ async fn performs_hello_and_relays_verbatim_in_both_directions() {
     let status = browser.status(8).await;
     assert_eq!(status["daemonRunning"], true);
     assert_eq!(status["daemonVersion"], "9.9.9-fake");
+
+    browser.close().await.unwrap();
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn starts_the_app_when_a_download_waits_for_a_missing_window() {
+    let dir = TempDir::new("launch");
+    let mut daemon = FakeDaemon::start("t").await;
+    write_runtime(&dir.runtime_file(), daemon.port, "t");
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(dir.runtime_file());
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    let count = || launches.load(std::sync::atomic::Ordering::SeqCst);
+
+    let add = |id: u64| {
+        json!({"jsonrpc":"2.0","id":id,"method":"download.add","params":{"url":"https://e/a"}})
+            .to_string()
+    };
+    // A window is connected: nothing to start.
+    browser.send(&add(1)).await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":1,"result":{"id":"dl_1","awaitingConfirmation":true}}"#);
+    browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(count(), 0);
+
+    // No window: start the app, once (not again for the next one soon after).
+    for id in [2, 3] {
+        browser.send(&add(id)).await;
+        daemon.recv().await;
+        daemon.send(format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"result":{{"id":"dl_{id}","awaitingConfirmation":true,"needsApp":true}}}}"#
+        ));
+        browser.recv_until(|m| m["id"] == id).await;
+        assert_eq!(count(), 1);
+    }
+
+    // A page offered to the media picker with no window: the same, but
+    // still within the gap since the last start.
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":5,"method":"media.offer","params":{"url":"https://v.example/w"}}"#)
+        .await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":5,"result":{"id":"of_1","needsApp":true}}"#);
+    browser.recv_until(|m| m["id"] == 5).await;
+    assert_eq!(count(), 1);
+
+    // Another method's result with the same field is not an add.
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":4,"method":"stats.get"}"#)
+        .await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":4,"result":{"needsApp":true}}"#);
+    browser.recv_until(|m| m["id"] == 4).await;
+    assert_eq!(count(), 1);
+
+    browser.close().await.unwrap();
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn starts_the_app_when_a_download_arrives_and_no_daemon_runs() {
+    let dir = TempDir::new("launch-cold");
+    // The app's daemon: up, but nobody knows its port until the app writes runtime.json.
+    let mut daemon = FakeDaemon::start("cold").await;
+    let port = daemon.port;
+    let runtime = dir.runtime_file();
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(runtime.clone());
+    cfg.app_start_wait = Duration::from_secs(5);
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        write_runtime(&runtime, port, "cold");
+    }));
+    let mut browser = Browser::start(cfg);
+
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":1,"method":"download.add","params":{"url":"https://example.com/td.tar.xz"}}"#)
+        .await;
+    // The host started the app, waited for its daemon and handed the download over.
+    let forwarded = daemon.recv().await;
+    assert!(forwarded.contains("td.tar.xz"), "{forwarded}");
+    daemon.send(r#"{"jsonrpc":"2.0","id":1,"result":{"id":"dl_1"}}"#);
+    let reply = browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(reply["result"]["id"], "dl_1");
+    assert_eq!(launches.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    browser.close().await.unwrap();
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn a_status_check_alone_never_starts_the_app() {
+    let dir = TempDir::new("launch-status");
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(dir.runtime_file());
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    assert_eq!(browser.status(1).await["daemonRunning"], false);
+    assert_eq!(launches.load(std::sync::atomic::Ordering::SeqCst), 0);
+    browser.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn starts_the_app_when_an_offered_page_has_no_window() {
+    let dir = TempDir::new("launch-offer");
+    let mut daemon = FakeDaemon::start("t").await;
+    write_runtime(&dir.runtime_file(), daemon.port, "t");
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(dir.runtime_file());
+    cfg.launch_gap = std::time::Duration::ZERO;
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    let count = || launches.load(std::sync::atomic::Ordering::SeqCst);
+    let offer = |id: u64| {
+        json!({"jsonrpc":"2.0","id":id,"method":"media.offer","params":{"url":"https://v.example/w"}})
+            .to_string()
+    };
+
+    // A window is connected: nothing to start.
+    browser.send(&offer(1)).await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":1,"result":{"id":"of_1"}}"#);
+    browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(count(), 0);
+
+    browser.send(&offer(2)).await;
+    daemon.recv().await;
+    daemon.send(r#"{"jsonrpc":"2.0","id":2,"result":{"id":"of_1","needsApp":true}}"#);
+    browser.recv_until(|m| m["id"] == 2).await;
+    assert_eq!(count(), 1);
 
     browser.close().await.unwrap();
     daemon.stop().await;
@@ -527,7 +670,7 @@ async fn sends_a_fresh_valid_nonce_on_every_connection() {
         .as_str()
         .unwrap()
         .to_owned();
-    assert!(whoosh_proto::auth::is_valid_nonce(&nonce), "{nonce}");
+    assert!(wdm_proto::auth::is_valid_nonce(&nonce), "{nonce}");
 
     browser.close().await.unwrap();
     daemon.stop().await;

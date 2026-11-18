@@ -9,7 +9,7 @@
 //! events. Pause, resume, remove, refresh-URL and settings work as the
 //! protocol says, including the error codes.
 //!
-//! Run it with `whoosh-daemon --mock` so UIs, the CLI and the extension can be
+//! Run it with `wdm-daemon --mock` so UIs, the CLI and the extension can be
 //! built against a running daemon before the engine exists.
 //!
 //! # URL hints
@@ -36,12 +36,12 @@ use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use whoosh_proto::service::{Notification, Service, ServiceError, ServiceResult};
-use whoosh_proto::{
-    AddParams, AddResult, DownloadDetail, DownloadState, DownloadSummary, ErrorInfo, IdParams,
-    IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent, ProgressItem,
-    RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, Settings, StateEvent, Stats,
-    category,
+use wdm_proto::service::{Notification, Service, ServiceError, ServiceResult};
+use wdm_proto::{
+    AddParams, AddResult, ConfirmParams, DownloadDetail, DownloadState, DownloadSummary, ErrorInfo,
+    IdParams, IdsParams, ListParams, PreconnectParams, ProbeParams, ProbeResult, ProgressEvent,
+    ProgressItem, RefreshUrlParams, RemoveParams, RemovedEvent, SegmentInfo, Settings, StateEvent,
+    Stats, category,
 };
 
 const KIB: u64 = 1024;
@@ -201,7 +201,14 @@ impl Service for MockService {
     }
 
     fn add(&self, params: AddParams) -> BoxFuture<'_, ServiceResult<AddResult>> {
-        self.with(move |s| s.add(params).map(|id| AddResult { id }))
+        self.with(move |s| {
+            let ask = params.from_browser && params.start && s.settings.confirm_browser_downloads;
+            let id = s.add(params, ask)?;
+            Ok(AddResult {
+                awaiting_confirmation: ask,
+                ..AddResult::new(id)
+            })
+        })
     }
 
     fn list(&self, params: ListParams) -> BoxFuture<'_, ServiceResult<Vec<DownloadSummary>>> {
@@ -218,6 +225,10 @@ impl Service for MockService {
 
     fn resume(&self, params: IdsParams) -> BoxFuture<'_, ServiceResult<()>> {
         self.with(move |s| s.resume(&params.ids))
+    }
+
+    fn confirm(&self, params: ConfirmParams) -> BoxFuture<'_, ServiceResult<()>> {
+        self.with(move |s| s.confirm(params))
     }
 
     fn remove(&self, params: RemoveParams) -> BoxFuture<'_, ServiceResult<()>> {
@@ -382,6 +393,7 @@ impl State {
                 theme: "system".into(),
                 durability: Default::default(),
                 speed_schedule: Vec::new(),
+                confirm_browser_downloads: true,
             },
             subscribers: Vec::new(),
             next_id: 1,
@@ -486,7 +498,7 @@ impl State {
         id
     }
 
-    fn add(&mut self, params: AddParams) -> ServiceResult<String> {
+    fn add(&mut self, params: AddParams, ask: bool) -> ServiceResult<String> {
         let probed = probe(&params.url)?;
         let directory = match params.directory.as_deref().map(str::trim) {
             Some(dir) if !dir.is_empty() => {
@@ -510,11 +522,11 @@ impl State {
             parse_url(mirror)?;
         }
         if let Some(c) = params.connections
-            && !(1..=whoosh_proto::MAX_CONNECTIONS_PER_DOWNLOAD).contains(&c)
+            && !(1..=wdm_proto::MAX_CONNECTIONS_PER_DOWNLOAD).contains(&c)
         {
             return Err(ServiceError::invalid_params(format!(
                 "connections must be 1–{}",
-                whoosh_proto::MAX_CONNECTIONS_PER_DOWNLOAD
+                wdm_proto::MAX_CONNECTIONS_PER_DOWNLOAD
             )));
         }
         let queue = match params.queue.as_deref().map(str::trim) {
@@ -546,7 +558,7 @@ impl State {
                 url: probed.result.final_url.clone(),
                 filename,
                 directory,
-                state: if params.start {
+                state: if params.start && !ask {
                     DownloadState::Queued
                 } else {
                     DownloadState::Paused
@@ -562,6 +574,9 @@ impl State {
                 added_at: now_ms(),
                 completed_at: None,
                 error: None,
+                media: None,
+                awaiting_confirmation: ask,
+                active_ms: Some(0),
             },
             segments: Vec::new(),
             size: probed.size,
@@ -646,6 +661,7 @@ impl State {
         }
         for i in targets {
             let sim = &mut self.sims[i];
+            sim.s.awaiting_confirmation = false;
             match sim.s.state {
                 DownloadState::Paused => {}
                 DownloadState::Failed => {
@@ -659,6 +675,57 @@ impl State {
                 _ => continue,
             }
             self.set_state(i, DownloadState::Queued, None);
+        }
+        Ok(())
+    }
+
+    fn confirm(&mut self, p: ConfirmParams) -> ServiceResult<()> {
+        let i = self.find(&p.id)?;
+        if !self.sims[i].s.awaiting_confirmation {
+            return Err(ServiceError::invalid_state(
+                "this download is not waiting for confirmation",
+            ));
+        }
+        if let Some(dir) = p.directory.as_deref().map(str::trim) {
+            if !is_absolute(dir) {
+                return Err(ServiceError::invalid_params(
+                    "directory must be an absolute path",
+                ));
+            }
+            self.sims[i].s.directory = dir.to_owned();
+        }
+        if let Some(name) = p.filename.as_deref() {
+            let directory = self.sims[i].s.directory.clone();
+            self.sims[i].s.filename = String::new();
+            let name = self.unique_filename(&directory, &sanitize_filename(name));
+            self.sims[i].s.filename = name;
+        }
+        if let Some(c) = p.category.filter(|c| !c.trim().is_empty()) {
+            self.sims[i].s.category = Some(c);
+        }
+        if let Some(q) = p.queue {
+            let q = q.trim();
+            self.sims[i].s.queue =
+                (!q.is_empty() && q != wdm_proto::MAIN_QUEUE).then(|| q.to_owned());
+        }
+        self.sims[i].s.awaiting_confirmation = false;
+        let summary = self.sims[i].s.clone();
+        self.emit(Notification::DownloadUpdated(summary));
+        let state = if p.start {
+            DownloadState::Queued
+        } else {
+            DownloadState::Paused
+        };
+        if self.sims[i].s.state == state {
+            // No state change to announce: say so anyway, the waiting ended.
+            let event = StateEvent {
+                id: p.id,
+                state,
+                error: None,
+            };
+            self.emit(Notification::DownloadState(event));
+        } else {
+            self.set_state(i, state, None);
         }
         Ok(())
     }
@@ -721,6 +788,13 @@ impl State {
         for i in 0..self.sims.len() {
             let state = self.sims[i].s.state;
             self.sims[i].phase += dt;
+            if matches!(
+                state,
+                DownloadState::Probing | DownloadState::Downloading | DownloadState::Verifying
+            ) && let Some(ms) = self.sims[i].s.active_ms.as_mut()
+            {
+                *ms += dt.as_millis() as u64;
+            }
             let phase = self.sims[i].phase;
             if state == DownloadState::Probing && phase >= Duration::from_millis(300) {
                 self.start_transfer(i);
@@ -963,6 +1037,9 @@ impl State {
                     completed_at: (d.state == DownloadState::Completed)
                         .then_some(added_at + 90_000),
                     error,
+                    media: None,
+                    awaiting_confirmation: false,
+                    active_ms: (d.state == DownloadState::Completed).then_some(84_000),
                 },
                 segments: Vec::new(),
                 size,
@@ -1587,7 +1664,7 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, whoosh_proto::error_code::INVALID_STATE);
+        assert_eq!(err.code, wdm_proto::error_code::INVALID_STATE);
         // ...but continues after refreshUrl.
         mock.refresh_url(RefreshUrlParams {
             id: expire.clone(),
@@ -1636,7 +1713,7 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(missing.code, whoosh_proto::error_code::NOT_FOUND);
+        assert_eq!(missing.code, wdm_proto::error_code::NOT_FOUND);
 
         mock.resume(IdsParams {
             ids: vec![id.clone()],
@@ -1652,14 +1729,14 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, whoosh_proto::error_code::INVALID_STATE);
+        assert_eq!(err.code, wdm_proto::error_code::INVALID_STATE);
         let err = mock
             .pause(IdsParams {
                 ids: vec![id.clone()],
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, whoosh_proto::error_code::INVALID_STATE);
+        assert_eq!(err.code, wdm_proto::error_code::INVALID_STATE);
 
         let mut events = mock.subscribe();
         mock.remove(RemoveParams {
@@ -1674,7 +1751,7 @@ mod tests {
         ));
         assert_eq!(
             mock.get(IdParams { id }).await.unwrap_err().code,
-            whoosh_proto::error_code::NOT_FOUND
+            wdm_proto::error_code::NOT_FOUND
         );
     }
 
@@ -1785,11 +1862,11 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert_eq!(err.code, whoosh_proto::error_code::NETWORK);
+        assert_eq!(err.code, wdm_proto::error_code::NETWORK);
         let err = mock.add(add("not a url")).await.unwrap_err();
         assert_eq!(err.code, -32602);
         let err = mock.add(add("ftp://example.com/x")).await.unwrap_err();
-        assert_eq!(err.code, whoosh_proto::error_code::UNSUPPORTED);
+        assert_eq!(err.code, wdm_proto::error_code::UNSUPPORTED);
         let live = mock
             .probe(ProbeParams {
                 url: "https://example.com/live/feed.ts".into(),

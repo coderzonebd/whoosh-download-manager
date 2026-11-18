@@ -97,6 +97,37 @@ jobs:
         # Windows runs the whole suite too, and blocks like the others.
         run: cargo test --workspace --locked --no-fail-fast
 
+  android:
+    # The Android app (apps/mobile) and everything it runs in-process (daemon, engine, net,
+    # store) must keep building for Android: a desktop-only dependency would otherwise only
+    # show up when a release builds the APK. Clippy for the 64-bit ARM target is enough; the
+    # release workflow builds the APK itself.
+    name: Android (clippy, aarch64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: android
+          save-if: ${{ github.event_name == 'push' }}
+      - name: cargo clippy (Android)
+        run: |
+          set -euo pipefail
+          # The runner image's NDK compiles the C parts (sqlite, ring, aws-lc).
+          bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$bin/aarch64-linux-android30-clang"
+          export CXX_aarch64_linux_android="$bin/aarch64-linux-android30-clang++"
+          export AR_aarch64_linux_android="$bin/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$bin/aarch64-linux-android30-clang"
+          cargo clippy -p wdm-mobile --target aarch64-linux-android --locked -- -D warnings
+
   js:
     name: TypeScript (typecheck, test, build)
     runs-on: ubuntu-24.04
@@ -144,10 +175,70 @@ jobs:
           test -n "$firefox" || { echo "::error::Firefox not found on the runner"; exit 1; }
           "$chrome" --version
           "$firefox" --version
-          echo "WHOOSH_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
-          echo "WHOOSH_E2E_FIREFOX=$firefox" >> "$GITHUB_ENV"
+          echo "WDM_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
+          echo "WDM_E2E_FIREFOX=$firefox" >> "$GITHUB_ENV"
       - name: e2e tests
-        run: pnpm --filter @whoosh/extension test:e2e
+        run: pnpm --filter @wdm/extension test:e2e
+
+  ui-a11y:
+    name: UI accessibility (axe-core, Chrome for Testing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Chrome for Testing (Playwright's chromium build)
+        working-directory: packages/ui
+        run: pnpm exec playwright-core install --with-deps --no-shell chromium
+      - name: Point the suite at it
+        run: |
+          chrome=$(find "$HOME/.cache/ms-playwright" -path '*/chromium-*/chrome-linux64/chrome' -type f | sort -V | tail -n 1)
+          test -x "$chrome" || { echo "::error::Chrome for Testing not found"; exit 1; }
+          "$chrome" --version
+          echo "WDM_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
+      - name: axe-core on the main screens (en, bn × light, dark, high contrast)
+        env:
+          # Fail instead of skipping when the browser is missing.
+          WDM_E2E_REQUIRE: "1"
+        run: pnpm --filter @wdm/ui test:a11y
+
+  desktop-e2e:
+    name: Desktop e2e (UI against a real daemon)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Non-blocking until it has proven stable on hosted runners.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: desktop-e2e
+          save-if: ${{ github.event_name == 'push' }}
+      - name: Build wdm-daemon and wdm-labserver
+        run: cargo build --locked -p wdm-daemon -p wdm-labserver
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Chrome for Testing (Playwright's chromium build)
+        working-directory: packages/ui
+        run: pnpm exec playwright-core install --with-deps --no-shell chromium
+      - name: Point the suite at it
+        run: |
+          chrome=$(find "$HOME/.cache/ms-playwright" -path '*/chromium-*/chrome-linux64/chrome' -type f | sort -V | tail -n 1)
+          test -x "$chrome" || { echo "::error::Chrome for Testing not found"; exit 1; }
+          echo "WDM_E2E_CHROME=$chrome" >> "$GITHUB_ENV"
+      - name: Add, pause/resume, bulk remove, queue, media probe
+        env:
+          WDM_E2E_REQUIRE: "1"
+        run: pnpm --filter @wdm/ui test:e2e
 
   docker:
     name: Docker image (labserver stand-in for the daemon)
@@ -160,17 +251,58 @@ jobs:
         with:
           persist-credentials: false
       - name: docker build
-        run: docker build --file packaging/docker/Dockerfile --tag whoosh-labserver:ci .
+        run: docker build --file packaging/docker/Dockerfile --tag wdm-labserver:ci .
       - name: Smoke test
         run: |
-          docker run --rm whoosh-labserver:ci --help
-          test "$(docker run --rm --entrypoint id whoosh-labserver:ci -u)" != "0"
+          docker run --rm wdm-labserver:ci --help
+          test "$(docker run --rm --entrypoint id wdm-labserver:ci -u)" != "0"
+
+  install-script:
+    # packaging/install/install is one file for sh and PowerShell: each half must parse and pick
+    # the right way to install on its own system. A dry run changes nothing.
+    name: Install script (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The shell half
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(WDM_DRY_RUN=1 sh < packaging/install/install)"
+          echo "$out"
+          case "$RUNNER_OS" in
+            Linux) grep -q 'would install with apt' <<<"$out" ;;
+            macOS) grep -q 'would install with Homebrew' <<<"$out" ;;
+          esac
+      - name: The PowerShell half
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:WDM_DRY_RUN = '1'
+          $out = (Get-Content -Raw packaging/install/install | Invoke-Expression) 6>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'would install with winget|would install the per-user installer') { throw 'the PowerShell half did not run' }
+      - name: The PowerShell half parses on Linux too
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseInput((Get-Content -Raw packaging/install/install), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; throw 'PowerShell cannot parse the install script' }
 
   # Single required check for branch protection (matrix job names change).
   ci-ok:
     name: CI OK
     if: always()
-    needs: [workflows, rust, js]
+    needs: [workflows, rust, js, ui-a11y, install-script, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

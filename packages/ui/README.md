@@ -1,15 +1,15 @@
-# @whoosh/ui
+# @wdm/ui
 
 The download manager interface shared by the desktop app, the extension
 popup/side panel, the mobile shell and the web remote. Svelte 5 (runes) +
 TypeScript. Apache-2.0.
 
 ```ts
-import "@whoosh/ui/styles.css";             // tokens + base styles, once per host
-import { App } from "@whoosh/ui";
+import "@wdm/ui/styles.css";             // tokens + base styles, once per host
+import { App } from "@wdm/ui";
 import { mount } from "svelte";
 
-mount(App, { target, props: { client, mode: "live" } }); // any WhooshClient: ws, mock, native messaging
+mount(App, { target, props: { client, mode: "live" } }); // any WdmClient: ws, mock, native messaging
 ```
 
 Props: `client`, `mode` (`"mock"` shows "Demo data"), `storage` (where device
@@ -23,7 +23,10 @@ prefs persist; `null` disables), `locale`, `manageDocument` (set
 can't do. Every part is optional and its controls are hidden without it:
 `pickFolder` (Browse… buttons), `desktopPrefs` (close to tray, Quit also
 stops downloads) and `launchAtLogin` (both under Settings → *This
-computer*). `app.openAdd(url)` opens the add dialog prefilled; the desktop
+computer*), and `crashReports` (Settings → *Privacy* → "Send crash reports",
+on by default, plus a one-time dismissable notice under the toolbar with a
+link to the switch; both hidden when `get()` resolves `undefined`, i.e. a
+build with no crash-report address). `app.openAdd(url)` opens the add dialog prefilled; the desktop
 app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 
 ## What is in it
@@ -57,6 +60,15 @@ app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 - **Without queues:** the UI learns from the hello's `capabilities` (or a
   -32006 answer to `queue.list`) that the daemon has no queues, and then
   shows only the main queue, with no error.
+- **Video and audio sites** (daemons with the `media` capability): when a
+  link in the add dialog turns out to be a web page, the dialog asks
+  `media.probe` and offers a format picker (video at a quality, audio only
+  as it is or MP3, subtitles) with an estimated size, or the page itself as a
+  file. Media downloads show their step (merging, refreshing a link…) in
+  the status column. Settings → Video and audio sites shows yt-dlp and
+  ffmpeg (version, source, licence), checks for updates, updates them, and
+  turns on the daily check. A daemon without media support (`-32006`) shows
+  none of this.
 - **History:** finished and failed downloads, newest first, with search and
   an All/Completed/Failed filter; clear one entry or everything shown
   (`download.remove` with `deleteFiles: false`, after a confirmation).
@@ -81,15 +93,31 @@ app calls it for `whoosh://add?url=…` links, checked with `parseDeepLink`.
 - Visible focus everywhere (`:focus-visible`), 4.5:1 text contrast in every
   theme (tested in design-tokens), `forced-colors` support, motion removed
   under `prefers-reduced-motion`, hover effects only for fine pointers.
+- Every view has one `h1` (hidden for the download list, the queue's name in
+  a queue view); progress bars are named.
+- Checked automatically: axe-core (WCAG 2.2 A/AA + best practices) on every
+  main screen in English and Bangla, light, dark and high contrast
+  (`test:a11y`, blocking in CI). By hand: [`docs/qa/screen-reader.md`](../../docs/qa/screen-reader.md).
 
 ## Internationalisation
 
-`src/lib/i18n/en.ts` is the source; `bn.ts` is a native-written Bangla table
-(typed against English, so a missing key fails `typecheck`; a test also fails
-if a Bangla string is left in English or invents a placeholder). Bangla uses
-Bangla digits via `Intl` (`bn-BD`). Plurals use `Intl.PluralRules`.
-`I18n.register(tag, …)` adds locales at runtime; Arabic, Persian, Urdu,
-Hebrew… switch the whole UI to RTL (every style uses logical properties).
+Strings live in `src/lib/i18n/locales/<lang>.json`, one file per language
+in i18next JSON v4 (nested keys, `{{name}}` placeholders, `key_one` /
+`key_other` / … plurals chosen with `Intl.PluralRules`), translated on
+hosted Weblate ([docs/translating.md](../../docs/translating.md)).
+`en.json` is the source, and `t()` keys are type-checked against it
+(`MessageKey`). `bn.json` is native-written Bangla; ten more languages are
+seeded by machine translation and flagged `machine: true` in
+`src/lib/i18n/languages.ts`, which the language picker shows with a link to
+Weblate. A missing or empty string falls back to English. Tests check that
+every locale has the source's keys, placeholders and CLDR plural forms
+(`test/i18n.test.ts`); `pnpm i18n:sync` adds new English keys to the other
+locales, and `scripts/i18n-import-ts.mjs` converts strings still written in
+the old `en.ts`/`bn.ts` format. Numbers, sizes and percentages come from
+`Intl` (Bangla digits via `bn-BD`, `%42,3` in Turkish).
+`I18n.register(tag, …)` adds locales at runtime. Arabic and Urdu switch the
+whole UI to RTL (every style uses logical properties; `test/rtl.test.ts`
+renders the app in both and refuses physical `left`/`right` styles).
 
 ## Performance (10 000 downloads)
 
@@ -107,10 +135,25 @@ Hebrew… switch the whole UI to RTL (every style uses logical properties).
 ## Commands
 
 ```bash
-corepack pnpm --filter @whoosh/ui dev         # playground on the mock: http://localhost:5174 (?bulk=10000, ?lang=bn)
-corepack pnpm --filter @whoosh/ui test        # vitest + @testing-library (jsdom)
-corepack pnpm --filter @whoosh/ui typecheck   # svelte-check --fail-on-warnings (includes a11y rules)
+corepack pnpm --filter @wdm/ui dev         # playground on the mock: http://localhost:5174 (?bulk=10000, ?lang=bn)
+corepack pnpm --filter @wdm/ui test        # vitest + @testing-library (jsdom)
+corepack pnpm --filter @wdm/ui typecheck   # svelte-check --fail-on-warnings (includes a11y rules)
+corepack pnpm --filter @wdm/ui test:a11y    # axe-core in Chrome for Testing, on the mock
+cargo build -p wdm-daemon -p wdm-labserver
+corepack pnpm --filter @wdm/ui test:e2e     # the UI against a real daemon + labserver
 ```
+
+The browser suites (`vitest.e2e.config.ts`) build `e2e/harness.html`, a
+test-only page that is never part of an app or package export, and run it in
+Chrome for Testing (`WDM_E2E_CHROME`, or the newest build in Playwright's
+cache; `WDM_E2E_REQUIRE=1` fails instead of skipping when it is missing).
+`test:e2e` starts `wdm-labserver` and `wdm-daemon` (`target/debug`, or
+`WDM_E2E_LABSERVER` / `WDM_E2E_DAEMON`) on a temporary data directory,
+with a fake yt-dlp (`e2e/fake-yt-dlp.mjs`, answering from
+`crates/media/tests/fixtures/info.json`) as the daemon's managed copy. The
+daemon only accepts the desktop webview's `Origin`, so the page connects
+through a TCP relay in the test process that drops the browser's `Origin`
+header, the way a native client connects; the daemon is not loosened.
 
 svelte-check does not support TypeScript 7 yet, so this package pins
 TypeScript 6 locally; the root stays on 7.

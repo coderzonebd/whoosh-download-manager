@@ -5,7 +5,7 @@ use std::io;
 
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use whoosh_proto::{Checksum, DownloadId, DownloadState, ErrorInfo, RequestContext, UnixMillis};
+use wdm_proto::{Checksum, DownloadId, DownloadState, ErrorInfo, RequestContext, UnixMillis};
 
 use crate::source::Protocol;
 
@@ -36,6 +36,14 @@ pub struct DownloadRecord {
     pub added_at: UnixMillis,
     pub completed_at: Option<UnixMillis>,
     pub error: Option<ErrorInfo>,
+    /// Caught in a browser and waiting for the user (`download.confirm`);
+    /// `state` is `Paused` meanwhile.
+    #[serde(default)]
+    pub awaiting_confirmation: bool,
+    /// Milliseconds spent in runs (transferring, probing, verifying), not
+    /// paused or queued. `None` for records written before it was kept.
+    #[serde(default)]
+    pub active_ms: Option<u64>,
 }
 
 /// What we learned about a host, so the next download from it starts at the

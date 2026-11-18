@@ -1,0 +1,31 @@
+# TEMPLATE cask: see README.md. Version, sha256 and every URL are placeholders.
+cask "whoosh-download-manager" do
+  version "0.0.1"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+
+  url "https://github.com/coderzonebd/whoosh-download-manager/releases/download/v#{version}/Whoosh-Download-Manager_#{version}_universal.dmg",
+      verified: "github.com/coderzonebd/whoosh-download-manager/"
+  name "Whoosh Download Manager"
+  desc "Fast, open-source download manager"
+  homepage "https://github.com/coderzonebd/whoosh-download-manager"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  # The app updates itself (signed in-app updates); `brew upgrade` leaves it alone.
+  auto_updates true
+  depends_on macos: ">= :monterey"
+
+  app "Whoosh Download Manager.app"
+
+  zap trash: [
+    "~/Library/Application Support/com.coderzonebd.whoosh",
+    "~/Library/Caches/com.coderzonebd.whoosh",
+    "~/Library/HTTPStorages/com.coderzonebd.whoosh",
+    "~/Library/Preferences/com.coderzonebd.whoosh.plist",
+    "~/Library/Saved Application State/com.coderzonebd.whoosh.savedState",
+    "~/Library/WebKit/com.coderzonebd.whoosh",
+  ]
+end

@@ -67,7 +67,7 @@
         }}
       />
     </div>
-    <div class="choice" role="radiogroup" aria-label={t("history.filter")}>
+    <div class="choice" role="radiogroup" aria-label={t("history.filter.label")}>
       {#each FILTERS as f (f)}
         <label class:on={filter === f}>
           <input type="radio" name="vy-history-filter" value={f} bind:group={filter} />
@@ -75,7 +75,7 @@
         </label>
       {/each}
     </div>
-    <button class="vy-btn" disabled={entries.length === 0} onclick={() => (app.clearIds = entries.map((d) => d.id))}>
+    <button class="vy-btn vy-btn--secondary" disabled={entries.length === 0} onclick={() => (app.clearIds = entries.map((d) => d.id))}>
       <Icon name="trash" size={15} />
       {query.trim() || filter !== "all" ? t("history.clearShown") : t("history.clear")}
     </button>
@@ -131,7 +131,7 @@
     </ul>
     {#if entries.length > shown.length}
       <div class="more">
-        <button class="vy-btn" onclick={() => (limit += PAGE)}>{t("history.more", { count: entries.length - shown.length })}</button>
+        <button class="vy-btn vy-btn--secondary" onclick={() => (limit += PAGE)}>{t("history.more", { count: entries.length - shown.length })}</button>
       </div>
     {/if}
   {/if}
@@ -246,7 +246,13 @@
     color: var(--vy-color-text-muted);
     font-size: var(--vy-font-size-sm);
   }
+  /* Size and date stay whole ("412 MB" never splits); the folder takes what is left. */
+  .facts > .vy-num {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
   .dir {
+    flex: 1 1 auto;
     min-inline-size: 0;
     color: var(--vy-color-text-subtle);
   }
@@ -283,6 +289,22 @@
     }
     .facts .dir {
       display: none;
+    }
+    /* A phone: the buttons go under the facts instead of squeezing them. */
+    .entry {
+      flex-wrap: wrap;
+      row-gap: var(--vy-space-1-5);
+    }
+    .main {
+      flex-basis: calc(100% - 3rem);
+    }
+    .facts {
+      flex-wrap: wrap;
+      row-gap: 0;
+    }
+    .actions {
+      flex-basis: 100%;
+      justify-content: flex-end;
     }
   }
 </style>

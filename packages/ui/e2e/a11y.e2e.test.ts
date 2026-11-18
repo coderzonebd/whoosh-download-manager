@@ -1,0 +1,283 @@
+// SPDX-License-Identifier: Apache-2.0
+// Automated accessibility: axe-core (WCAG 2.2 A/AA and best practices) on
+// the main screens, in English and Bangla, in the light, dark and high
+// contrast themes, on the mock daemon. Any violation fails the test, with
+// the rule, the elements and axe's advice in the message.
+//
+// Run: pnpm --filter @wdm/ui test:a11y
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import type { Browser, Page } from "playwright-core";
+import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
+import { chromeOrSkip, launch } from "./browser.ts";
+
+const axeSource = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
+const chrome = chromeOrSkip();
+
+type Lang = "en" | "bn";
+type Theme = "light" | "dark" | "high-contrast";
+
+interface Screen {
+  name: string;
+  /** The desktop app's prompt window (PromptApp, 520×440) instead of the main one. */
+  prompt?: boolean;
+  /** The Android app's phone layout (MobileApp, 390×844, touch). */
+  phone?: boolean;
+  /** Opens the screen; resolves once it is on the page. */
+  open(page: Page): Promise<void>;
+}
+
+/** Runs `fn` in the page with the AppState. */
+function withApp(page: Page, fn: string): Promise<unknown> {
+  return page.evaluate(`(async (app) => { ${fn} })(window.__wdmApp)`);
+}
+
+const SCREENS: Screen[] = [
+  {
+    name: "download list (Classic)",
+    async open(page) {
+      await withApp(page, `app.prefs.layout = "classic"; app.prefs.detailOpen = true;`);
+      await page.locator('[role="grid"] [role="row"][aria-rowindex="2"]').first().waitFor();
+      // Select a row so the detail panel and the bulk checkboxes are drawn too.
+      await page.locator('[role="grid"] [role="row"][aria-rowindex="2"]').first().click();
+    },
+  },
+  {
+    name: "download list (Modern)",
+    async open(page) {
+      await withApp(page, `app.prefs.layout = "modern";`);
+      await page.locator('[role="grid"] [role="row"]').nth(1).waitFor();
+      await page.locator('[role="grid"] [role="row"]').nth(1).click();
+    },
+  },
+  {
+    name: "add dialog",
+    async open(page) {
+      await withApp(page, `app.openAdd("https://downloads.example.org/releases/ubuntu-24.04-desktop-amd64.iso");`);
+      await page.locator("#vy-add-url").waitFor();
+      // Wait for the probe to fill in the file name.
+      await page.waitForFunction(() => (document.querySelector<HTMLInputElement>("#vy-add-name")?.value ?? "").includes("ubuntu"));
+    },
+  },
+  {
+    name: "settings",
+    async open(page) {
+      await withApp(page, `app.view = "settings";`);
+      await page.locator("main form, main section").first().waitFor();
+    },
+  },
+  {
+    name: "queue and scheduler",
+    async open(page) {
+      await withApp(
+        page,
+        `await app.createQueue({ name: "Night", maxActive: 2, schedule: { start: { at: "01:00", days: [1, 2, 3, 4, 5] }, stop: { at: "07:00" }, afterDone: "sleep" } });
+         app.store.view = { kind: "queue", queue: "Night" };`,
+      );
+      await page.getByText("Night").first().waitFor();
+    },
+  },
+  {
+    name: "queue scheduler dialog",
+    async open(page) {
+      await withApp(page, `app.queueDialog = { mode: "create" };`);
+      await page.locator('[role="dialog"]').waitFor();
+    },
+  },
+  {
+    name: "connect your browser",
+    async open(page) {
+      await withApp(page, `app.view = "browsers";`);
+      await page.getByText("Microsoft Edge").first().waitFor();
+    },
+  },
+  {
+    name: "history",
+    async open(page) {
+      await withApp(page, `app.view = "history";`);
+      await page.locator("main").getByRole("searchbox").or(page.locator("main table, main [role='grid'], main ul")).first().waitFor();
+    },
+  },
+  {
+    name: "browser download confirmation",
+    async open(page) {
+      // What the extension sends through the native host (which sets fromBrowser).
+      await withApp(
+        page,
+        `await app.client.call("download.add", { url: "https://cdn.example.com/releases/wdm-handbook-2026.pdf", fromBrowser: true });
+         await app.client.call("download.add", { url: "https://mirror.example.org/iso/debian-13.1.0-amd64-netinst.iso", fromBrowser: true });`,
+      );
+      await page.locator("#vy-confirm-start").waitFor();
+    },
+  },
+  {
+    name: "details of a finished download (time taken)",
+    async open(page) {
+      await withApp(page, `app.prefs.layout = "classic"; app.reveal(app.store.all().find((d) => d.data.filename.startsWith("node-v24")).id);`);
+      await page.locator("aside dl").waitFor();
+    },
+  },
+  {
+    name: "prompt window: browser download confirmation",
+    prompt: true,
+    async open(page) {
+      await withApp(page, `await app.client.call("download.add", { url: "https://cdn.example.com/releases/wdm-handbook-2026.pdf", fromBrowser: true });`);
+      await page.locator("#vy-confirm-start").waitFor();
+    },
+  },
+  {
+    name: "prompt window: video offered by the extension",
+    prompt: true,
+    async open(page) {
+      await withApp(page, `await app.client.call("media.offer", { url: "https://video.example.com/watch?v=aqz-KE-bpKQ", title: "A talk" });`);
+      await page.locator("#vy-media-title").waitFor({ timeout: 20_000 });
+    },
+  },
+  {
+    name: "media format picker",
+    async open(page) {
+      await withApp(page, `app.openAdd("https://video.example.com/watch?v=aqz-KE-bpKQ");`);
+      await page.locator("#vy-media-title").waitFor({ timeout: 20_000 });
+    },
+  },
+  {
+    name: "phone: download list",
+    phone: true,
+    async open(page) {
+      await page.locator("article").first().waitFor();
+    },
+  },
+  {
+    name: "phone: details sheet",
+    phone: true,
+    async open(page) {
+      await page.locator("article .open").first().click();
+      await page.locator(".sheet aside dl").waitFor();
+    },
+  },
+  {
+    name: "phone: add sheet",
+    phone: true,
+    async open(page) {
+      await withApp(page, `app.openAdd("https://downloads.example.org/releases/ubuntu-24.04-desktop-amd64.iso");`);
+      await page.waitForFunction(() => (document.querySelector<HTMLInputElement>("#vy-add-name")?.value ?? "").includes("ubuntu"));
+    },
+  },
+  {
+    name: "phone: settings",
+    phone: true,
+    async open(page) {
+      await withApp(page, `app.view = "settings";`);
+      await page.locator("#vy-set-lang").waitFor();
+    },
+  },
+];
+
+interface AxeNode {
+  target: string[];
+  failureSummary?: string;
+  html: string;
+}
+interface AxeViolation {
+  id: string;
+  impact: string | null;
+  help: string;
+  helpUrl: string;
+  nodes: AxeNode[];
+}
+
+async function scan(page: Page): Promise<AxeViolation[]> {
+  // Let transitions and the toast region settle.
+  await page.waitForTimeout(400);
+  await page.addScriptTag({ content: axeSource });
+  return (await page.evaluate(async () => {
+    const axe = (window as unknown as { axe: { run: (ctx: unknown, opts: unknown) => Promise<{ violations: unknown[] }> } }).axe;
+    const res = await axe.run(document, {
+      runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"] },
+      resultTypes: ["violations"],
+    });
+    return res.violations;
+  })) as AxeViolation[];
+}
+
+/**
+ * Text squeezed into a column a few characters wide: what a label looks like
+ * when a narrow box style leaks onto it (axe cannot see this). Lists each one.
+ */
+async function squeezed(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const found: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>("body *")) {
+      const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent ?? "").join(" ").trim();
+      if (own.split(/\s+/).length < 3) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.width < 60 && Math.max(r.height, el.scrollHeight) > 40) found.push(`${el.tagName.toLowerCase()} "${own.slice(0, 40)}" ${Math.round(r.width)}px wide`);
+    }
+    return found;
+  });
+}
+
+function report(violations: AxeViolation[]): string {
+  return violations
+    .map(
+      (v) =>
+        `${v.id} (${v.impact ?? "?"}): ${v.help}\n  ${v.helpUrl}\n` +
+        v.nodes
+          .slice(0, 6)
+          .map((n) => `  - ${n.target.join(" ")}\n    ${n.html.slice(0, 160)}\n    ${(n.failureSummary ?? "").replace(/\n/g, "\n    ")}`)
+          .join("\n"),
+    )
+    .join("\n\n");
+}
+
+describe.skipIf(!chrome)("accessibility (axe-core)", () => {
+  let browser: Browser;
+  const base = inject("harnessUrl");
+
+  beforeAll(async () => {
+    browser = await launch(chrome as string);
+  });
+  afterAll(async () => {
+    await browser?.close();
+  });
+
+  const LANGS: Lang[] = ["en", "bn"];
+  const THEMES: Theme[] = ["light", "dark", "high-contrast"];
+
+  for (const lang of LANGS) {
+    for (const theme of THEMES) {
+      describe(`${lang}, ${theme}`, () => {
+        for (const screen of SCREENS) {
+          it(screen.name, async () => {
+            const colorScheme = theme === "dark" ? "dark" : "light";
+            const viewport = screen.phone ? { width: 390, height: 844 } : screen.prompt ? { width: 520, height: 440 } : { width: 1280, height: 800 };
+            const touch = screen.phone ? { isMobile: true, hasTouch: true } : {};
+            const context = await browser.newContext({ viewport, colorScheme, locale: lang === "bn" ? "bn-BD" : "en-US", ...touch });
+            const page = await context.newPage();
+            const errors: string[] = [];
+            page.on("pageerror", (e) => errors.push(e.message));
+            try {
+              const url = new URL(base);
+              url.searchParams.set("lang", lang);
+              url.searchParams.set("theme", theme === "dark" ? "dark" : "light");
+              if (screen.prompt) url.searchParams.set("view", "prompt");
+              if (screen.phone) url.searchParams.set("view", "mobile");
+              await page.goto(url.toString());
+              await page.waitForFunction(() => window.__wdmApp !== undefined);
+              await page.waitForFunction((l) => document.documentElement.lang === l, lang);
+              if (theme === "high-contrast") await withApp(page, `app.prefs.highContrast = true;`);
+              await page.waitForFunction((t) => document.documentElement.dataset["theme"] === t, theme);
+              await screen.open(page);
+              const violations = await scan(page);
+              expect(errors, "page errors").toEqual([]);
+              expect(await squeezed(page), "text squeezed into a narrow column").toEqual([]);
+              expect(violations, report(violations)).toEqual([]);
+            } finally {
+              await context.close();
+            }
+          });
+        }
+      });
+    }
+  }
+});

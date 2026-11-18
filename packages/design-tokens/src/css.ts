@@ -62,6 +62,7 @@ const THEME_ATTR: Record<ThemeName, string> = {
 export function toCss(): string {
   const staticDecls: [string, string][] = [
     [varName("font", "sans"), font.sans],
+    [varName("font", "display"), font.display],
     [varName("font", "mono"), font.mono],
     ...group("font-size", fontSize),
     ...group("font-weight", fontWeight),
@@ -77,7 +78,7 @@ export function toCss(): string {
 
   const parts = [
     "/* SPDX-License-Identifier: Apache-2.0 */",
-    "/* Generated from src/tokens.ts by `pnpm --filter @whoosh/design-tokens build`. Do not edit. */",
+    "/* Generated from src/tokens.ts by `pnpm --filter @wdm/design-tokens build`. Do not edit. */",
     "",
     block(":root", staticDecls),
     "",

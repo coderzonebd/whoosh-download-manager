@@ -15,11 +15,11 @@ use common::*;
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use tokio::time::Instant;
-use whoosh_core::StateStore;
-use whoosh_engine::{Clock, Engine, EngineConfig, LocalTime, QUEUES_KEY};
-use whoosh_proto::queue::AFTER_DONE_GRACE_SECS;
-use whoosh_proto::service::{Notification, Service, ServiceError};
-use whoosh_proto::{
+use wdm_core::StateStore;
+use wdm_engine::{Clock, Engine, EngineConfig, LocalTime, QUEUES_KEY};
+use wdm_proto::queue::AFTER_DONE_GRACE_SECS;
+use wdm_proto::service::{Notification, Service, ServiceError};
+use wdm_proto::{
     AfterDone, ClockTime, DownloadState, IdsParams, ListParams, MAIN_QUEUE, Queue, QueueConfig,
     QueueNameParams, QueueRenameParams, Schedule, SetQueueParams, SpeedWindow, error_code,
 };
@@ -160,7 +160,7 @@ fn queue_events(events: &mut BoxStream<'static, Notification>) -> Vec<Vec<Queue>
 /// Waits (virtual time) for the next `event.queue.finished`.
 async fn next_finished(
     events: &mut BoxStream<'static, Notification>,
-) -> whoosh_proto::QueueFinishedEvent {
+) -> wdm_proto::QueueFinishedEvent {
     tokio::time::timeout(LONG, async {
         loop {
             if let Notification::QueueFinished(e) = events.next().await.expect("stream ended") {

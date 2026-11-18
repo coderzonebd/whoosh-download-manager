@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A stand-in for whoosh-nmhost in end-to-end tests: speaks native messaging on
+// A stand-in for wdm-nmhost in end-to-end tests: speaks native messaging on
 // stdio, logs every message, and answers as the control file says:
 //   {
 //     "mode": "accept" | "error" | "slow", "delayMs"?: number,
@@ -13,8 +13,8 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { endianness } from "node:os";
 
-const LOG = process.env.WHOOSH_FAKE_HOST_LOG;
-const CONTROL = process.env.WHOOSH_FAKE_HOST_CONTROL;
+const LOG = process.env.WDM_FAKE_HOST_LOG;
+const CONTROL = process.env.WDM_FAKE_HOST_CONTROL;
 const LE = endianness() === "LE";
 
 function control() {
@@ -78,7 +78,7 @@ function handle(msg) {
     case "download.add": {
       const c = control();
       if (c.mode === "error") {
-        return send({ jsonrpc: "2.0", id: msg.id, error: { code: -32007, message: "the whoosh daemon is not running" } });
+        return send({ jsonrpc: "2.0", id: msg.id, error: { code: -32007, message: "the wdm daemon is not running" } });
       }
       const id = `dl_e2e_${msg.id}`;
       const accept = () => {
@@ -99,6 +99,8 @@ function handle(msg) {
       return expireLater(msg.params?.id);
     case "download.list":
       return reply(control().list ?? []);
+    case "media.offer":
+      return reply({ id: `of_e2e_${msg.id}` });
     default:
       return reply(null);
   }

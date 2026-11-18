@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Queue state, capability detection, deep links and schedule helpers.
-import type { WhooshClient } from "@whoosh/api-client";
-import { createMockClient } from "@whoosh/api-client/mock";
+import type { WdmClient } from "@wdm/api-client";
+import { createMockClient } from "@wdm/api-client/mock";
 import { describe, expect, it } from "vitest";
 import { parseDeepLink } from "../src/lib/host.ts";
 import { I18n } from "../src/lib/i18n/i18n.svelte.ts";
@@ -99,7 +99,7 @@ describe("AppState and queues", () => {
       call: ((m: string, p: unknown) => {
         calls.push(m);
         return (inner.call as (m: string, p: unknown) => Promise<unknown>)(m, p);
-      }) as WhooshClient["call"],
+      }) as WdmClient["call"],
       on: inner.on.bind(inner),
       close: () => inner.close(),
       onStatus(h: (s: { state: string; hello?: { capabilities: string[] } }) => void) {

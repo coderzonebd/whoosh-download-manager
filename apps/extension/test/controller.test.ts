@@ -1,4 +1,4 @@
-import type { AddParams } from "@whoosh/api-client";
+import type { AddParams } from "@wdm/api-client";
 import { describe, expect, it, vi } from "vitest";
 
 import { CaptureController, type CaptureDeps } from "../src/background/capture/controller";
@@ -138,13 +138,32 @@ describe("CaptureController", () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it("sends an Alt+click to Whoosh when the setting says so, whatever the rules", async () => {
+  it("sends an Alt+click to WDM when the setting says so, whatever the rules", async () => {
     const { controller, deps, added } = harness({ settings: { captureEnabled: false, fileTypes: ["mp4"] } });
     deps.force = new BypassTracker();
     deps.force.arm(900);
     await expect(controller.onBrowserDownload(item, () => {})).resolves.toMatchObject({ outcome: "sent" });
     expect(added).toHaveLength(1);
     await expect(controller.onBrowserDownload({ ...item, id: 8 }, () => {})).resolves.toEqual({ outcome: "skipped", reason: "disabled" });
+  });
+
+  it("waits for the app to start when the daemon was not running", async () => {
+    vi.useFakeTimers();
+    try {
+      for (const up of [true, false]) {
+        const h = harness({ settings: { handoffTimeoutMs: 1_000 } });
+        // The native host starts the app; its daemon answers after 8 s.
+        h.deps.daemon.call = (() => new Promise((resolve) => setTimeout(() => resolve({ id: "dl_cold" }), 8_000))) as unknown as CaptureDeps["daemon"]["call"];
+        h.deps.daemonUp = () => up;
+        const done = h.controller.onBrowserDownload(item, () => {});
+        await vi.advanceTimersByTimeAsync(9_000);
+        const result = await done;
+        // Running: the usual 1 s, so the browser keeps it. Not running: it waits for the app.
+        expect(result.outcome).toBe(up ? "kept" : "sent");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("leaves store-blocked downloads to the browser", async () => {

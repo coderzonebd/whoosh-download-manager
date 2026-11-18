@@ -1,6 +1,6 @@
 [package]
-name = "whoosh-daemon"
-description = "The whoosh daemon: serves the local JSON-RPC API (PROTOCOL.md) over WebSocket for any Service"
+name = "wdm-daemon"
+description = "The wdm daemon: serves the local JSON-RPC API (PROTOCOL.md) over WebSocket for any Service"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,12 +9,16 @@ authors.workspace = true
 publish.workspace = true
 
 [lib]
-name = "whoosh_daemon"
+name = "wdm_daemon"
 path = "src/lib.rs"
 
 [[bin]]
-name = "whoosh-daemon"
+name = "wdm-daemon"
 path = "src/main.rs"
+
+[features]
+default = ["media"]
+media = ["dep:wdm-media"]
 
 [dependencies]
 futures.workspace = true
@@ -25,11 +29,17 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 clap = { workspace = true, features = ["env"] }
-whoosh-proto.workspace = true
+wdm-proto.workspace = true
+# Crash reports: on by default, can be turned off; inert without a build-time DSN.
+wdm-crash.workspace = true
 # The real service, wired only in the binary (src/main.rs; ADR 0005).
-whoosh-engine.workspace = true
-whoosh-net.workspace = true
-whoosh-store.workspace = true
+wdm-core.workspace = true
+wdm-engine.workspace = true
+wdm-net.workspace = true
+wdm-store.workspace = true
+# Video and audio sites through yt-dlp/ffmpeg (`media` feature, on by
+# default for desktop and GitHub builds; a store build turns it off).
+wdm-media = { workspace = true, optional = true }
 
 bytes = "1"
 getrandom = "0.4"
