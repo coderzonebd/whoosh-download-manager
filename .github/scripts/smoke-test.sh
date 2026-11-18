@@ -142,8 +142,9 @@ if (cd "$work" && limit 300 "$bin/yt-dlp$exe" --ignore-config --no-playlist --no
   else
     "$bin/ffmpeg$exe" -hide_banner -i "$video.mkv" 2>&1 | grep -o 'Stream #[^:]*:[0-9]*[^:]*: [A-Za-z]*' | awk '{print tolower($NF)}' | tee "$out/streams.txt"
   fi
-  grep -q video "$out/streams.txt" && grep -q audio "$out/streams.txt" \
-    || fail "the merged video lacks a video or an audio stream"
+  if ! grep -q video "$out/streams.txt" || ! grep -q audio "$out/streams.txt"; then
+    fail "the merged video lacks a video or an audio stream"
+  fi
   echo "ok: YouTube video merged"
 else
   tail -n 20 "$out/yt-dlp.log"
