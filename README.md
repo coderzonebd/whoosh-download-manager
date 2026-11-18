@@ -77,7 +77,7 @@ One command per system; each checks what it downloads and the app keeps itself u
 
 The script is the same file for every system: it works out which one it runs on. On Windows it uses winget, else the per-user installer; on macOS Homebrew, else the `.dmg`; on Linux it uses apt (Debian, Ubuntu, Mint), dnf or zypper (Fedora, openSUSE) through the signed WDM repository, else the AppImage. The installers are also on the [releases page](https://github.com/coderzonebd/whoosh-download-manager/releases). How each channel updates: [docs/release.md](docs/release.md#package-channels).
 
-The browser extension: [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/whoosh-download-manager/); Edge Add-ons is in review; for Chrome, Brave and other Chromium browsers, the zip on the releases page. The app's *Connect your browser* page links the right one.
+The browser extension: [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/whoosh-download-manager/) and [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/lbcnfampnnfcbfacehkdjlggmbigpbdh); for Chrome, Brave and other Chromium browsers, the zip on the releases page. The app's *Connect your browser* page links the right one.
 
 The apt and rpm repository is hosted by [Cloudsmith](https://cloudsmith.com), free for open source:
 [![Hosted By: Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)

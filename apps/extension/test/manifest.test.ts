@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // @ts-expect-error -- plain ESM build script without type declarations
-import { DEV_EXTENSION_ID, DEV_PUBLIC_KEY, GECKO_ID, manifestFor } from "../scripts/manifest.mjs";
+import { DEV_EXTENSION_ID, DEV_PUBLIC_KEY, GECKO_ID, browserVersion, manifestFor } from "../scripts/manifest.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -61,5 +61,33 @@ describe("manifest", () => {
     const store = manifestFor("chromium", { version: "1.2.3", store: true });
     expect(store.content_scripts[0].exclude_matches).toContain("*://*.youtube.com/*");
     expect(manifestFor("chromium", { version: "1.2.3", store: false }).content_scripts[0].exclude_matches).toBeUndefined();
+  });
+});
+
+describe("browserVersion", () => {
+  it("keeps a release version and puts a pre-release just below its release", () => {
+    expect(browserVersion("1.2.3")).toEqual({ version: "1.2.3" });
+    expect(browserVersion("1.0.0-beta.1")).toEqual({ version: "0.65535.65535.1", versionName: "1.0.0-beta.1" });
+    expect(browserVersion("1.2.3-beta.2")).toEqual({ version: "1.2.2.2", versionName: "1.2.3-beta.2" });
+    expect(browserVersion("1.3.0-rc.4")).toEqual({ version: "1.2.65535.4", versionName: "1.3.0-rc.4" });
+  });
+
+  it("orders like the app's versions", () => {
+    const key = (v: string) => browserVersion(v).version.split(".").map(Number);
+    const less = (a: string, b: string) => {
+      const [x, y] = [key(a), key(b)];
+      for (let i = 0; i < 4; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+      return false;
+    };
+    expect(less("0.1.2", "1.0.0-beta.1")).toBe(true);
+    expect(less("1.0.0-beta.1", "1.0.0-beta.2")).toBe(true);
+    expect(less("1.0.0-beta.2", "1.0.0")).toBe(true);
+    expect(less("1.0.0", "1.0.1-beta.1")).toBe(true);
+  });
+
+  it("names the pre-release in Chromium only (Firefox has no version_name)", () => {
+    expect(manifestFor("chromium", { version: "1.0.0-beta.1", store: true }).version_name).toBe("1.0.0-beta.1");
+    expect(manifestFor("firefox", { version: "1.0.0-beta.1", store: true }).version_name).toBeUndefined();
+    expect(manifestFor("firefox", { version: "1.0.0-beta.1", store: true }).version).toBe("0.65535.65535.1");
   });
 });
