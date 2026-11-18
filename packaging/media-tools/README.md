@@ -1,5 +1,10 @@
 # Media tools in the installers
 
+> **Not used by the release installers any more** (they would be ten times larger): the app
+> fetches yt-dlp, ffmpeg and Deno in the background after its first start (`Tools::prefetch`).
+> What follows still applies to `wdm-media-bundle` and `--media-tools-dir`, for distribution
+> packages and offline setups.
+
 The desktop installers ship yt-dlp, ffmpeg, Deno and QuickJS (`qjs`), the
 JavaScript runtimes yt-dlp uses for YouTube when the computer has none (Deno
 first, QuickJS as the fallback), so video and audio

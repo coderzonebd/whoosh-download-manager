@@ -221,58 +221,9 @@ jobs:
       - name: Build the sidecars
         run: node apps/desktop/scripts/sidecars.mjs --target "$TARGET"
 
-      # yt-dlp and ffmpeg ship inside every installer, so video and audio
-      # sites work right after installation (packaging/media-tools). Fetched
-      # by crates/media itself: the same upstreams and checksum checks as the
-      # first-use download. The versions go into media-tools/manifest.json
-      # and the job summary.
-      - name: Fetch yt-dlp and ffmpeg for the installers
-        env:
-          # GitHub's API (QuickJS's release digests) limits anonymous requests per address, which
-          # shared runners use up; wdm-media-bundle sends this token to api.github.com only.
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cargo build --release --locked -p wdm-media --bin wdm-media-bundle
-          exe=; [ "$RUNNER_OS" = Windows ] && exe=.exe
-          echo "MEDIA_BUNDLER=$PWD/target/release/wdm-media-bundle$exe" >> "$GITHUB_ENV"
-          dir=apps/desktop/src-tauri/media-tools
-          rm -rf "$dir"
-          "target/release/wdm-media-bundle$exe" fetch --target "$TARGET" --out "$dir" > media-tools.md
-          cp packaging/media-tools/NOTICE.txt packaging/media-tools/LGPL-2.1.txt \
-             packaging/media-tools/Unlicense.txt packaging/media-tools/QuickJS-MIT.txt \
-             packaging/media-tools/Deno-MIT.txt "$dir/"
-          cp LICENSE-GPL "$dir/GPL-3.0.txt"
-          { echo "#### yt-dlp and ffmpeg in the $TARGET installers"; echo; cat media-tools.md; } >> "$GITHUB_STEP_SUMMARY"
-          ls -l "$dir"
-      - name: Sign yt-dlp, ffmpeg, QuickJS and Deno (macOS)
-        # Inside the .app they must be signed like the app: Developer ID when
-        # configured, else ad hoc. lipo's universal ffmpeg is unsigned. Signing
-        # changes the files, so the manifest's checksums are taken again.
-        if: runner.os == 'macOS'
-        run: |
-          set -euo pipefail
-          dir=apps/desktop/src-tauri/media-tools
-          files=()
-          for f in yt-dlp ffmpeg ffprobe qjs deno; do [ -e "$dir/$f" ] && files+=("$dir/$f"); done
-          if [ "$APPLE_SIGNING_ENABLED" = true ]; then
-            # yt-dlp is a PyInstaller program: under the hardened runtime it
-            # loads the Python libraries it unpacks, signed by its authors.
-            MACOS_SIGN_ENTITLEMENTS=packaging/media-tools/yt-dlp.entitlements \
-              .github/scripts/macos-sign.sh "$dir/yt-dlp"
-            # Deno runs V8: under the hardened runtime it needs JIT memory.
-            MACOS_SIGN_ENTITLEMENTS=packaging/media-tools/deno.entitlements \
-              .github/scripts/macos-sign.sh "$dir/deno"
-            others=()
-            for f in "${files[@]:1}"; do [ "$f" = "$dir/deno" ] || others+=("$f"); done
-            .github/scripts/macos-sign.sh "${others[@]}"
-          else
-            for f in "${files[@]}"; do
-              codesign --force --sign - "$f"
-              codesign --verify --strict "$f"
-            done
-          fi
-          "$MEDIA_BUNDLER" rehash "$dir" > /dev/null
+      # yt-dlp, ffmpeg and Deno are not in the installers (they would make them ten times
+      # larger): the app downloads them quietly in the background after its first start, from
+      # their projects' releases, checked against the checksums those publish (crates/media).
 
       # ---- Linux and macOS: one tauri build ----
       - name: Build and bundle
@@ -285,45 +236,11 @@ jobs:
           # Sidecars (daemon, native host) and the browser integration
           # (packaging/browsers/README.md).
           args=(--ci --target "$TARGET" --bundles "$BUNDLES" --config src-tauri/tauri.sidecars.conf.json
-                --config src-tauri/tauri.browsers.conf.json --config src-tauri/tauri.media.conf.json)
+                --config src-tauri/tauri.browsers.conf.json)
           if [ "$UPDATER_ARTIFACTS" = true ]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           fi
           pnpm tauri build "${args[@]}"
-      - name: Check yt-dlp and ffmpeg inside the bundles
-        # The bundler must ship them byte for byte (the daemon refuses a
-        # file that does not match the manifest and downloads instead).
-        if: runner.os != 'Windows'
-        run: |
-          set -euo pipefail
-          bundle="target/$TARGET/release/bundle"
-          check() {
-            local found=("$@")
-            if [ "${#found[@]}" != 1 ] || [ ! -d "${found[0]}" ]; then
-              echo "::error::media-tools not found: ${found[*]}"; exit 1
-            fi
-            "$MEDIA_BUNDLER" verify "${found[0]}" > /dev/null
-            echo "ok: ${found[0]}"
-          }
-          tmp=$(mktemp -d)
-          case "$RUNNER_OS" in
-            macOS)
-              for app in "$bundle"/macos/*.app; do
-                check "$app/Contents/Resources/media-tools"
-                codesign --verify --strict "$app/Contents/Resources/media-tools/ffmpeg"
-              done ;;
-            Linux)
-              for deb in "$bundle"/deb/*.deb; do
-                dpkg-deb -x "$deb" "$tmp/deb"
-                check "$tmp"/deb/usr/lib/*/media-tools
-              done
-              for img in "$bundle"/appimage/*.AppImage; do
-                img=$(realpath "$img")
-                (cd "$tmp" && "$img" --appimage-extract > /dev/null)
-                check "$tmp"/squashfs-root/usr/lib/*/media-tools
-              done ;;
-          esac
-          rm -rf "$tmp"
       - name: Sign and notarize the .dmg
         if: runner.os == 'macOS' && env.APPLE_SIGNING_ENABLED == 'true'
         run: |
@@ -338,8 +255,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           pnpm tauri build --ci --target "$TARGET" --no-bundle \
-            --config src-tauri/tauri.sidecars.conf.json --config src-tauri/tauri.browsers.windows.conf.json \
-            --config src-tauri/tauri.media.conf.json
+            --config src-tauri/tauri.sidecars.conf.json --config src-tauri/tauri.browsers.windows.conf.json
       - name: Stage the executable for signing
         if: runner.os == 'Windows'
         run: |
@@ -382,8 +298,7 @@ jobs:
         # --no-binary-patching: patching would rewrite (and unsign) the exe.
         run: |
           pnpm tauri bundle --ci --target "$TARGET" --bundles "$BUNDLES" --no-binary-patching \
-            --config src-tauri/tauri.sidecars.conf.json --config src-tauri/tauri.browsers.windows.conf.json \
-            --config src-tauri/tauri.media.conf.json
+            --config src-tauri/tauri.sidecars.conf.json --config src-tauri/tauri.browsers.windows.conf.json
       - name: Stage the installers for signing
         if: runner.os == 'Windows'
         run: |
@@ -446,16 +361,13 @@ jobs:
             Windows)
               cp staging/installers/* out/
               # Portable build: the (signed) app with its daemon and native
-              # host next to it, and yt-dlp and ffmpeg where the installers
-              # put them (the app's resource directory is its own folder on
-              # Windows); needs the WebView2 runtime.
+              # host next to it; needs the WebView2 runtime. The media tools
+              # come on first start, as with the installers.
               mkdir -p portable
               cp "target/$TARGET/release/wdm-desktop.exe" portable/
               for b in wdm-daemon wdm-nmhost; do
                 cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" "portable/$b.exe"
               done
-              cp -R apps/desktop/src-tauri/media-tools portable/media-tools
-              "$MEDIA_BUNDLER" verify portable/media-tools > /dev/null
               (cd portable && 7z a -tzip -mx=9 "../out/${ASSET_PREFIX}_${VERSION}_${WINDOWS_ARCH}_portable.zip" . >/dev/null) ;;
           esac
           # Tauri names the bundles after productName, "Whoosh Download

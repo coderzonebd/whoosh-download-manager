@@ -4,10 +4,11 @@
 # notice first.
 #
 #   1. The installer installs (Linux .deb through apt, Windows NSIS silently, macOS .dmg).
-#   2. The installed daemon starts with media support and the shipped tools, and the CLI
-#      downloads a file through it (size checked).
-#   3. The shipped yt-dlp, Deno and ffmpeg download a YouTube video and merge video and audio
-#      (warning only: YouTube sometimes asks datacenter machines to sign in).
+#   2. The installed daemon starts with media support, and the CLI downloads a file through it
+#      (size checked).
+#   3. The daemon fetches yt-dlp, ffmpeg and Deno by itself in the background (the installers
+#      ship none), and those download a YouTube video and merge video and audio (the YouTube
+#      part is a warning only: YouTube sometimes asks datacenter machines to sign in).
 #   4. The app's window opens; a screenshot is kept as an artifact.
 #
 # Usage: smoke-test.sh <desktop-artifact-dir> <binaries-artifact-dir> <out-dir>
@@ -40,7 +41,6 @@ case "$os" in
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$deb" xvfb imagemagick > /dev/null
     app_bin=$(command -v wdm-desktop)
     daemon=$(command -v wdm-daemon)
-    tools=$(dirname "$(find /usr/lib -path '*media-tools/manifest.json' | head -n 1)")
     ;;
   macos)
     dmg=$(ls "$desktop"/*.dmg | head -n 1)
@@ -50,7 +50,6 @@ case "$os" in
     app=$(ls -d /Applications/*[Ww]hoosh*.app | head -n 1)
     app_bin="$app/Contents/MacOS/wdm-desktop"
     daemon="$app/Contents/MacOS/wdm-daemon"
-    tools="$app/Contents/Resources/media-tools"
     ;;
   windows)
     setup=$(ls "$desktop"/*-setup.exe | head -n 1)
@@ -60,14 +59,12 @@ case "$os" in
     [ -d "$dir" ] || dir=$(dirname "$(find "$(cygpath -u "$LOCALAPPDATA")" "$(cygpath -u "$PROGRAMFILES")" -maxdepth 3 -name 'wdm-daemon.exe' 2>/dev/null | head -n 1)")
     app_bin="$dir/wdm-desktop.exe"
     daemon="$dir/wdm-daemon.exe"
-    tools="$dir/media-tools"
     ;;
 esac
-for f in "$app_bin" "$daemon" "$tools/manifest.json"; do
+for f in "$app_bin" "$daemon"; do
   [ -e "$f" ] || fail "not installed: $f"
 done
-echo "app: $app_bin"; echo "daemon: $daemon"; echo "tools: $tools"
-ls "$tools"
+echo "app: $app_bin"; echo "daemon: $daemon"
 
 # The CLI comes from the release's CLI archive.
 archive=$(ls "$binaries"/wdm-[0-9]*.tar.gz "$binaries"/wdm-[0-9]*.zip 2>/dev/null | head -n 1)
@@ -81,11 +78,11 @@ cli=$(find "$work/cli" -type f -name "wdm$exe" | head -n 1)
 chmod +x "$cli" 2>/dev/null || true
 
 # ---------------------------------------------------------- 2. daemon and CLI
-log "daemon with the shipped media tools"
+log "daemon"
 data="$work/data"
 mkdir -p "$data" "$work/downloads"
 export WDM_DATA_DIR="$data"
-"$daemon" --data-dir "$data" --port 0 --media-tools-dir "$tools" > "$out/daemon.log" 2>&1 &
+"$daemon" --data-dir "$data" --port 0 > "$out/daemon.log" 2>&1 &
 daemon_pid=$!
 trap 'kill $daemon_pid 2>/dev/null || true' EXIT
 for _ in $(seq 1 60); do
@@ -112,18 +109,17 @@ size=$(wc -c < "$saved" | tr -d ' ')
 [ "$size" = 10485760 ] || fail "downloaded $size bytes, expected 10485760 ($saved)"
 echo "ok: $saved ($size bytes)"
 
-# ------------------------------------------------- 3. the shipped media tools
-log "yt-dlp + Deno + ffmpeg as shipped"
-bin="$work/tools"
-mkdir -p "$bin"
-for name in yt-dlp ffmpeg ffprobe deno qjs; do
-  if [ -f "$tools/$name$exe.tar" ]; then
-    tar -xf "$tools/$name$exe.tar" -C "$bin"
-  elif [ -f "$tools/$name$exe" ]; then
-    cp "$tools/$name$exe" "$bin/"
-  fi
+# ---------------------------------------- 3. the media tools, fetched by the daemon
+log "the daemon fetches yt-dlp, ffmpeg and Deno by itself"
+bin="$data/media/bin"
+for _ in $(seq 1 120); do
+  [ -x "$bin/yt-dlp$exe" ] && [ -x "$bin/ffmpeg$exe" ] && [ -x "$bin/deno$exe" ] && break
+  sleep 5
 done
-chmod +x "$bin"/* 2>/dev/null || true
+ls -l "$bin" || true
+for name in yt-dlp ffmpeg deno; do
+  [ -x "$bin/$name$exe" ] || { grep -i "fetch\|media" "$out/daemon.log" | tail -n 20; fail "the daemon did not fetch $name"; }
+done
 "$bin/deno$exe" --version | head -n 1 | tee "$out/deno-version.txt" || fail "the shipped Deno does not run"
 "$bin/ffmpeg$exe" -hide_banner -version | head -n 1 || fail "the shipped ffmpeg does not run"
 "$bin/yt-dlp$exe" --version || fail "the shipped yt-dlp does not run"
@@ -132,7 +128,12 @@ if (cd "$work" && limit 300 "$bin/yt-dlp$exe" --ignore-config --no-playlist --no
       --js-runtimes "deno:$bin/deno$exe" --ffmpeg-location "$bin" \
       -f 'bv*[height<=360]+ba/b[height<=360]' --merge-output-format mkv \
       -o "$video.%(ext)s" "https://www.youtube.com/watch?v=jNQXAC9IVRw" > "$out/yt-dlp.log" 2>&1); then
-  "$bin/ffprobe$exe" -v error -show_entries stream=codec_type -of csv=p=0 "$video.mkv" | sort | tee "$out/streams.txt"
+  # ffprobe where the build has one (not every macOS build does), else ffmpeg's own listing.
+  if [ -x "$bin/ffprobe$exe" ]; then
+    "$bin/ffprobe$exe" -v error -show_entries stream=codec_type -of csv=p=0 "$video.mkv" | sort | tee "$out/streams.txt"
+  else
+    "$bin/ffmpeg$exe" -hide_banner -i "$video.mkv" 2>&1 | grep -o 'Stream #[^:]*:[0-9]*[^:]*: [A-Za-z]*' | awk '{print tolower($NF)}' | tee "$out/streams.txt"
+  fi
   grep -q video "$out/streams.txt" && grep -q audio "$out/streams.txt" \
     || fail "the merged video lacks a video or an audio stream"
   echo "ok: YouTube video merged"
