@@ -1,7 +1,7 @@
 # Master Plan — Open-Source Download Ecosystem
 
 > Working name: **PROJECT** (final name TBD — must not contain "IDM"; run a trademark search first).
-> Owner: CoderZone BD. License: see §10. Status: planning, 2026-11-10.
+> Owner: Coder Zone BD. License: see §10. Status: planning, 2026-11-10.
 
 ---
 

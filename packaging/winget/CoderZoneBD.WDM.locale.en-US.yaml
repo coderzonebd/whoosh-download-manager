@@ -3,14 +3,14 @@
 PackageIdentifier: CoderZoneBD.WDM
 PackageVersion: 0.0.1
 PackageLocale: en-US
-Publisher: CoderZone BD
+Publisher: Coder Zone BD
 PublisherUrl: https://github.com/coderzonebd
 PublisherSupportUrl: https://github.com/coderzonebd/whoosh-download-manager/issues
 PackageName: Whoosh Download Manager
 PackageUrl: https://github.com/coderzonebd/whoosh-download-manager
 License: GPL-3.0-or-later
 LicenseUrl: https://github.com/coderzonebd/whoosh-download-manager/blob/main/LICENSE.md
-Copyright: Copyright © 2026 CoderZone BD and contributors
+Copyright: Copyright © 2026 Coder Zone BD and contributors
 ShortDescription: Fast, open-source download manager
 Description: >-
   A free download manager built on one Rust engine: many connections per file,
