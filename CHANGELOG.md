@@ -8,6 +8,7 @@ The first public beta: Windows (x64, ARM64), macOS (universal), Linux (x64, ARM6
 
 ### Release
 - **Versions:** the browser extension's version is numbers only, so a pre-release `X.Y.Z-beta.N` ships as a version just below `X.Y.Z` (`1.0.0-beta.1` → `0.65535.65535.1`, shown as `1.0.0-beta.1` in Chromium), and stores accept the release after it. Android's versionCode gets two more digits so each beta and its release differ (`1.0.0-beta.1` → 100000001, `1.0.0` → 100000099).
+- **No .rpm and no MSI for pre-releases:** RPM and WiX refuse the `-` of a pre-release version. Fedora and openSUSE get the AppImage during the beta (the install script picks it); Windows gets the NSIS installer.
 
 ### Installing and updating
 - **One command to install on every system:** `winget install --id CoderZoneBD.WDM -e`, `brew install --cask coderzonebd/tap/whoosh-download-manager`, or one universal script, `packaging/install/install`, which is both a shell and a PowerShell script and works out the system itself: `curl -fsSL …/install | sh` on Linux and macOS (apt, dnf or zypper through the signed WDM repository, else the AppImage; Homebrew, else the `.dmg`) and `irm …/install | iex` on Windows (winget, else the per-user installer). It checks every download against the release's `SHA256SUMS`.

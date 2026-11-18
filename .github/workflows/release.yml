@@ -43,6 +43,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       windows-bundles: ${{ steps.version.outputs.windows-bundles }}
+      linux-bundles: ${{ steps.version.outputs.linux-bundles }}
       source-date-epoch: ${{ steps.version.outputs.source-date-epoch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,15 +84,18 @@ jobs:
             fi
           done
           [ "$bad" = 0 ]
-          # WiX (MSI) rejects pre-release versions, so pre-releases ship NSIS only.
+          # WiX (MSI) and RPM reject a pre-release's `-` in the version, so pre-releases ship
+          # NSIS only on Windows and AppImage and .deb on Linux (rpm distributions take the
+          # AppImage then: packaging/install/install).
           case "$version" in
-            *-*) prerelease=true;  windows_bundles=nsis ;;
-            *)   prerelease=false; windows_bundles=nsis,msi ;;
+            *-*) prerelease=true;  windows_bundles=nsis;     linux_bundles=appimage,deb ;;
+            *)   prerelease=false; windows_bundles=nsis,msi; linux_bundles=appimage,deb,rpm ;;
           esac
           {
             echo "version=$version"
             echo "prerelease=$prerelease"
             echo "windows-bundles=$windows_bundles"
+            echo "linux-bundles=$linux_bundles"
             echo "source-date-epoch=$(git log -1 --format=%ct)"
           } >> "$GITHUB_OUTPUT"
           echo "### Building $version (prerelease: $prerelease)" >> "$GITHUB_STEP_SUMMARY"
@@ -112,12 +116,12 @@ jobs:
             # Oldest supported glibc for the AppImage / .deb / .rpm.
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
+            bundles: "" # from meta: appimage,deb,rpm (appimage,deb for pre-releases)
           - platform: linux-arm64
             # GitHub's free arm64 runner (public repositories), same glibc.
             os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
+            bundles: "" # from meta: appimage,deb,rpm (appimage,deb for pre-releases)
           - platform: macos-universal
             os: macos-15
             target: universal-apple-darwin
@@ -141,7 +145,7 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ needs.meta.outputs.source-date-epoch }}
       TARGET: ${{ matrix.target }}
       WINDOWS_ARCH: ${{ matrix.arch }}
-      BUNDLES: ${{ matrix.bundles || needs.meta.outputs.windows-bundles }}
+      BUNDLES: ${{ matrix.bundles || (startsWith(matrix.platform, 'linux') && needs.meta.outputs.linux-bundles) || needs.meta.outputs.windows-bundles }}
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_PROJECT_SLUG != '' }}
       APPLE_SIGNING_ENABLED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
       # Opt-in crash reports (crates/crash): the DSN is compiled in by every
@@ -350,7 +354,9 @@ jobs:
           bundle="target/$TARGET/release/bundle"
           case "$RUNNER_OS" in
             Linux)
-              cp "$bundle"/appimage/*.AppImage* "$bundle"/deb/*.deb* "$bundle"/rpm/*.rpm* out/ ;;
+              cp "$bundle"/appimage/*.AppImage* "$bundle"/deb/*.deb* out/
+              # No .rpm for a pre-release (meta).
+              for f in "$bundle"/rpm/*.rpm*; do [ -e "$f" ] && cp "$f" out/; done ;;
             macOS)
               cp "$bundle"/dmg/*.dmg out/
               # The updater archive is named after the app only; add version and arch.

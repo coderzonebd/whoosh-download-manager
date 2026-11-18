@@ -149,6 +149,14 @@ install_rpm() {
   TAG="$(release_tag)"; [ -n "$TAG" ] || die "no release found"
   v="${TAG#v}"
   rpm="Whoosh-Download-Manager-${v}-1.$(arch_rpm).rpm"
+  base="https://github.com/$REPO/releases/download/$TAG"
+  fetch "$base/SHA256SUMS" "$TMP/SHA256SUMS"
+  if ! grep -q "$rpm" "$TMP/SHA256SUMS"; then
+    # Pre-releases ship no .rpm (RPM refuses the `-` of a pre-release version).
+    say "$TAG has no .rpm; installing the AppImage instead"
+    install_appimage
+    return
+  fi
   say "downloading $rpm"
   asset "$rpm"
   if [ "$pm" = zypper ]; then root zypper --non-interactive install --allow-unsigned-rpm "$TMP/$rpm"
