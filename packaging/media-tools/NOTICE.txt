@@ -62,7 +62,7 @@ Used:     when the computer has no JavaScript runtime of its own, for yt-dlp
 
 Written offer
 -------------
-For at least three years after each Whoosh Download Manager release, CoderZone BD will give
+For at least three years after each Whoosh Download Manager release, Coder Zone BD will give
 anyone who asks the complete corresponding source code of the ffmpeg build
 shipped in that release, for no more than the cost of providing it. Ask
 through https://github.com/coderzonebd/whoosh-download-manager/issues.

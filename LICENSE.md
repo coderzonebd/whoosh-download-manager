@@ -9,4 +9,4 @@ This repository uses two licenses (see [docs/adr/0002-licensing.md](docs/adr/000
 
 Each crate's `Cargo.toml` and each package's `package.json` states its license. Contributions are accepted under the license of the directory they change.
 
-Copyright © 2026 CoderZone BD and contributors.
+Copyright © 2026 Coder Zone BD and contributors.

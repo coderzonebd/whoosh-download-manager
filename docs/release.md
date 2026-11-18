@@ -156,7 +156,7 @@ optionally add required reviewers.
 | `SIGNPATH_SIGNING_POLICY_SLUG` | variable, optional | defaults to `release-signing`; use `test-signing` for trials | SignPath project → *Signing policies* |
 | `APPLE_CERTIFICATE` | secret | *Developer ID Application* certificate + private key, `.p12`, base64 | Keychain Access → export `.p12` → `base64 -i cert.p12 \| pbcopy` |
 | `APPLE_CERTIFICATE_PASSWORD` | secret | password of that `.p12` | chosen at export |
-| `APPLE_SIGNING_IDENTITY` | secret | e.g. `Developer ID Application: CoderZone BD (TEAMID1234)` | `security find-identity -v -p codesigning` |
+| `APPLE_SIGNING_IDENTITY` | secret | e.g. `Developer ID Application: Coder Zone BD (TEAMID1234)` | `security find-identity -v -p codesigning` |
 | `APPLE_API_KEY_ID` | secret | notarization (preferred): App Store Connect API key id | App Store Connect → *Users and Access* → *Integrations* → *Team Keys* (role *Developer*) |
 | `APPLE_API_ISSUER` | secret | issuer UUID of that key | same page |
 | `APPLE_API_KEY_P8` | secret | contents of `AuthKey_<id>.p8` (multi-line is fine) | downloaded once when the key is created |

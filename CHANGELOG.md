@@ -8,6 +8,7 @@ The first public beta: Windows (x64, ARM64), macOS (universal), Linux (x64, ARM6
 
 ### Release
 - **Versions:** the browser extension's version is numbers only, so a pre-release `X.Y.Z-beta.N` ships as a version just below `X.Y.Z` (`1.0.0-beta.1` → `0.65535.65535.1`, shown as `1.0.0-beta.1` in Chromium), and stores accept the release after it. Android's versionCode gets two more digits so each beta and its release differ (`1.0.0-beta.1` → 100000001, `1.0.0` → 100000099).
+- **Install script on macOS:** a Mac with Homebrew installed no longer stops at our tap, which carries full releases only: a beta, a pinned version or a failed `brew install` takes the `.dmg` instead.
 - **No .rpm and no MSI for pre-releases:** RPM and WiX refuse the `-` of a pre-release version. Fedora and openSUSE get the AppImage during the beta (the install script picks it); Windows gets the NSIS installer.
 
 ### Installing and updating
