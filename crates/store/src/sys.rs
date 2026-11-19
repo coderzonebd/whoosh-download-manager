@@ -237,6 +237,10 @@ pub(crate) enum Prealloc {
     /// The filesystem cannot reserve space (FAT on some kernels, network and
     /// FUSE filesystems, …): the file was only extended, sparsely.
     SizeOnly,
+    /// Windows, NTFS/ReFS: the file is marked sparse and extended, without
+    /// reserving space (see `set_sparse`).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    Sparse,
 }
 
 /// Reserve `[0, len)` and leave the file exactly `len` bytes long: a tail
@@ -244,6 +248,13 @@ pub(crate) enum Prealloc {
 /// byte past the known size can belong to the download.
 pub(crate) fn preallocate(file: &File, len: u64) -> io::Result<Prealloc> {
     let cur = file.metadata()?.len();
+    #[cfg(windows)]
+    if len > 0 && set_sparse(file)? {
+        if cur != len {
+            file.set_len(len)?;
+        }
+        return Ok(Prealloc::Sparse);
+    }
     let reserved = len == 0 || reserve(file, cur, len)?;
     if file.metadata()?.len() != len {
         file.set_len(len)?;
@@ -303,6 +314,52 @@ fn reserve(file: &File, cur: u64, len: u64) -> io::Result<bool> {
         Ok(_) => Ok(true),
         Err(Errno::ENOTSUP | Errno::EOPNOTSUPP | Errno::EINVAL) => Ok(false),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// Marks `file` sparse (`FSCTL_SET_SPARSE`). Returns `Ok(false)` where the
+/// filesystem has no sparse files (FAT, exFAT, some network shares).
+///
+/// Why: NTFS keeps a *valid data length* per file and zero-fills everything
+/// between it and a write further on before that write completes. A
+/// segmented download writes near the end of the file early, so a plain
+/// preallocated file made Windows write most of it twice, the first time
+/// as zeroes, synchronously (a 1 GiB download over loopback ran at about
+/// 80 MB/s instead of disk speed). A sparse file has no such zero-fill:
+/// unwritten ranges are holes that read as zeroes. The cost is that space
+/// is not reserved up front, as on filesystems without fallocate; a full
+/// disk fails the write that hits it, which the engine reports.
+#[cfg(windows)]
+pub(crate) fn set_sparse(file: &File) -> io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::FSCTL_SET_SPARSE;
+    let mut returned = 0u32;
+    // SAFETY: `file` is an open handle borrowed for the whole call. No input
+    // buffer means "set sparse"; there is no output buffer; `returned` is a
+    // valid u32 on our stack; the call is synchronous (no OVERLAPPED) and
+    // keeps no pointer.
+    let ok = unsafe {
+        DeviceIoControl(
+            file.as_raw_handle(),
+            FSCTL_SET_SPARSE,
+            std::ptr::null(),
+            0,
+            std::ptr::null_mut(),
+            0,
+            &raw mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok != 0 {
+        return Ok(true);
+    }
+    let e = io::Error::last_os_error();
+    // ERROR_INVALID_FUNCTION, ERROR_NOT_SUPPORTED, ERROR_INVALID_PARAMETER:
+    // no sparse files on this filesystem.
+    match e.raw_os_error() {
+        Some(1 | 50 | 87) => Ok(false),
+        _ => Err(e),
     }
 }
 
@@ -749,5 +806,33 @@ mod tests {
         assert_eq!(buf[100], 0);
         preallocate(&f, 50).unwrap();
         assert_eq!(f.metadata().unwrap().len(), 50);
+    }
+
+    /// NTFS: the in-progress file is sparse, so a write near its end does
+    /// not zero-fill everything before it, and the holes still read as 0.
+    #[cfg(windows)]
+    #[test]
+    fn windows_preallocation_is_sparse() {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_SPARSE_FILE: u32 = 0x200;
+        let d = tempfile::tempdir().unwrap();
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(d.path().join("f"))
+            .unwrap();
+        let len = 64 << 20;
+        assert_eq!(preallocate(&f, len).unwrap(), Prealloc::Sparse);
+        assert_eq!(f.metadata().unwrap().len(), len);
+        assert_ne!(
+            f.metadata().unwrap().file_attributes() & FILE_ATTRIBUTE_SPARSE_FILE,
+            0
+        );
+        write_all_at(&f, &[9u8; 4096], len - 4096).unwrap();
+        let mut buf = [1u8; 4096];
+        assert_eq!(read_at(&f, &mut buf, 0).unwrap(), 4096);
+        assert!(buf.iter().all(|&b| b == 0));
     }
 }

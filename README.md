@@ -13,7 +13,7 @@ Open-source, crash-proof, and measured against every competitor in public.
 [![Platforms](https://img.shields.io/badge/targets-Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-6a4bd8)](MASTER-PLAN.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome%20(into%20dev)-2f74ec)](CONTRIBUTING.md)
 
-**[Download](https://coderzonebd.github.io/wdm/)** · [Benchmarks](#measured-not-claimed) · [Features](#what-it-does) · [Install](#install) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh-download-manager)
+**[Download](https://coderzonebd.github.io/wdm/)** · [Benchmarks](#measured-not-claimed) · [vs IDM](#against-internet-download-manager-on-windows) · [Features](#what-it-does) · [Install](#install) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Support](#support-whoosh-download-manager)
 
 </div>
 
@@ -38,6 +38,21 @@ Every number below comes from [`wdm-bench`](crates/bench). It runs Whoosh Downlo
 <sub>Run sets <a href="docs/bench/data/2026-11-13-pop-os-phase1-gate4/report.md">2026-11-13-pop-os-phase1-gate4</a>, <a href="docs/bench/data/2026-11-13-pop-os-phase1-hardkill-9665f1b">hardkill-9665f1b</a> and <a href="docs/bench/data/2026-11-13-pop-os-phase1-cdn3/report.md">cdn3</a>: Pop!_OS laptop, loopback and real internet. Times are to the file being safely on disk. Competitors: curl, wget, aria2c, aria2-next, Mister DM, Surge, Gopeed. Lower is better.</sub>
 
 Whoosh Download Manager doesn't call a download done until the bytes are synced to disk, so a power cut or load-shedding never leaves a broken file. The other clients leave data in the page cache, so the benchmark syncs their files too before it stops the clock. That safety has a small fixed cost: on 1 MiB files wget can finish 5–9 ms sooner. The gate allows up to 10 ms on files of 4 MiB or less, and every report lists each row where that allowance applies ([MASTER-PLAN §8](MASTER-PLAN.md#phase-1--engine-months-13)).
+
+### Against Internet Download Manager, on Windows
+
+IDM only runs on Windows, so it gets its own run: the same harness on a GitHub Windows runner, IDM 6.43 (trial) resident as people use it, against WDM and curl. Six scenarios, 5 runs each, repeated in four run sets. Times are medians, from the command to the file safely on disk; lower is better.
+
+| | WDM | IDM 6.43 (its best run set) | curl |
+|---|---|---|---|
+| **1 GiB, fast server** | **6.2–7.6 s** | 12.4 s | 7.2–9.7 s |
+| **Flaky server**, 100 MiB | **0.59–0.68 s** | 0.92 s | fails (no retry) |
+| **Stalling server**, 100 MiB | **0.60–0.66 s** | 3.9 s | 8.7–9.2 s |
+| **Slow-drip server**, 10 MiB | **0.62–0.72 s** | 5.0 s | 6.7–8.4 s |
+| **Per-connection throttle**, 10 MiB | **0.45–0.47 s** | 1.48 s | 5.23 s |
+| **High latency**, 10 MiB | **0.60–0.62 s** | 3.8 s | 0.67–0.73 s |
+
+<sub>Run sets <a href="docs/bench/data/2026-11-19-gh-windows-idm-1/report.md">gh-windows-idm-1</a> to <a href="docs/bench/data/2026-11-19-gh-windows-idm-4/report.md">-4</a>; ranges are WDM's and curl's medians across the four sets. Every IDM and WDM run was byte-exact. A runner is a shared virtual machine on loopback, so compare clients within a set, not with the Linux numbers above; real-internet tests against IDM are still to come. How IDM is driven (and kept from stopping on its pop-ups): <a href="docs/bench/README.md#windows-with-idm">docs/bench</a>.</sub>
 
 ## What it does
 
@@ -166,7 +181,7 @@ Setup, rules and commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Please repo
 
 ## Support Whoosh Download Manager
 
-Whoosh Download Manager is free and has no ads or telemetry. If it saves you time, you can help keep it going:
+Whoosh Download Manager is free, has no ads and does not track you ([privacy](docs/privacy.md)). If it saves you time, you can help keep it going:
 
 - [GitHub Sponsors](https://github.com/sponsors/coderzonebd)
 - [Buy Me a Coffee](https://buymeacoffee.com/devrkb21)

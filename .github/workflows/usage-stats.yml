@@ -1,0 +1,63 @@
+# Usage numbers: once a day, record the release download counts and, when the
+# update feed (infra/update-feed) is deployed, its update checks per day, on the
+# `stats` branch (downloads.csv, active.csv, README.md). Nothing identifies a
+# person; see docs/privacy.md. Needs no secret: GITHUB_TOKEN may push to
+# `stats` (only dev and pub are protected). The feed's address is the
+# repository variable WDM_UPDATE_FEED (e.g. https://wdm-update-feed.example.workers.dev);
+# without it, only downloads are recorded.
+name: Usage stats
+
+on:
+  schedule:
+    - cron: "23 2 * * *" # 02:23 UTC, after the feed's day has ended
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: usage-stats
+  cancel-in-progress: false
+
+jobs:
+  stats:
+    name: Record downloads and update checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # push to the stats branch
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FEED: ${{ vars.WDM_UPDATE_FEED }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: src
+      - name: Record and push
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate | jq -s . > "$RUNNER_TEMP/releases.json"
+          active=""
+          if [ -n "$FEED" ]; then
+            if curl -fsS --max-time 30 "${FEED%/}/stats" -o "$RUNNER_TEMP/active.json"; then
+              active="$RUNNER_TEMP/active.json"
+            else
+              echo "::warning::could not read ${FEED%/}/stats; recording downloads only"
+            fi
+          fi
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$url" stats > /dev/null; then
+            git clone --quiet --depth 1 --branch stats "$url" stats
+          else
+            git init --quiet -b stats stats
+            git -C stats remote add origin "$url"
+          fi
+          day=$(date -u +%F)
+          node src/.github/scripts/usage-stats.mjs "$RUNNER_TEMP/releases.json" stats "$day" ${active:+"$active"} | tee -a "$GITHUB_STEP_SUMMARY"
+          cd stats
+          git add -A
+          if git diff --cached --quiet; then echo "unchanged"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "stats: $day"
+          git push --quiet origin stats

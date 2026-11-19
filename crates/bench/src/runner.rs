@@ -1417,18 +1417,31 @@ fn wait_final_file(
     sync: &dyn Fn() -> Synced,
 ) -> Waited {
     let deadline = running.started + timeout;
+    // A hand-off client (IDM with IDM resident) exits at once; the download
+    // goes on in the resident instance, so polling continues after the exit.
+    let mut exited: Option<Measured> = None;
     loop {
-        if let Some(m) = running.wait(Duration::from_millis(5)) {
-            // Exited before the poll saw the file: it may still be there.
-            return Waited {
-                synced: Some(sync()),
-                ..Waited::new(m)
-            };
+        if exited.is_none() {
+            if let Some(m) = running.wait(Duration::from_millis(5)) {
+                if !a.hands_off() {
+                    // Exited before the poll saw the file: it may still be there.
+                    return Waited {
+                        synced: Some(sync()),
+                        ..Waited::new(m)
+                    };
+                }
+                exited = Some(m);
+            }
+        } else {
+            std::thread::sleep(Duration::from_millis(5));
         }
         if final_file_ready(a, out, size) {
             let done = unix_us();
             let synced = sync();
-            let m = running.stop(Duration::from_secs(5));
+            let m = match exited.take() {
+                Some(m) => m,
+                None => running.stop(Duration::from_secs(5)),
+            };
             // `completion: final-file` in the record says it was stopped.
             return Waited {
                 done_unix_us: Some(done),
@@ -1437,9 +1450,13 @@ fn wait_final_file(
             };
         }
         if Instant::now() > deadline {
+            let m = match exited.take() {
+                Some(m) => m,
+                None => running.stop(Duration::from_secs(3)),
+            };
             return Waited {
                 timed_out: true,
-                ..Waited::new(running.stop(Duration::from_secs(3)))
+                ..Waited::new(m)
             };
         }
     }
