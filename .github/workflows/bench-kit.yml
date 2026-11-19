@@ -106,8 +106,10 @@ jobs:
       - name: Benchmark wdm, idm, curl
         shell: pwsh
         run: |
-          $quick = if ($env:FULL) { @() } else { @("--quick") }
-          .\kit\wdm-bench.exe run --clients wdm,idm,curl @quick --seed 20261120 --label idm-runner --out "$env:RUNNER_TEMP\bench" --bin "wdm=$PWD\kit\wdm.exe"
+          $a = @("run", "--clients", "wdm,idm,curl", "--seed", "20261120", "--label", "idm-runner",
+                 "--out", "$env:RUNNER_TEMP\bench", "--bin", "wdm=$PWD\kit\wdm.exe")
+          if (-not $env:FULL) { $a += "--quick" }
+          & .\kit\wdm-bench.exe @a
           "exit $LASTEXITCODE"
           .\kit\wdm-bench.exe report "$env:RUNNER_TEMP\bench\idm-runner" -o "$env:RUNNER_TEMP\bench\idm-runner\report.md"
           Get-Content "$env:RUNNER_TEMP\bench\idm-runner\report.md" | Add-Content $env:GITHUB_STEP_SUMMARY
