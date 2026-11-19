@@ -79,7 +79,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 300
     env:
-      FULL: ${{ inputs.full && '1' || '' }}
+      FULL: ${{ (inputs.full || vars.BENCH_IDM_FULL == '1') && '1' || '' }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
