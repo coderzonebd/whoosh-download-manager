@@ -1,0 +1,62 @@
+# Windows benchmark kit: wdm-bench, wdm and wdm-daemon built for Windows x64,
+# plus docs/bench/windows-idm.ps1, as one artifact. Unzip it on a Windows PC
+# with IDM installed and run the script (docs/bench/README.md, "Windows, with
+# IDM"); nothing needs to be built there. Runs on demand and on pull requests
+# that change the kit.
+name: Bench kit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/bench-kit.yml
+      - docs/bench/windows-idm.ps1
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 kit
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked -p wdm-bench -p wdm-cli -p wdm-daemon
+      - name: Assemble
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir kit
+          cp target/release/wdm-bench.exe target/release/wdm.exe target/release/wdm-daemon.exe kit/
+          cp docs/bench/windows-idm.ps1 kit/
+          printf '%s\r\n' \
+            "WDM vs IDM benchmark kit ($GITHUB_SHA)" \
+            "" \
+            "1. Install Internet Download Manager, then exit it (tray icon > Exit)." \
+            "2. Open PowerShell in this folder and run:" \
+            "     powershell -ExecutionPolicy Bypass -File .\\windows-idm.ps1 -Quick" \
+            "   (without -Quick for the full matrix, a few hours)." \
+            "3. Send back the .zip it prints." \
+            "" \
+            "More: docs/bench/README.md, section 'Windows, with IDM'." > kit/README.txt
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          .\kit\wdm-bench.exe list --bin "wdm=$PWD\kit\wdm.exe"
+          .\kit\wdm-bench.exe run --clients wdm,curl --quick --runs 1 --force-runs --label smoke --out "$env:RUNNER_TEMP\bench" --bin "wdm=$PWD\kit\wdm.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\kit\wdm-bench.exe report "$env:RUNNER_TEMP\bench\smoke" | Select-Object -First 40
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wdm-bench-windows-x64
+          path: kit/
+          retention-days: 30

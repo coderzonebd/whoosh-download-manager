@@ -111,7 +111,19 @@ twice in a block is skipped for the rest of it.
 IDM is Windows-only and closed source; the harness drives it through its
 documented command line, `IDMan.exe /d <url> /p <dir> /f <file> /n /q`.
 This path is implemented but was **not tested** (the baseline machine runs
-Linux). Steps:
+Linux).
+
+**The quick way: the prebuilt kit.** The *Bench kit* workflow
+(`.github/workflows/bench-kit.yml`) builds `wdm-bench.exe`, `wdm.exe` and
+`wdm-daemon.exe` for Windows x64 and packs them with
+[`windows-idm.ps1`](windows-idm.ps1) as the artifact `wdm-bench-windows-x64`.
+On the Windows PC, unzip it, exit IDM, and run
+`powershell -ExecutionPolicy Bypass -File .\windows-idm.ps1 -Quick` (or without
+`-Quick` for the full matrix). The script checks IDM, reminds you of the
+settings below, runs WDM, IDM and curl against the in-process labserver,
+writes `report.md` and packs the run set as a zip. No Rust needed.
+
+Building it yourself instead:
 
 1. Install Rust (rustup, MSVC toolchain), Git, and IDM. In IDM's options
    turn off anything that pops up a dialog at the end of a download, and set
