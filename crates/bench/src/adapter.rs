@@ -143,6 +143,12 @@ pub trait Adapter: Send + Sync + fmt::Debug {
             _ => Completion::Exit,
         }
     }
+    /// Whether the measured process only hands the download to an
+    /// already-running instance and exits (IDM with IDM resident): a
+    /// [`Completion::FinalFile`] wait then keeps polling after the exit.
+    fn hands_off(&self) -> bool {
+        false
+    }
     /// The settings that matter for reproducing this adapter's numbers.
     fn settings(&self) -> String {
         String::new()
@@ -584,8 +590,13 @@ impl Adapter for Gopeed {
 /// docs/bench/README.md). IDM's command line cannot send extra headers, and
 /// `/f` fixes the file name, so Content-Disposition is not exercised.
 /// IDM keeps settings in the registry: runs are not isolated from each
-/// other the way other clients' are. Untested here (Linux development
-/// machine).
+/// other the way other clients' are.
+///
+/// `/q` does not make IDM exit (seen on IDM 6.43 on a GitHub Windows
+/// runner: every run lingered until the timeout), so completion is the
+/// finished file in the download directory, after which the harness stops
+/// IDM. This is IDM started cold for each download; [`IdmWarm`] is IDM
+/// resident, as people run it.
 #[derive(Debug, Default)]
 pub struct Idm;
 
@@ -611,25 +622,78 @@ impl Adapter for Idm {
     fn settings(&self) -> String {
         "IDM's own settings (connections per Options > Connection)".into()
     }
+    fn completion(&self) -> Completion {
+        Completion::FinalFile
+    }
     fn invocation(&self, program: &Path, job: &Job) -> Invocation {
-        Invocation {
-            program: program.to_owned(),
-            args: vec![
-                os("/d"),
-                os(job.url),
-                os("/p"),
-                job.out_dir.as_os_str().to_owned(),
-                os("/f"),
-                os(url_file_name(job.url)),
-                os("/n"),
-                os("/q"),
-            ],
-            // IDM reads its settings from the registry; overriding HOME etc.
-            // would not isolate it and could confuse it.
-            env: Vec::new(),
-            cwd: job.out_dir.to_owned(),
-            api: None,
-        }
+        idm_invocation(program, job, true)
+    }
+}
+
+/// `IDMan.exe /d <url> /p <dir> /f <file> /n [/q]`.
+fn idm_invocation(program: &Path, job: &Job, quit: bool) -> Invocation {
+    let mut args = vec![
+        os("/d"),
+        os(job.url),
+        os("/p"),
+        job.out_dir.as_os_str().to_owned(),
+        os("/f"),
+        os(url_file_name(job.url)),
+        os("/n"),
+    ];
+    if quit {
+        args.push(os("/q"));
+    }
+    Invocation {
+        program: program.to_owned(),
+        args,
+        // IDM reads its settings from the registry; overriding HOME etc.
+        // would not isolate it and could confuse it.
+        env: Vec::new(),
+        cwd: job.out_dir.to_owned(),
+        api: None,
+    }
+}
+
+/// IDM as people run it: already resident (started before the run set,
+/// outside the harness, e.g. `Start-Process IDMan.exe`). The measured
+/// `IDMan.exe /d ... /n` hands the URL to the running IDM and exits;
+/// completion is the finished file in the download directory. The resident
+/// IDM's own start is not timed, like wdm's daemon.
+#[derive(Debug, Default)]
+pub struct IdmWarm;
+
+impl Adapter for IdmWarm {
+    fn id(&self) -> &str {
+        "idm-warm"
+    }
+    fn description(&self) -> &str {
+        "Internet Download Manager (Windows), resident: IDMan.exe /d /p /f /n handed to the running IDM"
+    }
+    fn tool(&self) -> &str {
+        "idm"
+    }
+    fn executable_names(&self) -> Vec<&str> {
+        vec!["IDMan.exe", "IDMan"]
+    }
+    fn version_args(&self) -> &[&str] {
+        &[]
+    }
+    fn supports_headers(&self) -> bool {
+        false
+    }
+    fn settings(&self) -> String {
+        "IDM resident before the run set; IDM's own settings (connections per Options > Connection)"
+            .into()
+    }
+    fn completion(&self) -> Completion {
+        Completion::FinalFile
+    }
+    fn hands_off(&self) -> bool {
+        true
+    }
+    fn invocation(&self, program: &Path, job: &Job) -> Invocation {
+        idm_invocation(program, job, false)
     }
 }
 
@@ -834,6 +898,7 @@ pub fn all() -> Vec<Arc<dyn Adapter>> {
         Arc::new(Surge),
         Arc::new(Gopeed),
         Arc::new(Idm),
+        Arc::new(IdmWarm),
         Arc::new(Manual::new(
             "abdm",
             "AB Download Manager (GUI; manual mode)",
@@ -1107,6 +1172,16 @@ mod tests {
         );
         assert_eq!(body["opts"]["path"], "/run/out");
         assert_eq!(body["opts"]["extra"]["connections"], 4);
+    }
+
+    #[test]
+    fn idm_warm_hands_off_without_quit() {
+        let inv = IdmWarm.invocation(Path::new("IDMan.exe"), &job(&[], Conn::Default));
+        assert_eq!(strs(&inv).last().map(String::as_str), Some("/n"));
+        assert!(IdmWarm.hands_off());
+        assert_eq!(IdmWarm.completion(), Completion::FinalFile);
+        assert_eq!(Idm.completion(), Completion::FinalFile);
+        assert_eq!(IdmWarm.tool(), "idm");
     }
 
     #[test]

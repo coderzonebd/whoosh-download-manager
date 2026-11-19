@@ -7,7 +7,8 @@
 # The `idm` job also runs the comparison on the GitHub runner itself: it
 # downloads IDM's trial from internetdownloadmanager.com, checks the
 # installer's Authenticode signature (Tonec Inc.), installs it silently and
-# runs wdm, idm and curl against the in-process labserver. A runner is a
+# starts IDM so it is resident (as people run it) and runs wdm, idm-warm
+# and curl against the in-process labserver. A runner is a
 # shared VM, so compare clients within one run set only.
 name: Bench kit
 
@@ -103,10 +104,15 @@ jobs:
           $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
           if (-not (Test-Path $idm)) { throw "IDMan.exe not found after install" }
           "IDM $((Get-Item $idm).VersionInfo.ProductVersion) installed"
-      - name: Benchmark wdm, idm, curl
+      - name: Benchmark wdm, idm-warm, curl
         shell: pwsh
         run: |
-          $a = @("run", "--clients", "wdm,idm,curl", "--seed", "20261120", "--label", "idm-runner",
+          # IDM resident, as people run it (idm-warm hands each URL to it).
+          $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
+          Start-Process $idm
+          Start-Sleep 15
+          if (-not (Get-Process IDMan -ErrorAction SilentlyContinue)) { throw "IDM did not stay running" }
+          $a = @("run", "--clients", "wdm,idm-warm,curl", "--seed", "20261120", "--label", "idm-runner",
                  "--out", "$env:RUNNER_TEMP\bench", "--bin", "wdm=$PWD\kit\wdm.exe")
           if (-not $env:FULL) { $a += "--quick" }
           & .\kit\wdm-bench.exe @a

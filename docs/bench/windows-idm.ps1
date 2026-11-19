@@ -31,16 +31,19 @@ foreach ($f in @($Bench, $Wdm, (Join-Path $Kit "wdm-daemon.exe"))) {
     if (-not (Test-Path $f)) { Fail "$f is missing; unzip the whole kit and run the script from inside it." }
 }
 
-# IDM must be installed and must not be running: /q only exits the instance
-# the command starts, so a running IDM makes every run wait for its timeout.
+# IDM must be installed.
 $idm = @("${env:ProgramFiles(x86)}", "$env:ProgramFiles") |
     Where-Object { $_ } |
     ForEach-Object { Join-Path $_ "Internet Download Manager\IDMan.exe" } |
     Where-Object { Test-Path $_ } |
     Select-Object -First 1
 if (-not $idm) { Fail "Internet Download Manager is not installed (looked in Program Files). Install it, then run this again." }
-if (Get-Process -Name IDMan -ErrorAction SilentlyContinue) {
-    Fail "IDM is running. Right-click its tray icon > Exit, then run this again."
+# IDM runs resident, as people use it: the benchmark hands each URL to the
+# running IDM (client idm-warm), like wdm's resident daemon.
+if (-not (Get-Process -Name IDMan -ErrorAction SilentlyContinue)) {
+    Say "starting IDM"
+    Start-Process $idm
+    Start-Sleep 10
 }
 $idmVersion = (Get-Item $idm).VersionInfo.ProductVersion
 Say "IDM $idmVersion at $idm"
@@ -59,11 +62,11 @@ Keep the PC plugged in, close other programs, and don't use it while the benchma
 $answer = Read-Host "Ready? (y/n)"
 if ($answer -notmatch '^[yY]') { Say "stopped"; exit 0 }
 
-$clients = "wdm,idm,curl"
+$clients = "wdm,idm-warm,curl"
 if ($All) {
     Say "fetching the other downloaders from their official releases"
     & $Bench fetch
-    $clients = "wdm,idm,curl,aria2-next,mdm,surge,gopeed"
+    $clients = "wdm,idm-warm,curl,aria2-next,mdm,surge,gopeed"
 }
 
 $label = "{0}-{1}-idm" -f (Get-Date -Format yyyy-MM-dd), $env:COMPUTERNAME.ToLower()

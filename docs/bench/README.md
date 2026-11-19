@@ -117,11 +117,25 @@ Linux).
 (`.github/workflows/bench-kit.yml`) builds `wdm-bench.exe`, `wdm.exe` and
 `wdm-daemon.exe` for Windows x64 and packs them with
 [`windows-idm.ps1`](windows-idm.ps1) as the artifact `wdm-bench-windows-x64`.
-On the Windows PC, unzip it, exit IDM, and run
+On the Windows PC, unzip it and run
 `powershell -ExecutionPolicy Bypass -File .\windows-idm.ps1 -Quick` (or without
 `-Quick` for the full matrix). The script checks IDM, reminds you of the
-settings below, runs WDM, IDM and curl against the in-process labserver,
+settings below, starts IDM if it is not running, runs WDM, IDM (`idm-warm`)
+and curl against the in-process labserver,
 writes `report.md` and packs the run set as a zip. No Rust needed.
+
+The same comparison also runs on a GitHub Windows runner: the *Bench kit*
+workflow's `idm` job installs IDM's trial from internetdownloadmanager.com
+(after checking the installer's Tonec signature), starts it, and runs
+`wdm,idm-warm,curl` (`--quick` by default; the `full` input runs the whole
+matrix). The run set is the artifact `bench-idm-runner`.
+
+**Two IDM clients.** `idm` starts IDM for each download with `/q`; IDM 6.43
+does not exit after the download, so the harness takes the finished file in
+the download directory as completion and then stops IDM. `idm-warm` is IDM as
+people run it, already resident: `IDMan.exe /d ... /n` hands the URL to the
+running IDM and exits, and completion is again the finished file. Compare
+`idm-warm` with `wdm` (both resident).
 
 Building it yourself instead:
 
@@ -129,9 +143,9 @@ Building it yourself instead:
    turn off anything that pops up a dialog at the end of a download, and set
    the connection count you want to test (IDM's default is 8). Note IDM's
    version (Help → About) for the report.
-2. Make sure IDM is **not running** (tray icon → Exit). `/q` ("exit after
-   the download") only works for the instance the command starts; with IDM
-   already running the harness waits for the timeout.
+2. For `idm-warm` start IDM and leave it running; for `idm` exit it first
+   (tray icon → Exit), since `/q` only applies to the instance the command
+   starts.
 3. Build and fetch:
 
    ```powershell
@@ -146,7 +160,7 @@ Building it yourself instead:
 4. Run with IDM included:
 
    ```powershell
-   & $B run --clients idm,curl,aria2c,aria2c-tuned,mdm --seed 20261110 --label "$(Get-Date -Format yyyy-MM-dd)-$env:COMPUTERNAME"
+   & $B run --clients wdm,idm-warm,curl,aria2c,aria2c-tuned,mdm --seed 20261110 --label "$(Get-Date -Format yyyy-MM-dd)-$env:COMPUTERNAME"
    & $B report docs\bench\data\<dir> -o windows-baseline.md
    ```
 
