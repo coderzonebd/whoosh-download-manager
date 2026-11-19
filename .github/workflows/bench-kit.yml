@@ -106,17 +106,49 @@ jobs:
           $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
           if (-not (Test-Path $idm)) { throw "IDMan.exe not found after install" }
           "IDM $((Get-Item $idm).VersionInfo.ProductVersion) installed"
-      - name: Benchmark wdm, idm-warm, curl (stable set)
+      - name: Start IDM and turn off its "Download complete" dialog
         shell: pwsh
         run: |
           # IDM resident, as people run it (idm-warm hands each URL to it).
+          # After each download IDM opens a "Download complete" dialog, which
+          # stops it from taking the next URL until someone closes it. Turn
+          # it off the way a user does: download one small file, tick "Don't
+          # show this dialog again" and close it. The registry diff shows
+          # which setting that changed.
+          $ErrorActionPreference = "Stop"
           $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
           Start-Process $idm
           Start-Sleep 15
           if (-not (Get-Process IDMan -ErrorAction SilentlyContinue)) { throw "IDM did not stay running" }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\bench\diag", "$env:RUNNER_TEMP\probe" | Out-Null
+          reg export "HKCU\Software\DownloadManager" "$env:RUNNER_TEMP\bench\diag\idm-installed.reg" /y | Out-Null
+          & $idm /d "https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/pub/README.md" /p "$env:RUNNER_TEMP\probe" /f probe.md /n
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          $A = [System.Windows.Automation.AutomationElement]
+          $root = $A::RootElement
+          $byName = { param($n) New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $n) }
+          $dlg = $null
+          for ($i = 0; $i -lt 60 -and -not $dlg; $i++) {
+            $dlg = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, (& $byName "Download complete"))
+            if (-not $dlg) { Start-Sleep 1 }
+          }
+          if (-not $dlg) { throw "no Download complete dialog appeared" }
+          $box = $dlg.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (& $byName "Don't show this dialog again"))
+          $box.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+          $close = $dlg.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (& $byName "Close"))
+          $close.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+          Start-Sleep 3
+          reg export "HKCU\Software\DownloadManager" "$env:RUNNER_TEMP\bench\diag\idm-dialog-off.reg" /y | Out-Null
+          $before = Get-Content "$env:RUNNER_TEMP\bench\diag\idm-installed.reg"
+          $after = Get-Content "$env:RUNNER_TEMP\bench\diag\idm-dialog-off.reg"
+          "registry values changed by turning the dialog off:"
+          Compare-Object $before $after | Where-Object SideIndicator -eq "=>" | ForEach-Object InputObject
+      - name: Benchmark wdm, idm-warm, curl (stable set)
+        shell: pwsh
+        run: |
           # Diagnostics for IDM: its settings, and a screenshot every 20 s
           # (the newest 30 kept), to see any dialog that blocks it.
-          $diag = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\bench\diag"
+          $diag = "$env:RUNNER_TEMP\bench\diag"
           reg export "HKCU\Software\DownloadManager" "$diag\idm-before.reg" /y | Out-Null
           $shot = @'
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
