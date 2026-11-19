@@ -27,13 +27,15 @@ cd infra/update-feed
 npx wrangler login                       # opens the browser; sign in to Cloudflare
 npx wrangler d1 create wdm-update-feed   # put the printed database_id in wrangler.toml
 npx wrangler d1 execute wdm-update-feed --remote --file schema.sql
-npx wrangler deploy                      # prints https://wdm-update-feed.<account>.workers.dev
+npx wrangler deploy                      # serves https://wdm.coderzonebd.com
 ```
 
-Then set the repository variable `WDM_UPDATE_FEED` to that address, and use it
-as the first entry of `plugins.updater.endpoints` in
-`apps/desktop/src-tauri/tauri.conf.json`. Copies get the new address with the
-next release.
+It runs on the Coder Zone BD Cloudflare account as the Custom Domain
+`wdm.coderzonebd.com` (`/` redirects to the website). The repository variable
+`WDM_UPDATE_FEED` holds that address for the stats workflow, and it is the
+first entry of `plugins.updater.endpoints` in
+`apps/desktop/src-tauri/tauri.conf.json`. Copies start using it with the first
+release built after this change.
 
 ## Test
 

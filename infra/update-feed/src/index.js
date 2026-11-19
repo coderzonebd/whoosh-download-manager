@@ -8,6 +8,7 @@
 //                          check is counted as +1 for (day, channel, target,
 //                          arch, version)
 //   GET /stats             the counts of the last 60 days, as JSON
+//   GET /                  redirects to the website
 //
 // The desktop app checks once a day, so checks per day are close to the
 // number of copies running that day. No IP address, header, ID or time of day
@@ -65,6 +66,7 @@ export default {
     const url = new URL(request.url);
     if (request.method !== "GET") return json({ error: "GET only" }, 405);
 
+    if (url.pathname === "/") return Response.redirect(env.WEBSITE ?? "https://coderzonebd.github.io/wdm/", 302);
     if (url.pathname === "/stats") return json(await stats(env.DB));
 
     const file = url.pathname.slice(1);

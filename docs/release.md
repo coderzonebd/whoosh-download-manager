@@ -181,8 +181,12 @@ is needed. Not used yet, but will be for automated store/package submissions:
 
 The app ships `tauri-plugin-updater` (`apps/desktop/src-tauri/src/updates.rs`)
 with the **public** key pinned in `tauri.conf.json` (`plugins.updater.pubkey`)
-and the endpoint
+and two endpoints, tried in order: the update feed
+`https://wdm.coderzonebd.com/latest.json` ([`infra/update-feed`](../infra/update-feed),
+which passes the file through and counts checks anonymously) and, if it is
+unreachable,
 `https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/updater/latest.json`.
+For 1.0.0 both become `stable.json`.
 Settings → Updates has *Check for a new version* (download, install, restart)
 and a daily check, on by default, that only shows a notice. An update whose
 signature does not match the pinned key is refused, whether or not the
