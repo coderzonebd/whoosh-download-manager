@@ -140,10 +140,12 @@ jobs:
               # The trial's "N days left ... register now?" question: answer No
               # (keep using the trial), as a user evaluating IDM would.
               if ($n -match '^Internet Download Manager [\d.]+$') {
-                $txt = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text)))
-                if ($txt -and $txt.Current.Name -match 'days left to use') {
-                  $btn = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, "No")))
-                  if ($btn) {
+                # Its text is not exposed to UI Automation; it is the only
+                # IDM dialog with this title and Yes/No buttons.
+                $yes = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, "Yes")))
+                $btn = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, "No")))
+                if ($yes -and $btn) {
+                  if ($true) {
                     $r = $btn.Current.BoundingRectangle
                     [W.Mouse]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)) | Out-Null
                     [W.Mouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [W.Mouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
