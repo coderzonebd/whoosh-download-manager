@@ -166,7 +166,7 @@ Setup, rules and commands are in [CONTRIBUTING.md](CONTRIBUTING.md). Please repo
 
 ## Support Whoosh Download Manager
 
-Whoosh Download Manager is free and has no ads or telemetry. If it saves you time, you can help keep it going:
+Whoosh Download Manager is free, has no ads and does not track you ([privacy](docs/privacy.md)). If it saves you time, you can help keep it going:
 
 - [GitHub Sponsors](https://github.com/sponsors/coderzonebd)
 - [Buy Me a Coffee](https://buymeacoffee.com/devrkb21)

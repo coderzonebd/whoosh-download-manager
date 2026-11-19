@@ -1,0 +1,23 @@
+# The in-app update feed with an anonymous daily count (README.md).
+# Served at https://wdm.coderzonebd.com (a Custom Domain on the Coder Zone BD
+# Cloudflare account). Deploy: npx wrangler deploy (after `wrangler d1 create wdm-update-feed` and
+# `wrangler d1 execute wdm-update-feed --remote --file schema.sql`).
+name = "wdm-update-feed"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "wdm.coderzonebd.com", custom_domain = true }]
+
+# No request logs: Cloudflare would otherwise keep IP addresses in them.
+[observability]
+enabled = false
+
+[vars]
+WEBSITE = "https://coderzonebd.github.io/wdm/"
+UPSTREAM = "https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/updater/"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wdm-update-feed"
+database_id = "602047c1-86b4-4928-a25b-bf0f840b685f"
