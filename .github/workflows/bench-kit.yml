@@ -9,7 +9,9 @@
 # installer's Authenticode signature (Tonec Inc.), installs it silently and
 # starts IDM so it is resident (as people run it) and runs wdm, idm-warm
 # and curl against the in-process labserver. A runner is a
-# shared VM, so compare clients within one run set only.
+# shared VM, so compare clients within one run set only. The full matrix runs
+# with the `full` input, or on any trigger while the repository variable
+# BENCH_IDM_FULL is 1.
 name: Bench kit
 
 on:
