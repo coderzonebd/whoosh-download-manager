@@ -110,8 +110,21 @@ twice in a block is skipped for the rest of it.
 
 IDM is Windows-only and closed source; the harness drives it through its
 documented command line, `IDMan.exe /d <url> /p <dir> /f <file> /n /q`.
-This path is implemented but was **not tested** (the baseline machine runs
-Linux).
+Results so far: four run sets of the stable set on a GitHub Windows runner,
+[`data/2026-11-19-gh-windows-idm-1`](data/2026-11-19-gh-windows-idm-1/report.md)
+to [`-4`](data/2026-11-19-gh-windows-idm-4/report.md), summarised in the
+top-level README. Two things to know when reading them:
+
+- IDM pops up dialogs that stop it from taking the next URL while open: a
+  "Download complete" dialog after each download (off with
+  `HKCU\Software\DownloadManager` `bComlDlgVMS=1`, which "Don't show this
+  dialog again" writes), a one-time browser-integration notice, and the
+  trial's "register now?" reminder. The runner job turns the first off and
+  closes the others with a watcher that logs each one.
+- labserver's server-side timings (`ttfb_s`, `last_byte_s`) are not
+  reliable for `idm-warm`: IDM's connections from an earlier run can still
+  reach the scenario, so its first request can appear before the run
+  started. Use *time* and *durable*.
 
 **The quick way: the prebuilt kit.** The *Bench kit* workflow
 (`.github/workflows/bench-kit.yml`) builds `wdm-bench.exe`, `wdm.exe` and
