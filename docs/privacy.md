@@ -1,10 +1,18 @@
 # Privacy
 
-What the Whoosh Download Manager desktop app, its background service (`wdm-daemon`), the command line (`wdm`) and the browser extension send anywhere. The short version: **apart from anonymous crash reports, which you can turn off, nothing is sent anywhere.** The extension has its own policy in [`apps/extension/PRIVACY.md`](../apps/extension/PRIVACY.md); it collects no data.
+What the Whoosh Download Manager desktop app, its background service (`wdm-daemon`), the command line (`wdm`) and the browser extension send anywhere. The short version: **apart from anonymous crash reports and an anonymous count of update checks, both of which you can turn off, nothing is sent anywhere.** The extension has its own policy in [`apps/extension/PRIVACY.md`](../apps/extension/PRIVACY.md); it collects no data.
 
 ## The app
 
 Whoosh Download Manager downloads what you ask it to and keeps its settings, download list and history on your computer, in its data directory (Linux `~/.local/share/wdm`, macOS `~/Library/Application Support/wdm`, Windows `%LOCALAPPDATA%\wdm`). It does not send usage data, analytics or identifiers anywhere. It talks to the network only to download what you asked for, and to fetch yt-dlp and ffmpeg from their official releases where the installer did not include them (the desktop installers do; the command line fetches them the first time you download from a video site) or when you ask for an update (see [`crates/media/README.md`](../crates/media/README.md)).
+
+## Update checks
+
+The desktop app checks for a new version once a day (Settings → Updates; you can turn the daily check off). The check asks our update feed, a small Cloudflare Worker ([`infra/update-feed`](../infra/update-feed)), for the newest version, and tells it three things: the operating system (`windows`, `darwin` or `linux`), the processor type (such as `x86_64`) and the WDM version.
+
+The feed adds one to a counter for that day, operating system, processor type and version, and keeps nothing else: no IP address, no ID, no time of day, and request logging is off. Because each copy checks about once a day, the daily total tells us roughly how many copies are in use; it cannot tell copies or people apart. The counts are public: the feed's `/stats` address and the `stats` branch of the repository. Copies installed through a package manager (winget, Homebrew, apt and the like) are updated by it and do not check.
+
+Cloudflare, which runs the feed, sees the connection like any web host does, under its own privacy policy. If the feed is unreachable the app falls back to reading the same file from GitHub, which is not counted.
 
 ## The local API
 

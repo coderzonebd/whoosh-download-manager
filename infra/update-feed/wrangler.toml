@@ -1,0 +1,19 @@
+# The in-app update feed with an anonymous daily count (README.md).
+# Deploy: npx wrangler deploy (after `wrangler d1 create wdm-update-feed` and
+# `wrangler d1 execute wdm-update-feed --remote --file schema.sql`).
+name = "wdm-update-feed"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# No request logs: Cloudflare would otherwise keep IP addresses in them.
+[observability]
+enabled = false
+
+[vars]
+UPSTREAM = "https://raw.githubusercontent.com/coderzonebd/whoosh-download-manager/updater/"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wdm-update-feed"
+database_id = "REPLACE_AFTER_D1_CREATE"
