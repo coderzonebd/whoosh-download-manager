@@ -114,8 +114,9 @@ jobs:
           # one-time "browser integration" notice, stops IDM from taking the
           # next URL while it is open. bComlDlgVMS=1 is what ticking "Don't
           # show this dialog again" writes (seen on IDM 6.43); set it before
-          # IDM starts. A watcher closes any IDM dialog that still appears
-          # and logs it (diag/idm-dialogs.log), so a run is never left stuck.
+          # IDM starts. A watcher closes those dialogs if they still appear,
+          # answers No to the trial's "register now?" reminder, and logs
+          # every IDM dialog (diag/idm-dialogs.log), so a run is never left stuck.
           $ErrorActionPreference = "Stop"
           $diag = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\bench\diag"
           reg add "HKCU\Software\DownloadManager" /v bComlDlgVMS /t REG_DWORD /d 1 /f | Out-Null
@@ -136,6 +137,21 @@ jobs:
               $n = $w.Current.Name
               if ($w.Current.ClassName -ne "#32770") { continue }
               if ((Get-Process -Id $w.Current.ProcessId -ErrorAction SilentlyContinue).Name -ne "IDMan") { continue }
+              # The trial's "N days left ... register now?" question: answer No
+              # (keep using the trial), as a user evaluating IDM would.
+              if ($n -match '^Internet Download Manager [\d.]+$') {
+                $txt = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text)))
+                if ($txt -and $txt.Current.Name -match 'days left to use') {
+                  $btn = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, "No")))
+                  if ($btn) {
+                    $r = $btn.Current.BoundingRectangle
+                    [W.Mouse]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)) | Out-Null
+                    [W.Mouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [W.Mouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+                    Add-Content $log ("{0:o} answered No to the trial reminder" -f (Get-Date))
+                    continue
+                  }
+                }
+              }
               if ($titles -notcontains $n) {
                 # Any other IDM dialog: log it once, leave it alone.
                 if (-not $seen[$n]) { $seen[$n] = 1; Add-Content $log ("{0:o} saw '{1}' (left open)" -f (Get-Date), $n) }
