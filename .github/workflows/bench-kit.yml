@@ -129,12 +129,19 @@ jobs:
           $A = [System.Windows.Automation.AutomationElement]
           $T = [System.Windows.Automation.TreeScope]
           $log = $args[0]
-          $titles = @("Download complete", "IDM browser integration", "Internet Download Manager")
+          $titles = @("Download complete", "IDM browser integration")
+          $seen = @{}
           while ($true) {
             foreach ($w in $A::RootElement.FindAll($T::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
               $n = $w.Current.Name
-              if ($titles -notcontains $n -or $w.Current.ClassName -ne "#32770") { continue }
-              foreach ($b in @("Close", "OK", "Cancel")) {
+              if ($w.Current.ClassName -ne "#32770") { continue }
+              if ((Get-Process -Id $w.Current.ProcessId -ErrorAction SilentlyContinue).Name -ne "IDMan") { continue }
+              if ($titles -notcontains $n) {
+                # Any other IDM dialog: log it once, leave it alone.
+                if (-not $seen[$n]) { $seen[$n] = 1; Add-Content $log ("{0:o} saw '{1}' (left open)" -f (Get-Date), $n) }
+                continue
+              }
+              foreach ($b in @("Close", "OK")) {
                 $btn = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $b)))
                 if ($btn) {
                   $r = $btn.Current.BoundingRectangle
