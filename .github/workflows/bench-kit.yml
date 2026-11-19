@@ -134,9 +134,21 @@ jobs:
           }
           if (-not $dlg) { throw "no Download complete dialog appeared" }
           $box = $dlg.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (& $byName "Don't show this dialog again"))
-          $box.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+          # IDM's controls expose no toggle/invoke patterns: click them.
+          Add-Type -Namespace W -Name Mouse -MemberDefinition @"
+          [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+          [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, System.UIntPtr e);
+          "@
+          $click = { param($el)
+            $r = $el.Current.BoundingRectangle
+            [W.Mouse]::SetCursorPos([int]($r.Left + 8), [int]($r.Top + $r.Height / 2)) | Out-Null
+            [W.Mouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [W.Mouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 500 }
+          & $click $box
           $close = $dlg.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (& $byName "Close"))
-          $close.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+          $r = $close.Current.BoundingRectangle
+          [W.Mouse]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)) | Out-Null
+          [W.Mouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [W.Mouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
           Start-Sleep 3
           reg export "HKCU\Software\DownloadManager" "$env:RUNNER_TEMP\bench\diag\idm-dialog-off.reg" /y | Out-Null
           $before = Get-Content "$env:RUNNER_TEMP\bench\diag\idm-installed.reg"
