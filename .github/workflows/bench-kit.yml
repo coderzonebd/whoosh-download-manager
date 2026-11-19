@@ -106,7 +106,7 @@ jobs:
           $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
           if (-not (Test-Path $idm)) { throw "IDMan.exe not found after install" }
           "IDM $((Get-Item $idm).VersionInfo.ProductVersion) installed"
-      - name: Benchmark wdm, idm-warm, curl
+      - name: Benchmark wdm, idm-warm, curl (stable set)
         shell: pwsh
         run: |
           # IDM resident, as people run it (idm-warm hands each URL to it).
@@ -114,11 +114,38 @@ jobs:
           Start-Process $idm
           Start-Sleep 15
           if (-not (Get-Process IDMan -ErrorAction SilentlyContinue)) { throw "IDM did not stay running" }
+          # Diagnostics for IDM: its settings, and a screenshot every 20 s
+          # (the newest 30 kept), to see any dialog that blocks it.
+          $diag = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\bench\diag"
+          reg export "HKCU\Software\DownloadManager" "$diag\idm-before.reg" /y | Out-Null
+          $shot = @'
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $i = 0
+          while ($true) {
+            $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+            $bmp.Save((Join-Path $args[0] ("shot-{0:D4}.png" -f $i)), [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose(); $i++
+            Get-ChildItem $args[0] -Filter shot-*.png | Sort-Object Name -Descending | Select-Object -Skip 30 | Remove-Item
+            Start-Sleep 20
+          }
+          '@
+          Set-Content "$env:RUNNER_TEMP\shots.ps1" $shot
+          $shooter = Start-Process pwsh -ArgumentList "-NoProfile", "-File", "$env:RUNNER_TEMP\shots.ps1", "$diag" -PassThru -WindowStyle Hidden
+          # The stable set: six scenarios that separate download managers
+          # (fast big file, flaky, stalling, slow-drip, per-connection
+          # throttle, high latency), 5 runs each. FULL runs the whole matrix.
           $a = @("run", "--clients", "wdm,idm-warm,curl", "--seed", "20261120", "--label", "idm-runner",
                  "--out", "$env:RUNNER_TEMP\bench", "--bin", "wdm=$PWD\kit\wdm.exe")
-          if (-not $env:FULL) { $a += "--quick" }
+          if (-not $env:FULL) {
+            $a += @("--scenarios", "clean,flaky,stall,slow-drip,per-conn-throttle,high-latency", "--runs", "5", "--force-runs")
+          }
           & .\kit\wdm-bench.exe @a
           "exit $LASTEXITCODE"
+          Stop-Process -Id $shooter.Id -Force -ErrorAction SilentlyContinue
+          reg export "HKCU\Software\DownloadManager" "$diag\idm-after.reg" /y | Out-Null
+          Get-ChildItem "$env:APPDATA\IDM" -Recurse -ErrorAction SilentlyContinue | Measure-Object Length -Sum | Format-List Count, Sum | Out-File "$diag\idm-appdata.txt"
           .\kit\wdm-bench.exe report "$env:RUNNER_TEMP\bench\idm-runner" -o "$env:RUNNER_TEMP\bench\idm-runner\report.md"
           Get-Content "$env:RUNNER_TEMP\bench\idm-runner\report.md" | Add-Content $env:GITHUB_STEP_SUMMARY
           Get-Process IDMan -ErrorAction SilentlyContinue | Stop-Process -Force

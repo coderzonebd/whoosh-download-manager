@@ -972,7 +972,7 @@ impl Writer {
 
     fn preallocate(&self, len: u64) -> io::Result<()> {
         match sys::preallocate(self.file()?, len) {
-            Ok(sys::Prealloc::Reserved) => Ok(()),
+            Ok(sys::Prealloc::Reserved | sys::Prealloc::Sparse) => Ok(()),
             Ok(sys::Prealloc::SizeOnly) => {
                 tracing::debug!(path = %self.path.display(), len, "filesystem cannot reserve space; file extended sparsely");
                 Ok(())
