@@ -2,6 +2,19 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); releases are cut on `pub` (see [ADR 0006](docs/adr/0006-dev-and-pub-branches.md)).
 
+## 1.0.0-beta.2 (2026-11-20)
+
+### Faster on Windows
+- **Large downloads on Windows are about twice as fast.** NTFS fills a file with zeroes up to wherever it is written, so the segments WDM writes near the end of a big file made Windows write most of it twice. The file being downloaded is now a sparse file (where the filesystem has them: NTFS, ReFS), which has no such fill. A 1 GiB download on a GitHub Windows machine went from 12.9 s to 6.2–7.6 s, ahead of curl and Internet Download Manager.
+
+### Measured against IDM
+- **WDM vs Internet Download Manager on Windows**, in public: the benchmark drives IDM 6.43 resident, as people use it (`idm-warm`), next to WDM and curl. In six scenarios (1 GiB on a fast server; flaky, stalling and slow-drip servers; a per-connection throttle; high latency), 5 runs each and four run sets, WDM finished first in every one. The data is in `docs/bench/data/2026-11-19-gh-windows-idm-*`, the summary in the README.
+- A *Bench kit* workflow builds the benchmark for Windows with a script, so anyone with IDM can repeat it, and runs the comparison on a GitHub runner, handling IDM's pop-ups (the completion dialog, the browser-integration notice, the trial reminder) that otherwise stop it taking new downloads.
+
+### Usage numbers, without tracking
+- The desktop app now asks its update feed at `wdm.coderzonebd.com` first (GitHub stays the fallback). The feed counts update checks per day, operating system, processor type and version, and nothing else: no IP address, no ID, no logs. That count is how we know roughly how many copies are in use; it is public, and docs/privacy.md explains it. You can turn the daily check off in Settings → Updates.
+- Release download counts are recorded daily on the repository's `stats` branch.
+
 ## 1.0.0-beta.1 (2026-11-18)
 
 The first public beta: Windows (x64, ARM64), macOS (universal), Linux (x64, ARM64; AppImage, .deb, .rpm), Android (arm64) and the browser extension. Installers are not code-signed yet (Windows SmartScreen and macOS Gatekeeper warn on first start).
