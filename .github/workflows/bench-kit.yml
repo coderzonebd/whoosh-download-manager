@@ -3,10 +3,21 @@
 # with IDM installed and run the script (docs/bench/README.md, "Windows, with
 # IDM"); nothing needs to be built there. Runs on demand and on pull requests
 # that change the kit.
+#
+# The `idm` job also runs the comparison on the GitHub runner itself: it
+# downloads IDM's trial from internetdownloadmanager.com, checks the
+# installer's Authenticode signature (Tonec Inc.), installs it silently and
+# runs wdm, idm and curl against the in-process labserver. A runner is a
+# shared VM, so compare clients within one run set only.
 name: Bench kit
 
 on:
   workflow_dispatch:
+    inputs:
+      full:
+        description: Full matrix in the idm job (several hours) instead of --quick
+        type: boolean
+        default: false
   pull_request:
     paths:
       - .github/workflows/bench-kit.yml
@@ -60,3 +71,50 @@ jobs:
           name: wdm-bench-windows-x64
           path: kit/
           retention-days: 30
+
+  idm:
+    name: WDM vs IDM on the runner
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 300
+    env:
+      FULL: ${{ inputs.full && '1' || '' }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wdm-bench-windows-x64
+          path: kit
+      - name: Install IDM (signature checked)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $page = (Invoke-WebRequest -UseBasicParsing https://www.internetdownloadmanager.com/download.html).Content
+          $url = [regex]::Match($page, 'https://download\.internetdownloadmanager\.com/idman\d+build\d+\.exe').Value
+          if (-not $url) { throw "no installer link on the download page" }
+          $exe = Join-Path $env:RUNNER_TEMP "idm-setup.exe"
+          Invoke-WebRequest -UseBasicParsing $url -OutFile $exe
+          $sig = Get-AuthenticodeSignature $exe
+          "installer: $url"; "signature: $($sig.Status) $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "Tonec") { throw "installer is not validly signed by Tonec" }
+          $p = Start-Process $exe -ArgumentList "/skipdlgs" -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "installer did not finish in 5 minutes" }
+          Start-Sleep 5
+          Get-Process IDMan, IEMonitor, IDMIntegrator64 -ErrorAction SilentlyContinue | Stop-Process -Force
+          $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
+          if (-not (Test-Path $idm)) { throw "IDMan.exe not found after install" }
+          "IDM $((Get-Item $idm).VersionInfo.ProductVersion) installed"
+      - name: Benchmark wdm, idm, curl
+        shell: pwsh
+        run: |
+          $quick = if ($env:FULL) { @() } else { @("--quick") }
+          .\kit\wdm-bench.exe run --clients wdm,idm,curl @quick --seed 20261120 --label idm-runner --out "$env:RUNNER_TEMP\bench" --bin "wdm=$PWD\kit\wdm.exe"
+          "exit $LASTEXITCODE"
+          .\kit\wdm-bench.exe report "$env:RUNNER_TEMP\bench\idm-runner" -o "$env:RUNNER_TEMP\bench\idm-runner\report.md"
+          Get-Content "$env:RUNNER_TEMP\bench\idm-runner\report.md" | Add-Content $env:GITHUB_STEP_SUMMARY
+          Get-Process IDMan -ErrorAction SilentlyContinue | Stop-Process -Force
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: bench-idm-runner
+          path: ${{ runner.temp }}/bench/
+          retention-days: 90
