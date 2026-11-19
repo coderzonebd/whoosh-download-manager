@@ -5,6 +5,7 @@ name = "wdm-update-feed"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
 workers_dev = true
+preview_urls = false
 
 # No request logs: Cloudflare would otherwise keep IP addresses in them.
 [observability]
@@ -16,4 +17,4 @@ UPSTREAM = "https://raw.githubusercontent.com/coderzonebd/whoosh-download-manage
 [[d1_databases]]
 binding = "DB"
 database_name = "wdm-update-feed"
-database_id = "REPLACE_AFTER_D1_CREATE"
+database_id = "4020c678-6172-4828-a500-529867aa2adf"
