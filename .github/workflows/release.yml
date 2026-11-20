@@ -852,6 +852,24 @@ jobs:
         run: |
           node .github/scripts/updater-manifest.mjs dist "$VERSION" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+      - name: Fewer files on the release page
+        # People download an installer; everything else either has a home
+        # elsewhere or goes into one archive:
+        # - the updater signatures (*.sig) are inside latest.json, which is
+        #   what the app reads, so the files themselves are not uploaded;
+        # - the SBOMs (one per crate and app) go into wdm-<v>-sbom.zip;
+        # - the store uploads (extension store zips, Android .aab) go into
+        #   wdm-<v>-store-uploads.zip.
+        run: |
+          set -euo pipefail
+          cd dist
+          test -s latest.json || ! ls ./*.sig >/dev/null 2>&1
+          rm -f ./*.sig
+          zip -q -X -j "wdm-$VERSION-sbom.zip" ./*.cdx.json && rm ./*.cdx.json
+          store=(wdm-*-store.zip)
+          for f in ./*_android.aab; do [ -e "$f" ] && store+=("$f"); done
+          zip -q -X -j "wdm-$VERSION-store-uploads.zip" "${store[@]}" && rm "${store[@]}"
+          ls -l
       - name: SHA256SUMS
         run: |
           cd dist
