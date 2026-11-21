@@ -2,6 +2,13 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); releases are cut on `pub` (see [ADR 0006](docs/adr/0006-dev-and-pub-branches.md)).
 
+## Unreleased
+
+### Windows fixes
+- **The daemon and the browser connection start on a fresh Windows.** `wdm-daemon.exe` and `wdm-nmhost.exe` needed the Visual C++ runtime (`VCRUNTIME140.dll`), which a fresh Windows does not have: downloads did not start and the extension showed "Not connected". The C runtime is now linked into them, and the release fails if a Windows executable still imports it.
+- **The install script works in Windows PowerShell 5.1.** `irm https://coderzonebd.github.io/wdm/install.txt | iex` stopped with "…-setup.exe is not in SHA256SUMS": PowerShell 5.1 returns GitHub's checksum file as bytes, not text. It is now decoded first.
+- **The browser host manifest holds a plain path.** On Windows the registered host path was a verbatim path (`\\?\C:\…`); it is now a plain `C:\…` path, and the app rewrites manifests written by earlier versions.
+
 ## 1.0.0-beta.2 (2026-11-20)
 
 ### Faster on Windows

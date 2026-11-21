@@ -190,6 +190,7 @@ fn options(flags: Flags) -> Result<register::Options, String> {
         Some(path) => std::path::absolute(&path).map_err(|e| e.to_string())?,
         None => std::env::current_exe()
             .and_then(|p| p.canonicalize())
+            .map(|p| register::launchable_path(&p))
             .map_err(|e| format!("cannot find this executable: {e}"))?,
     };
     let mut chromium_ids = Vec::new();
