@@ -69,11 +69,13 @@ pub async fn open_prompt<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     open(&app).map_err(|e| e.to_string())
 }
 
-/// The prompt window has nothing left to ask.
+/// The prompt window has nothing left to ask. `destroy`, not `close`: the
+/// window goes at once, without a close request that could be held up, and
+/// was seen on Windows to leave the window showing "Nothing is waiting".
 #[tauri::command]
 pub async fn close_prompt<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     match app.get_webview_window(PROMPT_WINDOW) {
-        Some(window) => window.close().map_err(|e| e.to_string()),
+        Some(window) => window.destroy().map_err(|e| e.to_string()),
         None => Ok(()),
     }
 }

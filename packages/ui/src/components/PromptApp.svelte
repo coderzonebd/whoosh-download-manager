@@ -38,6 +38,9 @@
   }
   let { client, mode = "live", storage, locale, manageDocument = true, onready, host, closeDelayMs = 400 }: Props = $props();
 
+  /** While nothing is left and the window is still open, ask again this often (ms). */
+  const RETRY_CLOSE_MS = 2000;
+
   const app = untrack(() => {
     const opts: AppOptions = { mode, prompt: true };
     if (storage !== undefined) opts.storage = storage;
@@ -55,13 +58,20 @@
   const following = $derived(confirming || offering ? undefined : app.following);
   const empty = $derived(app.loaded && confirming === undefined && offering === undefined && following === undefined);
 
-  // Nothing left to ask: close the window (after a moment, in case the next one is on its way).
+  // Nothing left to ask: close the window (after a moment, in case the next one is on its way),
+  // and keep asking every few seconds should the window still be there.
   $effect(() => {
     if (!empty) return;
+    const close = () => void app.host.closePrompt?.().catch(() => undefined);
+    let retry: ReturnType<typeof setInterval> | undefined;
     const timer = setTimeout(() => {
-      app.host.closePrompt?.().catch(() => undefined);
+      close();
+      retry = setInterval(close, RETRY_CLOSE_MS);
     }, closeDelayMs);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(retry);
+    };
   });
 
   $effect(() => {
@@ -88,7 +98,12 @@
       <FollowedDownloadDialog download={following} />
     {/key}
   {:else if empty}
-    <p class="empty" role="status">{i18n.t("prompt.empty")}</p>
+    <div class="empty">
+      <p role="status">{i18n.t("prompt.empty")}</p>
+      {#if app.host.closePrompt}
+        <button class="vy-btn vy-btn--secondary" onclick={() => void app.host.closePrompt?.().catch(() => undefined)}>{i18n.t("action.close")}</button>
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -117,8 +132,13 @@
   }
   .empty {
     display: grid;
-    place-items: center;
+    place-content: center;
+    justify-items: center;
+    gap: var(--vy-space-3);
     block-size: 100%;
     color: var(--vy-color-text-muted);
+  }
+  .empty p {
+    margin: 0;
   }
 </style>
