@@ -23,8 +23,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return core.invoke<T>(cmd, args);
 }
 
-function pick({ closeToTray, quitStopsAll, autoUpdateCheck }: DesktopPrefs): DesktopPrefs {
-  return { closeToTray, quitStopsAll, autoUpdateCheck };
+function pick({ closeToTray, autoUpdateCheck }: DesktopPrefs): DesktopPrefs {
+  return { closeToTray, autoUpdateCheck };
 }
 
 /** Changes some fields of `desktop.json`, keeping the rest. */
@@ -38,8 +38,11 @@ export async function installUpdate(): Promise<void> {
   await invoke("install_update");
 }
 
+declare const __APP_VERSION__: string;
+
 export function desktopHost(): Host {
   return {
+    appVersion: __APP_VERSION__,
     async pickFolder({ title, defaultPath }) {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const opts: Parameters<typeof open>[0] = { directory: true, multiple: false, title };

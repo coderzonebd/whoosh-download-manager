@@ -143,9 +143,10 @@ fn save_window_state<R: Runtime>(app: &AppHandle<R>) {
 /// still exists: once `exit()` starts, the window-state plugin can only fall
 /// back to sizes from resize events, which on GTK include client-side
 /// decorations — the window would grow a little on every launch. Quit
-/// closes WDM completely (`Prefs::quit_stops_all`, on by default): the
-/// daemon stops, and a mark in the data directory tells the browser's native
-/// host not to start the app for a download until the user opens it again.
+/// closes WDM completely: the daemon stops, and a mark in the data directory
+/// tells the browser's native host not to start the app for a download until
+/// the user opens it again. (Downloads go on in the background only while
+/// the app runs in the tray: closing the window keeps it there.)
 fn quit_app<R: Runtime>(app: &AppHandle<R>) {
     if QUITTING.swap(true, Ordering::SeqCst) {
         return;
@@ -156,10 +157,6 @@ fn quit_app<R: Runtime>(app: &AppHandle<R>) {
         if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
             let _ = window.hide();
         }
-        return;
-    }
-    if !app.state::<prefs::PrefsState>().get().quit_stops_all {
-        app.exit(0);
         return;
     }
     daemon::mark_quit(true);

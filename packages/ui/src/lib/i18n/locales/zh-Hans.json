@@ -291,9 +291,7 @@
     "launchAtLogin": "登录时启动 Whoosh Download Manager",
     "launchAtLoginHint": "启动后驻留在托盘中，不打开窗口。",
     "closeToTray": "关闭窗口时将 Whoosh Download Manager 保留在托盘中",
-    "closeToTrayHint": "下载会继续进行。请从托盘菜单退出。",
-    "quitStopsAll": "退出时完全关闭 WDM",
-    "quitStopsAllHint": "从托盘退出会停止所有下载，在你再次打开 WDM 之前，浏览器会自己处理下载。关闭此项：下载会在后台继续。",
+    "closeToTrayHint": "下载会继续。从托盘菜单退出会完全关闭 WDM，在你再次打开 WDM 之前，浏览器会自己处理下载。",
     "privacy": "隐私",
     "crashReports": "发送崩溃报告",
     "crashReportsHint": "Whoosh Download Manager 会发送匿名崩溃报告以帮助修复错误：错误内容、发生在 WDM 的哪个位置、应用版本和操作系统。不含文件名、链接或用户名。除非你关闭，否则保持开启；后台服务会在下次启动时应用更改。",
@@ -513,7 +511,8 @@
     "autoUpdate": "每天检查一次更新",
     "autoUpdateHint": "否则 Whoosh Download Manager 只在你要求时检查。",
     "error": "上次尝试失败：{{message}}",
-    "checkFailed": "无法检查更新：{{message}}"
+    "checkFailed": "无法检查更新：{{message}}",
+    "notNeeded": "不需要：改用 {{name}}。只有 {{name}} 无法使用时才会下载。"
   },
   "browsers": {
     "title": "连接你的浏览器",

@@ -550,13 +550,6 @@
                 </label>
                 <span id="vy-set-tray-hint" class="vy-hint">{t("settings.closeToTrayHint")}</span>
               </div>
-              <div class="vy-field">
-                <label class="vy-check">
-                  <input type="checkbox" checked={desktop?.quitStopsAll === true} disabled={!desktop} onchange={(e) => setDesktop("quitStopsAll", e.currentTarget.checked)} aria-describedby="vy-set-quit-hint" />
-                  {t("settings.quitStopsAll")}
-                </label>
-                <span id="vy-set-quit-hint" class="vy-hint">{t("settings.quitStopsAllHint")}</span>
-              </div>
             {/if}
           </div>
           <p class="vy-hint applies">{t("settings.desktopHint")}</p>

@@ -298,9 +298,7 @@
     "launchAtLogin": "Start Whoosh Download Manager when I log in",
     "launchAtLoginHint": "It starts in the tray, without opening the window.",
     "closeToTray": "Closing the window keeps Whoosh Download Manager in the tray",
-    "closeToTrayHint": "Downloads go on. Quit from the tray menu.",
-    "quitStopsAll": "Quit closes WDM completely",
-    "quitStopsAllHint": "Quitting from the tray stops all downloads, and your browser keeps its downloads to itself until you open WDM again. Off: downloads keep going in the background.",
+    "closeToTrayHint": "Downloads go on. Quit in the tray menu closes WDM completely, and your browser keeps its downloads until you open WDM again.",
     "privacy": "Privacy",
     "crashReports": "Send crash reports",
     "crashReportsHint": "Whoosh Download Manager sends anonymous crash reports to help fix bugs: the error, where in the app it happened, the app version and the operating system. No file names, links or user name. On unless you turn it off; the background service follows a change the next time it starts.",
@@ -528,7 +526,8 @@
     "autoUpdate": "Check for updates once a day",
     "autoUpdateHint": "Otherwise Whoosh Download Manager checks only when you ask.",
     "error": "Last attempt failed: {{message}}",
-    "checkFailed": "Couldn’t check for updates: {{message}}"
+    "checkFailed": "Couldn’t check for updates: {{message}}",
+    "notNeeded": "Not needed: {{name}} is used instead. Downloaded only if {{name}} stops working."
   },
   "browsers": {
     "title": "Connect your browser",

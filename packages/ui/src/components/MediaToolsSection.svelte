@@ -50,7 +50,16 @@
     }
   }
 
+  /**
+   * QuickJS is only the stand-in for Deno (the faster runtime, fetched with the other tools):
+   * while Deno is ready it is not needed, and fetched only should Deno stop working.
+   */
+  function standIn(tool: MediaTool): boolean {
+    return tool.name === "quickjs" && tool.state === "missing" && (status?.tools ?? []).some((d) => d.name === "deno" && d.state === "ready");
+  }
+
   function stateText(tool: MediaTool): string {
+    if (standIn(tool)) return t("mediaTools.notNeeded", { name: "Deno" });
     if (tool.state === "installing") {
       const total = tool.totalBytes;
       return total && tool.downloadedBytes !== undefined
@@ -86,7 +95,7 @@
             <p class="line source">{t("mediaTools.source", { upstream: tool.upstream, license: tool.license })}</p>
             {#if tool.error}<p class="vy-error">{t("mediaTools.error", { message: tool.error })}</p>{/if}
           </div>
-          {#if tool.state !== "installing" && (tool.state === "missing" || tool.updateAvailable)}
+          {#if tool.state !== "installing" && !standIn(tool) && (tool.state === "missing" || tool.updateAvailable)}
             <button type="button" class="vy-btn vy-btn--secondary vy-btn--sm" onclick={() => update(tool)}>
               <Icon name="download" size={14} />
               {tool.state === "missing" ? t("mediaTools.install", { name: tool.name }) : t("mediaTools.update", { name: tool.name })}

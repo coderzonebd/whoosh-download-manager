@@ -8,8 +8,6 @@
 export interface DesktopPrefs {
   /** Closing the window hides it to the tray; downloads go on. */
   closeToTray: boolean;
-  /** Quit closes WDM completely: downloads stop, and the browser keeps its downloads until WDM is opened again. */
-  quitStopsAll: boolean;
   /** Look for a new version once a day (never installs on its own). */
   autoUpdateCheck: boolean;
 }
@@ -51,6 +49,8 @@ export interface Host {
    * (the list layout, typing a download folder path).
    */
   platform?: "android";
+  /** The app's own version, shown in the status bar (the daemon's when absent). */
+  appVersion?: string;
   /** Ask the user for a folder; undefined when they cancel. */
   pickFolder?: (opts: { title: string; defaultPath?: string | undefined }) => Promise<string | undefined>;
   /** Desktop-only settings, shown in Settings → This computer. */

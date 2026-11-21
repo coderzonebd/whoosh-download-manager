@@ -43,7 +43,7 @@ export interface AppOptions {
 export type QueueDialog = { mode: "create" } | { mode: "edit"; name: string };
 
 interface StatusSource {
-  onStatus(h: (s: { state: string; hello?: { capabilities?: string[] } }) => void): () => void;
+  onStatus(h: (s: { state: string; hello?: { capabilities?: string[]; daemonVersion?: string } }) => void): () => void;
 }
 function hasStatus(c: unknown): c is StatusSource {
   return typeof (c as Partial<StatusSource>)?.onStatus === "function";
@@ -133,6 +133,8 @@ export class AppState {
    * there (`Host.openPrompt`), never here.
    */
   readonly delegates: boolean;
+  /** The daemon's version from the last hello, when the client reports it. */
+  daemonVersion = $state<string | undefined>(undefined);
   /** Capabilities from the last hello, when the client reports them. */
   #capabilities: string[] | undefined;
 
@@ -171,6 +173,7 @@ export class AppState {
         client.onStatus((s) => {
           const st = s.state as Connection;
           if (s.hello) this.#capabilities = s.hello.capabilities ?? [];
+          if (s.hello?.daemonVersion) this.daemonVersion = s.hello.daemonVersion;
           // Load again on every (re)connection after the first, since events were missed while
           // away, and on the first one when the first load already failed: the daemon was still
           // starting and the calls timed out. (The client reports "connecting" before each

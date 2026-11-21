@@ -10,6 +10,14 @@
   const stats = $derived(app.stats);
   const limit = $derived(app.settings?.speedLimitBps);
   const selectedCount = $derived(app.store.selection.size);
+  /** The app's version, or the daemon's where the app does not say (the browser UI). */
+  const version = $derived(app.host.appVersion ?? app.daemonVersion);
+  /** Both, when they differ (an app talking to another version's daemon). */
+  const versionTitle = $derived(
+    app.host.appVersion && app.daemonVersion && app.daemonVersion !== app.host.appVersion
+      ? `WDM ${app.host.appVersion} · daemon ${app.daemonVersion}`
+      : version && `WDM ${version}`,
+  );
 </script>
 
 <footer class="statusbar" aria-label={t("status.label")}>
@@ -35,6 +43,10 @@
     <span class="dot" aria-hidden="true"></span>
     {t(`conn.${app.connection}`)}
   </span>
+  {#if version}
+    <span class="sep version-sep" aria-hidden="true"></span>
+    <span class="vy-num version" title={versionTitle} dir="ltr">v{version}</span>
+  {/if}
 </footer>
 
 <style>
@@ -76,6 +88,9 @@
   }
   .spacer {
     flex: 1;
+  }
+  .version {
+    color: var(--vy-color-text-subtle);
   }
   .conn {
     display: inline-flex;
