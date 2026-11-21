@@ -108,7 +108,7 @@ impl Client {
     }
 
     /// Sends `req` to `url` and waits for the response head (at most
-    /// `idle_timeout`). Does not follow redirects. A request that never
+    /// `head_timeout`). Does not follow redirects. A request that never
     /// left on a pooled connection that turned out to be dead is sent once
     /// more on a new connection; nothing else is retried.
     pub async fn send(
@@ -338,7 +338,7 @@ impl Client {
             .map_err(|e| Failure::Error(SourceError::Fatal(format!("invalid host: {e}"))))?;
         r.headers_mut().insert(header::HOST, host);
         let reused = c.reused;
-        let sent = tokio::time::timeout(self.cfg.idle_timeout, c.sender.try_send_request(r)).await;
+        let sent = tokio::time::timeout(self.cfg.head_timeout, c.sender.try_send_request(r)).await;
         match sent {
             Err(_) => Err(Failure::Error(self.head_timeout())),
             Ok(Ok(resp)) => {
@@ -386,7 +386,7 @@ impl Client {
             .body(Full::new(req.body.clone()))
             .map_err(|e| Failure::Error(SourceError::Fatal(format!("building request: {e}"))))?;
         *r.headers_mut() = req.headers.clone();
-        match tokio::time::timeout(self.cfg.idle_timeout, sender.try_send_request(r)).await {
+        match tokio::time::timeout(self.cfg.head_timeout, sender.try_send_request(r)).await {
             Err(_) => Err(Failure::Error(self.head_timeout())),
             Ok(Ok(resp)) => {
                 let (parts, body) = resp.into_parts();
@@ -409,7 +409,7 @@ impl Client {
     }
 
     fn head_timeout(&self) -> SourceError {
-        SourceError::Transient(format!("no response within {:?}", self.cfg.idle_timeout))
+        SourceError::Transient(format!("no response within {:?}", self.cfg.head_timeout))
     }
 
     // ------------------------------------------------------------ QUIC
@@ -597,7 +597,7 @@ impl Client {
             let resp = stream.recv_response().await.map_err(|e| (false, e))?;
             Ok::<_, (bool, h3::error::StreamError)>((resp, stream))
         };
-        match tokio::time::timeout(self.cfg.idle_timeout, exchange).await {
+        match tokio::time::timeout(self.cfg.head_timeout, exchange).await {
             Err(_) => Err(Failure::Error(self.head_timeout())),
             Ok(Ok((resp, stream))) => {
                 let (parts, ()) = resp.into_parts();
