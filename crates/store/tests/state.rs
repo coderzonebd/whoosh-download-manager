@@ -32,6 +32,7 @@ fn record(i: u64) -> DownloadRecord {
         filename: format!("archive-{i}.tar.zst"),
         filename_locked: i.is_multiple_of(4),
         directory: "/home/user/Downloads/Compressed".into(),
+        directory_auto: false,
         category: Some("compressed".into()),
         queue: Some("main".into()),
         state: if i.is_multiple_of(3) {

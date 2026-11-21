@@ -14,7 +14,7 @@
   import { choiceFor, isWebPage, type AudioConvert, type MediaMode, type Quality } from "../lib/media.ts";
   import MediaPicker from "./MediaPicker.svelte";
   import { isDownloadUrl } from "../lib/host.ts";
-  import { CATEGORIES, categoryForFilename, type Category } from "@wdm/api-client/categories";
+  import { CATEGORIES, categoryFolder, categoryForFilename, type Category } from "@wdm/api-client/categories";
   import { getApp } from "../lib/state/app.svelte.ts";
   import Dialog from "./Dialog.svelte";
   import FileIcon from "./FileIcon.svelte";
@@ -188,9 +188,28 @@
     if (dir && directory === "") directory = dir;
   });
 
+  /**
+   * The folder to send: only one the user changed. Left as the default folder, the daemon picks
+   * it, which means the folder for the file's type inside it when sorting by category.
+   */
+  const chosenDirectory = $derived.by(() => {
+    const d = directory.trim();
+    return d && d !== app.settings?.defaultDirectory ? d : undefined;
+  });
+
   const mediaResult = $derived(media.status === "ok" && media.url === trimmed ? media.result : undefined);
   /** The video picker is showing (instead of the file). */
   const picking = $derived(mediaResult !== undefined && !asFile);
+  /** Sorting by category and the folder left as it is: the type's folder the file goes into. */
+  const sortedInto = $derived(
+    app.settings?.organizeByCategory === true && chosenDirectory === undefined
+      ? picking
+        ? mediaMode === "audio"
+          ? categoryFolder("music")
+          : categoryFolder("video")
+        : categoryFolder(category)
+      : undefined,
+  );
   const ready = $derived(
     valid && !submitting && (picking ? stem.trim() !== "" || scope === "playlist" : probe.status === "ok" && probe.url === trimmed),
   );
@@ -216,7 +235,7 @@
         adding = { done: 0, total: list.entries.length };
         for (const entry of list.entries) {
           const params: MediaAddParams = { url: entry.url, start: startNow, choice, filename: entry.title };
-          if (directory.trim()) params.directory = directory.trim();
+          if (chosenDirectory) params.directory = chosenDirectory;
           if (queue !== MAIN_QUEUE && app.queues.has(queue)) params.queue = queue;
           await app.addMedia(params);
           added += 1;
@@ -238,7 +257,7 @@
         const params: MediaAddParams = { url: trimmed, start: startNow, choice: choiceFor(mediaMode, quality, convert) };
         if (subtitles.length > 0) params.subtitles = [...subtitles];
         if (stem.trim() && stem.trim() !== mediaResult.title) params.filename = stem.trim();
-        if (directory.trim()) params.directory = directory.trim();
+        if (chosenDirectory) params.directory = chosenDirectory;
         if (queue !== MAIN_QUEUE && app.queues.has(queue)) params.queue = queue;
         const id = await app.addMedia(params);
         app.toasts.push({ tone: "success", message: t("add.added", { name: mediaResult.title }) }, 3000);
@@ -254,7 +273,7 @@
     try {
       const params: Parameters<typeof app.add>[0] = { url: trimmed, start: startNow, category };
       if (filename.trim()) params.filename = filename.trim();
-      if (directory.trim()) params.directory = directory.trim();
+      if (chosenDirectory) params.directory = chosenDirectory;
       if (queue !== MAIN_QUEUE && app.queues.has(queue)) params.queue = queue;
       const id = await app.add(params);
       app.toasts.push({ tone: "success", message: t("add.added", { name: app.store.get(id)?.data.filename ?? filename }) }, 3000);
@@ -326,12 +345,13 @@
         <div class="folder-row">
           <div class="with-icon">
             <Icon name="folder" size={15} />
-            <input id="vy-add-dir" class="vy-input" bind:value={directory} />
+            <input id="vy-add-dir" class="vy-input" bind:value={directory} aria-describedby={sortedInto ? "vy-add-dir-sorted" : undefined} />
           </div>
           {#if app.host.pickFolder}
             <button type="button" class="vy-btn vy-btn--secondary" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
           {/if}
         </div>
+        {#if sortedInto}<span id="vy-add-dir-sorted" class="vy-hint" dir="auto">{t("add.folderSorted", { folder: sortedInto })}</span>{/if}
       </div>
       {#if queueNames.length > 1}
         <div class="vy-field">
@@ -366,12 +386,13 @@
           <div class="folder-row">
             <div class="with-icon">
               <Icon name="folder" size={15} />
-              <input id="vy-add-dir" class="vy-input" bind:value={directory} />
+              <input id="vy-add-dir" class="vy-input" bind:value={directory} aria-describedby={sortedInto ? "vy-add-dir-sorted" : undefined} />
             </div>
             {#if app.host.pickFolder}
               <button type="button" class="vy-btn vy-btn--secondary" disabled={choosingFolder} onclick={chooseFolder}>{t("action.browse")}</button>
             {/if}
           </div>
+          {#if sortedInto}<span id="vy-add-dir-sorted" class="vy-hint" dir="auto">{t("add.folderSorted", { folder: sortedInto })}</span>{/if}
         </div>
         <div class="vy-field">
           <label class="vy-label" for="vy-add-cat">{t("add.category")}</label>

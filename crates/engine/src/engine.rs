@@ -310,20 +310,26 @@ impl Inner {
         generation: u64,
         wanted: &str,
         category_auto: bool,
-    ) -> Option<String> {
+    ) -> Option<(String, PathBuf)> {
         let mut st = lock(&self.st);
         let e = st.downloads.get(id)?;
         if e.generation != generation {
             return None;
         }
-        let dir = PathBuf::from(&e.record.directory);
+        // A new name can mean a new category, and so another category folder.
+        let dir = if e.record.directory_auto && category_auto {
+            PathBuf::from(auto_directory(&st.settings, category_for(wanted)))
+        } else {
+            PathBuf::from(&e.record.directory)
+        };
         let name = unique_in(&st, &dir, wanted, id);
         let e = st.downloads.get_mut(id)?;
         if e.record.filename != name && category_auto {
             e.record.category = Some(category_for(&name).to_string());
         }
         e.record.filename = name.clone();
-        Some(name)
+        e.record.directory = dir.to_string_lossy().into_owned();
+        Some((name, dir))
     }
 
     /// Persist the per-download connection counts (small; rewritten whole).
@@ -839,6 +845,7 @@ impl Inner {
         if let Some(c) = &p.checksum {
             checksum::parse(c).map_err(ServiceError::invalid_params)?;
         }
+        let directory_auto = p.directory.is_none();
         let directory = match &p.directory {
             Some(d) => d.clone(),
             None => lock(&self.st).settings.default_directory.clone(),
@@ -880,6 +887,7 @@ impl Inner {
             filename: name,
             filename_locked: name_locked,
             directory,
+            directory_auto,
             category: None,
             queue,
             state: if p.start && !ask {
@@ -908,10 +916,14 @@ impl Inner {
                 }
                 _ => false,
             };
-            // Pick the name and store it in one critical section.
+            // Pick the folder and the name and store them in one critical section.
+            let category =
+                user_category.unwrap_or_else(|| category_for(&record.filename).to_string());
+            if record.directory_auto {
+                record.directory = auto_directory(&st.settings, &category);
+            }
             record.filename = unique_in(&st, Path::new(&record.directory), &record.filename, &id);
-            record.category =
-                Some(user_category.unwrap_or_else(|| category_for(&record.filename).to_string()));
+            record.category = Some(category);
             let seq = st.seq;
             st.seq += 1;
             let entry = Entry {
@@ -988,23 +1000,31 @@ impl Inner {
                 if !e.record.awaiting_confirmation || e.run.is_some() {
                     return;
                 }
+                let category_auto =
+                    e.record.category.as_deref() == Some(category_for(&e.record.filename));
                 let name = if e.record.filename_locked {
                     None
                 } else {
-                    let dir = PathBuf::from(&e.record.directory);
+                    // The dialog shows the folder for the real name's category.
+                    let dir = if e.record.directory_auto && category_auto {
+                        PathBuf::from(auto_directory(&st.settings, category_for(&wanted)))
+                    } else {
+                        PathBuf::from(&e.record.directory)
+                    };
                     let n = unique_in(&st, &dir, &wanted, &id);
-                    names::part_path(&dir, &n).is_some().then_some(n)
+                    names::part_path(&dir, &n).is_some().then_some((n, dir))
                 };
                 let Some(e) = st.downloads.get_mut(&id) else {
                     return;
                 };
-                if let Some(name) = name
+                if let Some((name, dir)) = name
                     && name != e.record.filename
                 {
-                    if e.record.category.as_deref() == Some(category_for(&e.record.filename)) {
+                    if category_auto {
                         e.record.category = Some(category_for(&name).to_string());
                     }
                     e.record.filename = name;
+                    e.record.directory = dir.to_string_lossy().into_owned();
                 }
                 e.record.total_bytes = meta.size;
                 e.record.resumable = meta.accepts_ranges && meta.size.is_some();
@@ -1050,10 +1070,24 @@ impl Inner {
                     "this download is not waiting for confirmation",
                 ));
             }
-            let directory = p.directory.clone().unwrap_or(e.record.directory.clone());
             let old_name = e.record.filename.clone();
             let category_auto = e.record.category.as_deref() == Some(category_for(&old_name));
             let wanted = user_name.clone().unwrap_or(old_name.clone());
+            // A folder the user typed or picked is kept as it is; otherwise the
+            // folder follows the category the answer gives (a new name or category).
+            let directory_auto = p.directory.is_none() && e.record.directory_auto;
+            let directory = match &p.directory {
+                Some(d) => d.clone(),
+                None if directory_auto => {
+                    let final_category = match &category {
+                        Some(c) => c.clone(),
+                        None if category_auto => category_for(&wanted).to_string(),
+                        None => e.record.category.clone().unwrap_or_default(),
+                    };
+                    auto_directory(&st.settings, &final_category)
+                }
+                None => e.record.directory.clone(),
+            };
             if names::part_path(Path::new(&directory), &wanted).is_none() {
                 return Err(ServiceError::invalid_params("filename is not usable"));
             }
@@ -1076,6 +1110,7 @@ impl Inner {
             };
             e.record.filename = name;
             e.record.directory = directory;
+            e.record.directory_auto = directory_auto;
             if let Some(q) = queue {
                 e.record.queue = q;
             }
@@ -1447,6 +1482,23 @@ impl Inner {
 /// `name`, or `name (n).ext`, so no other unfinished download in `dir`
 /// uses the same in-progress file. Callers hold the state lock until the
 /// name is stored.
+/// Where a download whose folder the user did not choose goes: the folder
+/// for `category` inside the default directory when sorting by category
+/// (`Settings::organize_by_category`), else the default directory. The
+/// folder is created with the part file.
+fn auto_directory(settings: &Settings, category: &str) -> String {
+    match (
+        settings.organize_by_category,
+        wdm_proto::category::folder(category),
+    ) {
+        (Some(true), Some(folder)) => Path::new(&settings.default_directory)
+            .join(folder)
+            .to_string_lossy()
+            .into_owned(),
+        _ => settings.default_directory.clone(),
+    }
+}
+
 fn unique_in(st: &St, dir: &Path, name: &str, except: &str) -> String {
     let taken: HashSet<String> = st
         .downloads

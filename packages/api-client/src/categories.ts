@@ -32,3 +32,23 @@ export function categoryForFilename(filename: string): Category {
 export function isCategory(value: unknown): value is Category {
   return typeof value === "string" && (CATEGORIES as readonly string[]).includes(value);
 }
+
+const FOLDERS: Record<Exclude<Category, "other">, string> = {
+  programs: "Programs",
+  compressed: "Compressed",
+  images: "Images",
+  video: "Video",
+  music: "Music",
+  documents: "Documents",
+};
+
+/** The folders `Settings.organizeByCategory` sorts into, in display order (as the daemon's). */
+export const CATEGORY_FOLDERS: readonly string[] = Object.values(FOLDERS);
+
+/**
+ * The folder a category's files go to inside the download directory when sorting by category;
+ * `undefined` for "other" and user categories, which stay in the download directory.
+ */
+export function categoryFolder(category: string | undefined): string | undefined {
+  return category && category in FOLDERS ? FOLDERS[category as Exclude<Category, "other">] : undefined;
+}

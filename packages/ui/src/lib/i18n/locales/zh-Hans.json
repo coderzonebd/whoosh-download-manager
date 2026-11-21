@@ -222,7 +222,8 @@
     "asFile": "改为下载页面本身",
     "asMedia": "改为选择视频格式",
     "addingPlaylist": "正在添加 {{done}} / {{total}}…",
-    "addedPlaylist": "已添加“{{name}}”：{{count}} 个下载"
+    "addedPlaylist": "已添加“{{name}}”：{{count}} 个下载",
+    "folderSorted": "将保存到此文件夹内的 {{folder}} 文件夹。"
   },
   "confirm": {
     "title": "来自浏览器的新下载",
@@ -318,7 +319,17 @@
     "installUpdate": "安装并重启",
     "installing": "正在安装…",
     "updateFailed": "无法检查更新：{{message}}",
-    "installFailed": "无法安装更新：{{message}}"
+    "installFailed": "无法安装更新：{{message}}",
+    "organize": "按类型将下载整理到文件夹",
+    "organizeHint": "下载文件夹中的 {{folders}}，每个文件夹在该类型的第一个文件到达时创建。其他文件留在下载文件夹中。你为某个下载选择的文件夹会保持不变。"
+  },
+  "organize": {
+    "title": "要将下载整理到文件夹中吗？",
+    "body": "WDM 可以把每个下载放进对应类型的文件夹，让 {{folder}} 保持整洁。",
+    "folders": "该类型的第一个文件到达时，会在其中创建以下文件夹：",
+    "note": "其他文件留在 {{folder}} 中。你为某个下载选择的文件夹始终保留，可以在 Settings 中更改此设置。",
+    "yes": "整理到文件夹",
+    "no": "全部放在一个文件夹"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager 会发送匿名崩溃报告以帮助修复错误。不含文件名或链接。可在设置中关闭。",

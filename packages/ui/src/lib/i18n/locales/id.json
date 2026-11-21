@@ -222,7 +222,8 @@
     "asFile": "Unduh halamannya saja",
     "asMedia": "Pilih format video",
     "addingPlaylist": "Menambahkan {{done}} / {{total}}…",
-    "addedPlaylist": "“{{name}}” ditambahkan: {{count}} unduhan"
+    "addedPlaylist": "“{{name}}” ditambahkan: {{count}} unduhan",
+    "folderSorted": "Masuk ke folder {{folder}} di dalam folder ini."
   },
   "confirm": {
     "title": "Unduhan baru dari browser Anda",
@@ -318,7 +319,17 @@
     "installUpdate": "Pasang dan mulai ulang",
     "installing": "Memasang…",
     "updateFailed": "Tidak dapat memeriksa pembaruan: {{message}}",
-    "installFailed": "Tidak dapat memasang pembaruan: {{message}}"
+    "installFailed": "Tidak dapat memasang pembaruan: {{message}}",
+    "organize": "Urutkan unduhan ke folder menurut jenis",
+    "organizeHint": "{{folders}} di dalam folder unduhan, masing-masing dibuat saat file jenis itu pertama kali datang. File lain tetap di folder unduhan. Folder yang Anda pilih untuk sebuah unduhan tetap dipakai."
+  },
+  "organize": {
+    "title": "Urutkan unduhan ke dalam folder?",
+    "body": "WDM bisa menjaga {{folder}} tetap rapi dengan menaruh setiap unduhan di folder untuk jenisnya.",
+    "folders": "Folder ini dibuat di dalamnya saat file jenis itu pertama kali datang:",
+    "note": "File lain tetap di {{folder}}. Folder yang Anda pilih untuk sebuah unduhan selalu dipakai, dan Anda bisa mengubah ini di Settings.",
+    "yes": "Urutkan ke folder",
+    "no": "Simpan semua di satu folder"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager mengirim laporan kerusakan anonim untuk membantu memperbaiki bug. Tanpa nama file atau tautan. Matikan di Pengaturan.",
