@@ -248,8 +248,14 @@ function Install-FromRelease {
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
         Say "downloading $name"
-        $sums = (Invoke-WebRequest "$base/SHA256SUMS" -UseBasicParsing).Content
-        $want = ($sums -split "`n" | Where-Object { $_ -match "^([0-9a-fA-F]{64})\s+\*?$([regex]::Escape($name))\s*$" } | ForEach-Object { $Matches[1] }) | Select-Object -First 1
+        # GitHub serves release assets as application/octet-stream, for which
+        # Windows PowerShell 5.1 returns .Content as bytes, not text.
+        $body = (Invoke-WebRequest "$base/SHA256SUMS" -UseBasicParsing).Content
+        $sums = if ($body -is [byte[]]) { [Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
+        $want = $null
+        foreach ($line in ($sums -split "`r?`n")) {
+            if ($line -match "^([0-9a-fA-F]{64})\s+\*?$([regex]::Escape($name))\s*$") { $want = $Matches[1]; break }
+        }
         if (-not $want) { throw "$name is not in SHA256SUMS" }
         $file = Join-Path $tmp $name
         Invoke-WebRequest "$base/$name" -OutFile $file -UseBasicParsing

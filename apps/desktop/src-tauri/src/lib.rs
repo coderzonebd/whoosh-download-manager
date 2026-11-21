@@ -48,7 +48,7 @@ pub const EVENT_HIDDEN_TO_TRAY: &str = "desktop://hidden-to-tray";
 /// notifier), closing the window quits, or the app could not be reached.
 static TRAY_SHOWN: AtomicBool = AtomicBool::new(false);
 /// Set once Quit has started, so closing the window then really closes it.
-static QUITTING: AtomicBool = AtomicBool::new(false);
+pub(crate) static QUITTING: AtomicBool = AtomicBool::new(false);
 
 /// Passed by the login item (`tauri-plugin-autostart`): start in the tray,
 /// without showing the window.
@@ -142,8 +142,11 @@ fn save_window_state<R: Runtime>(app: &AppHandle<R>) {
 /// Quit from the tray. The window state is saved first, while the window
 /// still exists: once `exit()` starts, the window-state plugin can only fall
 /// back to sizes from resize events, which on GTK include client-side
-/// decorations — the window would grow a little on every launch. The daemon
-/// keeps running unless the user asked Quit to stop it.
+/// decorations — the window would grow a little on every launch. Quit
+/// closes WDM completely: the daemon stops, and a mark in the data directory
+/// tells the browser's native host not to start the app for a download until
+/// the user opens it again. (Downloads go on in the background only while
+/// the app runs in the tray: closing the window keeps it there.)
 fn quit_app<R: Runtime>(app: &AppHandle<R>) {
     if QUITTING.swap(true, Ordering::SeqCst) {
         return;
@@ -156,10 +159,7 @@ fn quit_app<R: Runtime>(app: &AppHandle<R>) {
         }
         return;
     }
-    if !app.state::<prefs::PrefsState>().get().stop_daemon_on_quit {
-        app.exit(0);
-        return;
-    }
+    daemon::mark_quit(true);
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.hide();
     }
@@ -297,6 +297,8 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // Opened again: the browser may hand downloads to WDM (and start it) again.
+            daemon::mark_quit(false);
             let loaded = prefs::load(app.handle());
             let first_run = !loaded.browser_setup_shown;
             app.manage(prefs::PrefsState(std::sync::Mutex::new(loaded)));

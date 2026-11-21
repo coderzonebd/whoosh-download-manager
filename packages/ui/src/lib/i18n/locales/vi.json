@@ -292,9 +292,7 @@
     "launchAtLogin": "Khởi động Whoosh Download Manager khi tôi đăng nhập",
     "launchAtLoginHint": "Ứng dụng chạy trong khay hệ thống, không mở cửa sổ.",
     "closeToTray": "Đóng cửa sổ vẫn giữ Whoosh Download Manager trong khay hệ thống",
-    "closeToTrayHint": "Các tải xuống vẫn tiếp tục. Thoát từ menu khay hệ thống.",
-    "stopDaemonOnQuit": "Thoát cũng dừng các tải xuống",
-    "stopDaemonOnQuitHint": "Khi tắt: các tải xuống vẫn chạy nền cho tiện ích trình duyệt và dòng lệnh.",
+    "closeToTrayHint": "Các lượt tải vẫn tiếp tục. Thoát từ menu khay sẽ đóng hẳn WDM, và trình duyệt tự tải tệp của nó cho đến khi bạn mở lại WDM.",
     "privacy": "Quyền riêng tư",
     "crashReports": "Gửi báo cáo sự cố",
     "crashReportsHint": "Whoosh Download Manager gửi báo cáo sự cố ẩn danh để giúp sửa lỗi: lỗi, vị trí xảy ra trong WDM, phiên bản ứng dụng và hệ điều hành. Không có tên tệp, liên kết hay tên người dùng. Bật trừ khi bạn tắt; dịch vụ chạy nền sẽ áp dụng thay đổi vào lần khởi động tiếp theo.",
@@ -524,7 +522,8 @@
     "autoUpdate": "Kiểm tra cập nhật mỗi ngày một lần",
     "autoUpdateHint": "Nếu không, Whoosh Download Manager chỉ kiểm tra khi bạn yêu cầu.",
     "error": "Lần thử gần nhất thất bại: {{message}}",
-    "checkFailed": "Không thể kiểm tra cập nhật: {{message}}"
+    "checkFailed": "Không thể kiểm tra cập nhật: {{message}}",
+    "notNeeded": "Không cần: dùng {{name}} thay thế. Chỉ tải về nếu {{name}} ngừng hoạt động."
   },
   "browsers": {
     "title": "Kết nối trình duyệt của bạn",

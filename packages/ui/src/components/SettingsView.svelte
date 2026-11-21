@@ -568,13 +568,6 @@
                 </label>
                 <span id="vy-set-tray-hint" class="vy-hint">{t("settings.closeToTrayHint")}</span>
               </div>
-              <div class="vy-field">
-                <label class="vy-check">
-                  <input type="checkbox" checked={desktop?.stopDaemonOnQuit === true} disabled={!desktop} onchange={(e) => setDesktop("stopDaemonOnQuit", e.currentTarget.checked)} aria-describedby="vy-set-quit-hint" />
-                  {t("settings.stopDaemonOnQuit")}
-                </label>
-                <span id="vy-set-quit-hint" class="vy-hint">{t("settings.stopDaemonOnQuitHint")}</span>
-              </div>
             {/if}
           </div>
           <p class="vy-hint applies">{t("settings.desktopHint")}</p>

@@ -1,0 +1,7 @@
+# Link the C runtime statically on Windows (MSVC), so wdm-daemon, wdm-nmhost
+# and wdm need no VCRUNTIME140.dll: a fresh Windows does not have it, and the
+# daemon then fails to start and the browser extension cannot connect. The
+# desktop app gets the same from tauri-build. A RUSTFLAGS environment variable
+# replaces this setting, so release.yml adds the flag to its RUSTFLAGS too.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

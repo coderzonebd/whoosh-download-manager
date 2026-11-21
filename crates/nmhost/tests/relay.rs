@@ -451,6 +451,39 @@ async fn starts_the_app_when_a_download_arrives_and_no_daemon_runs() {
 }
 
 #[tokio::test]
+async fn after_the_user_quit_the_app_a_download_is_left_to_the_browser() {
+    let dir = TempDir::new("launch-quit");
+    let runtime = dir.runtime_file();
+    std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+    std::fs::write(
+        runtime
+            .parent()
+            .unwrap()
+            .join(wdm_nmhost::runtime::APP_QUIT_FILE),
+        "",
+    )
+    .unwrap();
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(runtime);
+    cfg.app_start_wait = Duration::from_secs(30);
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    let t0 = std::time::Instant::now();
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":1,"method":"download.add","params":{"url":"https://example.com/a.zip"}}"#)
+        .await;
+    // Refused at once (no 30 s wait for an app start), so the browser keeps it.
+    let reply = browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(reply["error"]["code"], -32007, "{reply}");
+    assert!(t0.elapsed() < Duration::from_secs(10));
+    assert_eq!(launches.load(std::sync::atomic::Ordering::SeqCst), 0);
+    browser.close().await.unwrap();
+}
+
+#[tokio::test]
 async fn a_status_check_alone_never_starts_the_app() {
     let dir = TempDir::new("launch-status");
     let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));

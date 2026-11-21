@@ -197,7 +197,12 @@ jobs:
           fi
           rustc --version
           # Strip build-machine paths from the binaries (reproducibility).
-          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wdm --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+          # RUSTFLAGS replaces .cargo/config.toml, so repeat its static C runtime
+          # for Windows here: without it wdm-daemon and wdm-nmhost need
+          # VCRUNTIME140.dll, which a fresh Windows does not have.
+          crt=""
+          if [ "$RUNNER_OS" = Windows ]; then crt=" -C target-feature=+crt-static"; fi
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wdm --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo$crt" >> "$GITHUB_ENV"
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -269,6 +274,9 @@ jobs:
           for b in wdm-daemon wdm-nmhost; do
             cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" staging/exe/
           done
+      - name: Check the executables need no VC++ runtime
+        if: runner.os == 'Windows'
+        run: .github/scripts/no-vcruntime.sh staging/exe/*.exe
       - name: Upload the unsigned executable
         id: unsigned-exe
         if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
@@ -549,12 +557,21 @@ jobs:
           rustup toolchain install
           # shellcheck disable=SC2086 # TARGETS is a list
           rustup target add $TARGETS
-          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wdm --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" >> "$GITHUB_ENV"
+          # RUSTFLAGS replaces .cargo/config.toml, so repeat its static C runtime
+          # for Windows here: without it wdm-daemon and wdm-nmhost need
+          # VCRUNTIME140.dll, which a fresh Windows does not have.
+          crt=""
+          if [ "$RUNNER_OS" = Windows ]; then crt=" -C target-feature=+crt-static"; fi
+          echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wdm --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo$crt" >> "$GITHUB_ENV"
       - name: Build
         run: |
           for t in $TARGETS; do
             cargo build --release --locked --target "$t" -p wdm-cli -p wdm-daemon -p wdm-nmhost
           done
+      - name: Check the executables need no VC++ runtime
+        if: runner.os == 'Windows'
+        run: |
+          for t in $TARGETS; do .github/scripts/no-vcruntime.sh target/"$t"/release/*.exe; done
       - name: Stage the binaries
         run: |
           set -euo pipefail

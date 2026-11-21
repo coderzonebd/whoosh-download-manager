@@ -84,6 +84,13 @@ const TOOL_INSTALL_MS = 1500;
 const MOCK_YT_DLP_VERSION = "2026.10.26";
 const MOCK_YT_DLP_LATEST = "2026.11.10";
 const VERIFY_MS = 900;
+/** Where each media tool comes from, and its licence (as the daemon reports them). */
+const MOCK_TOOL_ORIGIN: Record<string, [string, string]> = {
+  "yt-dlp": ["github.com/yt-dlp/yt-dlp", "Unlicense"],
+  ffmpeg: ["github.com/BtbN/FFmpeg-Builds", "LGPL-2.1-or-later"],
+  deno: ["github.com/denoland/deno", "MIT"],
+  quickjs: ["github.com/quickjs-ng/quickjs", "MIT"],
+};
 const MIN_SPLIT_BYTES = 2 * MB;
 
 const DEFAULT_SETTINGS: Settings = {
@@ -353,8 +360,8 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
     const t: MediaTool = {
       name,
       state: ready ? "ready" : "missing",
-      upstream: name === "yt-dlp" ? "github.com/yt-dlp/yt-dlp" : "github.com/BtbN/FFmpeg-Builds",
-      license: name === "yt-dlp" ? "Unlicense" : "LGPL-2.1-or-later",
+      upstream: MOCK_TOOL_ORIGIN[name]?.[0] ?? "github.com/BtbN/FFmpeg-Builds",
+      license: MOCK_TOOL_ORIGIN[name]?.[1] ?? "LGPL-2.1-or-later",
     };
     if (ready) {
       t.source = "managed";
@@ -364,7 +371,13 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
     return t;
   };
   const mediaTools: MediaToolsStatus = {
-    tools: [tool("yt-dlp", !options.mediaToolsMissing, MOCK_YT_DLP_VERSION), tool("ffmpeg", false)],
+    // As a desktop install has them: Deno ready (fetched with the others), QuickJS only its stand-in.
+    tools: [
+      tool("yt-dlp", !options.mediaToolsMissing, MOCK_YT_DLP_VERSION),
+      tool("ffmpeg", false),
+      tool("deno", !options.mediaToolsMissing, "2.9.8"),
+      tool("quickjs", false),
+    ],
     autoUpdate: false,
   };
   /** Simulated time at which an installing tool is ready. */

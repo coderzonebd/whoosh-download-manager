@@ -192,6 +192,16 @@ describe("media tools in Settings", { timeout: 30_000 }, () => {
     expect(client.log.some((c) => c.method === "media.configure")).toBe(true);
   });
 
+  it("shows QuickJS as not needed while Deno is ready, without a download button", async () => {
+    const { user } = await setup();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const section = await screen.findByRole("region", { name: "Video and audio sites" });
+    const qjs = within(section).getByRole("listitem", { name: "quickjs" });
+    expect(qjs).toHaveTextContent("Not needed: Deno is used instead");
+    expect(within(qjs).queryByRole("button", { name: /Download/ })).not.toBeInTheDocument();
+    expect(within(section).getByRole("listitem", { name: "deno" })).toHaveTextContent("Ready");
+  });
+
   it("is in Bangla too", async () => {
     const { user } = await setup({ language: "bn" });
     await user.click(screen.getByRole("button", { name: "সেটিংস" }));

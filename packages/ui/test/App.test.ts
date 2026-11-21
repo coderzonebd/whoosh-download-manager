@@ -329,3 +329,16 @@ describe("App shell", () => {
     expect(rows(grid).length).toBeLessThan(60);
   });
 });
+
+describe("status bar version", () => {
+  it("shows the app's version to the right of the connection state", async () => {
+    client = createMockClient({ autoTick: false });
+    render(App, { props: { client, mode: "mock", storage: null, locale: "en", host: { appVersion: "1.2.3-beta.4" } } });
+    const bar = await screen.findByRole("contentinfo", { name: "Status" });
+    const version = within(bar).getByText("v1.2.3-beta.4");
+    expect(version).toHaveAttribute("title", "WDM 1.2.3-beta.4");
+    // It comes after the connection state.
+    const conn = within(bar).getByText(/Demo|Connected|Connecting/);
+    expect(conn.compareDocumentPosition(version) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

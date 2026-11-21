@@ -375,7 +375,12 @@ describe("mock media (yt-dlp)", () => {
     const c = mock({ mediaToolsMissing: true });
     const events = record(c, "event.media.tools");
     let s = await c.call("media.tools", undefined);
-    expect(s.tools.map((t) => [t.name, t.state])).toEqual([["yt-dlp", "missing"], ["ffmpeg", "missing"]]);
+    expect(s.tools.map((t) => [t.name, t.state])).toEqual([
+      ["yt-dlp", "missing"],
+      ["ffmpeg", "missing"],
+      ["deno", "missing"],
+      ["quickjs", "missing"],
+    ]);
     // First use fetches yt-dlp.
     await c.call("media.probe", { url: page });
     expect((await c.call("media.tools", undefined)).tools[0]?.state).toBe("ready");

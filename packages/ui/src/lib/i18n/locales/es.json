@@ -306,9 +306,7 @@
     "launchAtLogin": "Iniciar Whoosh Download Manager al iniciar sesión",
     "launchAtLoginHint": "Se inicia en la bandeja, sin abrir la ventana.",
     "closeToTray": "Al cerrar la ventana, Whoosh Download Manager sigue en la bandeja",
-    "closeToTrayHint": "Las descargas continúan. Para salir, usa el menú de la bandeja.",
-    "stopDaemonOnQuit": "Al salir, también se detienen las descargas",
-    "stopDaemonOnQuitHint": "Desactivado: las descargas siguen en segundo plano para la extensión del navegador y la línea de comandos.",
+    "closeToTrayHint": "Las descargas siguen. Salir desde el menú de la bandeja cierra WDM por completo, y el navegador se queda con sus descargas hasta que vuelvas a abrir WDM.",
     "privacy": "Privacidad",
     "crashReports": "Enviar informes de errores",
     "crashReportsHint": "Whoosh Download Manager envía informes de errores anónimos para ayudar a corregir fallos: el error, en qué parte de WDM ocurrió, la versión de la aplicación y el sistema operativo. Sin nombres de archivo, enlaces ni nombre de usuario. Activado salvo que lo desactives; el servicio en segundo plano aplicará el cambio la próxima vez que se inicie.",
@@ -554,7 +552,8 @@
     "autoUpdate": "Buscar actualizaciones una vez al día",
     "autoUpdateHint": "Si no, Whoosh Download Manager solo busca cuando usted lo pide.",
     "error": "El último intento falló: {{message}}",
-    "checkFailed": "No se pudo buscar actualizaciones: {{message}}"
+    "checkFailed": "No se pudo buscar actualizaciones: {{message}}",
+    "notNeeded": "No hace falta: se usa {{name}} en su lugar. Solo se descarga si {{name}} deja de funcionar."
   },
   "browsers": {
     "title": "Conecta tu navegador",
