@@ -7,7 +7,7 @@
 ; Failures are ignored: the app can register again from "Connect your browser".
 ;
 ; Before installing over an earlier version, and before uninstalling, the
-; daemon and the browser host are stopped: they keep running after the app's
+; app, the daemon and the browser host are stopped: they keep running after the app's
 ; window is closed (the daemon finishes downloads; the host serves an open
 ; browser), and Windows does not let the installer replace or delete a running
 ; .exe ("Error opening file for writing: ...\wdm-daemon.exe"). Stopping them
@@ -16,12 +16,29 @@
 ; user's processes, which is what a per-user install needs.
 
 !macro WDM_STOP_BACKGROUND
-  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM wdm-daemon.exe'
-  Pop $0
-  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM wdm-nmhost.exe'
-  Pop $0
+  ; The app first: while it runs it starts the daemon again as soon as the
+  ; daemon is gone (Tauri's own "app is running" check comes only after this
+  ; hook, by which time the app has started a new daemon that holds the file).
+  ; Each is stopped until taskkill reports it is no longer running (exit code
+  ; 128), at most 20 tries a quarter of a second apart.
+  !insertmacro WDM_STOP_ONE "wdm-desktop.exe"
+  !insertmacro WDM_STOP_ONE "wdm-daemon.exe"
+  !insertmacro WDM_STOP_ONE "wdm-nmhost.exe"
   ; Give Windows a moment to release the files.
   Sleep 500
+!macroend
+
+!macro WDM_STOP_ONE image
+  StrCpy $9 0
+  ${Do}
+    nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM ${image}'
+    Pop $0
+    ${If} $0 = 128
+      ${Break}
+    ${EndIf}
+    Sleep 250
+    IntOp $9 $9 + 1
+  ${LoopUntil} $9 >= 20
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
