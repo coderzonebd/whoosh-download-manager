@@ -227,7 +227,8 @@
     "asFile": "Bunun yerine sayfanın kendisini indir",
     "asMedia": "Bunun yerine bir video biçimi seç",
     "addingPlaylist": "Ekleniyor {{done}} / {{total}}…",
-    "addedPlaylist": "“{{name}}” eklendi: {{count}} indirme"
+    "addedPlaylist": "“{{name}}” eklendi: {{count}} indirme",
+    "folderSorted": "Bunun içindeki {{folder}} klasörüne gider."
   },
   "confirm": {
     "title": "Tarayıcınızdan yeni indirme",
@@ -323,7 +324,17 @@
     "installUpdate": "Yükle ve yeniden başlat",
     "installing": "Yükleniyor…",
     "updateFailed": "Güncellemeler denetlenemedi: {{message}}",
-    "installFailed": "Güncelleme yüklenemedi: {{message}}"
+    "installFailed": "Güncelleme yüklenemedi: {{message}}",
+    "organize": "İndirmeleri türe göre klasörlere ayır",
+    "organizeHint": "İndirme klasörünün içinde {{folders}}; her biri o türden ilk dosya geldiğinde oluşturulur. Diğer dosyalar indirme klasöründe kalır. Bir indirme için seçtiğiniz klasör korunur."
+  },
+  "organize": {
+    "title": "İndirmeler klasörlere ayrılsın mı?",
+    "body": "WDM her indirmeyi türüne ait bir klasöre koyarak {{folder}} klasörünü düzenli tutabilir.",
+    "folders": "O türden ilk dosya geldiğinde içinde şu klasörler oluşturulur:",
+    "note": "Diğer dosyalar {{folder}} içinde kalır. Bir indirme için seçtiğiniz klasör her zaman korunur; bunu Settings içinden değiştirebilirsiniz.",
+    "yes": "Klasörlere ayır",
+    "no": "Hepsini tek klasörde tut"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager, hataları düzeltmeye yardımcı olmak için anonim çökme raporları gönderir. Dosya adı veya bağlantı yok. Ayarlar'dan kapatabilirsiniz.",

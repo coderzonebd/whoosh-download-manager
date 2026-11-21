@@ -222,7 +222,8 @@
     "asFile": "Tải chính trang này xuống",
     "asMedia": "Chọn định dạng video",
     "addingPlaylist": "Đang thêm {{done}} / {{total}}…",
-    "addedPlaylist": "Đã thêm “{{name}}”: {{count}} lượt tải"
+    "addedPlaylist": "Đã thêm “{{name}}”: {{count}} lượt tải",
+    "folderSorted": "Sẽ vào thư mục {{folder}} bên trong thư mục này."
   },
   "confirm": {
     "title": "Lượt tải mới từ trình duyệt",
@@ -316,7 +317,17 @@
     "installUpdate": "Cài đặt và khởi động lại",
     "installing": "Đang cài đặt…",
     "updateFailed": "Không thể kiểm tra cập nhật: {{message}}",
-    "installFailed": "Không thể cài đặt bản cập nhật: {{message}}"
+    "installFailed": "Không thể cài đặt bản cập nhật: {{message}}",
+    "organize": "Sắp xếp tệp tải về vào thư mục theo loại",
+    "organizeHint": "{{folders}} bên trong thư mục tải về, mỗi thư mục được tạo khi tệp đầu tiên thuộc loại đó đến. Các tệp khác vẫn ở thư mục tải về. Thư mục bạn chọn cho một lượt tải được giữ nguyên."
+  },
+  "organize": {
+    "title": "Sắp xếp tệp tải về vào thư mục?",
+    "body": "WDM có thể giữ {{folder}} gọn gàng bằng cách đặt mỗi tệp tải về vào thư mục theo loại của nó.",
+    "folders": "Các thư mục này được tạo bên trong khi tệp đầu tiên thuộc loại đó đến:",
+    "note": "Các tệp khác vẫn ở {{folder}}. Thư mục bạn chọn cho một lượt tải luôn được giữ, và bạn có thể đổi điều này trong Settings.",
+    "yes": "Sắp xếp vào thư mục",
+    "no": "Để tất cả trong một thư mục"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager gửi báo cáo sự cố ẩn danh để giúp sửa lỗi. Không có tên tệp hay liên kết. Tắt trong Cài đặt.",

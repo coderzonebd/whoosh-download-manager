@@ -4,6 +4,10 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## Unreleased
 
+### Downloads sorted into folders by type
+- **Like Internet Download Manager, downloads can go into a folder for their type** inside the download folder: `Programs`, `Compressed`, `Images`, `Video`, `Music` and `Documents`; other files stay in the download folder. The type comes from the final name, so a link without one (`download.php`) still lands in the right folder once the server names the file. A folder you pick for a download is used as it is.
+- The desktop app asks once before it creates any folder ("Sort downloads into folders?"), and Settings → Downloads can turn it on or off. The add dialog shows which folder a file will go to. `wdm settings set organizeByCategory=true` does the same from the command line.
+
 ### Windows fixes
 - **The daemon and the browser connection start on a fresh Windows.** `wdm-daemon.exe` and `wdm-nmhost.exe` needed the Visual C++ runtime (`VCRUNTIME140.dll`), which a fresh Windows does not have: downloads did not start and the extension showed "Not connected". The C runtime is now linked into them, and the release fails if a Windows executable still imports it.
 - **The install script works in Windows PowerShell 5.1.** `irm https://coderzonebd.github.io/wdm/install.txt | iex` stopped with "…-setup.exe is not in SHA256SUMS": PowerShell 5.1 returns GitHub's checksum file as bytes, not text. It is now decoded first.

@@ -227,6 +227,7 @@ fn record(id: &str, url: &str, name: &str) -> DownloadRecord {
         filename: name.into(),
         filename_locked: false,
         directory: DIR.into(),
+        directory_auto: false,
         category: None,
         queue: None,
         state: DownloadState::Downloading,

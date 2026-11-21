@@ -966,6 +966,7 @@ mod tests {
             filename: "f".into(),
             filename_locked: false,
             directory: "/d".into(),
+            directory_auto: false,
             category: None,
             queue: None,
             state: wdm_proto::DownloadState::Downloading,

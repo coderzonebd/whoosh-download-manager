@@ -232,7 +232,8 @@
     "asFile": "Baixar a própria página",
     "asMedia": "Escolher um formato de vídeo",
     "addingPlaylist": "Adicionando {{done}} / {{total}}…",
-    "addedPlaylist": "“{{name}}” adicionada: {{count}} downloads"
+    "addedPlaylist": "“{{name}}” adicionada: {{count}} downloads",
+    "folderSorted": "Vai para a pasta {{folder}} dentro desta."
   },
   "confirm": {
     "title": "Novo download do seu navegador",
@@ -330,7 +331,17 @@
     "installUpdate": "Instalar e reiniciar",
     "installing": "Instalando…",
     "updateFailed": "Não foi possível procurar atualizações: {{message}}",
-    "installFailed": "Não foi possível instalar a atualização: {{message}}"
+    "installFailed": "Não foi possível instalar a atualização: {{message}}",
+    "organize": "Organizar downloads em pastas por tipo",
+    "organizeHint": "{{folders}} dentro da pasta de downloads; cada uma é criada quando chega o primeiro arquivo desse tipo. Os outros arquivos ficam na pasta de downloads. A pasta que você escolher para um download é mantida."
+  },
+  "organize": {
+    "title": "Organizar downloads em pastas?",
+    "body": "O WDM pode manter {{folder}} organizada colocando cada download numa pasta do seu tipo.",
+    "folders": "Estas pastas são criadas dentro dela quando chega o primeiro arquivo desse tipo:",
+    "note": "Os outros arquivos ficam em {{folder}}. A pasta que você escolher para um download é sempre mantida, e você pode mudar isso em Settings.",
+    "yes": "Organizar em pastas",
+    "no": "Manter tudo em uma pasta"
   },
   "crashNotice": {
     "text": "O Whoosh Download Manager envia relatórios de falhas anônimos para ajudar a corrigir bugs. Sem nomes de arquivos nem links. Desative em Configurações.",

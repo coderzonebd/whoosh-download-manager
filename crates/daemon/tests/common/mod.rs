@@ -164,6 +164,7 @@ pub fn settings() -> Settings {
         durability: Default::default(),
         speed_schedule: Vec::new(),
         confirm_browser_downloads: true,
+        organize_by_category: None,
     }
 }
 

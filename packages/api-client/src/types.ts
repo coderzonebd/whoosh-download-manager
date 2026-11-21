@@ -333,6 +333,13 @@ export interface Settings {
    * daemon always sends it (default true); older daemons don't, and never ask.
    */
   confirmBrowserDownloads?: boolean;
+  /**
+   * Downloads saved to `defaultDirectory` go into a folder for their category inside it
+   * (`Programs`, `Compressed`, `Images`, `Video`, `Music`, `Documents`; other files stay in
+   * `defaultDirectory`). A folder given with the download is used as it is. Absent: not decided
+   * yet, nothing is sorted, and the desktop app asks once, because sorting creates folders.
+   */
+  organizeByCategory?: boolean;
 }
 
 export type Durability = "powerSafe" | "processSafe";

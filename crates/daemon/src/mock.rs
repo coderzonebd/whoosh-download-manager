@@ -394,6 +394,7 @@ impl State {
                 durability: Default::default(),
                 speed_schedule: Vec::new(),
                 confirm_browser_downloads: true,
+                organize_by_category: None,
             },
             subscribers: Vec::new(),
             next_id: 1,
@@ -511,6 +512,10 @@ impl State {
             }
             _ => self.settings.default_directory.clone(),
         };
+        let directory_auto = params
+            .directory
+            .as_deref()
+            .is_none_or(|d| d.trim().is_empty());
         let has_checksum = match &params.checksum {
             Some(c) => {
                 validate_checksum(&c.algorithm, &c.value)?;
@@ -544,11 +549,22 @@ impl State {
             Some(name) => sanitize_filename(name),
             None => probed.result.filename.clone(),
         };
-        let filename = self.unique_filename(&directory, &wanted);
         let category = params
             .category
             .clone()
-            .unwrap_or_else(|| category_for(&filename).to_owned());
+            .unwrap_or_else(|| category_for(&wanted).to_owned());
+        // As the engine: the category's folder when sorting by category.
+        let directory = match (
+            directory_auto && self.settings.organize_by_category == Some(true),
+            wdm_proto::category::folder(&category),
+        ) {
+            (true, Some(folder)) => std::path::Path::new(&directory)
+                .join(folder)
+                .to_string_lossy()
+                .into_owned(),
+            _ => directory,
+        };
+        let filename = self.unique_filename(&directory, &wanted);
         let nominal_bps = probed
             .bps
             .unwrap_or_else(|| 4 * MIB + (44.0 * MIB as f64 * self.random()) as u64);

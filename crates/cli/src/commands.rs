@@ -485,6 +485,13 @@ pub async fn settings(ctx: &Ctx, action: Option<SettingsCmd>) -> Result<u8> {
                 "confirmBrowserDownloads",
                 settings.confirm_browser_downloads.to_string(),
             ),
+            (
+                "organizeByCategory",
+                match settings.organize_by_category {
+                    Some(on) => on.to_string(),
+                    None => "(not chosen: off)".to_owned(),
+                },
+            ),
         ] {
             println!("{k:<26} {v}");
         }
@@ -502,6 +509,7 @@ enum Key {
     Theme,
     Durability,
     ConfirmBrowserDownloads,
+    OrganizeByCategory,
 }
 
 fn parse_pair(pair: &str) -> Result<(Key, String)> {
@@ -525,11 +533,12 @@ fn parse_pair(pair: &str) -> Result<(Key, String)> {
         "theme" => Key::Theme,
         "durability" => Key::Durability,
         "confirmbrowserdownloads" | "confirmbrowser" | "askbrowser" => Key::ConfirmBrowserDownloads,
+        "organizebycategory" | "organize" | "categoryfolders" => Key::OrganizeByCategory,
         _ => {
             return Err(CliError::Usage(format!(
                 "unknown setting {key:?} (defaultDirectory, maxActiveDownloads, \
                  maxConnectionsPerDownload, speedLimitBps, language, theme, durability, \
-                 confirmBrowserDownloads)"
+                 confirmBrowserDownloads, organizeByCategory)"
             )));
         }
     };
@@ -580,6 +589,17 @@ fn apply(s: &mut Settings, key: Key, value: &str) -> Result<()> {
                     )));
                 }
             }
+        }
+        Key::OrganizeByCategory => {
+            s.organize_by_category = Some(match value.to_ascii_lowercase().as_str() {
+                "true" | "on" | "yes" | "1" => true,
+                "false" | "off" | "no" | "0" => false,
+                _ => {
+                    return Err(CliError::Usage(format!(
+                        "organizeByCategory: {value:?} is not true or false"
+                    )));
+                }
+            })
         }
     }
     Ok(())
@@ -952,6 +972,7 @@ mod tests {
             durability: Default::default(),
             speed_schedule: Vec::new(),
             confirm_browser_downloads: true,
+            organize_by_category: None,
         };
         for pair in [
             "max_active_downloads=5",

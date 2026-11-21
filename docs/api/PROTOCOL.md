@@ -107,6 +107,8 @@ extension ──native messaging (stdio)──▶ wdm-nmhost ──WebSocket + t
 
 `Settings.confirmBrowserDownloads` (default `true`; absent in a `settings.set` means `true`): downloads from the browser wait for the user before they start (next section).
 
+`Settings.organizeByCategory` (absent until the user chooses): when `true`, a download added without a `directory` goes into a folder for its category inside `defaultDirectory`: `Programs`, `Compressed`, `Images`, `Video`, `Music`, `Documents` (English on every system); "other" and user-defined categories stay in `defaultDirectory`. The folder follows the final name: when a probe renames a download before any byte is written (or `download.confirm` renames it or gives a category, without a `directory`), it moves to that category's folder. A `directory` given in `download.add`, `media.add` or `download.confirm` is used as it is. Folders are created with the first file. Absent or `false`: everything goes to `defaultDirectory`; the desktop app asks the user once, because sorting creates folders.
+
 ### Downloads from the browser
 
 With `Settings.confirmBrowserDownloads` on ("Ask before downloading from the browser"), a download the browser extension hands over is created but not started, like IDM's "Download File Info" window:

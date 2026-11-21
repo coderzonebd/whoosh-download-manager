@@ -232,7 +232,8 @@
     "asFile": "Descargar la página en su lugar",
     "asMedia": "Elegir un formato de vídeo en su lugar",
     "addingPlaylist": "Añadiendo {{done}} / {{total}}…",
-    "addedPlaylist": "Añadida «{{name}}»: {{count}} descargas"
+    "addedPlaylist": "Añadida «{{name}}»: {{count}} descargas",
+    "folderSorted": "Se guarda en la carpeta {{folder}} dentro de esta."
   },
   "confirm": {
     "title": "Nueva descarga desde tu navegador",
@@ -330,7 +331,17 @@
     "installUpdate": "Instalar y reiniciar",
     "installing": "Instalando…",
     "updateFailed": "No se pudieron buscar actualizaciones: {{message}}",
-    "installFailed": "No se pudo instalar la actualización: {{message}}"
+    "installFailed": "No se pudo instalar la actualización: {{message}}",
+    "organize": "Ordenar las descargas en carpetas por tipo",
+    "organizeHint": "{{folders}} dentro de la carpeta de descargas; cada una se crea cuando llega el primer archivo de ese tipo. Los demás archivos quedan en la carpeta de descargas. Se respeta la carpeta que elijas para una descarga."
+  },
+  "organize": {
+    "title": "¿Ordenar las descargas en carpetas?",
+    "body": "WDM puede mantener {{folder}} ordenada guardando cada descarga en una carpeta según su tipo.",
+    "folders": "Estas carpetas se crean dentro cuando llega el primer archivo de ese tipo:",
+    "note": "Los demás archivos quedan en {{folder}}. Siempre se respeta la carpeta que elijas para una descarga, y puedes cambiar esto en Settings.",
+    "yes": "Ordenar en carpetas",
+    "no": "Dejar todo en una carpeta"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager envía informes de errores anónimos para ayudar a corregir fallos. Sin nombres de archivo ni enlaces. Puedes desactivarlo en Configuración.",

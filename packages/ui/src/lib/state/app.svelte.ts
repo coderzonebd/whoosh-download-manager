@@ -716,6 +716,23 @@ export class AppState {
     }
   }
 
+  /** "Not now" on the sort-into-folders question: asked again at the next start. */
+  organizeDismissed = $state(false);
+
+  /**
+   * Ask once whether to sort downloads into folders by type: the daemon has not been told
+   * (`organizeByCategory` absent), and sorting creates folders, so it waits for the user.
+   */
+  get askOrganize(): boolean {
+    return this.connection === "open" && this.settings !== undefined && this.settings.organizeByCategory === undefined && !this.organizeDismissed;
+  }
+
+  /** The answer to that question, kept by the daemon (`settings.set`). */
+  async setOrganize(on: boolean): Promise<boolean> {
+    if (!this.settings) return false;
+    return this.saveSettings({ ...this.settings, organizeByCategory: on });
+  }
+
   async saveSettings(next: Settings): Promise<boolean> {
     try {
       const saved = await this.client.call("settings.set", next);
