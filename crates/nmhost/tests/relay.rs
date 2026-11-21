@@ -499,7 +499,10 @@ async fn after_a_quit_a_message_sent_right_away_is_answered_too() {
     let runtime = dir.runtime_file();
     std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
     std::fs::write(
-        runtime.parent().unwrap().join(wdm_nmhost::runtime::APP_QUIT_FILE),
+        runtime
+            .parent()
+            .unwrap()
+            .join(wdm_nmhost::runtime::APP_QUIT_FILE),
         "",
     )
     .unwrap();
