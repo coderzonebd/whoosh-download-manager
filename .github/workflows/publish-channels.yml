@@ -10,10 +10,11 @@
 # are kept off the release page, in the release run's `release-internal` artifact
 # (.github/scripts/release-internal.sh).
 #
-# The browser extension goes to Firefox Add-ons (AMO) and Microsoft Edge Add-ons with every
-# release, pre-releases too (their extension version, 0.65535.65535.N for X.Y.Z-beta.N, stays
-# below X.Y.Z, so the stores take the full release after it). Once a store has reviewed it,
-# the browser updates everyone's extension by itself.
+# The browser extension goes to Firefox Add-ons (AMO) and Microsoft Edge Add-ons with every full
+# release, and with the betas of 1.0.0 (the stores have carried those since before 1.0.0). Other
+# pre-releases stay off the stores: a store shows only the numeric extension version, which for
+# X.Y.Z-beta.N is a number just below X.Y.Z (1.1.0-beta.1 would be listed as 1.0.65535.1).
+# Once a store has reviewed a version, the browser updates everyone's extension by itself.
 #
 # The app updates itself after that, and the package managers see it: winget reads the version
 # the installer writes to Windows' list of programs, the cask says `auto_updates`, and a .deb or
@@ -57,6 +58,7 @@ jobs:
       aur: ${{ steps.s.outputs.aur }}
       amo: ${{ steps.s.outputs.amo }}
       edge: ${{ steps.s.outputs.edge }}
+      stores: ${{ steps.r.outputs.stores }}
     steps:
       - id: r
         run: |
@@ -64,9 +66,15 @@ jobs:
           case "$TAG" in v[0-9]*) ;; *) echo "::error::$TAG is not a v* tag"; exit 1 ;; esac
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease > r.json
           [ "$(jq -r .isDraft r.json)" = false ] || { echo "::error::$TAG is still a draft"; exit 1; }
+          prerelease=$(jq -r .isPrerelease r.json)
+          version=${TAG#v}
+          # The extension stores: full releases, and the betas of 1.0.0 (see the top).
+          stores=false
+          if [ "$prerelease" = false ] || [ "${version%%-*}" = 1.0.0 ]; then stores=true; fi
           {
-            echo "version=${TAG#v}"
-            echo "prerelease=$(jq -r .isPrerelease r.json)"
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "stores=$stores"
           } >> "$GITHUB_OUTPUT"
       - id: s
         # Which channels are set up (secrets cannot be tested in a job's `if`).
@@ -235,7 +243,7 @@ jobs:
   amo:
     name: Firefox Add-ons (AMO)
     needs: meta
-    if: needs.meta.outputs.amo == 'true'
+    if: needs.meta.outputs.amo == 'true' && needs.meta.outputs.stores == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: release
@@ -278,7 +286,7 @@ jobs:
   edge:
     name: Microsoft Edge Add-ons
     needs: meta
-    if: needs.meta.outputs.edge == 'true'
+    if: needs.meta.outputs.edge == 'true' && needs.meta.outputs.stores == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release

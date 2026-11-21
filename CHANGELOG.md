@@ -5,7 +5,7 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 ## Unreleased
 
 ### Release
-- **The browser extension reaches Firefox and Edge users by itself.** Publishing a release now submits the extension to Firefox Add-ons and Microsoft Edge Add-ons (`publish-channels.yml`); once a store has reviewed it, the browser updates everyone's extension. Pre-releases go too. CI no longer runs on pushes to `pub`, which only takes tested PRs from `dev`.
+- **The browser extension reaches Firefox and Edge users by itself.** Publishing a release now submits the extension to Firefox Add-ons and Microsoft Edge Add-ons (`publish-channels.yml`); once a store has reviewed it, the browser updates everyone's extension. From 1.0.0 on only full releases go to the stores (until then the 1.0.0 betas do), so the stores always list a plain version. CI no longer runs on pushes to `pub`, which only takes tested PRs from `dev`.
 - **The release page lists only what people need** to install and run WDM: 19 files instead of 28. The command-line archive now includes the browser's native host (`wdm-nmhost`), so the five separate host archives are gone. What only the release jobs use (`latest.json`, the store uploads, the package manifests, the SBOMs) is kept with the release run as its `release-internal` artifact.
 
 ## 1.0.0-beta.3 (2026-11-22)
