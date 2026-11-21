@@ -243,7 +243,7 @@ where
     relay.start_connecting();
 
     let mut result = Ok(());
-    while !relay.output_closed {
+    while !relay.output_closed && !relay.quit {
         tokio::select! {
             inbound = in_rx.recv() => match inbound {
                 None => break,
@@ -305,6 +305,8 @@ struct Relay {
     cfg: Config,
     out: mpsc::Sender<Vec<u8>>,
     output_closed: bool,
+    /// The user quit the app: the host ends ([`Relay::end_if_quit`]).
+    quit: bool,
     conn: Conn,
     waiting: Vec<Waiter>,
     /// Requests sent to the daemon and not yet answered, keyed by their id
@@ -330,6 +332,7 @@ impl Relay {
             cfg,
             out,
             output_closed: false,
+            quit: false,
             conn: Conn::Down {
                 retry_at: Instant::now(),
             },
@@ -409,6 +412,7 @@ impl Relay {
                     self.waiting.push(Waiter::Status { id });
                 } else {
                     self.reply_status(id, false).await;
+                    self.end_if_quit();
                 }
             }
         }
@@ -425,6 +429,7 @@ impl Relay {
                 } else if let Some(id) = id {
                     self.reply_unavailable(id, "the wdm daemon is not running")
                         .await;
+                    self.end_if_quit();
                 }
             }
         }
@@ -488,7 +493,9 @@ impl Relay {
                 self.retry_delay = (self.retry_delay * 2).min(self.cfg.retry_max);
                 self.report(false).await;
                 let reason = format!("the wdm daemon is not available: {e}");
-                for waiter in std::mem::take(&mut self.waiting) {
+                let waited = std::mem::take(&mut self.waiting);
+                let answered = !waited.is_empty();
+                for waiter in waited {
                     match waiter {
                         Waiter::Status { id } => self.reply_status(id, false).await,
                         Waiter::Forward { id: Some(id), .. } => {
@@ -496,6 +503,11 @@ impl Relay {
                         }
                         Waiter::Forward { id: None, .. } => {}
                     }
+                }
+                // Never on the attempt made at start alone: the browser's first
+                // message may not have arrived yet, and it must get its answer.
+                if answered {
+                    self.end_if_quit();
                 }
             }
             ConnEvent::Daemon(Some(Ok(Message::Text(text)))) => self.on_daemon_text(text).await,
@@ -636,6 +648,18 @@ impl Relay {
             .await;
         }
         self.report(false).await;
+        self.end_if_quit();
+    }
+
+    /// The user quit the app (it stopped its daemon): end this host too, once
+    /// what waited has been answered, so nothing of WDM keeps running. The
+    /// browser starts a new host when the extension next needs one, which
+    /// then answers "not running" at once and ends again.
+    fn end_if_quit(&mut self) {
+        if self.app_quit() {
+            log::debug("the user quit the app: the host ends too");
+            self.quit = true;
+        }
     }
 
     // ------------------------------------------------------------ connection
