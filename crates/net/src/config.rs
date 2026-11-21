@@ -21,10 +21,16 @@ pub struct NetConfig {
     /// address gets before the next one is tried in parallel. Default
     /// 250 ms (the RFC's recommendation).
     pub happy_eyeballs_delay: Duration,
-    /// Backstop for a silent server: no response head, or no body bytes,
-    /// for this long fails the request with `Transient`. Stall detection is
-    /// the engine's job (contract point 5); keep this ≥ 30 s. Default 60 s.
+    /// Backstop for a silent body: no bytes for this long fails the stream
+    /// with `Transient`. Stall detection is the engine's job (contract point
+    /// 5); keep this ≥ 30 s. Default 60 s.
     pub idle_timeout: Duration,
+    /// How long a request waits for the response head. Longer than
+    /// `idle_timeout`: some servers build the file before they answer (a
+    /// report, a zip made on the fly), and giving up sends the request again,
+    /// which makes such a server start over, so the download never begins.
+    /// Firefox waits 300 s (`network.http.response.timeout`). Default 300 s.
+    pub head_timeout: Duration,
     /// How long an unused connection (kept alive after a request, or opened
     /// by `preconnect`) stays in the pool. Default 30 s.
     pub pool_idle_timeout: Duration,
@@ -66,6 +72,7 @@ impl Default for NetConfig {
             connect_timeout: Duration::from_secs(10),
             happy_eyeballs_delay: Duration::from_millis(250),
             idle_timeout: Duration::from_secs(60),
+            head_timeout: Duration::from_secs(300),
             pool_idle_timeout: Duration::from_secs(30),
             max_redirects: 10,
             http2: true,

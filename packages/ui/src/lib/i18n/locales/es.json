@@ -232,7 +232,8 @@
     "asFile": "Descargar la página en su lugar",
     "asMedia": "Elegir un formato de vídeo en su lugar",
     "addingPlaylist": "Añadiendo {{done}} / {{total}}…",
-    "addedPlaylist": "Añadida «{{name}}»: {{count}} descargas"
+    "addedPlaylist": "Añadida «{{name}}»: {{count}} descargas",
+    "folderSorted": "Se guarda en la carpeta {{folder}} dentro de esta."
   },
   "confirm": {
     "title": "Nueva descarga desde tu navegador",
@@ -305,9 +306,7 @@
     "launchAtLogin": "Iniciar Whoosh Download Manager al iniciar sesión",
     "launchAtLoginHint": "Se inicia en la bandeja, sin abrir la ventana.",
     "closeToTray": "Al cerrar la ventana, Whoosh Download Manager sigue en la bandeja",
-    "closeToTrayHint": "Las descargas continúan. Para salir, usa el menú de la bandeja.",
-    "stopDaemonOnQuit": "Al salir, también se detienen las descargas",
-    "stopDaemonOnQuitHint": "Desactivado: las descargas siguen en segundo plano para la extensión del navegador y la línea de comandos.",
+    "closeToTrayHint": "Las descargas siguen. Salir desde el menú de la bandeja cierra WDM por completo, y el navegador se queda con sus descargas hasta que vuelvas a abrir WDM.",
     "privacy": "Privacidad",
     "crashReports": "Enviar informes de errores",
     "crashReportsHint": "Whoosh Download Manager envía informes de errores anónimos para ayudar a corregir fallos: el error, en qué parte de WDM ocurrió, la versión de la aplicación y el sistema operativo. Sin nombres de archivo, enlaces ni nombre de usuario. Activado salvo que lo desactives; el servicio en segundo plano aplicará el cambio la próxima vez que se inicie.",
@@ -332,7 +331,17 @@
     "installUpdate": "Instalar y reiniciar",
     "installing": "Instalando…",
     "updateFailed": "No se pudieron buscar actualizaciones: {{message}}",
-    "installFailed": "No se pudo instalar la actualización: {{message}}"
+    "installFailed": "No se pudo instalar la actualización: {{message}}",
+    "organize": "Ordenar las descargas en carpetas por tipo",
+    "organizeHint": "{{folders}} dentro de la carpeta de descargas; cada una se crea cuando llega el primer archivo de ese tipo. Los demás archivos quedan en la carpeta de descargas. Se respeta la carpeta que elijas para una descarga."
+  },
+  "organize": {
+    "title": "¿Ordenar las descargas en carpetas?",
+    "body": "WDM puede mantener {{folder}} ordenada guardando cada descarga en una carpeta según su tipo.",
+    "folders": "Estas carpetas se crean dentro cuando llega el primer archivo de ese tipo:",
+    "note": "Los demás archivos quedan en {{folder}}. Siempre se respeta la carpeta que elijas para una descarga, y puedes cambiar esto en Settings.",
+    "yes": "Ordenar en carpetas",
+    "no": "Dejar todo en una carpeta"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager envía informes de errores anónimos para ayudar a corregir fallos. Sin nombres de archivo ni enlaces. Puedes desactivarlo en Configuración.",
@@ -543,7 +552,8 @@
     "autoUpdate": "Buscar actualizaciones una vez al día",
     "autoUpdateHint": "Si no, Whoosh Download Manager solo busca cuando usted lo pide.",
     "error": "El último intento falló: {{message}}",
-    "checkFailed": "No se pudo buscar actualizaciones: {{message}}"
+    "checkFailed": "No se pudo buscar actualizaciones: {{message}}",
+    "notNeeded": "No hace falta: se usa {{name}} en su lugar. Solo se descarga si {{name}} deja de funcionar."
   },
   "browsers": {
     "title": "Conecta tu navegador",

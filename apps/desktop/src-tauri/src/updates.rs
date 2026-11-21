@@ -260,7 +260,7 @@ async fn install_ready<R: Runtime>(app: &AppHandle<R>, quitting: bool) {
         eprintln!("wdm-desktop: update: could not stop the daemon: {err}");
     }
     match update.install(bytes) {
-        Ok(()) if quitting => app.exit(0),
+        Ok(()) if quitting => crate::exit_cleanly(app).await,
         Ok(()) => app.restart(),
         Err(err) => {
             eprintln!("wdm-desktop: installing {}: {err}", update.version);
@@ -284,7 +284,7 @@ pub fn install_on_quit<R: Runtime>(app: &AppHandle<R>) -> bool {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         install_ready(&app, true).await;
-        app.exit(0);
+        crate::exit_cleanly(&app).await;
     });
     true
 }

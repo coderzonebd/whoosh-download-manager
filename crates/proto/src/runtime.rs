@@ -19,6 +19,12 @@ pub const DATA_DIR_ENV: &str = "WDM_DATA_DIR";
 /// The runtime file's name inside the data directory.
 pub const RUNTIME_FILE: &str = "runtime.json";
 
+/// Written to the data directory by the desktop app when the user quits it
+/// (and so stops its daemon), removed when the app starts again. While it
+/// is there the browser's native host does not start the app for a
+/// download: the browser keeps its downloads until the user opens WDM.
+pub const APP_QUIT_FILE: &str = "app-quit";
+
 /// The contents of `runtime.json`. `token` is a secret: `Debug` redacts it.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeInfo {

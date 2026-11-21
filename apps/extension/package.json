@@ -1,6 +1,6 @@
 {
   "name": "@wdm/extension",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "private": true,
   "description": "wdm browser extension (Pro mode: hands browser downloads to the wdm daemon)",
   "license": "GPL-3.0-or-later",

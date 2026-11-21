@@ -451,6 +451,93 @@ async fn starts_the_app_when_a_download_arrives_and_no_daemon_runs() {
 }
 
 #[tokio::test]
+async fn after_the_user_quit_the_app_a_download_is_left_to_the_browser() {
+    let dir = TempDir::new("launch-quit");
+    let runtime = dir.runtime_file();
+    std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+    std::fs::write(
+        runtime
+            .parent()
+            .unwrap()
+            .join(wdm_nmhost::runtime::APP_QUIT_FILE),
+        "",
+    )
+    .unwrap();
+    let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut cfg = test_config(runtime);
+    cfg.app_start_wait = Duration::from_secs(30);
+    let counter = launches.clone();
+    cfg.launcher = relay::Launcher(Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut browser = Browser::start(cfg);
+    // The host's own first attempt (at start, with no daemon) has failed before
+    // the browser speaks, as it happened on macOS: the host must still be there
+    // to answer, and not have ended on that attempt.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let t0 = std::time::Instant::now();
+    browser
+        .send(r#"{"jsonrpc":"2.0","id":1,"method":"download.add","params":{"url":"https://example.com/a.zip"}}"#)
+        .await;
+    // Refused at once (no 30 s wait for an app start), so the browser keeps it.
+    let reply = browser.recv_until(|m| m["id"] == 1).await;
+    assert_eq!(reply["error"]["code"], -32007, "{reply}");
+    assert!(t0.elapsed() < Duration::from_secs(10));
+    assert_eq!(launches.load(std::sync::atomic::Ordering::SeqCst), 0);
+    // Having answered, the host ends by itself (the user quit the app).
+    tokio::time::timeout(WAIT, browser.task)
+        .await
+        .expect("the host did not end after answering")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn after_a_quit_a_message_sent_right_away_is_answered_too() {
+    // The browser speaks before the host's first attempt has failed (as on Linux).
+    let dir = TempDir::new("launch-quit-early");
+    let runtime = dir.runtime_file();
+    std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+    std::fs::write(
+        runtime
+            .parent()
+            .unwrap()
+            .join(wdm_nmhost::runtime::APP_QUIT_FILE),
+        "",
+    )
+    .unwrap();
+    let mut browser = Browser::start(test_config(runtime));
+    assert_eq!(browser.status(1).await["daemonRunning"], false);
+    tokio::time::timeout(WAIT, browser.task)
+        .await
+        .expect("the host did not end after answering")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn the_host_ends_when_the_user_quits_the_app() {
+    let dir = TempDir::new("host-quit");
+    let daemon = FakeDaemon::start("q").await;
+    write_runtime(&dir.runtime_file(), daemon.port, "q");
+    let mut browser = Browser::start(test_config(dir.runtime_file()));
+    assert_eq!(browser.status(1).await["daemonRunning"], true);
+    // Quit: the app leaves its mark and stops the daemon.
+    std::fs::write(dir.0.join(wdm_nmhost::runtime::APP_QUIT_FILE), "").unwrap();
+    daemon.stop().await;
+    // The host says the daemon is gone, then ends on its own (stdin still open).
+    let gone = browser
+        .recv_until(|m| m["method"] == "event.nm.status")
+        .await;
+    assert_eq!(gone["params"]["daemonRunning"], false);
+    tokio::time::timeout(WAIT, browser.task)
+        .await
+        .expect("the host did not end after the user quit the app")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
 async fn a_status_check_alone_never_starts_the_app() {
     let dir = TempDir::new("launch-status");
     let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));

@@ -43,7 +43,7 @@ export interface AppOptions {
 export type QueueDialog = { mode: "create" } | { mode: "edit"; name: string };
 
 interface StatusSource {
-  onStatus(h: (s: { state: string; hello?: { capabilities?: string[] } }) => void): () => void;
+  onStatus(h: (s: { state: string; hello?: { capabilities?: string[]; daemonVersion?: string } }) => void): () => void;
 }
 function hasStatus(c: unknown): c is StatusSource {
   return typeof (c as Partial<StatusSource>)?.onStatus === "function";
@@ -133,10 +133,16 @@ export class AppState {
    * there (`Host.openPrompt`), never here.
    */
   readonly delegates: boolean;
+  /** The daemon's version from the last hello, when the client reports it. */
+  daemonVersion = $state<string | undefined>(undefined);
   /** Capabilities from the last hello, when the client reports them. */
   #capabilities: string[] | undefined;
 
   readonly #off: (() => void)[] = [];
+  /** The connection was open at least once (a later "open" is a reconnect). */
+  #wasOpen = false;
+  /** A reload is running; a second one would only repeat its calls. */
+  #reloading = false;
   readonly #storage: Storage | null;
 
   constructor(client: WdmClient, opts: AppOptions = {}) {
@@ -167,10 +173,15 @@ export class AppState {
         client.onStatus((s) => {
           const st = s.state as Connection;
           if (s.hello) this.#capabilities = s.hello.capabilities ?? [];
-          // The prompt window also loads again when its first load failed (the daemon was starting).
-          const resync = st === "open" && (this.connection === "reconnecting" || (this.prompt && !this.loaded));
+          if (s.hello?.daemonVersion) this.daemonVersion = s.hello.daemonVersion;
+          // Load again on every (re)connection after the first, since events were missed while
+          // away, and on the first one when the first load already failed: the daemon was still
+          // starting and the calls timed out. (The client reports "connecting" before each
+          // attempt, so the state just before "open" is not "reconnecting" even after a drop.)
+          const resync = st === "open" && this.connection !== "open" && (this.#wasOpen || !this.loaded);
+          if (st === "open") this.#wasOpen = true;
           this.connection = st;
-          if (resync) void this.reload(); // events were missed while away
+          if (resync) void this.reload();
         }),
       );
     } else this.connection = "open";
@@ -229,6 +240,16 @@ export class AppState {
 
   /** (Re)load the list, settings and stats — at start and after a reconnect. */
   async reload(): Promise<void> {
+    if (this.#reloading) return;
+    this.#reloading = true;
+    try {
+      await this.#reload();
+    } finally {
+      this.#reloading = false;
+    }
+  }
+
+  async #reload(): Promise<void> {
     const [list, settings, stats] = await Promise.allSettled([
       this.client.call("download.list", {}),
       this.client.call("settings.get", undefined),
@@ -693,6 +714,23 @@ export class AppState {
     } catch (e) {
       this.report(e);
     }
+  }
+
+  /** "Not now" on the sort-into-folders question: asked again at the next start. */
+  organizeDismissed = $state(false);
+
+  /**
+   * Ask once whether to sort downloads into folders by type: the daemon has not been told
+   * (`organizeByCategory` absent), and sorting creates folders, so it waits for the user.
+   */
+  get askOrganize(): boolean {
+    return this.connection === "open" && this.settings !== undefined && this.settings.organizeByCategory === undefined && !this.organizeDismissed;
+  }
+
+  /** The answer to that question, kept by the daemon (`settings.set`). */
+  async setOrganize(on: boolean): Promise<boolean> {
+    if (!this.settings) return false;
+    return this.saveSettings({ ...this.settings, organizeByCategory: on });
   }
 
   async saveSettings(next: Settings): Promise<boolean> {

@@ -26,6 +26,13 @@ pub struct DownloadRecord {
     #[serde(default)]
     pub filename_locked: bool,
     pub directory: String,
+    /// `directory` was not chosen by the user: it is the default directory,
+    /// or the folder for the download's category inside it when sorting by
+    /// category. Such a download moves to another category's folder when a
+    /// probe changes its name, before any byte is written. False for
+    /// records written before it was kept.
+    #[serde(default)]
+    pub directory_auto: bool,
     pub category: Option<String>,
     pub queue: Option<String>,
     pub state: DownloadState,

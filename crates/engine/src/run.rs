@@ -675,12 +675,15 @@ impl Driver {
             if name != self.filename {
                 // Checked and stored in one critical section (two probes
                 // naming the same file must not share a part file).
-                if let Some(reserved) =
+                if let Some((reserved, dir)) =
                     self.inner
                         .reserve_name(&self.id, self.generation, &name, self.category_auto)
                 {
                     name = reserved;
                     self.filename = name;
+                    // The folder for the new name's category, when sorting by
+                    // category and the user did not pick the folder.
+                    self.directory = dir;
                 }
             }
         }

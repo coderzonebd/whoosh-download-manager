@@ -198,7 +198,8 @@ pub fn open_extension_page(browser: String) -> Result<(), String> {
 }
 
 /// A user-level manifest that points at a host which no longer exists (the
-/// app was moved, or an AppImage copy was deleted).
+/// app was moved, or an AppImage copy was deleted) or at a verbatim Windows
+/// path that browsers cannot start.
 fn stale_user_manifest(browser: Browser) -> bool {
     let Ok(targets) = register::targets(Os::current(), &Env::from_process(), browser) else {
         return false;
@@ -210,8 +211,10 @@ fn stale_user_manifest(browser: Browser) -> bool {
         std::fs::read(path)
             .ok()
             .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-            .and_then(|v| v.get("path").and_then(|p| p.as_str()).map(PathBuf::from))
-            .is_some_and(|host| !host.is_file())
+            .and_then(|v| v.get("path").and_then(|p| p.as_str()).map(str::to_owned))
+            // 1.0.0-beta.2 and earlier wrote a verbatim path on Windows, which
+            // browsers cannot launch: rewrite it.
+            .is_some_and(|host| register::is_verbatim(&host) || !Path::new(&host).is_file())
     })
 }
 

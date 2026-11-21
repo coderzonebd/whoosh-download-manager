@@ -9,7 +9,7 @@
 // UIs run on it until the daemon exists (Phase 1); tests drive it with
 // `autoTick: false` and `advance(ms)` for deterministic results.
 
-import { CATEGORIES, categoryForFilename } from "./categories";
+import { CATEGORIES, categoryFolder, categoryForFilename } from "./categories";
 import { WdmConnectionError, WdmRpcError, JsonRpcErrorCode } from "./errors";
 import {
   ErrorCode,
@@ -84,6 +84,13 @@ const TOOL_INSTALL_MS = 1500;
 const MOCK_YT_DLP_VERSION = "2026.10.26";
 const MOCK_YT_DLP_LATEST = "2026.11.10";
 const VERIFY_MS = 900;
+/** Where each media tool comes from, and its licence (as the daemon reports them). */
+const MOCK_TOOL_ORIGIN: Record<string, [string, string]> = {
+  "yt-dlp": ["github.com/yt-dlp/yt-dlp", "Unlicense"],
+  ffmpeg: ["github.com/BtbN/FFmpeg-Builds", "LGPL-2.1-or-later"],
+  deno: ["github.com/denoland/deno", "MIT"],
+  quickjs: ["github.com/quickjs-ng/quickjs", "MIT"],
+};
 const MIN_SPLIT_BYTES = 2 * MB;
 
 const DEFAULT_SETTINGS: Settings = {
@@ -353,8 +360,8 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
     const t: MediaTool = {
       name,
       state: ready ? "ready" : "missing",
-      upstream: name === "yt-dlp" ? "github.com/yt-dlp/yt-dlp" : "github.com/BtbN/FFmpeg-Builds",
-      license: name === "yt-dlp" ? "Unlicense" : "LGPL-2.1-or-later",
+      upstream: MOCK_TOOL_ORIGIN[name]?.[0] ?? "github.com/BtbN/FFmpeg-Builds",
+      license: MOCK_TOOL_ORIGIN[name]?.[1] ?? "LGPL-2.1-or-later",
     };
     if (ready) {
       t.source = "managed";
@@ -364,7 +371,13 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
     return t;
   };
   const mediaTools: MediaToolsStatus = {
-    tools: [tool("yt-dlp", !options.mediaToolsMissing, MOCK_YT_DLP_VERSION), tool("ffmpeg", false)],
+    // As a desktop install has them: Deno ready (fetched with the others), QuickJS only its stand-in.
+    tools: [
+      tool("yt-dlp", !options.mediaToolsMissing, MOCK_YT_DLP_VERSION),
+      tool("ffmpeg", false),
+      tool("deno", !options.mediaToolsMissing, "2.9.8"),
+      tool("quickjs", false),
+    ],
     autoUpdate: false,
   };
   /** Simulated time at which an installing tool is ready. */
@@ -709,8 +722,13 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
 
   function add(params: AddParams): { id: string; awaitingConfirmation?: boolean } {
     const p = probe(params.url);
-    const directory = params.directory?.trim() || settings.defaultDirectory;
-    const filename = uniqueFilename(directory, params.filename?.trim() || p.filename);
+    const wanted = params.filename?.trim() || p.filename;
+    // As the daemon: the category's folder inside the default directory when sorting by category.
+    const folder = settings.organizeByCategory === true ? categoryFolder(params.category || categoryForFilename(wanted)) : undefined;
+    const base = settings.defaultDirectory.replace(/[\\/]+$/, "");
+    const auto = folder ? `${base}${settings.defaultDirectory.includes("\\") ? "\\" : "/"}${folder}` : settings.defaultDirectory;
+    const directory = params.directory?.trim() || auto;
+    const filename = uniqueFilename(directory, wanted);
     const start = params.start ?? true;
     // A browser download waits for the user (the real daemon decides "from the browser" itself).
     const ask = params.fromBrowser === true && start && settings.confirmBrowserDownloads !== false;
@@ -891,6 +909,8 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
     if (v.confirmBrowserDownloads !== undefined && typeof v.confirmBrowserDownloads !== "boolean") throw invalidParams("confirmBrowserDownloads must be true or false");
     // Absent means true, as in the daemon.
     out.confirmBrowserDownloads = v.confirmBrowserDownloads ?? true;
+    if (v.organizeByCategory !== undefined && typeof v.organizeByCategory !== "boolean") throw invalidParams("organizeByCategory must be true or false");
+    if (v.organizeByCategory !== undefined) out.organizeByCategory = v.organizeByCategory;
     if (v.speedSchedule !== undefined) {
       for (const w of v.speedSchedule) {
         if (!isClockTime(w.from) || !isClockTime(w.to)) throw invalidParams("speed window times must be HH:MM");

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Settings that belong to this app, not to the daemon (whose settings every
-//! client shares): what closing the window and Quit do, and the update
-//! check. Kept in
+//! client shares): what closing the window does, and the update check.
+//! (Quit always closes WDM completely; the `stopDaemonOnQuit` key of
+//! earlier versions is ignored.) Kept in
 //! `<app config dir>/desktop.json`; a missing or unreadable file means the
 //! defaults.
 
@@ -18,9 +19,6 @@ const FILE: &str = "desktop.json";
 pub struct Prefs {
     /// Closing the window hides it to the tray; downloads go on.
     pub close_to_tray: bool,
-    /// Quit also stops the daemon. Off by default: the daemon keeps
-    /// downloading for the CLI and the browser extension.
-    pub stop_daemon_on_quit: bool,
     /// The "still running in the tray" notice has been shown once.
     pub tray_notice_shown: bool,
     /// The UI's language when it last ran, so the tray starts in it
@@ -41,7 +39,6 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             close_to_tray: true,
-            stop_daemon_on_quit: false,
             tray_notice_shown: false,
             language: String::new(),
             auto_update_check: true,
@@ -109,10 +106,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_keep_the_daemon_running() {
+    fn defaults() {
         let p = Prefs::default();
         assert!(p.close_to_tray);
-        assert!(!p.stop_daemon_on_quit);
         assert!(p.auto_update_check);
         assert!(!p.browser_setup_shown);
         // Not set yet: the first start of an installed build turns launch at login on.
@@ -121,9 +117,8 @@ mod tests {
 
     #[test]
     fn missing_fields_take_defaults() {
-        let p: Prefs = serde_json::from_str(r#"{"stopDaemonOnQuit": true}"#).unwrap();
-        assert!(p.stop_daemon_on_quit);
-        assert!(p.close_to_tray);
+        let p: Prefs = serde_json::from_str(r#"{"closeToTray": false}"#).unwrap();
+        assert!(!p.close_to_tray);
         assert!(!p.tray_notice_shown);
     }
 }

@@ -261,6 +261,31 @@ pub fn targets(os: Os, env: &Env, browser: Browser) -> Result<Vec<Target>, Regis
     })
 }
 
+/// `host_path` as browsers can launch it. On Windows `canonicalize` returns
+/// a verbatim path (`\\?\C:\...`); Chrome and Edge start the host through
+/// `cmd.exe`, which cannot run such a path, so the extension only sees
+/// "Error when communicating with the native messaging host". Strip the
+/// prefix (`\\?\UNC\server\share` becomes `\\server\share`); other paths are
+/// returned unchanged.
+pub fn launchable_path(host_path: &Path) -> PathBuf {
+    let Some(s) = host_path.to_str() else {
+        return host_path.to_path_buf();
+    };
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => host_path.to_path_buf(),
+    }
+}
+
+/// True for a verbatim Windows path (`\\?\...`), which browsers cannot
+/// launch; manifests written by 1.0.0-beta.2 and earlier have one.
+pub fn is_verbatim(path: &str) -> bool {
+    path.starts_with(r"\\?\")
+}
+
 /// The manifest for Chromium-based browsers.
 pub fn chromium_manifest(host_path: &Path, extension_ids: &[String]) -> Value {
     let origins: Vec<String> = extension_ids
@@ -270,7 +295,7 @@ pub fn chromium_manifest(host_path: &Path, extension_ids: &[String]) -> Value {
     json!({
         "name": HOST_NAME,
         "description": DESCRIPTION,
-        "path": host_path,
+        "path": launchable_path(host_path),
         "type": "stdio",
         "allowed_origins": origins,
     })
@@ -281,7 +306,7 @@ pub fn firefox_manifest(host_path: &Path, extension_ids: &[String]) -> Value {
     json!({
         "name": HOST_NAME,
         "description": DESCRIPTION,
-        "path": host_path,
+        "path": launchable_path(host_path),
         "type": "stdio",
         "allowed_extensions": extension_ids,
     })
@@ -466,6 +491,30 @@ mod registry {
 mod tests {
     use super::*;
     use crate::{DEV_CHROMIUM_EXTENSION_ID, FIREFOX_EXTENSION_ID};
+
+    #[test]
+    fn manifests_never_hold_a_verbatim_windows_path() {
+        let verbatim =
+            Path::new(r"\\?\C:\Users\Ann\AppData\Local\Whoosh Download Manager\wdm-nmhost.exe");
+        let plain = r"C:\Users\Ann\AppData\Local\Whoosh Download Manager\wdm-nmhost.exe";
+        assert_eq!(launchable_path(verbatim), PathBuf::from(plain));
+        assert_eq!(chromium_manifest(verbatim, &[])["path"], plain);
+        assert_eq!(firefox_manifest(verbatim, &[])["path"], plain);
+        assert_eq!(
+            launchable_path(Path::new(r"\\?\UNC\srv\share\wdm-nmhost.exe")),
+            PathBuf::from(r"\\srv\share\wdm-nmhost.exe")
+        );
+        // Other paths, and verbatim paths that are not a drive or UNC path, stay.
+        for keep in [
+            "/usr/bin/wdm-nmhost",
+            r"C:\wdm\wdm-nmhost.exe",
+            r"\\?\Volume{1}\wdm-nmhost.exe",
+        ] {
+            assert_eq!(launchable_path(Path::new(keep)), PathBuf::from(keep));
+        }
+        assert!(is_verbatim(r"\\?\C:\x.exe"));
+        assert!(!is_verbatim(r"C:\x.exe"));
+    }
 
     struct TempHome(PathBuf);
 

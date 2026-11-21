@@ -222,7 +222,8 @@
     "asFile": "Unduh halamannya saja",
     "asMedia": "Pilih format video",
     "addingPlaylist": "Menambahkan {{done}} / {{total}}…",
-    "addedPlaylist": "“{{name}}” ditambahkan: {{count}} unduhan"
+    "addedPlaylist": "“{{name}}” ditambahkan: {{count}} unduhan",
+    "folderSorted": "Masuk ke folder {{folder}} di dalam folder ini."
   },
   "confirm": {
     "title": "Unduhan baru dari browser Anda",
@@ -291,9 +292,7 @@
     "launchAtLogin": "Jalankan Whoosh Download Manager saat saya masuk",
     "launchAtLoginHint": "Whoosh Download Manager berjalan di baki sistem tanpa membuka jendela.",
     "closeToTray": "Menutup jendela membiarkan Whoosh Download Manager tetap di baki sistem",
-    "closeToTrayHint": "Unduhan tetap berjalan. Keluar melalui menu baki sistem.",
-    "stopDaemonOnQuit": "Keluar juga menghentikan unduhan",
-    "stopDaemonOnQuitHint": "Jika nonaktif: unduhan tetap berjalan di latar belakang untuk ekstensi browser dan baris perintah.",
+    "closeToTrayHint": "Unduhan tetap berjalan. Keluar dari menu tray menutup WDM sepenuhnya, dan browser menangani unduhannya sendiri sampai Anda membuka WDM lagi.",
     "privacy": "Privasi",
     "crashReports": "Kirim laporan kerusakan",
     "crashReportsHint": "Whoosh Download Manager mengirim laporan kerusakan anonim untuk membantu memperbaiki bug: galatnya, di bagian WDM mana terjadi, versi aplikasi, dan sistem operasi. Tanpa nama file, tautan, atau nama pengguna. Aktif kecuali Anda mematikannya; layanan latar belakang mengikuti perubahan saat dijalankan berikutnya.",
@@ -318,7 +317,17 @@
     "installUpdate": "Pasang dan mulai ulang",
     "installing": "Memasang…",
     "updateFailed": "Tidak dapat memeriksa pembaruan: {{message}}",
-    "installFailed": "Tidak dapat memasang pembaruan: {{message}}"
+    "installFailed": "Tidak dapat memasang pembaruan: {{message}}",
+    "organize": "Urutkan unduhan ke folder menurut jenis",
+    "organizeHint": "{{folders}} di dalam folder unduhan, masing-masing dibuat saat file jenis itu pertama kali datang. File lain tetap di folder unduhan. Folder yang Anda pilih untuk sebuah unduhan tetap dipakai."
+  },
+  "organize": {
+    "title": "Urutkan unduhan ke dalam folder?",
+    "body": "WDM bisa menjaga {{folder}} tetap rapi dengan menaruh setiap unduhan di folder untuk jenisnya.",
+    "folders": "Folder ini dibuat di dalamnya saat file jenis itu pertama kali datang:",
+    "note": "File lain tetap di {{folder}}. Folder yang Anda pilih untuk sebuah unduhan selalu dipakai, dan Anda bisa mengubah ini di Settings.",
+    "yes": "Urutkan ke folder",
+    "no": "Simpan semua di satu folder"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager mengirim laporan kerusakan anonim untuk membantu memperbaiki bug. Tanpa nama file atau tautan. Matikan di Pengaturan.",
@@ -513,7 +522,8 @@
     "autoUpdate": "Periksa pembaruan sekali sehari",
     "autoUpdateHint": "Jika tidak, Whoosh Download Manager hanya memeriksa saat Anda minta.",
     "error": "Percobaan terakhir gagal: {{message}}",
-    "checkFailed": "Tidak bisa memeriksa pembaruan: {{message}}"
+    "checkFailed": "Tidak bisa memeriksa pembaruan: {{message}}",
+    "notNeeded": "Tidak diperlukan: {{name}} dipakai sebagai gantinya. Diunduh hanya jika {{name}} berhenti bekerja."
   },
   "browsers": {
     "title": "Hubungkan peramban Anda",

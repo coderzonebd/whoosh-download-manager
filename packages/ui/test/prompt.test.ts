@@ -156,6 +156,19 @@ describe("the prompt window", { timeout: 30_000 }, () => {
     await waitFor(() => expect(closePrompt).toHaveBeenCalledTimes(2));
   });
 
+  it("keeps asking to close while nothing is left, and offers a Close button", async () => {
+    const m = mock();
+    // The first requests do nothing (the window stayed open on Windows).
+    const closePrompt = vi.fn(() => Promise.resolve());
+    const user = userEvent.setup();
+    render(PromptApp, { props: { client: m, mode: "mock", storage: null, locale: "en", host: { closePrompt }, closeDelayMs: 0 } });
+    await screen.findByText("Nothing is waiting.");
+    await waitFor(() => expect(closePrompt).toHaveBeenCalledTimes(2), { timeout: 4000 });
+    const before = closePrompt.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(closePrompt.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it("says when a followed download is complete, also after it was hidden", async () => {
     const m = mock();
     const { id } = await m.call("download.add", { url: "https://cdn.example.com/files/report-2026.pdf", fromBrowser: true });

@@ -46,6 +46,7 @@ impl EngineConfig {
                 durability: Default::default(),
                 speed_schedule: Vec::new(),
                 confirm_browser_downloads: true,
+                organize_by_category: None,
             },
             tuning: Tuning::default(),
             capabilities: vec!["http".into(), "https".into(), "preconnect".into()],

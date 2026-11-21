@@ -728,17 +728,31 @@ async fn h2_streams_per_connection() {
     }
 }
 
-/// A slow response head is a `Transient` error after `idle_timeout`.
+/// A slow response head is a `Transient` error after `head_timeout`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn head_timeout() {
     // 30 s of server think-time against a 200 ms limit: no race with load.
     let slow = custom("slow-head", "[latency]\nttfb_ms = 30000");
-    let lab = Lab::with(T::H1, slow, |c| c.idle_timeout = Duration::from_millis(200)).await;
+    let lab = Lab::with(T::H1, slow, |c| c.head_timeout = Duration::from_millis(200)).await;
     let e = lab.source("slow-head", "1m.bin").probe().await.unwrap_err();
     assert!(
         matches!(&e, SourceError::Transient(m) if m.contains("no response")),
         "{e:?}"
     );
+}
+
+/// A server that thinks longer than `idle_timeout` before it answers (it
+/// builds the file first) is waited for: the head wait is `head_timeout`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_slow_first_answer_is_waited_for() {
+    let slow = custom("slow-answer", "[latency]\nttfb_ms = 1500");
+    let lab = Lab::with(T::H1, slow, |c| {
+        c.idle_timeout = Duration::from_millis(300);
+        c.head_timeout = Duration::from_secs(20);
+    })
+    .await;
+    let m = lab.source("slow-answer", "1m.bin").probe().await.unwrap();
+    assert_eq!(m.size, Some(1 << 20));
 }
 
 /// Preconnect over TLS, then the probe and an open use that connection.

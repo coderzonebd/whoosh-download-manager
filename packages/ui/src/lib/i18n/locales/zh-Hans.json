@@ -222,7 +222,8 @@
     "asFile": "改为下载页面本身",
     "asMedia": "改为选择视频格式",
     "addingPlaylist": "正在添加 {{done}} / {{total}}…",
-    "addedPlaylist": "已添加“{{name}}”：{{count}} 个下载"
+    "addedPlaylist": "已添加“{{name}}”：{{count}} 个下载",
+    "folderSorted": "将保存到此文件夹内的 {{folder}} 文件夹。"
   },
   "confirm": {
     "title": "来自浏览器的新下载",
@@ -291,9 +292,7 @@
     "launchAtLogin": "登录时启动 Whoosh Download Manager",
     "launchAtLoginHint": "启动后驻留在托盘中，不打开窗口。",
     "closeToTray": "关闭窗口时将 Whoosh Download Manager 保留在托盘中",
-    "closeToTrayHint": "下载会继续进行。请从托盘菜单退出。",
-    "stopDaemonOnQuit": "退出时同时停止下载",
-    "stopDaemonOnQuitHint": "关闭时：下载会在后台继续，供浏览器扩展和命令行使用。",
+    "closeToTrayHint": "下载会继续。从托盘菜单退出会完全关闭 WDM，在你再次打开 WDM 之前，浏览器会自己处理下载。",
     "privacy": "隐私",
     "crashReports": "发送崩溃报告",
     "crashReportsHint": "Whoosh Download Manager 会发送匿名崩溃报告以帮助修复错误：错误内容、发生在 WDM 的哪个位置、应用版本和操作系统。不含文件名、链接或用户名。除非你关闭，否则保持开启；后台服务会在下次启动时应用更改。",
@@ -318,7 +317,17 @@
     "installUpdate": "安装并重启",
     "installing": "正在安装…",
     "updateFailed": "无法检查更新：{{message}}",
-    "installFailed": "无法安装更新：{{message}}"
+    "installFailed": "无法安装更新：{{message}}",
+    "organize": "按类型将下载整理到文件夹",
+    "organizeHint": "下载文件夹中的 {{folders}}，每个文件夹在该类型的第一个文件到达时创建。其他文件留在下载文件夹中。你为某个下载选择的文件夹会保持不变。"
+  },
+  "organize": {
+    "title": "要将下载整理到文件夹中吗？",
+    "body": "WDM 可以把每个下载放进对应类型的文件夹，让 {{folder}} 保持整洁。",
+    "folders": "该类型的第一个文件到达时，会在其中创建以下文件夹：",
+    "note": "其他文件留在 {{folder}} 中。你为某个下载选择的文件夹始终保留，可以在 Settings 中更改此设置。",
+    "yes": "整理到文件夹",
+    "no": "全部放在一个文件夹"
   },
   "crashNotice": {
     "text": "Whoosh Download Manager 会发送匿名崩溃报告以帮助修复错误。不含文件名或链接。可在设置中关闭。",
@@ -513,7 +522,8 @@
     "autoUpdate": "每天检查一次更新",
     "autoUpdateHint": "否则 Whoosh Download Manager 只在你要求时检查。",
     "error": "上次尝试失败：{{message}}",
-    "checkFailed": "无法检查更新：{{message}}"
+    "checkFailed": "无法检查更新：{{message}}",
+    "notNeeded": "不需要：改用 {{name}}。只有 {{name}} 无法使用时才会下载。"
   },
   "browsers": {
     "title": "连接你的浏览器",
