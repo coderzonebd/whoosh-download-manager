@@ -484,6 +484,28 @@ async fn after_the_user_quit_the_app_a_download_is_left_to_the_browser() {
 }
 
 #[tokio::test]
+async fn the_host_ends_when_the_user_quits_the_app() {
+    let dir = TempDir::new("host-quit");
+    let daemon = FakeDaemon::start("q").await;
+    write_runtime(&dir.runtime_file(), daemon.port, "q");
+    let mut browser = Browser::start(test_config(dir.runtime_file()));
+    assert_eq!(browser.status(1).await["daemonRunning"], true);
+    // Quit: the app leaves its mark and stops the daemon.
+    std::fs::write(dir.0.join(wdm_nmhost::runtime::APP_QUIT_FILE), "").unwrap();
+    daemon.stop().await;
+    // The host says the daemon is gone, then ends on its own (stdin still open).
+    let gone = browser
+        .recv_until(|m| m["method"] == "event.nm.status")
+        .await;
+    assert_eq!(gone["params"]["daemonRunning"], false);
+    tokio::time::timeout(WAIT, browser.task)
+        .await
+        .expect("the host did not end after the user quit the app")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
 async fn a_status_check_alone_never_starts_the_app() {
     let dir = TempDir::new("launch-status");
     let launches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
