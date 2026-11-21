@@ -2,6 +2,11 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); releases are cut on `pub` (see [ADR 0006](docs/adr/0006-dev-and-pub-branches.md)).
 
+## Unreleased
+
+### Release
+- **The browser extension reaches Firefox and Edge users by itself.** Publishing a release now submits the extension to Firefox Add-ons and Microsoft Edge Add-ons (`publish-channels.yml`); once a store has reviewed it, the browser updates everyone's extension. Pre-releases go too. CI no longer runs on pushes to `pub`, which only takes tested PRs from `dev`.
+
 ## 1.0.0-beta.3 (2026-11-22)
 
 Found by testing beta.2 on a clean Windows 11 and by hand on Linux: on a fresh Windows the browser connection and the background downloads did not start at all, and that is fixed here.

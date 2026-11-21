@@ -173,8 +173,7 @@ neither, macOS artifacts are signed but not notarized (warning in the log).
 
 `GITHUB_TOKEN` covers the draft release and the attestation; no personal token
 is needed. Not used yet, but will be for automated store/package submissions:
-`CHROME_WEBSTORE_*` (client id/secret/refresh token), `AMO_JWT_ISSUER` /
-`AMO_JWT_SECRET`, `WINGET_TOKEN`, `SNAPCRAFT_STORE_CREDENTIALS`,
+`CHROME_WEBSTORE_*` (client id/secret/refresh token), `SNAPCRAFT_STORE_CREDENTIALS`,
 `AUR_SSH_KEY`, a GPG key for apt/dnf repositories, `DOCKERHUB_TOKEN`.
 
 ### Updater key
@@ -338,9 +337,14 @@ only when its secret exists in the `release` environment:
 | `WINGET_TOKEN` (secret) | winget | a GitHub token (classic, `public_repo`) of an account that forked `microsoft/winget-pkgs`. The first version is submitted by hand from the release's package manifests (`packaging/winget/README.md`); Komac updates it from then on |
 | `HOMEBREW_TAP_DEPLOY_KEY` (secret), `HOMEBREW_TAP` (variable, default `coderzonebd/homebrew-tap`) | Homebrew | the public `coderzonebd/homebrew-tap` repository and an SSH deploy key with write access on it (its private half is the secret); no personal token |
 | `AUR_SSH_PRIVATE_KEY` (secret) | AUR | an AUR account with that SSH key; the first push creates the `wdm` package |
+| `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` (secrets) | Firefox Add-ons | AMO → *Developer Hub* → *Manage API Keys* (<https://addons.mozilla.org/developers/addon/api/key/>): *Generate new credentials*; the JWT issuer and JWT secret. The job submits the release's `wdm-firefox-<v>-store.zip` as a new listed version with `web-ext sign`, the source archive and notes for the reviewers attached; AMO reviews and signs it, then Firefox updates users |
+| `EDGE_CLIENT_ID`, `EDGE_API_KEY`, `EDGE_PRODUCT_ID` (secrets) | Microsoft Edge Add-ons | Partner Center → Microsoft Edge → *Publish API* (<https://partner.microsoft.com/dashboard/microsoftedge/publishapi>): *Create API credentials* gives the client ID and the API key (it expires: renew it there and update the secret); the Product ID is on the extension's *Overview* page (a GUID, not the store's extension ID). The job uploads `wdm-chromium-<v>-store.zip` and submits it for certification (`.github/scripts/edge-submit.mjs`) |
 
 Pre-releases go only to `CLOUDSMITH_BETA_REPO` (when set); winget, Homebrew and the AUR take full
-releases. Flathub is a pull request to `flathub/flathub` by hand (`packaging/flatpak/README.md`).
+releases. The extension goes to AMO and Edge Add-ons with every release, pre-releases too: a
+pre-release's extension version (`0.65535.65535.N`) stays below the full release's, so the stores
+take that one after it. Neither job waits for the store's review. The jobs run from the workflow
+as it is at the release tag, so a job added after a tag first runs at the next release. Flathub is a pull request to `flathub/flathub` by hand (`packaging/flatpak/README.md`).
 
 ## Accounts to create
 
@@ -407,7 +411,8 @@ Phase 4).
 
 ## Not automated yet
 
-- Store uploads (Chrome Web Store, AMO, Edge Add-ons, Microsoft Store) and
+- Store uploads to the Chrome Web Store and the Microsoft Store (AMO and Edge Add-ons are
+  submitted by `publish-channels.yml`), and
   package-manager submissions (winget, Homebrew, Scoop, Flathub, AUR, Snap,
   Nix, Chocolatey). The manifests are filled in per release
   (`wdm-<v>-package-manifests.tar.gz`); submitting them is by hand.
