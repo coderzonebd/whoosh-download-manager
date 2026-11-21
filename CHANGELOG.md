@@ -2,28 +2,33 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); releases are cut on `pub` (see [ADR 0006](docs/adr/0006-dev-and-pub-branches.md)).
 
-## Unreleased
+## 1.0.0-beta.3 (2026-11-22)
+
+Found by testing beta.2 on a clean Windows 11 and by hand on Linux: on a fresh Windows the browser connection and the background downloads did not start at all, and that is fixed here.
 
 ### Downloads sorted into folders by type
 - **Like Internet Download Manager, downloads can go into a folder for their type** inside the download folder: `Programs`, `Compressed`, `Images`, `Video`, `Music` and `Documents`; other files stay in the download folder. The type comes from the final name, so a link without one (`download.php`) still lands in the right folder once the server names the file. A folder you pick for a download is used as it is.
 - The desktop app asks once before it creates any folder ("Sort downloads into folders?"), and Settings → Downloads can turn it on or off. The add dialog shows which folder a file will go to. `wdm settings set organizeByCategory=true` does the same from the command line.
 
-### Slow servers
-- **Files a server builds before it answers now download.** A report, an export or a zip made on request can take more than a minute before the server's first byte. WDM gave up after 60 s and asked again, which made such a server start over, so the download never began (seen with a PDF report). It now waits up to 5 minutes for the first answer, as Firefox does; a body that goes silent is still retried after 60 s.
+### Quit closes WDM completely
+- **Quit in the tray stops everything:** the app, its daemon and the browser's host. Until WDM is opened again the browser keeps its downloads to itself; the browser's host no longer starts the app for a caught download after a quit. Downloads go on in the background while WDM runs in the tray (closing the window keeps it there); a daemon for the command line alone is `wdm daemon start`. The "Quitting also stops downloads" switch is gone.
+- **No crash report on Linux.** The app exited while its window's page was alive, so WebKitGTK's web process crashed and Ubuntu showed "WebKitWebProcess closed unexpectedly" on every Quit. The windows are now closed first.
 
-### Windows fixes
+### Windows
 - **The daemon and the browser connection start on a fresh Windows.** `wdm-daemon.exe` and `wdm-nmhost.exe` needed the Visual C++ runtime (`VCRUNTIME140.dll`), which a fresh Windows does not have: downloads did not start and the extension showed "Not connected". The C runtime is now linked into them, and the release fails if a Windows executable still imports it.
 - **The install script works in Windows PowerShell 5.1.** `irm https://coderzonebd.github.io/wdm/install.txt | iex` stopped with "…-setup.exe is not in SHA256SUMS": PowerShell 5.1 returns GitHub's checksum file as bytes, not text. It is now decoded first.
-- **Installing over WDM, and uninstalling it, work while it runs in the background.** The daemon and the browser host keep running after the window is closed, and the installer stopped with "Error opening file for writing: …\\wdm-daemon.exe"; uninstalling left them running. The installer and the uninstaller now stop the app, the daemon and the host first, in that order, since the app starts the daemon again while it runs (a download resumes from its journal; the browser restarts the host when needed).
+- **Installing over WDM works while it runs.** The installer stopped with "Error opening file for writing: …\\wdm-daemon.exe". The installer and the uninstaller now stop the app, the daemon and the browser's host first, in that order, since the app starts the daemon again while it runs (a download resumes from its journal).
 - **Uninstalling cleans up.** It removes the logon entries and the browser host manifests, and with "Delete the application data" ticked, all of WDM's data for that user (`%LOCALAPPDATA%\wdm`: download list and history, settings, resume journal, logs, media tools) and the WebView data. Downloaded files are never touched. Updates keep everything.
-- **The download list loads once the daemon is up.** When the app started before the daemon (it took a minute after an update on Windows), "Couldn't load downloads: download.list timed out" stayed on screen after the daemon came up; the list also did not load again after a reconnect. It now loads again on every reconnection, and when the first load failed.
-- **Quit closes WDM completely.** Quit in the tray now stops the daemon as well, and until WDM is opened again the browser keeps its downloads to itself: the native host no longer starts the app for a caught download after a quit. The "Quitting also stops downloads" switch is gone: downloads go on in the background while WDM runs in the tray (closing the window keeps it there), and a daemon for the command line alone is `wdm daemon start`.
-- **The small prompt window no longer stays open with "Nothing is waiting."** It is now destroyed rather than asked to close, asks again every two seconds while it is still there, and has a Close button.
-- **Quit on Linux no longer reports a crash.** The app exited while its window's page was alive, so WebKitGTK's web process crashed and Ubuntu showed "WebKitWebProcess closed unexpectedly" on every Quit. The windows are now closed first.
-- **After Quit the browser's host ends too**, once it has answered, instead of staying until the extension's 5-minute idle close. The browser starts a new one when needed, which says "not running" at once and ends again.
-- **The app shows its version** in the status bar, to the right of the connection state (with the daemon's too when they differ).
+- **The browser host manifest holds a plain path** (`C:\…`, not `\\?\C:\…`); the app rewrites manifests written by earlier versions.
+
+### Downloads
+- **Files a server builds before it answers now download.** A report, an export or a zip made on request can take more than a minute before the server's first byte. WDM gave up after 60 s and asked again, which made such a server start over, so the download never began (seen with a PDF report). It now waits up to 5 minutes for the first answer, as Firefox does; a body that goes silent is still retried after 60 s.
+
+### The app
+- **The download list loads once the daemon is up.** When the app started before the daemon, "Couldn't load downloads: download.list timed out" stayed on screen; the list also did not load again after a reconnect. It now loads again on every reconnection, and when the first load failed.
+- **The small prompt window no longer stays open with "Nothing is waiting."** It is destroyed rather than asked to close, asks again every two seconds while it is still there, and has a Close button.
+- **The version shows in the status bar**, to the right of the connection state (with the daemon's too when they differ).
 - **QuickJS no longer looks like a failed download.** It is only Deno's stand-in for YouTube: while Deno is ready, Settings says so instead of offering to download it.
-- **The browser host manifest holds a plain path.** On Windows the registered host path was a verbatim path (`\\?\C:\…`); it is now a plain `C:\…` path, and the app rewrites manifests written by earlier versions.
 
 ## 1.0.0-beta.2 (2026-11-20)
 

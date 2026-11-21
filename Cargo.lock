@@ -6284,7 +6284,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-bench"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -6304,7 +6304,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-cli"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "clap",
  "futures",
@@ -6320,7 +6320,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-client"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "futures",
  "serde",
@@ -6334,7 +6334,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-core"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "bytes",
  "futures",
@@ -6345,7 +6345,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-crash"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "regex",
  "sentry",
@@ -6355,7 +6355,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-daemon"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "bytes",
  "clap",
@@ -6387,7 +6387,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-desktop"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -6410,7 +6410,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-engine"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "bytes",
  "fastrand",
@@ -6434,7 +6434,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-labserver"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "anyhow",
  "bytes",
@@ -6466,7 +6466,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-media"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "bytes",
  "futures",
@@ -6490,7 +6490,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-mobile"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "futures",
  "serde",
@@ -6511,7 +6511,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-net"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -6543,7 +6543,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-nmhost"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "futures",
  "serde",
@@ -6557,7 +6557,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-proto"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "futures",
  "getrandom 0.4.3",
@@ -6572,7 +6572,7 @@ dependencies = [
 
 [[package]]
 name = "wdm-store"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 dependencies = [
  "bytes",
  "crc32c",
