@@ -1,0 +1,80 @@
+# Windows test build: only the x64 NSIS installer and the portable zip,
+# unsigned, in about a quarter of the time of a full release dry run.
+# For trying a Windows fix in a VM before it is merged. Runs on a push to a
+# fix/windows-* or test/windows-* branch, or by hand. Nothing is released.
+name: Windows test build
+
+on:
+  push:
+    branches: ["fix/windows-*", "test/windows-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  TARGET: x86_64-pc-windows-msvc
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  windows-x64:
+    name: Windows x64 installer
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          node-version: "24"
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The daemon and the native host ship next to the app (ADR 0007). The
+      # static C runtime comes from .cargo/config.toml.
+      - name: Build the sidecars
+        run: node apps/desktop/scripts/sidecars.mjs --target "$TARGET"
+      - name: Build and bundle (NSIS)
+        working-directory: apps/desktop
+        run: |
+          pnpm tauri build --ci --target "$TARGET" --bundles nsis \
+            --config src-tauri/tauri.sidecars.conf.json --config src-tauri/tauri.browsers.windows.conf.json
+      - name: Check the executables need no VC++ runtime
+        run: |
+          .github/scripts/no-vcruntime.sh "target/$TARGET/release/wdm-desktop.exe" \
+            apps/desktop/src-tauri/binaries/wdm-daemon-"$TARGET".exe \
+            apps/desktop/src-tauri/binaries/wdm-nmhost-"$TARGET".exe
+      - name: Collect
+        run: |
+          set -euo pipefail
+          mkdir -p out portable
+          for f in target/"$TARGET"/release/bundle/nsis/*-setup.exe; do
+            name=$(basename "$f"); cp "$f" "out/${name// /-}"
+          done
+          cp "target/$TARGET/release/wdm-desktop.exe" portable/
+          for b in wdm-daemon wdm-nmhost; do
+            cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" "portable/$b.exe"
+          done
+          (cd portable && 7z a -tzip -mx=9 ../out/wdm-windows-x64-portable.zip . >/dev/null)
+          ls -l out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wdm-windows-x64-${{ github.sha }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
