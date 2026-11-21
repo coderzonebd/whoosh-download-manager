@@ -286,7 +286,7 @@ describe("settings", () => {
   });
 
   it("applies desktop settings right away and fills the folder from the picker", async () => {
-    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: true };
+    let prefs: DesktopPrefs = { closeToTray: true, quitStopsAll: false, autoUpdateCheck: true };
     let atLogin = false;
     const host: Host = {
       pickFolder: vi.fn(async () => "/home/me/Videos"),
@@ -310,8 +310,8 @@ describe("settings", () => {
     const tray = screen.getByRole("checkbox", { name: "Closing the window keeps Whoosh Download Manager in the tray" });
     expect(tray).toBeChecked();
     await user.click(tray);
-    await user.click(screen.getByRole("checkbox", { name: "Quitting also stops downloads" }));
-    expect(prefs).toEqual({ closeToTray: false, stopDaemonOnQuit: true, autoUpdateCheck: true });
+    await user.click(screen.getByRole("checkbox", { name: "Quit closes WDM completely" }));
+    expect(prefs).toEqual({ closeToTray: false, quitStopsAll: true, autoUpdateCheck: true });
 
     await user.click(screen.getByRole("button", { name: "Browse…" }));
     expect(screen.getByRole("textbox", { name: "Default folder" })).toHaveValue("/home/me/Videos");
@@ -500,7 +500,7 @@ describe("connect your browser and updates (desktop)", () => {
   }, 20_000);
 
   it("checks for an update and installs it", async () => {
-    let prefs: DesktopPrefs = { closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: true };
+    let prefs: DesktopPrefs = { closeToTray: true, quitStopsAll: false, autoUpdateCheck: true };
     const updates = {
       check: vi.fn(async (): Promise<UpdateInfo | undefined> => undefined),
       install: vi.fn(async () => {}),

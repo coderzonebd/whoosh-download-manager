@@ -101,6 +101,26 @@ pub async fn shutdown(data_dir: &Path) -> Result<(), String> {
     }
 }
 
+/// Writes (`quit`) or removes the mark that the user quit the app
+/// (`wdm_proto::runtime::APP_QUIT_FILE`). While it is there the browser's
+/// native host leaves downloads to the browser instead of starting the app.
+/// Best effort: without it the host only starts the app as before.
+pub fn mark_quit(quit: bool) {
+    let Ok(dir) = data_dir() else { return };
+    let path = dir.join(wdm_proto::runtime::APP_QUIT_FILE);
+    let result = if quit {
+        std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, b""))
+    } else {
+        match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    };
+    if let Err(e) = result {
+        eprintln!("wdm-desktop: {}: {e}", path.display());
+    }
+}
+
 /// How often the shell looks for the daemon.
 const WATCH_EVERY: Duration = Duration::from_secs(5);
 
@@ -145,6 +165,10 @@ pub fn supervise<R: Runtime>(app: &tauri::AppHandle<R>, stop: &'static AtomicBoo
 /// Called by the UI before every (re)connection.
 #[tauri::command]
 pub async fn daemon_connection<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Connection, String> {
+    // Quitting stops the daemon; the window reconnecting meanwhile must not start it again.
+    if crate::QUITTING.load(Ordering::SeqCst) {
+        return Err("WDM is quitting".into());
+    }
     let media_tools = media_tools_dir(&app);
     connection(&data_dir()?, &daemon::daemon_exe(), media_tools.as_deref()).await
 }

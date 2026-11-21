@@ -23,8 +23,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return core.invoke<T>(cmd, args);
 }
 
-function pick({ closeToTray, stopDaemonOnQuit, autoUpdateCheck }: DesktopPrefs): DesktopPrefs {
-  return { closeToTray, stopDaemonOnQuit, autoUpdateCheck };
+function pick({ closeToTray, quitStopsAll, autoUpdateCheck }: DesktopPrefs): DesktopPrefs {
+  return { closeToTray, quitStopsAll, autoUpdateCheck };
 }
 
 /** Changes some fields of `desktop.json`, keeping the rest. */

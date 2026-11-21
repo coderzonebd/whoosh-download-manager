@@ -60,7 +60,7 @@ function client(): WdmClient {
 const crash = { enabled: true, noticeShown: false };
 const mockHost: Host = {
   desktopPrefs: {
-    get: async () => ({ closeToTray: true, stopDaemonOnQuit: false, autoUpdateCheck: false }),
+    get: async () => ({ closeToTray: true, quitStopsAll: false, autoUpdateCheck: false }),
     set: async (p) => p,
   },
   launchAtLogin: { get: async () => false, set: async () => {} },

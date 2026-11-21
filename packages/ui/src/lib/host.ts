@@ -8,8 +8,8 @@
 export interface DesktopPrefs {
   /** Closing the window hides it to the tray; downloads go on. */
   closeToTray: boolean;
-  /** Quit also stops the daemon. */
-  stopDaemonOnQuit: boolean;
+  /** Quit closes WDM completely: downloads stop, and the browser keeps its downloads until WDM is opened again. */
+  quitStopsAll: boolean;
   /** Look for a new version once a day (never installs on its own). */
   autoUpdateCheck: boolean;
 }

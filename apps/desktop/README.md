@@ -22,8 +22,12 @@ GPL-3.0-or-later.
 - **Closing and quitting.** Closing the window hides it to the tray, and
   downloads go on; the first time, a notification says so. Without a tray
   (a Linux desktop with no status notifier) closing quits. *Quit* in the tray
-  leaves the daemon running for the CLI and the browser extension, unless
-  `stopDaemonOnQuit` is set. These two choices are in
+  closes WDM completely (`quitStopsAll`, on by default): the daemon stops,
+  and the app leaves an `app-quit` mark in the data directory, so the
+  browser's native host does not start the app for a download; the browser
+  keeps its downloads until WDM is opened again, which removes the mark.
+  Off: the daemon keeps running for the CLI and the browser extension.
+  These two choices are in
   `<app config dir>/desktop.json` (`desktop_prefs` / `set_desktop_prefs`),
   shown in Settings → *This computer*.
 - **Launch at login.** Off by default; turned on in Settings → *This

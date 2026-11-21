@@ -576,11 +576,26 @@ impl Relay {
         {
             return false;
         }
+        // The user quit the app: leave the download to the browser (the hand-over
+        // fails now, and the extension lets the browser keep it) until WDM is opened.
+        if self.app_quit() {
+            log::debug("no daemon for a hand-over, and the user quit the app: not starting it");
+            return false;
+        }
         log::debug("no daemon for a hand-over: starting the app");
         self.last_launch = Some(now);
         self.starting_until = Some(now + self.cfg.app_start_wait);
         (self.cfg.launcher.0)();
         true
+    }
+
+    /// The user quit the desktop app ([`crate::runtime::APP_QUIT_FILE`] next to
+    /// `runtime.json`).
+    fn app_quit(&self) -> bool {
+        self.cfg
+            .runtime_file
+            .parent()
+            .is_some_and(|dir| dir.join(crate::runtime::APP_QUIT_FILE).exists())
     }
 
     /// A `download.add` or `media.offer` was answered: start the app if it waits

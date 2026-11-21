@@ -18,9 +18,14 @@ const FILE: &str = "desktop.json";
 pub struct Prefs {
     /// Closing the window hides it to the tray; downloads go on.
     pub close_to_tray: bool,
-    /// Quit also stops the daemon. Off by default: the daemon keeps
-    /// downloading for the CLI and the browser extension.
-    pub stop_daemon_on_quit: bool,
+    /// Quit closes WDM completely: it stops the daemon, and the browser's
+    /// native host does not start the app again for a download until the
+    /// user opens it (`wdm_proto::runtime::APP_QUIT_FILE`). On by default.
+    /// Off: the daemon keeps downloading in the background, for the browser
+    /// extension and the command line. (It replaced `stopDaemonOnQuit`,
+    /// which was off by default; that key is ignored, so every install
+    /// starts with the new default.)
+    pub quit_stops_all: bool,
     /// The "still running in the tray" notice has been shown once.
     pub tray_notice_shown: bool,
     /// The UI's language when it last ran, so the tray starts in it
@@ -41,7 +46,7 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             close_to_tray: true,
-            stop_daemon_on_quit: false,
+            quit_stops_all: true,
             tray_notice_shown: false,
             language: String::new(),
             auto_update_check: true,
@@ -109,10 +114,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_keep_the_daemon_running() {
+    fn defaults_close_everything_on_quit() {
         let p = Prefs::default();
         assert!(p.close_to_tray);
-        assert!(!p.stop_daemon_on_quit);
+        assert!(p.quit_stops_all);
         assert!(p.auto_update_check);
         assert!(!p.browser_setup_shown);
         // Not set yet: the first start of an installed build turns launch at login on.
@@ -121,9 +126,16 @@ mod tests {
 
     #[test]
     fn missing_fields_take_defaults() {
-        let p: Prefs = serde_json::from_str(r#"{"stopDaemonOnQuit": true}"#).unwrap();
-        assert!(p.stop_daemon_on_quit);
+        let p: Prefs = serde_json::from_str(r#"{"quitStopsAll": false}"#).unwrap();
+        assert!(!p.quit_stops_all);
         assert!(p.close_to_tray);
         assert!(!p.tray_notice_shown);
+    }
+
+    #[test]
+    fn the_old_keep_running_default_does_not_carry_over() {
+        // Earlier versions saved `"stopDaemonOnQuit": false` for everyone.
+        let p: Prefs = serde_json::from_str(r#"{"stopDaemonOnQuit": false}"#).unwrap();
+        assert!(p.quit_stops_all);
     }
 }

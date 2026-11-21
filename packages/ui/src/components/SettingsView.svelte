@@ -552,10 +552,10 @@
               </div>
               <div class="vy-field">
                 <label class="vy-check">
-                  <input type="checkbox" checked={desktop?.stopDaemonOnQuit === true} disabled={!desktop} onchange={(e) => setDesktop("stopDaemonOnQuit", e.currentTarget.checked)} aria-describedby="vy-set-quit-hint" />
-                  {t("settings.stopDaemonOnQuit")}
+                  <input type="checkbox" checked={desktop?.quitStopsAll === true} disabled={!desktop} onchange={(e) => setDesktop("quitStopsAll", e.currentTarget.checked)} aria-describedby="vy-set-quit-hint" />
+                  {t("settings.quitStopsAll")}
                 </label>
-                <span id="vy-set-quit-hint" class="vy-hint">{t("settings.stopDaemonOnQuitHint")}</span>
+                <span id="vy-set-quit-hint" class="vy-hint">{t("settings.quitStopsAllHint")}</span>
               </div>
             {/if}
           </div>
