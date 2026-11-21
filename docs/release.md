@@ -19,15 +19,27 @@ laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 | `Whoosh-Download-Manager_<v>_universal.app.tar.gz` (updater archive) | macos-15 | updater key (below) |
 | `Whoosh-Download-Manager_<v>_amd64.AppImage`, `Whoosh-Download-Manager_<v>_amd64.deb`, `Whoosh-Download-Manager-<v>-1.x86_64.rpm` | ubuntu-22.04 (glibc 2.35) | — (see *Not automated yet*) |
 | `Whoosh-Download-Manager_<v>_aarch64.AppImage`, `Whoosh-Download-Manager_<v>_arm64.deb`, `Whoosh-Download-Manager-<v>-1.aarch64.rpm` | ubuntu-22.04-arm (glibc 2.35) | — |
-| `wdm-<v>-<platform>.{tar.gz,zip}`: the command line `wdm` and `wdm-daemon` (Windows: also `wdm-autostart.exe`) | linux-x64, linux-arm64, macos-universal, windows-x64, windows-arm64 | SignPath / Developer ID + notarization |
-| `wdm-nmhost-<v>-<platform>.{tar.gz,zip}` (native messaging host, for packagers) | same | same |
-| `wdm-<v>-store-uploads.zip`: `wdm-chromium-<v>-store.zip`, `wdm-firefox-<v>-store.zip` and the Android `.aab` (for the stores, not for people) | ubuntu-24.04 | stores sign on upload |
+| `wdm-<v>-<platform>.{tar.gz,zip}`: the command line `wdm`, `wdm-daemon` and the browser's native host `wdm-nmhost` (Windows: also `wdm-autostart.exe`) | linux-x64, linux-arm64, macos-universal, windows-x64, windows-arm64 | SignPath / Developer ID + notarization |
 | `wdm-chromium-<v>.zip` (GitHub build for Chrome, Brave, Vivaldi: load unpacked; keeps the public key, so the native host accepts it) | ubuntu-24.04 | — |
-| `wdm-<v>-package-manifests.tar.gz` (winget, Scoop, Homebrew cask, Flathub, AUR, filled in with this release's URLs and hashes) | ubuntu-24.04 | covered by the attestation |
-| `wdm-<v>-sbom.zip`: `*.cargo.cdx.json` (one per crate), `wdm-desktop-<v>.npm.cdx.json`, `wdm-extension-<v>.npm.cdx.json` | ubuntu-24.04 | covered by the attestation |
-| `wdm-<v>-source.tar.gz` (`git archive` of the tag) | ubuntu-24.04 | covered by the attestation |
-| `latest.json` (Tauri updater; carries each update's signature, so the `.sig` files are not uploaded) | — | updater key (below) |
-| `SHA256SUMS` | ubuntu-24.04 | covered by the attestation |
+| `wdm-<v>-source.tar.gz` (`git archive` of the tag; the AUR builds from it) | ubuntu-24.04 | covered by the attestation |
+| `SHA256SUMS` (the install script and the website check downloads against it) | ubuntu-24.04 | covered by the attestation |
+
+The release page holds only what people need to install and run WDM. What only our own jobs use
+is kept with the release run instead, as its `release-internal` artifact (Actions → *Release* →
+the run for the tag → *Artifacts*; kept 90 days), with its own `SHA256SUMS` and the same
+attestation. `publish-channels.yml` and `updater-feed.yml` fetch it with
+`.github/scripts/release-internal.sh`:
+
+| Internal file | Used by |
+|---|---|
+| `latest.json` (Tauri updater; carries each update's signature, so the `.sig` files are not kept) | `updater-feed.yml`, which copies it to the update feed the app reads; updater key (below) |
+| `wdm-<v>-store-uploads.zip`: `wdm-chromium-<v>-store.zip`, `wdm-firefox-<v>-store.zip` and the Android `.aab` | the AMO and Edge Add-ons jobs; the Chrome Web Store and Google Play by hand |
+| `wdm-<v>-package-manifests.tar.gz` (winget, Scoop, Homebrew cask, Flathub, AUR, filled in with this release's URLs and hashes) | the Homebrew and AUR jobs; winget, Scoop and Flathub by hand |
+| `wdm-<v>-sbom.zip`: `*.cargo.cdx.json` (one per crate), `wdm-desktop-<v>.npm.cdx.json`, `wdm-extension-<v>.npm.cdx.json` | anyone auditing the dependencies |
+
+Publishing a release more than 90 days after it was built needs the release workflow to run
+again for its tag first, or those jobs find no internal files. Releases up to 1.0.0-beta.3
+attached these files to the release; the script takes them from there.
 
 Every desktop installer and the portable zip also carry **yt-dlp and ffmpeg**
 (with ffprobe on Windows and Linux) in the app's resources, `media-tools/`, so
@@ -95,11 +107,13 @@ without the development `key` (the job fails if a key is left in).
 5. Review the draft: download a few assets, check them as in
    [Verifying a download](#verifying-a-download), edit the notes, then
    **Publish**. Mark it "latest" only for stable versions.
-6. Afterwards: upload the store zips (inside `wdm-<v>-store-uploads.zip`), and submit the package-manager
-   manifests from `wdm-<v>-package-manifests.tar.gz` (the *Package
-   manifests* job filled in the version, URLs and SHA-256s with
-   `.github/scripts/package-manifests.mjs`; `packaging/*/README.md` says how
-   to submit each). Nothing is submitted automatically.
+6. Publishing starts `publish-channels.yml` (AMO, Edge Add-ons, the apt/rpm repository, winget,
+   Homebrew, the AUR, each where its secret is set) and `updater-feed.yml`. What stays by hand
+   (the Chrome Web Store, Google Play, Scoop, Flathub, a first winget submission) comes from the
+   release run's `release-internal` artifact: `wdm-<v>-store-uploads.zip` and
+   `wdm-<v>-package-manifests.tar.gz` (the *Package manifests* job filled in the version, URLs
+   and SHA-256s with `.github/scripts/package-manifests.mjs`; `packaging/*/README.md` says how to
+   submit each).
 
 ### Dry run
 
@@ -415,7 +429,8 @@ Phase 4).
   submitted by `publish-channels.yml`), and
   package-manager submissions (winget, Homebrew, Scoop, Flathub, AUR, Snap,
   Nix, Chocolatey). The manifests are filled in per release
-  (`wdm-<v>-package-manifests.tar.gz`); submitting them is by hand.
+  (`wdm-<v>-package-manifests.tar.gz`, in the release run's `release-internal` artifact);
+  submitting them is by hand.
 - Linux package signing and apt/dnf repositories; Snap and Nix packaging;
   MSIX; an MSI for Windows ARM64.
 - Publishing the Docker image (it is only built in CI).

@@ -6,7 +6,7 @@ plus libayatana-appindicator for the tray icon. Desktop entry and AppStream
 metainfo come from [`../linux`](../linux) (both pass `desktop-file-validate`
 and `appstreamcli validate`).
 
-Each release carries `wdm-<version>-package-manifests.tar.gz`; its `flatpak/`
+The release run keeps `wdm-<version>-package-manifests.tar.gz` (Actions → *Release* → the run for the tag → artifact `release-internal`; not on the release page); its `flatpak/`
 folder holds this manifest with the release's version, URLs and SHA-256s
 filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
 

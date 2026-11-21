@@ -639,30 +639,21 @@ jobs:
           mkdir -p out
           # GNU tar for --sort/--owner/--mtime (macOS runners ship it as gtar).
           tar=tar; if command -v gtar > /dev/null; then tar=gtar; fi
-          # Two archives: wdm-<v>-<platform> (the CLI and the daemon) and
-          # wdm-nmhost-<v>-<platform>.
-          for name in wdm wdm-nmhost; do
-            dir="$name-$VERSION-$PLATFORM"
-            mkdir -p "pkg/$dir"
-            case "$name" in
-              wdm)
-                for f in staging/bin/*; do
-                  case "$(basename "$f")" in wdm-nmhost*) ;; *) cp "$f" "pkg/$dir/" ;; esac
-                done
-                cp crates/cli/README.md "pkg/$dir/README.md" ;;
-              wdm-nmhost)
-                cp staging/bin/wdm-nmhost* "pkg/$dir/"
-                cp crates/nmhost/README.md "pkg/$dir/README.md" ;;
-            esac
-            cp LICENSE-APACHE "pkg/$dir/"
-            if [ "$RUNNER_OS" = Windows ]; then
-              (cd pkg && 7z a -tzip -mx=9 "../out/$dir.zip" "$dir" >/dev/null)
-            else
-              # Deterministic tarball: sorted entries, fixed owner and mtime.
-              "$tar" --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
-                -C pkg -cf - "$dir" | gzip -n -9 > "out/$dir.tar.gz"
-            fi
-          done
+          # One archive, wdm-<v>-<platform>: the CLI, the daemon and the browser's
+          # native host (wdm-nmhost; `wdm-nmhost --register` connects the browsers).
+          dir="wdm-$VERSION-$PLATFORM"
+          mkdir -p "pkg/$dir"
+          cp staging/bin/* "pkg/$dir/"
+          cp crates/cli/README.md "pkg/$dir/README.md"
+          cp crates/nmhost/README.md "pkg/$dir/README-nmhost.md"
+          cp LICENSE-APACHE "pkg/$dir/"
+          if [ "$RUNNER_OS" = Windows ]; then
+            (cd pkg && 7z a -tzip -mx=9 "../out/$dir.zip" "$dir" >/dev/null)
+          else
+            # Deterministic tarball: sorted entries, fixed owner and mtime.
+            "$tar" --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
+              -C pkg -cf - "$dir" | gzip -n -9 > "out/$dir.tar.gz"
+          fi
           ls -l out
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -869,35 +860,58 @@ jobs:
         run: |
           node .github/scripts/updater-manifest.mjs dist "$VERSION" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
-      - name: Fewer files on the release page
-        # People download an installer; everything else either has a home
-        # elsewhere or goes into one archive:
-        # - the updater signatures (*.sig) are inside latest.json, which is
-        #   what the app reads, so the files themselves are not uploaded;
-        # - the SBOMs (one per crate and app) go into wdm-<v>-sbom.zip;
-        # - the store uploads (extension store zips, Android .aab) go into
-        #   wdm-<v>-store-uploads.zip.
+      - name: Only what people need on the release page
+        # The release page holds what someone needs to install and run WDM: the
+        # installers, the portable and command-line archives, the Android app, the
+        # Chromium extension zip (until the Chrome Web Store), the source archive
+        # (the AUR builds from it) and SHA256SUMS (the install script checks it).
+        # The app also downloads the macOS .app.tar.gz to update itself.
+        #
+        # What only our own jobs use goes into the `release-internal` artifact of
+        # this run instead (publish-channels.yml and updater-feed.yml fetch it):
+        # - latest.json (the update feed copies it; the app reads the feed);
+        # - the updater signatures (*.sig) are inside latest.json, so they go;
+        # - the SBOMs (one per crate and app), as wdm-<v>-sbom.zip;
+        # - the store uploads (extension store zips, the Android .aab), as
+        #   wdm-<v>-store-uploads.zip (AMO and Edge get them automatically);
+        # - wdm-<v>-package-manifests.tar.gz (the winget, Homebrew, AUR jobs).
         run: |
           set -euo pipefail
+          mkdir internal
           cd dist
           test -s latest.json || ! ls ./*.sig >/dev/null 2>&1
           rm -f ./*.sig
-          zip -q -X -j "wdm-$VERSION-sbom.zip" ./*.cdx.json && rm ./*.cdx.json
+          if [ -e latest.json ]; then mv latest.json ../internal/; fi
+          zip -q -X -j "../internal/wdm-$VERSION-sbom.zip" ./*.cdx.json && rm ./*.cdx.json
           store=(wdm-*-store.zip)
           for f in ./*_android.aab; do [ -e "$f" ] && store+=("$f"); done
-          zip -q -X -j "wdm-$VERSION-store-uploads.zip" "${store[@]}" && rm "${store[@]}"
-          ls -l
+          zip -q -X -j "../internal/wdm-$VERSION-store-uploads.zip" "${store[@]}" && rm "${store[@]}"
+          mv "wdm-$VERSION-package-manifests.tar.gz" ../internal/
+          echo "release page:"; ls -l
+          echo "internal:"; ls -l ../internal
       - name: SHA256SUMS
         run: |
-          cd dist
-          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort \
-            | xargs -d '\n' sha256sum -- > ../SHA256SUMS.tmp
-          mv ../SHA256SUMS.tmp SHA256SUMS
-          cat SHA256SUMS
+          set -euo pipefail
+          for d in dist internal; do
+            (cd "$d" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort \
+              | xargs -d '\n' sha256sum -- > ../SHA256SUMS.tmp && mv ../SHA256SUMS.tmp SHA256SUMS)
+          done
+          cat dist/SHA256SUMS
       - name: Build provenance attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/*
+          subject-path: |
+            dist/*
+            internal/*
+      - name: Keep the internal files with this run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-internal
+          path: internal/
+          if-no-files-found: error
+          # The longest a repository may keep it. Publishing later than that
+          # needs the release workflow to run again for the tag.
+          retention-days: 90
       - name: Create or update the draft release
         env:
           GH_TOKEN: ${{ github.token }}

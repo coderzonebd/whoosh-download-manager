@@ -6,6 +6,10 @@
 # a repository without them publishes nothing. Pre-releases go only to the Linux beta repository
 # (when one is set up); winget, Homebrew and the AUR take full releases.
 #
+# The files these jobs need that are not for people (the package manifests, the store uploads)
+# are kept off the release page, in the release run's `release-internal` artifact
+# (.github/scripts/release-internal.sh).
+#
 # The browser extension goes to Firefox Add-ons (AMO) and Microsoft Edge Add-ons with every
 # release, pre-releases too (their extension version, 0.65535.65535.N for X.Y.Z-beta.N, stays
 # below X.Y.Z, so the stores take the full release after it). Once a store has reviewed it,
@@ -27,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # the release run's internal files (.github/scripts/release-internal.sh)
 
 concurrency:
   group: publish-channels-${{ github.event.release.tag_name || inputs.tag }}
@@ -157,10 +162,13 @@ jobs:
       TAP: ${{ vars.HOMEBREW_TAP || 'coderzonebd/homebrew-tap' }}
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: The release's cask
         run: |
           set -euo pipefail
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-package-manifests.tar.gz"
+          .github/scripts/release-internal.sh "$TAG" . "wdm-$VERSION-package-manifests.tar.gz"
           tar -xzf "wdm-$VERSION-package-manifests.tar.gz"
           ls "wdm-$VERSION-package-manifests/homebrew/whoosh-download-manager.rb"
       - name: Push it to the tap
@@ -194,10 +202,13 @@ jobs:
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: The release's PKGBUILD
         run: |
           set -euo pipefail
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-package-manifests.tar.gz"
+          .github/scripts/release-internal.sh "$TAG" . "wdm-$VERSION-package-manifests.tar.gz"
           tar -xzf "wdm-$VERSION-package-manifests.tar.gz"
           ls "wdm-$VERSION-package-manifests/aur/PKGBUILD" "wdm-$VERSION-package-manifests/aur/.SRCINFO"
       - name: Push it to the AUR
@@ -234,13 +245,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: The release's Firefox package and source
         run: |
           set -euo pipefail
-          mkdir amo && cd amo
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern "wdm-$VERSION-store-uploads.zip" --pattern "wdm-$VERSION-source.tar.gz" --pattern SHA256SUMS
-          grep -E " (wdm-$VERSION-store-uploads\.zip|wdm-$VERSION-source\.tar\.gz)\$" SHA256SUMS | sha256sum -c -
+          .github/scripts/release-internal.sh "$TAG" amo "wdm-$VERSION-store-uploads.zip"
+          cd amo
+          # The source archive stays on the release page (the AUR builds from it).
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-source.tar.gz" --pattern SHA256SUMS
+          awk -v f="wdm-$VERSION-source.tar.gz" '$2 == f' SHA256SUMS | sha256sum -c -
           unzip -q "wdm-$VERSION-store-uploads.zip" "wdm-firefox-$VERSION-store.zip"
           mkdir ext && unzip -q "wdm-firefox-$VERSION-store.zip" -d ext
           # For AMO's reviewers: how the bundled code is built (apps/extension/store/amo.md).
@@ -279,9 +294,8 @@ jobs:
       - name: The release's Chromium store package
         run: |
           set -euo pipefail
-          mkdir edge && cd edge
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-store-uploads.zip" --pattern SHA256SUMS
-          grep -E " wdm-$VERSION-store-uploads\.zip\$" SHA256SUMS | sha256sum -c -
+          .github/scripts/release-internal.sh "$TAG" edge "wdm-$VERSION-store-uploads.zip"
+          cd edge
           unzip -q "wdm-$VERSION-store-uploads.zip" "wdm-chromium-$VERSION-store.zip"
       - name: Upload and submit for certification
         env:

@@ -13,7 +13,7 @@ GitHub release.
 
 ## Per release
 
-Each release carries `wdm-<version>-package-manifests.tar.gz`; its `homebrew/`
+The release run keeps `wdm-<version>-package-manifests.tar.gz` (Actions → *Release* → the run for the tag → artifact `release-internal`; not on the release page); its `homebrew/`
 folder holds this manifest with the release's version, URLs and SHA-256s
 filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
 

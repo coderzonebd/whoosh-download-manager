@@ -17,7 +17,7 @@ It installs `wdm-desktop`, `wdm-daemon`, the command line `wdm`,
 
 ## Per release
 
-The release's `wdm-<version>-package-manifests.tar.gz` has `aur/PKGBUILD`
+The release run's `wdm-<version>-package-manifests.tar.gz` (artifact `release-internal`, not on the release page) has `aur/PKGBUILD`
 and `aur/.SRCINFO` filled in (version, checksum of the source archive). Copy
 both into the AUR clone, test-build, and push:
 
