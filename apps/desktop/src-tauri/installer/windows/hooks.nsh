@@ -38,3 +38,31 @@
   Pop $0
   !insertmacro WDM_STOP_BACKGROUND
 !macroend
+
+; Uninstalling (not updating: the in-app updater passes /UPDATE) removes the
+; logon entries, so nothing starts the deleted programs at the next logon,
+; and the browser host manifests, which point at them.
+;
+; With "Delete the application data" ticked it also removes everything WDM
+; keeps for this user: the data directory (download list and history,
+; settings, the resume journal, logs, the media tools fetched after install)
+; and the WebView data. Downloaded files are never touched. This follows the
+; box, not every uninstall, because installing a newer version by hand
+; first runs the old uninstaller (Tauri's default "Uninstall before
+; installing"), which must keep the user's downloads and settings.
+!macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $UpdateMode <> 1
+    SetShellVarContext current
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "WDM daemon"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "WDM daemon"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Whoosh daemon"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Whoosh daemon"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "${PRODUCTNAME}"
+    RmDir /r "$LOCALAPPDATA\wdm\nmhost"
+    ${If} $DeleteAppDataCheckboxState = 1
+      RmDir /r "$LOCALAPPDATA\wdm"
+      RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
+      RmDir /r "$APPDATA\${BUNDLEID}"
+    ${EndIf}
+  ${EndIf}
+!macroend
