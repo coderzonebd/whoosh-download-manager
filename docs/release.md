@@ -355,9 +355,10 @@ only when its secret exists in the `release` environment:
 | `EDGE_CLIENT_ID`, `EDGE_API_KEY`, `EDGE_PRODUCT_ID` (secrets) | Microsoft Edge Add-ons | Partner Center → Microsoft Edge → *Publish API* (<https://partner.microsoft.com/dashboard/microsoftedge/publishapi>): *Create API credentials* gives the client ID and the API key (it expires: renew it there and update the secret); the Product ID is on the extension's *Overview* page (a GUID, not the store's extension ID). The job uploads `wdm-chromium-<v>-store.zip` and submits it for certification (`.github/scripts/edge-submit.mjs`) |
 
 Pre-releases go only to `CLOUDSMITH_BETA_REPO` (when set); winget, Homebrew and the AUR take full
-releases. The extension goes to AMO and Edge Add-ons with every release, pre-releases too: a
-pre-release's extension version (`0.65535.65535.N`) stays below the full release's, so the stores
-take that one after it. Neither job waits for the store's review. The jobs run from the workflow
+releases. The extension goes to AMO and Edge Add-ons with every full release, and with the betas of 1.0.0
+(`1.0.0-beta.N`, listed as `0.65535.65535.N`, which stays below `1.0.0`). Later pre-releases stay
+off the stores: a store shows only the numeric extension version, and `1.1.0-beta.1` would be
+listed as `1.0.65535.1`. Neither job waits for the store's review. The jobs run from the workflow
 as it is at the release tag, so a job added after a tag first runs at the next release. Flathub is a pull request to `flathub/flathub` by hand (`packaging/flatpak/README.md`).
 
 ## Accounts to create
