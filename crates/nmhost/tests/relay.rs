@@ -471,6 +471,10 @@ async fn after_the_user_quit_the_app_a_download_is_left_to_the_browser() {
         counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }));
     let mut browser = Browser::start(cfg);
+    // The host's own first attempt (at start, with no daemon) has failed before
+    // the browser speaks, as it happened on macOS: the host must still be there
+    // to answer, and not have ended on that attempt.
+    tokio::time::sleep(Duration::from_millis(300)).await;
     let t0 = std::time::Instant::now();
     browser
         .send(r#"{"jsonrpc":"2.0","id":1,"method":"download.add","params":{"url":"https://example.com/a.zip"}}"#)
@@ -480,7 +484,32 @@ async fn after_the_user_quit_the_app_a_download_is_left_to_the_browser() {
     assert_eq!(reply["error"]["code"], -32007, "{reply}");
     assert!(t0.elapsed() < Duration::from_secs(10));
     assert_eq!(launches.load(std::sync::atomic::Ordering::SeqCst), 0);
-    browser.close().await.unwrap();
+    // Having answered, the host ends by itself (the user quit the app).
+    tokio::time::timeout(WAIT, browser.task)
+        .await
+        .expect("the host did not end after answering")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn after_a_quit_a_message_sent_right_away_is_answered_too() {
+    // The browser speaks before the host's first attempt has failed (as on Linux).
+    let dir = TempDir::new("launch-quit-early");
+    let runtime = dir.runtime_file();
+    std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+    std::fs::write(
+        runtime.parent().unwrap().join(wdm_nmhost::runtime::APP_QUIT_FILE),
+        "",
+    )
+    .unwrap();
+    let mut browser = Browser::start(test_config(runtime));
+    assert_eq!(browser.status(1).await["daemonRunning"], false);
+    tokio::time::timeout(WAIT, browser.task)
+        .await
+        .expect("the host did not end after answering")
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]

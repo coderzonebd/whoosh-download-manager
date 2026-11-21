@@ -412,6 +412,7 @@ impl Relay {
                     self.waiting.push(Waiter::Status { id });
                 } else {
                     self.reply_status(id, false).await;
+                    self.end_if_quit();
                 }
             }
         }
@@ -428,6 +429,7 @@ impl Relay {
                 } else if let Some(id) = id {
                     self.reply_unavailable(id, "the wdm daemon is not running")
                         .await;
+                    self.end_if_quit();
                 }
             }
         }
@@ -491,7 +493,9 @@ impl Relay {
                 self.retry_delay = (self.retry_delay * 2).min(self.cfg.retry_max);
                 self.report(false).await;
                 let reason = format!("the wdm daemon is not available: {e}");
-                for waiter in std::mem::take(&mut self.waiting) {
+                let waited = std::mem::take(&mut self.waiting);
+                let answered = !waited.is_empty();
+                for waiter in waited {
                     match waiter {
                         Waiter::Status { id } => self.reply_status(id, false).await,
                         Waiter::Forward { id: Some(id), .. } => {
@@ -500,7 +504,11 @@ impl Relay {
                         Waiter::Forward { id: None, .. } => {}
                     }
                 }
-                self.end_if_quit();
+                // Never on the attempt made at start alone: the browser's first
+                // message may not have arrived yet, and it must get its answer.
+                if answered {
+                    self.end_if_quit();
+                }
             }
             ConnEvent::Daemon(Some(Ok(Message::Text(text)))) => self.on_daemon_text(text).await,
             ConnEvent::Daemon(Some(Ok(Message::Binary(_)))) => {
