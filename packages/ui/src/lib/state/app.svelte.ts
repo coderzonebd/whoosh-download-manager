@@ -137,6 +137,10 @@ export class AppState {
   #capabilities: string[] | undefined;
 
   readonly #off: (() => void)[] = [];
+  /** The connection was open at least once (a later "open" is a reconnect). */
+  #wasOpen = false;
+  /** A reload is running; a second one would only repeat its calls. */
+  #reloading = false;
   readonly #storage: Storage | null;
 
   constructor(client: WdmClient, opts: AppOptions = {}) {
@@ -167,10 +171,14 @@ export class AppState {
         client.onStatus((s) => {
           const st = s.state as Connection;
           if (s.hello) this.#capabilities = s.hello.capabilities ?? [];
-          // The prompt window also loads again when its first load failed (the daemon was starting).
-          const resync = st === "open" && (this.connection === "reconnecting" || (this.prompt && !this.loaded));
+          // Load again on every (re)connection after the first, since events were missed while
+          // away, and on the first one when the first load already failed: the daemon was still
+          // starting and the calls timed out. (The client reports "connecting" before each
+          // attempt, so the state just before "open" is not "reconnecting" even after a drop.)
+          const resync = st === "open" && this.connection !== "open" && (this.#wasOpen || !this.loaded);
+          if (st === "open") this.#wasOpen = true;
           this.connection = st;
-          if (resync) void this.reload(); // events were missed while away
+          if (resync) void this.reload();
         }),
       );
     } else this.connection = "open";
@@ -229,6 +237,16 @@ export class AppState {
 
   /** (Re)load the list, settings and stats — at start and after a reconnect. */
   async reload(): Promise<void> {
+    if (this.#reloading) return;
+    this.#reloading = true;
+    try {
+      await this.#reload();
+    } finally {
+      this.#reloading = false;
+    }
+  }
+
+  async #reload(): Promise<void> {
     const [list, settings, stats] = await Promise.allSettled([
       this.client.call("download.list", {}),
       this.client.call("settings.get", undefined),
