@@ -5,7 +5,7 @@ the signed `wdm-desktop.exe` alone) that `release.yml` attaches to each
 release, and adds a Start-menu shortcut. `checkver`/`autoupdate` read new
 versions from GitHub and the hash from the release's `SHA256SUMS`.
 
-Each release carries `wdm-<version>-package-manifests.tar.gz`; its `scoop/`
+The release run keeps `wdm-<version>-package-manifests.tar.gz` (Actions → *Release* → the run for the tag → artifact `release-internal`; not on the release page); its `scoop/`
 folder holds this manifest with the release's version, URLs and SHA-256s
 filled in (`.github/scripts/package-manifests.mjs`). Start from that copy.
 
@@ -29,4 +29,4 @@ Check locally with `scoop install .\whoosh-download-manager.json` and
   executable, MASTER-PLAN §3.1). Until it does, settings live in
   `%APPDATA%` and survive `scoop update` anyway.
 - The native messaging host (`wdm-nmhost`) is not part of this manifest; it
-  ships separately in `wdm-nmhost-<version>-windows-x64.zip`.
+  ships in the command-line archive `wdm-<version>-windows-x64.zip`.

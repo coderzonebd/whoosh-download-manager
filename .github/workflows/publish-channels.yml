@@ -6,6 +6,15 @@
 # a repository without them publishes nothing. Pre-releases go only to the Linux beta repository
 # (when one is set up); winget, Homebrew and the AUR take full releases.
 #
+# The files these jobs need that are not for people (the package manifests, the store uploads)
+# are kept off the release page, in the release run's `release-internal` artifact
+# (.github/scripts/release-internal.sh).
+#
+# The browser extension goes to Firefox Add-ons (AMO) and Microsoft Edge Add-ons with every
+# release, pre-releases too (their extension version, 0.65535.65535.N for X.Y.Z-beta.N, stays
+# below X.Y.Z, so the stores take the full release after it). Once a store has reviewed it,
+# the browser updates everyone's extension by itself.
+#
 # The app updates itself after that, and the package managers see it: winget reads the version
 # the installer writes to Windows' list of programs, the cask says `auto_updates`, and a .deb or
 # .rpm is updated through dpkg/rpm (apps/desktop/src-tauri/src/updates.rs).
@@ -22,6 +31,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # the release run's internal files (.github/scripts/release-internal.sh)
 
 concurrency:
   group: publish-channels-${{ github.event.release.tag_name || inputs.tag }}
@@ -45,6 +55,8 @@ jobs:
       winget: ${{ steps.s.outputs.winget }}
       homebrew: ${{ steps.s.outputs.homebrew }}
       aur: ${{ steps.s.outputs.aur }}
+      amo: ${{ steps.s.outputs.amo }}
+      edge: ${{ steps.s.outputs.edge }}
     steps:
       - id: r
         run: |
@@ -63,12 +75,20 @@ jobs:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
         run: |
           {
             echo "linux-repo=${CLOUDSMITH_API_KEY:+true}"
             echo "winget=${WINGET_TOKEN:+true}"
             echo "homebrew=${HOMEBREW_TAP_DEPLOY_KEY:+true}"
             echo "aur=${AUR_SSH_PRIVATE_KEY:+true}"
+            [ -n "$AMO_JWT_ISSUER" ] && [ -n "$AMO_JWT_SECRET" ] && echo "amo=true"
+            [ -n "$EDGE_API_KEY" ] && [ -n "$EDGE_CLIENT_ID" ] && [ -n "$EDGE_PRODUCT_ID" ] && echo "edge=true"
+            true
           } >> "$GITHUB_OUTPUT"
 
   linux-repo:
@@ -142,10 +162,13 @@ jobs:
       TAP: ${{ vars.HOMEBREW_TAP || 'coderzonebd/homebrew-tap' }}
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: The release's cask
         run: |
           set -euo pipefail
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-package-manifests.tar.gz"
+          .github/scripts/release-internal.sh "$TAG" . "wdm-$VERSION-package-manifests.tar.gz"
           tar -xzf "wdm-$VERSION-package-manifests.tar.gz"
           ls "wdm-$VERSION-package-manifests/homebrew/whoosh-download-manager.rb"
       - name: Push it to the tap
@@ -179,10 +202,13 @@ jobs:
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: The release's PKGBUILD
         run: |
           set -euo pipefail
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-package-manifests.tar.gz"
+          .github/scripts/release-internal.sh "$TAG" . "wdm-$VERSION-package-manifests.tar.gz"
           tar -xzf "wdm-$VERSION-package-manifests.tar.gz"
           ls "wdm-$VERSION-package-manifests/aur/PKGBUILD" "wdm-$VERSION-package-manifests/aur/.SRCINFO"
       - name: Push it to the AUR
@@ -205,3 +231,77 @@ jobs:
           if git diff --cached --quiet; then echo "the AUR already has $VERSION"; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "$VERSION"
           git push origin HEAD:master
+
+  amo:
+    name: Firefox Add-ons (AMO)
+    needs: meta
+    if: needs.meta.outputs.amo == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The release's Firefox package and source
+        run: |
+          set -euo pipefail
+          .github/scripts/release-internal.sh "$TAG" amo "wdm-$VERSION-store-uploads.zip"
+          cd amo
+          # The source archive stays on the release page (the AUR builds from it).
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "wdm-$VERSION-source.tar.gz" --pattern SHA256SUMS
+          awk -v f="wdm-$VERSION-source.tar.gz" '$2 == f' SHA256SUMS | sha256sum -c -
+          unzip -q "wdm-$VERSION-store-uploads.zip" "wdm-firefox-$VERSION-store.zip"
+          mkdir ext && unzip -q "wdm-firefox-$VERSION-store.zip" -d ext
+          # For AMO's reviewers: how the bundled code is built (apps/extension/store/amo.md).
+          jq -n --arg tag "$TAG" --arg repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" '{version: {
+            release_notes: {"en-US": ("What is new: " + $repo + "/releases/tag/" + $tag)},
+            approval_notes: ("The extension hands downloads to the Whoosh Download Manager app through native messaging (host com.coderzonebd.whoosh); it has no network traffic of its own and no remote code. The JavaScript is bundled from TypeScript, not minified. The source archive attached is the repository at " + $tag + ". Build (Node.js 24 or newer): corepack pnpm install --frozen-lockfile, then corepack pnpm --filter @wdm/extension build:store; the add-on is apps/extension/dist/firefox/, byte for byte the uploaded package. Permissions: apps/extension/store/permissions.md. Without the app the popup shows Not connected and downloads stay in Firefox.")
+          }}' > metadata.json
+      - name: Submit the new version
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          cd amo
+          # Listed: AMO reviews and signs it, then Firefox updates users. Not waited for.
+          npx --yes web-ext@10.8.0 sign --channel=listed --source-dir ext --artifacts-dir out \
+            --upload-source-code "wdm-$VERSION-source.tar.gz" --amo-metadata metadata.json \
+            --approval-timeout 0
+
+  edge:
+    name: Microsoft Edge Add-ons
+    needs: meta
+    if: needs.meta.outputs.edge == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: The release's Chromium store package
+        run: |
+          set -euo pipefail
+          .github/scripts/release-internal.sh "$TAG" edge "wdm-$VERSION-store-uploads.zip"
+          cd edge
+          unzip -q "wdm-$VERSION-store-uploads.zip" "wdm-chromium-$VERSION-store.zip"
+      - name: Upload and submit for certification
+        env:
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+        run: |
+          node .github/scripts/edge-submit.mjs "edge/wdm-chromium-$VERSION-store.zip" \
+            "Whoosh Download Manager $VERSION: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
