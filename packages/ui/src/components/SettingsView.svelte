@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
   import type { Settings, SpeedWindow } from "@wdm/api-client";
+  import { CATEGORY_FOLDERS } from "@wdm/api-client/categories";
   import type { DesktopPrefs } from "../lib/host.ts";
   import { dirOf } from "../lib/i18n/i18n.svelte.ts";
   import { translateUrl } from "../lib/i18n/languages.ts";
@@ -40,6 +41,8 @@
     windows: WindowDraft[];
     /** undefined: the daemon has no such setting (older daemons never ask). */
     confirmBrowser: boolean | undefined;
+    /** Undefined until the user answers (the daemon then sorts nothing). */
+    organize: boolean | undefined;
   }
 
   const UNIT: Record<Unit, number> = { KB: 1024, MB: 1024 * 1024 };
@@ -70,6 +73,7 @@
       limitUnit: unit,
       windows: (s.speedSchedule ?? []).map(toWindow),
       confirmBrowser: s.confirmBrowserDownloads,
+      organize: s.organizeByCategory,
     };
   }
 
@@ -148,6 +152,7 @@
     });
     if (windows.length > 0) s.speedSchedule = windows;
     if (d.confirmBrowser !== undefined) s.confirmBrowserDownloads = d.confirmBrowser;
+    if (d.organize !== undefined) s.organizeByCategory = d.organize;
     return s;
   }
 
@@ -407,6 +412,19 @@
             {#if errors.defaultDirectory}<span id="vy-set-dir-err" class="vy-error">{errors.defaultDirectory}</span>{/if}
           </div>
           {/if}
+          <div class="vy-field wide">
+            <label class="vy-check">
+              <input
+                id="vy-set-organize"
+                type="checkbox"
+                checked={draft.organize === true}
+                onchange={(e) => draft && (draft.organize = e.currentTarget.checked)}
+                aria-describedby="vy-set-organize-hint"
+              />
+              {t("settings.organize")}
+            </label>
+            <span id="vy-set-organize-hint" class="vy-hint">{t("settings.organizeHint", { folders: CATEGORY_FOLDERS.join(", ") })}</span>
+          </div>
           <div class="vy-field">
             <label class="vy-label" for="vy-set-active">{t("settings.maxActive")}</label>
             <input

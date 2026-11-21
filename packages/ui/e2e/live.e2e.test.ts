@@ -135,7 +135,17 @@ describe.skipIf(!chrome || !haveBins)("desktop end-to-end against a real daemon"
     await page.goto(`${base}?client=live&lang=en`);
     await page.waitForFunction(() => window.__wdmApp?.connection === "open", undefined, { timeout: 20_000 });
     await page.waitForFunction(() => window.__wdmApp?.store.loaded === true, undefined, { timeout: 20_000 });
+    // A fresh daemon has not been told whether to sort into folders by type: the app asks once.
+    // Answer as a user would; the daemon keeps the answer, so later pages are not asked.
+    if (!asked) {
+      asked = true;
+      const ask = page.getByRole("dialog", { name: "Sort downloads into folders?" });
+      await ask.waitFor({ timeout: 20_000 });
+      await ask.getByRole("button", { name: "Keep all in one folder" }).click();
+      await ask.waitFor({ state: "detached" });
+    }
   }
+  let asked = false;
 
   const row = (name: string) => page.locator('[role="grid"] [role="row"][data-row-id]').filter({ hasText: name });
 

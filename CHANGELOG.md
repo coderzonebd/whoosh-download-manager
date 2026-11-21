@@ -2,6 +2,12 @@
 
 All notable changes are listed here, newest first. Versions follow [Semantic Versioning](https://semver.org); releases are cut on `pub` (see [ADR 0006](docs/adr/0006-dev-and-pub-branches.md)).
 
+## Unreleased
+
+### Downloads sorted into folders by type
+- **Like Internet Download Manager, downloads can go into a folder for their type** inside the download folder: `Programs`, `Compressed`, `Images`, `Video`, `Music` and `Documents`; other files stay in the download folder. The type comes from the final name, so a link without one (`download.php`) still lands in the right folder once the server names the file. A folder you pick for a download is used as it is.
+- The desktop app asks once before it creates any folder ("Sort downloads into folders?"), and Settings → Downloads can turn it on or off. The add dialog shows which folder a file will go to. `wdm settings set organizeByCategory=true` does the same from the command line.
+
 ## 1.0.0-beta.2 (2026-11-20)
 
 ### Faster on Windows

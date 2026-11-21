@@ -20,6 +20,7 @@
   import DownloadList from "./DownloadList.svelte";
   import HistoryView from "./HistoryView.svelte";
   import MoveQueueDialog from "./MoveQueueDialog.svelte";
+  import OrganizeDialog from "./OrganizeDialog.svelte";
   import QueueBar from "./QueueBar.svelte";
   import QueueDialog from "./QueueDialog.svelte";
   import RefreshLinkDialog from "./RefreshLinkDialog.svelte";
@@ -212,6 +213,8 @@
     {#key offering.id}
       <AddDownloadDialog initialUrl={offering.url} onclose={() => app.doneWithOffer(offering.id)} />
     {/key}
+  {:else if app.askOrganize && !app.addOpen}
+    <OrganizeDialog />
   {/if}
 </div>
 

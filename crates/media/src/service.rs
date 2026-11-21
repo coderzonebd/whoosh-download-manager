@@ -904,9 +904,28 @@ impl Shared {
             ),
             None => None,
         };
+        let audio = matches!(p.choice, MediaChoice::Audio { .. });
+        let category = p
+            .category
+            .clone()
+            .filter(|c| !c.trim().is_empty())
+            .unwrap_or_else(|| if audio { "music" } else { "video" }.into());
         let directory = match &p.directory {
             Some(d) => d.clone(),
-            None => self.inner.settings().await?.default_directory,
+            None => {
+                // As the engine does for files: the category's folder when sorting by category.
+                let s = self.inner.settings().await?;
+                match (
+                    s.organize_by_category,
+                    wdm_proto::category::folder(&category),
+                ) {
+                    (Some(true), Some(folder)) => Path::new(&s.default_directory)
+                        .join(folder)
+                        .to_string_lossy()
+                        .into_owned(),
+                    _ => s.default_directory,
+                }
+            }
         };
         if !Path::new(&directory).is_absolute() {
             return Err(ServiceError::invalid_params("directory must be absolute"));
@@ -922,7 +941,6 @@ impl Shared {
                 "a queue name is 1–64 characters, without control characters",
             ));
         }
-        let audio = matches!(p.choice, MediaChoice::Audio { .. });
         let cached_title = lock(&self.probes).get(&url).map(|(_, v)| info::title_of(v));
         let title = cached_title.unwrap_or_else(|| {
             url::Url::parse(&url)
@@ -943,10 +961,7 @@ impl Shared {
             user_stem,
             stem: None,
             directory,
-            category: p
-                .category
-                .filter(|c| !c.trim().is_empty())
-                .unwrap_or_else(|| if audio { "music" } else { "video" }.into()),
+            category,
             queue,
             added_at: now_ms(),
             completed_at: None,

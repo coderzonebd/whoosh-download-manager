@@ -136,6 +136,34 @@ pub mod category {
     pub const IMAGES: &str = "images";
     pub const OTHER: &str = "other";
     pub const BUILT_IN: [&str; 7] = [VIDEO, MUSIC, DOCUMENTS, COMPRESSED, PROGRAMS, IMAGES, OTHER];
+
+    /// The folder inside the download directory that a category's files go
+    /// to when sorting by category (`Settings::organize_by_category`).
+    /// `None` for "other" and user-defined categories: those stay in the
+    /// download directory itself. The names are English on every system,
+    /// as Internet Download Manager's are, so a folder keeps its name when
+    /// the app's language changes.
+    pub fn folder(category: &str) -> Option<&'static str> {
+        Some(match category {
+            VIDEO => "Video",
+            MUSIC => "Music",
+            DOCUMENTS => "Documents",
+            COMPRESSED => "Compressed",
+            PROGRAMS => "Programs",
+            IMAGES => "Images",
+            _ => return None,
+        })
+    }
+
+    /// Every folder sorting by category can create, in display order.
+    pub const FOLDERS: [&str; 6] = [
+        "Programs",
+        "Compressed",
+        "Images",
+        "Video",
+        "Music",
+        "Documents",
+    ];
 }
 
 /// JSON-RPC error codes beyond the standard -32700..-32600 range.
@@ -534,6 +562,14 @@ pub struct Settings {
     /// (name, folder, queue) before they start. Absent means true.
     #[serde(default = "default_true")]
     pub confirm_browser_downloads: bool,
+    /// Downloads saved to `default_directory` go into a folder for their
+    /// category inside it (`Programs`, `Compressed`, `Images`, `Video`,
+    /// `Music`, `Documents`; "other" stays in `default_directory` itself),
+    /// like Internet Download Manager. A folder the user picks is used as
+    /// it is. Absent means "not decided yet": nothing is sorted, and the
+    /// desktop app asks the user once, because sorting creates folders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organize_by_category: Option<bool>,
 }
 
 /// What a finished (and a checkpointed) download survives.

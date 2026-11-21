@@ -9,7 +9,7 @@
 // UIs run on it until the daemon exists (Phase 1); tests drive it with
 // `autoTick: false` and `advance(ms)` for deterministic results.
 
-import { CATEGORIES, categoryForFilename } from "./categories";
+import { CATEGORIES, categoryFolder, categoryForFilename } from "./categories";
 import { WdmConnectionError, WdmRpcError, JsonRpcErrorCode } from "./errors";
 import {
   ErrorCode,
@@ -709,8 +709,13 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
 
   function add(params: AddParams): { id: string; awaitingConfirmation?: boolean } {
     const p = probe(params.url);
-    const directory = params.directory?.trim() || settings.defaultDirectory;
-    const filename = uniqueFilename(directory, params.filename?.trim() || p.filename);
+    const wanted = params.filename?.trim() || p.filename;
+    // As the daemon: the category's folder inside the default directory when sorting by category.
+    const folder = settings.organizeByCategory === true ? categoryFolder(params.category || categoryForFilename(wanted)) : undefined;
+    const base = settings.defaultDirectory.replace(/[\\/]+$/, "");
+    const auto = folder ? `${base}${settings.defaultDirectory.includes("\\") ? "\\" : "/"}${folder}` : settings.defaultDirectory;
+    const directory = params.directory?.trim() || auto;
+    const filename = uniqueFilename(directory, wanted);
     const start = params.start ?? true;
     // A browser download waits for the user (the real daemon decides "from the browser" itself).
     const ask = params.fromBrowser === true && start && settings.confirmBrowserDownloads !== false;
@@ -891,6 +896,8 @@ export function createMockClient(options: MockClientOptions = {}): MockWdmClient
     if (v.confirmBrowserDownloads !== undefined && typeof v.confirmBrowserDownloads !== "boolean") throw invalidParams("confirmBrowserDownloads must be true or false");
     // Absent means true, as in the daemon.
     out.confirmBrowserDownloads = v.confirmBrowserDownloads ?? true;
+    if (v.organizeByCategory !== undefined && typeof v.organizeByCategory !== "boolean") throw invalidParams("organizeByCategory must be true or false");
+    if (v.organizeByCategory !== undefined) out.organizeByCategory = v.organizeByCategory;
     if (v.speedSchedule !== undefined) {
       for (const w of v.speedSchedule) {
         if (!isClockTime(w.from) || !isClockTime(w.to)) throw invalidParams("speed window times must be HH:MM");
