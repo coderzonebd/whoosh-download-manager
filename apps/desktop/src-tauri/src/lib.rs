@@ -172,8 +172,24 @@ fn quit_app<R: Runtime>(app: &AppHandle<R>) {
         if let Err(err) = stopped {
             eprintln!("wdm-desktop: could not stop the daemon: {err}");
         }
-        app.exit(0);
+        exit_cleanly(&app).await;
     });
+}
+
+/// How long the windows' web processes get to end after their windows close.
+const WEBVIEWS_CLOSE_GRACE: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Ends the app with its windows closed first. Exiting while a window's page
+/// is alive made WebKitGTK's web process crash on Linux (SIGSEGV, and a
+/// "WebKitWebProcess closed unexpectedly" report on every Quit): the windows
+/// are destroyed (no close request, so no hiding to the tray), their web
+/// processes get a moment to end, then the app exits.
+pub(crate) async fn exit_cleanly<R: Runtime>(app: &AppHandle<R>) {
+    for window in app.webview_windows().into_values() {
+        let _ = window.destroy();
+    }
+    tokio::time::sleep(WEBVIEWS_CLOSE_GRACE).await;
+    app.exit(0);
 }
 
 /// Whether closing the window (or ⌘Q on macOS) should keep the app in the
