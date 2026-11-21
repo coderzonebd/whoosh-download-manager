@@ -1,4 +1,9 @@
-# CI: lint, build and test on every PR and on pushes to dev and pub.
+# CI: lint, build and test on every PR and on pushes to dev.
+#
+# Not on pushes to pub: pub takes no direct pushes, only PRs from dev (rulesets,
+# pub-guard.yml), and those PRs must pass this workflow on the very commit pub
+# then gets, so a run after the merge would only test it a third time. A release
+# tag on pub is built and checked again on every platform by release.yml.
 #
 # Every third-party action is pinned to a full commit SHA (version in the
 # comment); Dependabot keeps them current (.github/dependabot.yml).
@@ -6,7 +11,7 @@ name: CI
 
 on:
   push:
-    branches: [dev, pub]
+    branches: [dev]
   pull_request:
   merge_group:
   workflow_dispatch:
