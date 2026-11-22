@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The few strings the shell shows itself (the tray menu and tooltip, and
-//! the system notifications it sends while the window is closed), in the
-//! UI's language. They live in the UI's locale files (`tray.*` in
-//! `packages/ui/src/lib/i18n/locales/<tag>.json`, one Weblate component for
-//! the whole app) and are embedded at build time (`build.rs`). The UI calls
-//! [`set_shell_language`] whenever its language changes, which follows the
-//! daemon's `Settings.language`; the choice is kept in `desktop.json` so the
-//! tray starts in the right language before the window loads.
+//! the system notifications), in the UI's language. They live in the UI's
+//! locale files (`packages/ui/src/lib/i18n/locales/<tag>.json`, one Weblate
+//! component for the whole app) and are embedded at build time
+//! (`build.rs`). The UI tells the app whenever its language changes (it
+//! follows the daemon's `Settings.language`); the app keeps it in
+//! `desktop.json` ([`crate::prefs`]), where the tray process reads it.
 
 use serde_json::Value;
-use tauri::menu::MenuItem;
-use tauri::{AppHandle, Manager, Runtime, State};
-
-use crate::prefs;
 
 include!(concat!(env!("OUT_DIR"), "/locales.rs"));
 
@@ -23,12 +18,6 @@ const SOURCE: &str = "en";
 pub struct ShellStrings {
     pub show: String,
     pub quit: String,
-}
-
-/// The menu items whose text follows the language.
-pub struct TrayItems<R: Runtime> {
-    pub show: MenuItem<R>,
-    pub quit: MenuItem<R>,
 }
 
 /// The bundled locale that best matches `tag`: exact (any case), then the
@@ -229,6 +218,7 @@ pub fn tooltip(tag: &str, bps: u64, active: u64) -> String {
 }
 
 /// What a system notification from the shell says.
+#[derive(Debug, Clone, Copy)]
 pub enum Notice<'a> {
     Completed(&'a str),
     Failed(&'a str),
@@ -268,22 +258,6 @@ pub fn notice(tag: &str, which: &Notice<'_>) -> (String, String) {
         ),
     };
     (title, body)
-}
-
-/// Called by the UI with its current language.
-#[tauri::command]
-pub fn set_shell_language<R: Runtime>(
-    app: AppHandle<R>,
-    language: String,
-    items: State<'_, TrayItems<R>>,
-) -> Result<(), String> {
-    let s = strings(&language);
-    items.show.set_text(&s.show).map_err(|e| e.to_string())?;
-    items.quit.set_text(&s.quit).map_err(|e| e.to_string())?;
-    if app.state::<prefs::PrefsState>().get().language != language {
-        prefs::update(&app, |p| p.language = language)?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

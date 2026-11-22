@@ -1,24 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The shell's own watch on the daemon: the prompt window, the tray
-//! tooltip, and the notifications for downloads that end.
+//! The app's own watch on the daemon, while it runs (a window is open):
+//! the prompt window, and the notifications for downloads that end.
 //!
-//! The main window could open the prompt window by itself, but hidden in
-//! the tray (closed, or ⌘Q on macOS) its page may be suspended by the
-//! system while its connection to the daemon stays up. The daemon then
-//! counts a desktop window as there, so `wdm-nmhost` does not start the app,
-//! and nothing opened the prompt window: a browser download waited unseen.
+//! The main window could open the prompt window by itself, but in the
+//! background its page may be suspended by the system while its connection
+//! to the daemon stays up. So this side listens to the daemon's events and
+//! opens the prompt window when a browser download waits for confirmation,
+//! when the extension offers a page, and when a download the prompt window
+//! follows (`set_followed`) ends, so its "Download complete" comes up even
+//! after the user hid its progress. A download that finishes or fails while
+//! the main window is not in front gets a notification (in front, its own
+//! toast says it).
 //!
-//! So the shell itself listens to the daemon's events and opens the prompt
-//! window when a browser download waits for confirmation, when the
-//! extension offers a page, and when a download the prompt window follows
-//! (`set_followed`) ends, so its "Download complete" comes up even after
-//! the user hid its progress.
-//!
-//! Closed to the tray, the main window does not exist at all (it is made
-//! again when shown), so the tray tooltip and the "finished" / "failed"
-//! notifications come from here too, in the UI's language
-//! ([`crate::shell_i18n`]). With the window in front, its own toast says it
-//! instead.
+//! With no window open the tray process does all this (`crates/tray`); it
+//! reads the followed downloads from [`wdm_tray::FOLLOWED_FILE`]. And when
+//! the tray's Quit stopped the daemon, this ends the app too.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -30,9 +26,9 @@ use tauri::{AppHandle, Manager, Runtime};
 use wdm_client::daemon::{self, Found};
 use wdm_proto::{event, method};
 
+use wdm_tray::i18n::Notice;
+
 use crate::daemon::{client_info, data_dir};
-use crate::prefs::PrefsState;
-use crate::shell_i18n::{self, Notice};
 
 /// How long to wait before connecting again (no daemon yet, or it went away).
 const RETRY: Duration = Duration::from_secs(3);
@@ -58,6 +54,14 @@ pub fn set_followed(state: tauri::State<'_, Followed>, ids: Vec<String>) {
         .filter(|id| !id.is_empty() && id.len() <= 200)
         .take(200)
         .collect();
+    // For the tray, which opens the prompt window when no window is open.
+    if let Ok(dir) = data_dir() {
+        let mut list: Vec<&String> = ids.iter().collect();
+        list.sort();
+        if let Ok(json) = serde_json::to_vec(&list) {
+            let _ = std::fs::write(dir.join(wdm_tray::FOLLOWED_FILE), json);
+        }
+    }
     *state.0.lock().unwrap_or_else(|e| e.into_inner()) = ids;
 }
 
@@ -122,10 +126,9 @@ async fn notify_ended<R: Runtime>(
     crate::notify(app, &notice);
 }
 
-/// The tray tooltip for an `event.stats`.
-fn tooltip(language: &str, stats: &Value) -> String {
-    let n = |k: &str| stats.get(k).and_then(Value::as_u64).unwrap_or(0);
-    shell_i18n::tooltip(language, n("downloadBps"), n("active"))
+/// The user quit WDM (`wdm_proto::runtime::APP_QUIT_FILE`).
+fn quit_marked() -> bool {
+    data_dir().is_ok_and(|d| d.join(wdm_proto::runtime::APP_QUIT_FILE).exists())
 }
 
 /// Something already waits when the shell connects (it started after it arrived).
@@ -170,7 +173,6 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, stop: &'static AtomicBool) {
                 open(&app);
             }
             first = false;
-            let mut shown_tooltip = String::new();
             while let Some(ev) = client.next_event().await {
                 if stop.load(Ordering::SeqCst) {
                     break;
@@ -179,23 +181,19 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, stop: &'static AtomicBool) {
                 if wants_prompt(&ev.method, &ev.params, &followed) {
                     open(&app);
                 }
-                match ev.method.as_str() {
-                    event::STATS => {
-                        let text = tooltip(&app.state::<PrefsState>().get().language, &ev.params);
-                        if text != shown_tooltip {
-                            crate::set_tray_tooltip(&app, &text);
-                            shown_tooltip = text;
-                        }
-                    }
-                    event::DOWNLOAD_STATE => {
-                        if let Some((id, ok)) = ended(&ev.params) {
-                            notify_ended(&app, &client, id, ok).await;
-                        }
-                    }
-                    _ => {}
+                if ev.method == event::DOWNLOAD_STATE
+                    && let Some((id, ok)) = ended(&ev.params)
+                {
+                    notify_ended(&app, &client, id, ok).await;
                 }
             }
             client.close().await;
+            // The tray's Quit stopped the daemon: the app goes too.
+            if quit_marked() && !stop.load(Ordering::SeqCst) {
+                stop.store(true, Ordering::SeqCst);
+                crate::exit_cleanly(&app).await;
+                return;
+            }
             tokio::time::sleep(RETRY).await;
         }
     });
@@ -219,14 +217,6 @@ mod tests {
         );
         assert_eq!(ended(&json!({ "id": "dl_3", "state": "paused" })), None);
         assert_eq!(ended(&json!({ "state": "completed" })), None);
-    }
-
-    #[test]
-    fn the_tooltip_follows_the_stats() {
-        let busy = json!({ "downloadBps": 13_107_200, "uploadBps": 0, "active": 3, "queued": 1 });
-        assert_eq!(tooltip("en", &busy), "WDM — ↓ 12.5 MB/s · 3 active");
-        let idle = json!({ "downloadBps": 0, "uploadBps": 0, "active": 0, "queued": 0 });
-        assert_eq!(tooltip("en", &idle), "Whoosh Download Manager");
     }
 
     #[test]

@@ -7,8 +7,8 @@
 ; Failures are ignored: the app can register again from "Connect your browser".
 ;
 ; Before installing over an earlier version, and before uninstalling, the
-; app, the daemon and the browser host are stopped: they keep running after the app's
-; window is closed (the daemon finishes downloads; the host serves an open
+; tray, the app, the daemon and the browser host are stopped: they keep running after the app's
+; window is closed (the tray and the daemon while WDM is in the tray; the host serves an open
 ; browser), and Windows does not let the installer replace or delete a running
 ; .exe ("Error opening file for writing: ...\wdm-daemon.exe"). Stopping them
 ; is safe: a download resumes from its journal, and the browser starts the
@@ -16,11 +16,13 @@
 ; user's processes, which is what a per-user install needs.
 
 !macro WDM_STOP_BACKGROUND
-  ; The app first: while it runs it starts the daemon again as soon as the
-  ; daemon is gone (Tauri's own "app is running" check comes only after this
-  ; hook, by which time the app has started a new daemon that holds the file).
+  ; The tray and the app first: the tray starts the daemon again as soon as
+  ; the daemon is gone (Tauri's own "app is running" check comes only after
+  ; this hook, by which time a new daemon would hold the file), and the app
+  ; starts the tray.
   ; Each is stopped until taskkill reports it is no longer running (exit code
   ; 128), at most 20 tries a quarter of a second apart.
+  !insertmacro WDM_STOP_ONE "wdm-tray.exe"
   !insertmacro WDM_STOP_ONE "wdm-desktop.exe"
   !insertmacro WDM_STOP_ONE "wdm-daemon.exe"
   !insertmacro WDM_STOP_ONE "wdm-nmhost.exe"

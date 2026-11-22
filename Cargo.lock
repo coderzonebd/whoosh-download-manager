@@ -6406,6 +6406,7 @@ dependencies = [
  "wdm-crash",
  "wdm-nmhost",
  "wdm-proto",
+ "wdm-tray",
 ]
 
 [[package]]
@@ -6590,6 +6591,23 @@ dependencies = [
  "wdm-core",
  "wdm-proto",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "wdm-tray"
+version = "1.0.0-beta.3"
+dependencies = [
+ "dirs 6.0.0",
+ "notify-rust",
+ "png",
+ "serde",
+ "serde_json",
+ "tao",
+ "tokio",
+ "tray-icon",
+ "wdm-client",
+ "wdm-crash",
+ "wdm-proto",
 ]
 
 [[package]]

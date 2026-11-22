@@ -1,0 +1,41 @@
+[package]
+name = "wdm-tray"
+description = "The tray icon of the WDM desktop app: a small process with no web view"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "wdm_tray"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wdm-tray"
+path = "src/main.rs"
+required-features = ["app"]
+
+[features]
+default = ["app"]
+# The tray process itself. Without it (`default-features = false`, as the
+# desktop app uses it) only the shared parts: strings, prefs, locks, paths.
+app = ["dep:notify-rust", "dep:png", "dep:tao", "dep:tokio", "dep:tray-icon", "dep:wdm-client", "dep:wdm-crash"]
+
+[dependencies]
+dirs = "6"
+serde.workspace = true
+serde_json.workspace = true
+wdm-proto.workspace = true
+notify-rust = { version = "4", optional = true }
+png = { version = "0.18", optional = true }
+tao = { version = "0.37", optional = true }
+tokio = { workspace = true, optional = true, features = ["time", "rt"] }
+# The Linux tray as Tauri has it (libappindicator, GTK 3 menus), without libxdo.
+tray-icon = { version = "0.25", optional = true, default-features = false, features = ["libappindicator"] }
+wdm-client = { workspace = true, optional = true }
+wdm-crash = { workspace = true, optional = true }
+
+[lints]
+workspace = true

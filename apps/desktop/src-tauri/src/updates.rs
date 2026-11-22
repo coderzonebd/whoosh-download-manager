@@ -55,20 +55,14 @@ pub struct Pending(Mutex<Option<Update>>);
 #[derive(Default)]
 pub struct Ready(Mutex<Option<(Update, Vec<u8>)>>);
 
-/// A new version announced where installing needs the password, until it is
-/// installed: the main window, made again after the tray, shows it too.
-#[derive(Default)]
-pub struct Announced(Mutex<Option<String>>);
-
-/// The version announced with [`EVENT_UPDATE_AVAILABLE`], if any (asked by
-/// the main window when it opens).
+/// The version announced with [`EVENT_UPDATE_AVAILABLE`] and not installed
+/// yet, if any: the main window shows it when it opens. Kept in
+/// `desktop.json`, since the window (and this process) may have come and
+/// gone since.
 #[tauri::command]
-pub fn update_notice(announced: tauri::State<'_, Announced>) -> Option<String> {
-    announced
-        .0
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
+pub fn update_notice(prefs: tauri::State<'_, prefs::PrefsState>) -> Option<String> {
+    let v = prefs.get().announced_update;
+    (!v.is_empty() && v != env!("CARGO_PKG_VERSION")).then_some(v)
 }
 
 /// Set while an automatic install runs, so it happens once.
@@ -179,6 +173,11 @@ async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<Option<UpdateInfo>, Str
         Err(e) if e.contains("valid release JSON") => None,
         other => other?,
     };
+    if found.is_none()
+        && let Err(err) = prefs::update(app, |p| p.announced_update.clear())
+    {
+        eprintln!("wdm-desktop: could not save desktop.json: {err}");
+    }
     let info = found.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),
         current_version: u.current_version.clone(),
@@ -311,8 +310,83 @@ fn window_hidden<R: Runtime>(app: &AppHandle<R>) -> bool {
         .is_none_or(|w| !w.is_visible().unwrap_or(false))
 }
 
-/// Keeps the app up to date by itself. Not in development builds, nor where
-/// a package manager updates the app ([`managed_by`]).
+/// Whether a downloaded update waits to be installed.
+fn have_ready<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.state::<Ready>()
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some()
+}
+
+/// Looks for an update when one is due, and downloads it, or announces it
+/// where installing needs the password (once per version: `announced`).
+fn look<R: Runtime>(app: &AppHandle<R>, announced: &mut String) {
+    let p = app.state::<prefs::PrefsState>().get();
+    if !p.auto_update_check || have_ready(app) || now().saturating_sub(p.last_update_check) < DAY {
+        return;
+    }
+    match tauri::async_runtime::block_on(check(app)) {
+        Ok(Some(info)) if needs_password() => {
+            // One click (and the password) away; never a password prompt out of nowhere.
+            if info.version != *announced {
+                if let Err(err) =
+                    prefs::update(app, |p| p.announced_update.clone_from(&info.version))
+                {
+                    eprintln!("wdm-desktop: could not save desktop.json: {err}");
+                }
+                let _ = app.emit(
+                    EVENT_UPDATE_AVAILABLE,
+                    serde_json::json!({ "version": info.version }),
+                );
+                // With no window in front, nobody sees the toast.
+                if !crate::main_window_in_front(app) {
+                    crate::notify(app, &wdm_tray::i18n::Notice::UpdateAvailable(&info.version));
+                }
+                announced.clone_from(&info.version);
+            }
+        }
+        Ok(Some(info)) => {
+            let update = app
+                .state::<Pending>()
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
+            if let Some(update) = update {
+                match tauri::async_runtime::block_on(update.download(|_, _| {}, || {})) {
+                    Ok(bytes) => {
+                        *app.state::<Ready>()
+                            .0
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner()) = Some((update, bytes));
+                    }
+                    Err(err) => eprintln!("wdm-desktop: downloading {}: {err}", info.version),
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(err) => eprintln!("wdm-desktop: update check: {err}"),
+    }
+}
+
+/// A quiet moment to install a downloaded update: nothing downloading and
+/// the window out of sight. Installs it then (the app restarts).
+fn install_if_quiet<R: Runtime>(app: &AppHandle<R>) {
+    let auto = app.state::<prefs::PrefsState>().get().auto_update_check;
+    if have_ready(app)
+        && auto
+        && window_hidden(app)
+        && !tauri::async_runtime::block_on(downloads_busy())
+    {
+        tauri::async_runtime::block_on(install_ready(app, false));
+    }
+}
+
+/// Keeps the app up to date by itself while it runs. Not in development
+/// builds, nor where a package manager updates the app ([`managed_by`]).
+/// (With no window open the app does not run: the tray has it look once a
+/// day instead, [`check_once`].)
 pub fn start_daily_check<R: Runtime>(app: AppHandle<R>) {
     if cfg!(debug_assertions) || managed_by().is_some() {
         return;
@@ -321,80 +395,33 @@ pub fn start_daily_check<R: Runtime>(app: AppHandle<R>) {
         std::thread::sleep(FIRST_DELAY);
         let mut announced = String::new();
         loop {
-            let p = app.state::<prefs::PrefsState>().get();
-            let have_ready = app
-                .state::<Ready>()
-                .0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_some();
-            if p.auto_update_check
-                && !have_ready
-                && now().saturating_sub(p.last_update_check) >= DAY
-            {
-                match tauri::async_runtime::block_on(check(&app)) {
-                    Ok(Some(info)) if needs_password() => {
-                        // One click (and the password) away; never a password prompt out of nowhere.
-                        if info.version != announced {
-                            *app.state::<Announced>()
-                                .0
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner()) = Some(info.version.clone());
-                            let _ = app.emit(
-                                EVENT_UPDATE_AVAILABLE,
-                                serde_json::json!({ "version": info.version }),
-                            );
-                            // With the window closed to the tray, nobody hears the event.
-                            if !crate::main_window_in_front(&app) {
-                                crate::notify(
-                                    &app,
-                                    &crate::shell_i18n::Notice::UpdateAvailable(&info.version),
-                                );
-                            }
-                            announced = info.version;
-                        }
-                    }
-                    Ok(Some(info)) => {
-                        let update = app
-                            .state::<Pending>()
-                            .0
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .take();
-                        if let Some(update) = update {
-                            match tauri::async_runtime::block_on(update.download(|_, _| {}, || {}))
-                            {
-                                Ok(bytes) => {
-                                    *app.state::<Ready>()
-                                        .0
-                                        .lock()
-                                        .unwrap_or_else(|e| e.into_inner()) = Some((update, bytes));
-                                }
-                                Err(err) => {
-                                    eprintln!("wdm-desktop: downloading {}: {err}", info.version)
-                                }
-                            }
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(err) => eprintln!("wdm-desktop: update check: {err}"),
+            look(&app, &mut announced);
+            install_if_quiet(&app);
+            std::thread::sleep(if have_ready(&app) { QUIET_TICK } else { TICK });
+        }
+    });
+}
+
+/// `wdm-desktop --update-check` (from the tray, with no window open): looks
+/// once, installs a downloaded update at the next quiet moment, and ends
+/// the app when there is nothing left to do and no window was opened
+/// meanwhile.
+pub fn check_once<R: Runtime>(app: AppHandle<R>) {
+    crate::UPDATE_BUSY.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::spawn(move || {
+        if !cfg!(debug_assertions) && managed_by().is_none() {
+            let mut announced = String::new();
+            look(&app, &mut announced);
+            while have_ready(&app) {
+                install_if_quiet(&app);
+                if have_ready(&app) {
+                    std::thread::sleep(QUIET_TICK);
                 }
             }
-            // A quiet moment: nothing downloading and the window out of sight.
-            let ready = app
-                .state::<Ready>()
-                .0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_some();
-            if ready
-                && p.auto_update_check
-                && window_hidden(&app)
-                && !tauri::async_runtime::block_on(downloads_busy())
-            {
-                tauri::async_runtime::block_on(install_ready(&app, false));
-            }
-            std::thread::sleep(if ready { QUIET_TICK } else { TICK });
+        }
+        crate::UPDATE_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+        if app.webview_windows().is_empty() {
+            app.exit(0);
         }
     });
 }

@@ -14,7 +14,7 @@ laptop and uploaded by hand (MASTER-PLAN §5). Releases are always created as
 |---|---|---|
 | `Whoosh-Download-Manager_<v>_x64-setup.exe`, `Whoosh-Download-Manager_<v>_arm64-setup.exe` (NSIS, per-user) | windows-2025, windows-11-arm | SignPath (exe inside and installer) |
 | `Whoosh-Download-Manager_<v>_x64_en-US.msi` (WiX, per-machine; x64 only, not for pre-releases) | windows-2025 | SignPath |
-| `Whoosh-Download-Manager_<v>_{x64,arm64}_portable.zip` (the exe with `wdm-daemon.exe`, `wdm-nmhost.exe` and `media-tools\` with yt-dlp and ffmpeg) | windows-2025, windows-11-arm | SignPath (all three) |
+| `Whoosh-Download-Manager_<v>_{x64,arm64}_portable.zip` (the exe with `wdm-daemon.exe`, `wdm-nmhost.exe`, `wdm-tray.exe` and `media-tools\` with yt-dlp and ffmpeg) | windows-2025, windows-11-arm | SignPath (all four) |
 | `Whoosh-Download-Manager_<v>_universal.dmg` (Apple silicon + Intel) | macos-15 | Developer ID + notarization, stapled |
 | `Whoosh-Download-Manager_<v>_universal.app.tar.gz` (updater archive) | macos-15 | updater key (below) |
 | `Whoosh-Download-Manager_<v>_amd64.AppImage`, `Whoosh-Download-Manager_<v>_amd64.deb`, `Whoosh-Download-Manager-<v>-1.x86_64.rpm` | ubuntu-22.04 (glibc 2.35) | — (see *Not automated yet*) |
@@ -136,7 +136,7 @@ run log.
 
 | What | How | Where in `release.yml` |
 |---|---|---|
-| Windows exe, NSIS, MSI, `wdm.exe`, `wdm-daemon.exe`, `wdm-autostart.exe`, `wdm-nmhost.exe` | [SignPath](https://signpath.io) (free for OSS through the [SignPath Foundation](https://signpath.org)); the unsigned files are uploaded as a short-lived artifact, SignPath signs them and the signed files replace them | `desktop` (Windows): build `--no-bundle` → sign the app exe and the sidecars (`wdm-daemon.exe`, `wdm-nmhost.exe`) in one request → `tauri bundle --no-binary-patching` → sign installers; `binaries` (Windows) |
+| Windows exe, NSIS, MSI, `wdm.exe`, `wdm-daemon.exe`, `wdm-autostart.exe`, `wdm-nmhost.exe` | [SignPath](https://signpath.io) (free for OSS through the [SignPath Foundation](https://signpath.org)); the unsigned files are uploaded as a short-lived artifact, SignPath signs them and the signed files replace them | `desktop` (Windows): build `--no-bundle` → sign the app exe and the sidecars (`wdm-daemon.exe`, `wdm-nmhost.exe`, `wdm-tray.exe`) in one request → `tauri bundle --no-binary-patching` → sign installers; `binaries` (Windows) |
 | macOS `.app` | Tauri CLI with `APPLE_*` variables: Developer ID, hardened runtime, notarization, stapling | `desktop` (macOS) |
 | macOS yt-dlp and ffmpeg inside the `.app` | `codesign` before bundling: Developer ID (hardened runtime; yt-dlp with `packaging/media-tools/yt-dlp.entitlements`) when configured, else ad hoc like the app; then `wdm-media-bundle rehash` | *Sign yt-dlp and ffmpeg (macOS)* |
 | macOS `.dmg` | `codesign` + `notarytool` + `stapler` | `.github/scripts/macos-sign.sh`, `macos-notarize.sh` |

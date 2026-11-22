@@ -13,7 +13,7 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const NAMES = ["wdm-daemon", "wdm-nmhost"];
+const NAMES = ["wdm-daemon", "wdm-nmhost", "wdm-tray"];
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const out = join(root, "apps", "desktop", "src-tauri", "binaries");
 
