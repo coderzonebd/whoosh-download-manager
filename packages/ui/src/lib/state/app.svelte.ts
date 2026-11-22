@@ -16,6 +16,9 @@ import { QUEUES_CAPABILITY, QueueStore, isUnsupported } from "./queues.svelte.ts
 import { MEDIA_CAPABILITY, MediaStore, isMediaUnsupported } from "./media.svelte.ts";
 import { ToastStore } from "./toasts.svelte.ts";
 
+
+/** `host.thisRun` key: the sort-into-folders question was closed without an answer. */
+const ORGANIZE_DISMISSED = "organizeDismissed";
 export type Connection = "demo" | "connecting" | "open" | "reconnecting" | "closed";
 export type MainView = "downloads" | "history" | "settings" | "browsers";
 export type Theme = "system" | "light" | "dark" | "high-contrast";
@@ -154,6 +157,10 @@ export class AppState {
       this.host.crashReports
         ?.get()
         .then((s) => (this.crashNotice = s !== undefined && !s.noticeShown))
+        .catch(() => undefined);
+      this.host.thisRun
+        ?.get(ORGANIZE_DISMISSED)
+        .then((v) => (this.organizeDismissed ||= v))
         .catch(() => undefined);
     }
     this.#storage = opts.storage === undefined ? defaultStorage() : opts.storage;
@@ -716,8 +723,16 @@ export class AppState {
     }
   }
 
-  /** "Not now" on the sort-into-folders question: asked again at the next start. */
+  /**
+   * "Not now" on the sort-into-folders question: asked again at the next start, not when the
+   * desktop app's window comes back from the tray (`host.thisRun`).
+   */
   organizeDismissed = $state(false);
+
+  dismissOrganize(): void {
+    this.organizeDismissed = true;
+    this.host.thisRun?.set(ORGANIZE_DISMISSED).catch(() => undefined);
+  }
 
   /**
    * Ask once whether to sort downloads into folders by type: the daemon has not been told

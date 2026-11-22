@@ -4,8 +4,10 @@
 //! The UI talks to the daemon over its WebSocket API and asks this side for
 //! the address and token ([`daemon::daemon_connection`]), which starts the
 //! bundled daemon when none is running. One instance per user: a second
-//! launch shows the first one's window. Closing the window hides it to the
-//! tray while downloads go on; Quit leaves the daemon running unless the
+//! launch shows the first one's window. Closing the window leaves the app in
+//! the tray while downloads go on, with the window and its web page gone so
+//! they take no memory ([`show_main_window`] makes it again); the tray
+//! tooltip and the notifications come from the shell ([`watch`]); Quit leaves the daemon running unless the
 //! user asked otherwise ([`prefs`]). Window size, position and maximised
 //! state are remembered. `whoosh://add?url=…` links open the add dialog
 //! ([`deep_links`]); launch at login is turned on once, at the first start
@@ -22,7 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
+use tauri::{AppHandle, Manager, Runtime, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 mod browsers;
@@ -40,15 +42,14 @@ mod updates;
 mod watch;
 mod window_size;
 
-/// Sent to the UI when closing the window hid it to the tray, so it can say
-/// so once (in the user's language): `{ "first": bool }`.
-pub const EVENT_HIDDEN_TO_TRAY: &str = "desktop://hidden-to-tray";
-
 /// Whether the tray icon exists. Without one (a Linux desktop with no status
 /// notifier), closing the window quits, or the app could not be reached.
 static TRAY_SHOWN: AtomicBool = AtomicBool::new(false);
 /// Set once Quit has started, so closing the window then really closes it.
 pub(crate) static QUITTING: AtomicBool = AtomicBool::new(false);
+/// Set when the window was closed to quit (the user does not keep WDM in
+/// the tray): the app then ends with its last window.
+static CLOSED_TO_QUIT: AtomicBool = AtomicBool::new(false);
 
 /// Passed by the login item (`tauri-plugin-autostart`): start in the tray,
 /// without showing the window.
@@ -66,14 +67,32 @@ fn window_state_flags() -> StateFlags {
     StateFlags::all() - StateFlags::SIZE
 }
 
-/// Called by the UI about once a second with e.g. "WDM — ↓ 12.5 MB/s · 3 active".
-#[tauri::command]
-fn set_tray_tooltip<R: Runtime>(app: AppHandle<R>, text: String) -> Result<(), String> {
+/// Sets the tray icon's tooltip ([`watch`] keeps it up to date).
+pub(crate) fn set_tray_tooltip<R: Runtime>(app: &AppHandle<R>, text: &str) {
     let text: String = text.chars().take(MAX_TOOLTIP_CHARS).collect();
-    match app.tray_by_id(TRAY_ID) {
-        Some(tray) => tray.set_tooltip(Some(text)).map_err(|e| e.to_string()),
-        None => Ok(()),
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        // No tray (no status notifier on this desktop): nothing to update.
+        let _ = tray.set_tooltip(Some(text));
     }
+}
+
+/// A system notification, in the UI's language.
+pub(crate) fn notify<R: Runtime>(app: &AppHandle<R>, which: &shell_i18n::Notice<'_>) {
+    use tauri_plugin_notification::NotificationExt;
+    let language = app.state::<prefs::PrefsState>().get().language;
+    let (title, body) = shell_i18n::notice(&language, which);
+    if let Err(err) = app.notification().builder().title(title).body(body).show() {
+        eprintln!("wdm-desktop: could not show a notification: {err}");
+    }
+}
+
+/// The main window is open and in front (it then says things itself).
+pub(crate) fn main_window_in_front<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.get_webview_window(MAIN_WINDOW).is_some_and(|w| {
+        w.is_visible().unwrap_or(false)
+            && !w.is_minimized().unwrap_or(false)
+            && w.is_focused().unwrap_or(false)
+    })
 }
 
 /// Where the language picker's "help improve the translation" link may go.
@@ -112,22 +131,61 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The UI asks for the main window.
+/// The UI (the prompt window) asks for the main window. Async: making a
+/// window inside a synchronous command deadlocks on Windows.
 #[tauri::command]
-fn show_window<R: Runtime>(app: AppHandle<R>) {
+async fn show_window<R: Runtime>(app: AppHandle<R>) {
     show_main_window(&app);
 }
 
+/// Shows the main window, making it again when it was closed to the tray.
 pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
-    // Back in the Dock while the window is open (see `hide_to_tray`).
-    #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+    let handle = app.clone();
+    // Windows are made on the main thread.
+    let _ = app.run_on_main_thread(move || {
+        // Back in the Dock while the window is open (see `went_to_tray`).
+        #[cfg(target_os = "macos")]
+        let _ = handle.set_activation_policy(tauri::ActivationPolicy::Regular);
+        let window = match handle.get_webview_window(MAIN_WINDOW) {
+            Some(window) => window,
+            None => match create_main_window(&handle) {
+                Ok(window) => window,
+                Err(err) => {
+                    eprintln!("wdm-desktop: could not open the window: {err}");
+                    return;
+                }
+            },
+        };
         // Best effort: a failure here leaves the window as it was.
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-    }
+    });
+}
+
+/// Makes the main window (hidden) from its entry in `tauri.conf.json`
+/// (`"create": false`, so it is made here), at its saved size and position.
+fn create_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::WebviewWindow<R>> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == MAIN_WINDOW)
+        .cloned()
+        .ok_or_else(|| tauri::Error::WindowNotFound)?;
+    // The window-state plugin puts it where it was as it is made.
+    let window = tauri::WebviewWindowBuilder::from_config(app, &config)?
+        .visible(false)
+        .build()?;
+    window_size::restore(&window);
+    let w = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            on_close_requested(&w, api);
+        }
+    });
+    Ok(window)
 }
 
 fn save_window_state<R: Runtime>(app: &AppHandle<R>) {
@@ -200,33 +258,35 @@ fn keeps_running_in_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
         && app.state::<prefs::PrefsState>().get().close_to_tray
 }
 
-/// Hides the window to the tray; downloads go on. The first time, the UI
-/// says so. On macOS the app also leaves the Dock and lives in the menu bar
-/// until the window is shown again.
-fn hide_to_tray<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        window_size::save(&window);
-        let _ = window.hide();
-    }
+/// The window is closing and the app stays in the tray; downloads go on.
+/// The window is closed for real, not hidden: its web page (WebKit's or
+/// WebView2's processes) would otherwise hold some 100 MB while nobody sees
+/// it. The first time, a notification says the app is still there. On
+/// macOS the app also leaves the Dock and lives in the menu bar until the
+/// window is shown again.
+fn went_to_tray<R: Runtime>(app: &AppHandle<R>) {
+    save_window_state(app);
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     let first = !app.state::<prefs::PrefsState>().get().tray_notice_shown;
-    if first && let Err(err) = prefs::update(app, |p| p.tray_notice_shown = true) {
-        eprintln!("wdm-desktop: could not save desktop.json: {err}");
+    if first {
+        if let Err(err) = prefs::update(app, |p| p.tray_notice_shown = true) {
+            eprintln!("wdm-desktop: could not save desktop.json: {err}");
+        }
+        notify(app, &shell_i18n::Notice::InTray);
     }
-    let _ = app.emit(EVENT_HIDDEN_TO_TRAY, serde_json::json!({ "first": first }));
 }
 
-/// Closing the window: hide it to the tray (downloads go on) when there is
-/// a tray and the user wants that; otherwise let it close, which quits.
-fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, api: &tauri::CloseRequestApi) {
+/// Closing the window: the app stays in the tray (downloads go on) when
+/// there is a tray and the user wants that; otherwise closing quits.
+fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, _: &tauri::CloseRequestApi) {
     let app = window.app_handle();
-    if !keeps_running_in_tray(app) {
+    if keeps_running_in_tray(app) {
+        went_to_tray(app);
+    } else {
+        CLOSED_TO_QUIT.store(true, Ordering::SeqCst);
         save_window_state(app);
-        return;
     }
-    api.prevent_close();
-    hide_to_tray(app);
 }
 
 /// ⌘Q, the app menu's Quit (macOS): the same as closing the window when the
@@ -235,7 +295,10 @@ fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, api: &tauri:
 #[cfg(target_os = "macos")]
 fn quit_from_app_menu<R: Runtime>(app: &AppHandle<R>) {
     if keeps_running_in_tray(app) {
-        hide_to_tray(app);
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            // Closes it like its close button: `on_close_requested`.
+            let _ = window.close();
+        }
     } else {
         quit_app(app);
     }
@@ -320,7 +383,9 @@ pub fn run() {
             app.manage(prefs::PrefsState(std::sync::Mutex::new(loaded)));
             app.manage(updates::Pending::default());
             app.manage(updates::Ready::default());
+            app.manage(updates::Announced::default());
             app.manage(watch::Followed::default());
+            app.manage(prefs::ThisRun::default());
             std::thread::spawn(move || browsers::ensure_registered(first_run));
             updates::start_daily_check(app.handle().clone());
             // Installed builds start at login unless the user turned that off.
@@ -338,41 +403,32 @@ pub fn run() {
             // A daemon that crashes comes back even while the window is in the tray.
             daemon::supervise(app.handle(), &QUITTING);
             watch::start(app.handle(), &QUITTING);
-            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                window_size::restore(&window);
-                let w = window.clone();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
-                        on_close_requested(&w, api);
-                    }
-                });
-            }
             // No tray is not fatal: closing the window then quits.
             if let Err(err) = build_tray(app) {
                 eprintln!("wdm-desktop: no tray icon: {err}");
             }
-            deep_links::setup(app);
             // Started at login, or by the browser for the prompt window:
-            // stay in the tray (when there is one).
+            // stay in the tray (when there is one), without making the
+            // window at all until it is wanted.
             let for_prompt = prompt::wants_prompt(std::env::args());
-            if TRAY_SHOWN.load(Ordering::SeqCst)
-                && (for_prompt || std::env::args().any(|a| a == AUTOSTART_ARG))
-                && let Some(window) = app.get_webview_window(MAIN_WINDOW)
-            {
-                let _ = window.hide();
-                // In the menu bar, not the Dock, as when hidden to the tray.
+            let in_tray = TRAY_SHOWN.load(Ordering::SeqCst)
+                && (for_prompt || std::env::args().any(|a| a == AUTOSTART_ARG));
+            if in_tray {
+                // In the menu bar, not the Dock, as when closed to the tray.
                 #[cfg(target_os = "macos")]
-                if for_prompt {
-                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                }
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            } else {
+                let window = create_main_window(app.handle())?;
+                window.show()?;
+                let _ = window.set_focus();
             }
+            deep_links::setup(app);
             if for_prompt && let Err(err) = prompt::open(app.handle()) {
                 eprintln!("wdm-desktop: could not open the prompt window: {err}");
             }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            set_tray_tooltip,
             show_window,
             prompt::open_prompt,
             prompt::close_prompt,
@@ -382,6 +438,8 @@ pub fn run() {
             deep_links::take_deep_links,
             prefs::desktop_prefs,
             prefs::set_desktop_prefs,
+            prefs::this_run,
+            prefs::set_this_run,
             shell_i18n::set_shell_language,
             open_translation_page,
             browsers::browser_status,
@@ -390,6 +448,7 @@ pub fn run() {
             updates::check_for_update,
             updates::install_update,
             updates::update_source,
+            updates::update_notice,
             crash::crash_reports,
             crash::set_crash_reports,
             crash::dismiss_crash_notice,
@@ -401,13 +460,23 @@ pub fn run() {
             eprintln!("wdm-desktop: failed to start: {err}");
             std::process::exit(1);
         });
-    app.run(|app, event| {
-        // macOS: clicking the Dock icon brings back a window hidden to the tray.
-        #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Reopen { .. } = event {
-            show_main_window(app);
+    app.run(|app, event| match event {
+        // The last window closed while the app stays in the tray: keep running.
+        // (Quit exits with a code, which goes through.)
+        tauri::RunEvent::ExitRequested {
+            code: None, api, ..
+        } if TRAY_SHOWN.load(Ordering::SeqCst)
+            && !QUITTING.load(Ordering::SeqCst)
+            && !CLOSED_TO_QUIT.load(Ordering::SeqCst) =>
+        {
+            api.prevent_exit();
         }
-        #[cfg(not(target_os = "macos"))]
-        let _ = (app, event);
+        // macOS: clicking the Dock icon brings back a window closed to the tray.
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => show_main_window(app),
+        _ => {
+            #[cfg(not(target_os = "macos"))]
+            let _ = app;
+        }
     });
 }

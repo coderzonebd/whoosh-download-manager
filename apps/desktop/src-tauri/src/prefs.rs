@@ -101,6 +101,46 @@ pub fn set_desktop_prefs<R: Runtime>(app: AppHandle<R>, prefs: Prefs) -> Result<
     update(&app, |p| *p = prefs)
 }
 
+/// Small answers the UI keeps while the app runs (`host.thisRun`), across
+/// the main window being closed to the tray and made again. Not saved.
+#[derive(Default)]
+pub struct ThisRun(Mutex<std::collections::HashSet<String>>);
+
+impl ThisRun {
+    /// At most this many keys, each this long: the page cannot grow it.
+    const MAX_KEYS: usize = 64;
+    const MAX_KEY_LEN: usize = 64;
+
+    fn get(&self, key: &str) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(key)
+    }
+
+    fn set(&self, key: String) -> Result<(), String> {
+        if key.is_empty() || key.len() > Self::MAX_KEY_LEN {
+            return Err("bad key".into());
+        }
+        let mut keys = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if keys.len() >= Self::MAX_KEYS && !keys.contains(&key) {
+            return Err("too many keys".into());
+        }
+        keys.insert(key);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn this_run(state: State<'_, ThisRun>, key: String) -> bool {
+    state.get(&key)
+}
+
+#[tauri::command]
+pub fn set_this_run(state: State<'_, ThisRun>, key: String) -> Result<(), String> {
+    state.set(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +153,21 @@ mod tests {
         assert!(!p.browser_setup_shown);
         // Not set yet: the first start of an installed build turns launch at login on.
         assert!(!p.login_item_set);
+    }
+
+    #[test]
+    fn this_run_keeps_a_few_short_keys() {
+        let run = ThisRun::default();
+        assert!(!run.get("organizeDismissed"));
+        run.set("organizeDismissed".into()).unwrap();
+        assert!(run.get("organizeDismissed"));
+        assert!(run.set(String::new()).is_err());
+        assert!(run.set("x".repeat(65)).is_err());
+        for i in 0..63 {
+            run.set(format!("k{i}")).unwrap();
+        }
+        assert!(run.set("one-too-many".into()).is_err());
+        run.set("k1".into()).unwrap();
     }
 
     #[test]

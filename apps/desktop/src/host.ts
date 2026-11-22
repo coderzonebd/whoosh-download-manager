@@ -42,6 +42,11 @@ declare const __APP_VERSION__: string;
 
 export function desktopHost(): Host {
   return {
+    // Kept by the shell, which outlives the window closed to the tray.
+    thisRun: {
+      get: (key) => invoke<boolean>("this_run", { key }),
+      set: (key) => invoke<void>("set_this_run", { key }),
+    },
     appVersion: __APP_VERSION__,
     async pickFolder({ title, defaultPath }) {
       const { open } = await import("@tauri-apps/plugin-dialog");
