@@ -1,0 +1,5 @@
+date,target,arch,version,checks
+2026-11-21,windows,x86_64,1.0.0-beta.2,4
+2026-11-21,linux,x86_64,1.0.0-beta.2,2
+2026-11-21,linux,x86_64,1.0.0-beta.3,1
+2026-11-21,other,other,other,1
