@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Which of the two processes runs: each holds a lock on its own file in
-//! the data directory for as long as it lives (`tray.lock`, `app.lock`).
+//! the data directory for as long as it lives (`tray.lock`, `app.lock`,
+//! and `prompt.lock` for the prompt window, so there is only one).
 //! The system releases a lock when its process ends, crashed or not, so a
 //! lock never goes stale.
 
@@ -10,9 +11,10 @@ use std::path::{Path, PathBuf};
 /// Held by the tray process.
 pub const TRAY: &str = "tray.lock";
 /// Held by the app (`wdm-desktop`) while it runs, that is while a window
-/// is open: the tray then leaves the notifications and the prompt window
-/// to it.
+/// is open: the tray then leaves the notifications to it.
 pub const APP: &str = "app.lock";
+/// Held by the prompt window (`wdm-prompt`) while it is open.
+pub const PROMPT: &str = "prompt.lock";
 
 fn file(dir: &Path, name: &str) -> std::io::Result<(PathBuf, File)> {
     std::fs::create_dir_all(dir)?;

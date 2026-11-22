@@ -1,0 +1,36 @@
+[package]
+name = "wdm-prompt"
+description = "The prompt window of the WDM desktop app: a small native window with no web view"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "wdm-prompt"
+path = "src/main.rs"
+
+[dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+wdm-client.workspace = true
+wdm-crash.workspace = true
+wdm-proto.workspace = true
+wdm-tray = { path = "../tray", default-features = false }
+# Software rendering (no GPU context to keep in memory) through winit; the
+# std widgets' text fields and lists, and AccessKit for screen readers.
+slint = { version = "1.19", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "software-renderer-systemfonts", "software-renderer-path", "accessibility"] }
+# The folder picker, as the desktop app's dialog plugin uses it (portal on Linux).
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland", "common-controls-v6"] }
+
+[dev-dependencies]
+# The UI tests render each screen to PNG (WDM_PROMPT_SHOTS=<dir>).
+png = "0.18"
+
+[build-dependencies]
+slint-build = "1.19"
+
+[lints]
+workspace = true

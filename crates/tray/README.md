@@ -9,13 +9,18 @@ The desktop app is two processes:
 | | `wdm-tray` (this crate) | `wdm-desktop` ([`apps/desktop`](../../apps/desktop/README.md)) |
 |---|---|---|
 | Runs | while WDM runs: started at login (`wdm-desktop --autostart` becomes it), or by the app | only while one of its windows is open |
-| Does | tray icon and menu, tooltip, starts the daemon (again if it stops), notifications and the prompt window while no window is open, the daily update look (`wdm-desktop --update-check`) | the main window and the prompt window (web pages), Settings, updates while it runs |
+| Does | tray icon and menu, tooltip, starts the daemon (again if it stops), starts the prompt window (`wdm-prompt`, [`crates/prompt`](../prompt/README.md)), notifications while no window is open, the daily update look (`wdm-desktop --update-check`) | the main window (a web page), Settings, updates while it runs |
 | Lock (data directory) | `tray.lock` | `app.lock` |
 
 Each starts the other when it is missing (`launch.rs`): the installers put
 `wdm-tray` next to `wdm-desktop` (Tauri `externalBin`); on macOS both are in
 `Contents/MacOS` and the app is started through Launch Services; from an
 AppImage each is started from the image itself (`$APPIMAGE`, `--tray`).
+
+The prompt window is a third, short-lived process: `wdm-prompt`, a native
+window that starts when the browser hands over a download or a page and ends
+when nothing is left to ask. The tray starts it (`prompt.lock` keeps it to
+one).
 
 The tray connects to the daemon as `desktop`, so the daemon counts an app
 there and the browser's native host leaves the prompt window to it. Quit in
@@ -26,8 +31,10 @@ off), the tray sees the mark and ends.
 
 The library (`default-features = false`) is what the app shares with it: the
 strings in the UI's language (`i18n.rs`, from the UI's locale files, embedded
-by `build.rs`), the app's `desktop.json` (`prefs.rs`), the locks
-(`locks.rs`) and the launching rules (`launch.rs`).
+by `build.rs`, with `Lang` for the prompt window), the app's `desktop.json`
+(`prefs.rs`), the locks (`locks.rs`), the launching rules (`launch.rs`), the
+followed downloads (`followed.rs`) and opening a finished download's file
+(`files.rs`).
 
 Platform parts: `tao` for the event loop (GTK on Linux, where the icon is a
 StatusNotifier through libappindicator, as Tauri's), `tray-icon` for the icon

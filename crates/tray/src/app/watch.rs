@@ -5,11 +5,13 @@
 //!   crash), unless the user quit WDM (the `app-quit` mark), which ends the
 //!   tray too.
 //! * `event.stats` keeps the tooltip up to date, in the UI's language.
-//! * While no window of the app is open (`app.lock` free), what the app
-//!   would say comes from here: the notifications for downloads that end,
-//!   and the prompt window (started as `wdm-desktop --prompt`) when the
-//!   browser hands over a download, offers a page, or a download the prompt
-//!   window follows ends. With a window open the app does it itself.
+//! * The prompt window (`wdm-prompt`, a native window of its own) is
+//!   started from here when the browser hands over a download, offers a
+//!   page, or a download the prompt window follows ends; a prompt window
+//!   already open sees it itself.
+//! * While no window of the app is open (`app.lock` free), the
+//!   notifications for downloads that end come from here. With a window
+//!   open the app sends them itself.
 //! * Once a day it has the app look for an update (`wdm-desktop
 //!   --update-check`, with no window), while no window is open.
 //!
@@ -29,9 +31,10 @@ use super::{Proxy, UserEvent, notify};
 
 /// How long to wait before connecting again.
 const RETRY: Duration = Duration::from_secs(3);
-/// The prompt window is asked for at most this often (it takes a moment
-/// to start, and a second start only brings it to the front).
-const PROMPT_GAP: Duration = Duration::from_secs(3);
+/// The prompt window is started at most this often (a second one ends at
+/// once anyway); one asked for meanwhile is started when the gap is over,
+/// in case the open one was just closing.
+const PROMPT_GAP: Duration = Duration::from_secs(1);
 /// The first update check waits this long after the tray starts.
 const UPDATE_FIRST_DELAY: Duration = Duration::from_secs(90);
 /// How often the update schedule is looked at.
@@ -91,13 +94,11 @@ fn app_running(dir: &Path) -> bool {
     locks::held(dir, locks::APP)
 }
 
-/// The downloads the prompt window follows, as the app last wrote them.
+/// The downloads the prompt window follows, as it last wrote them.
 fn followed(dir: &Path) -> HashSet<String> {
-    std::fs::read(dir.join(wdm_tray::FOLLOWED_FILE))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Vec<String>>(&b).ok())
-        .unwrap_or_default()
+    wdm_tray::followed::read(dir)
         .into_iter()
+        .map(|f| f.id)
         .collect()
 }
 
@@ -180,17 +181,29 @@ struct Watch {
     language: Language,
     tooltip: String,
     last_prompt: Option<Instant>,
+    /// A prompt window asked for within the gap waits for its end.
+    prompt_pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Watch {
     fn prompt(&mut self) {
-        if self.last_prompt.is_some_and(|t| t.elapsed() < PROMPT_GAP) {
+        use std::sync::atomic::Ordering;
+        if let Some(t) = self.last_prompt
+            && t.elapsed() < PROMPT_GAP
+        {
+            if !self.prompt_pending.swap(true, Ordering::SeqCst) {
+                let pending = self.prompt_pending.clone();
+                let wait = PROMPT_GAP - t.elapsed();
+                tokio::spawn(async move {
+                    tokio::time::sleep(wait).await;
+                    pending.store(false, Ordering::SeqCst);
+                    start_prompt();
+                });
+            }
             return;
         }
         self.last_prompt = Some(Instant::now());
-        if let Err(err) = wdm_tray::launch::start_app(&[wdm_tray::PROMPT_ARG]) {
-            eprintln!("wdm-tray: could not open the prompt window: {err}");
-        }
+        start_prompt();
     }
 
     fn set_tooltip(&mut self, stats: &Value) {
@@ -217,12 +230,15 @@ impl Watch {
                 | event::DOWNLOAD_UPDATED
                 | event::DOWNLOAD_STATE
         );
-        if !relevant || app_running(&self.dir) {
+        if !relevant {
             return;
         }
         let followed = followed(&self.dir);
         if wants_prompt(method, params, &|id| followed.contains(id)) {
             self.prompt();
+        }
+        if app_running(&self.dir) {
+            return;
         }
         if method == event::DOWNLOAD_STATE
             && let Some((id, ok)) = ended(params)
@@ -269,7 +285,7 @@ impl Watch {
                     continue;
                 }
             };
-            if !app_running(&self.dir) && waiting_now(&client).await {
+            if waiting_now(&client).await {
                 self.prompt();
             }
             while let Some(ev) = client.next_event().await {
@@ -278,6 +294,12 @@ impl Watch {
             client.close().await;
             tokio::time::sleep(RETRY).await;
         }
+    }
+}
+
+fn start_prompt() {
+    if let Err(err) = wdm_tray::launch::start_prompt() {
+        eprintln!("wdm-tray: could not open the prompt window: {err}");
     }
 }
 
@@ -332,6 +354,7 @@ pub fn start(dir: PathBuf, proxy: Proxy, language: String) {
                 language: Language::new(language),
                 tooltip: String::new(),
                 last_prompt: None,
+                prompt_pending: Default::default(),
             }
             .run(),
         );
@@ -407,7 +430,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("wdm-tray-followed-{}", std::process::id()));
         assert!(followed(&dir).is_empty());
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(wdm_tray::FOLLOWED_FILE), r#"["dl_1","dl_2"]"#).unwrap();
+        std::fs::write(
+            dir.join(wdm_tray::FOLLOWED_FILE),
+            r#"["dl_1",{"id":"dl_2","hidden":true}]"#,
+        )
+        .unwrap();
         assert_eq!(
             followed(&dir),
             HashSet::from(["dl_1".to_owned(), "dl_2".to_owned()])

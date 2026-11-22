@@ -2,27 +2,21 @@
 //! The app's own watch on the daemon, while it runs (a window is open):
 //! the prompt window, and the notifications for downloads that end.
 //!
-//! The main window could open the prompt window by itself, but in the
-//! background its page may be suspended by the system while its connection
-//! to the daemon stays up. So this side listens to the daemon's events and
-//! opens the prompt window when a browser download waits for confirmation,
-//! when the extension offers a page, and when a download the prompt window
-//! follows (`set_followed`) ends, so its "Download complete" comes up even
-//! after the user hid its progress. A download that finishes or fails while
-//! the main window is not in front gets a notification (in front, its own
-//! toast says it).
-//!
-//! With no window open the tray process does all this (`crates/tray`); it
-//! reads the followed downloads from [`wdm_tray::FOLLOWED_FILE`]. And when
-//! the tray's Quit stopped the daemon, this ends the app too.
+//! The prompt window is `wdm-prompt`, a native window of its own. The tray
+//! starts it when a browser download waits for confirmation, when the
+//! extension offers a page, and when a download the prompt window follows
+//! ([`wdm_tray::FOLLOWED_FILE`]) ends; this does the same while the app
+//! runs, for a desktop with no tray. A second start ends at once, so both
+//! asking is harmless. A download that finishes or fails while the main
+//! window is not in front gets a notification (in front, its own toast says
+//! it); with no window open the tray sends them. And when the tray's Quit
+//! stopped the daemon, this ends the app too.
 
-use std::collections::HashSet;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde_json::Value;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 use wdm_client::daemon::{self, Found};
 use wdm_proto::{event, method};
 
@@ -32,38 +26,6 @@ use crate::daemon::{client_info, data_dir};
 
 /// How long to wait before connecting again (no daemon yet, or it went away).
 const RETRY: Duration = Duration::from_secs(3);
-
-/// Downloads the prompt window follows; it keeps the list and sends it here.
-#[derive(Default)]
-pub struct Followed(Mutex<HashSet<String>>);
-
-impl Followed {
-    fn contains(&self, id: &str) -> bool {
-        self.0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains(id)
-    }
-}
-
-/// The prompt window's followed downloads changed.
-#[tauri::command]
-pub fn set_followed(state: tauri::State<'_, Followed>, ids: Vec<String>) {
-    let ids: HashSet<String> = ids
-        .into_iter()
-        .filter(|id| !id.is_empty() && id.len() <= 200)
-        .take(200)
-        .collect();
-    // For the tray, which opens the prompt window when no window is open.
-    if let Ok(dir) = data_dir() {
-        let mut list: Vec<&String> = ids.iter().collect();
-        list.sort();
-        if let Ok(json) = serde_json::to_vec(&list) {
-            let _ = std::fs::write(dir.join(wdm_tray::FOLLOWED_FILE), json);
-        }
-    }
-    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = ids;
-}
 
 /// What an event asks of the prompt window.
 fn wants_prompt(method: &str, params: &Value, followed: &dyn Fn(&str) -> bool) -> bool {
@@ -143,14 +105,10 @@ async fn waiting_now(client: &wdm_client::Client) -> bool {
     list.is_ok_and(|v| v.as_array().is_some_and(|a| a.iter().any(waits)))
 }
 
-fn open<R: Runtime>(app: &AppHandle<R>) {
-    let handle = app.clone();
-    // Windows are made on the main thread.
-    let _ = app.run_on_main_thread(move || {
-        if let Err(err) = crate::prompt::open(&handle) {
-            eprintln!("wdm-desktop: could not open the prompt window: {err}");
-        }
-    });
+fn open() {
+    if let Err(err) = wdm_tray::launch::start_prompt() {
+        eprintln!("wdm-desktop: could not open the prompt window: {err}");
+    }
 }
 
 /// Watches the daemon until `stop`, connecting again whenever it goes away.
@@ -170,16 +128,19 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, stop: &'static AtomicBool) {
             let client = connected.client;
             // At start the main window asks too; after a reconnect only this does.
             if !first && waiting_now(&client).await {
-                open(&app);
+                open();
             }
             first = false;
             while let Some(ev) = client.next_event().await {
                 if stop.load(Ordering::SeqCst) {
                     break;
                 }
-                let followed = |id: &str| app.state::<Followed>().contains(id);
+                let followed = |id: &str| {
+                    data_dir()
+                        .is_ok_and(|d| wdm_tray::followed::read(&d).iter().any(|f| f.id == id))
+                };
                 if wants_prompt(&ev.method, &ev.params, &followed) {
-                    open(&app);
+                    open();
                 }
                 if ev.method == event::DOWNLOAD_STATE
                     && let Some((id, ok)) = ended(&ev.params)

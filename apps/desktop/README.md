@@ -21,9 +21,9 @@ GPL-3.0-or-later.
 - **Two processes.** `wdm-desktop` (this app) shows the windows and runs
   only while one is open. `wdm-tray` ([`crates/tray`](../../crates/tray/README.md)),
   a small process with no web view, holds the tray icon, starts the daemon
-  and starts it again if it stops, sends the notifications and opens the
-  prompt window while no window is open, and starts the app again when it
-  is wanted. Each starts the other when it is missing; installers put
+  and starts it again if it stops, sends the notifications while no window
+  is open, starts the prompt window, and starts the app again when it is
+  wanted. Each starts the other when it is missing; installers put
   `wdm-tray` next to the app (`externalBin`, `scripts/sidecars.mjs`). Each
   holds a lock in the data directory while it runs (`tray.lock`,
   `app.lock`), which is how the other knows.
@@ -32,7 +32,7 @@ GPL-3.0-or-later.
   downloads go on; the first time, a notification says so. The app ends
   with its last window: its web page (WebKitGTK's or WebView2's processes)
   takes no memory while nobody sees it, and the tray (or a second launch, a
-  `whoosh://` link, the prompt window) starts it again. In the tray WDM is
+  `whoosh://` link) starts it again. In the tray WDM is
   the daemon and `wdm-tray`. Without a tray (a Linux desktop with no status
   notifier) closing just ends the app. When the user does not keep WDM in
   the tray (Settings), closing quits. *Quit* closes WDM completely: the
@@ -48,20 +48,18 @@ GPL-3.0-or-later.
   `--autostart`, and `wdm-desktop` then becomes the tray process at once
   (`--tray` does the same; an AppImage starts its tray that way), with no
   window and no web view.
-- **Prompt window** (`src-tauri/src/prompt.rs`). A browser download that waits
-  for confirmation, or a video page offered by the extension's button
-  (`media.offer`), is asked about in a small window of its own (`prompt`,
-  520×440, always on top, not in the taskbar), which loads
-  `index.html?view=prompt` (`PromptApp` of `@wdm/ui`), shows them one at a
-  time and closes itself when nothing is left; the main window does not come
-  up for them. A UI asks for it with `open_prompt` (opening it again only
-  focuses it). With no window open, the tray starts the app with `--prompt`
-  (the native host does the same when no tray or app is connected to the
-  daemon): the main window is then not made and only the prompt window
-  opens; a running app gets the argument through the single-instance
-  plugin. The prompt window's followed downloads are written to
-  `followed.json` in the data directory, so the tray can bring it back
-  for "Download complete".
+- **Prompt window** (`wdm-prompt`, [`crates/prompt`](../../crates/prompt/README.md)).
+  A browser download that waits for confirmation, or a video page offered by
+  the extension's button (`media.offer`), is asked about in a small native
+  window of its own (520×460, always on top, no web view, about 20 MB), one at
+  a time; it ends when nothing is left. The main window does not come up for
+  them. The tray starts it, the main window asks for it with `open_prompt`,
+  and `wdm-desktop --prompt` (the native host's way to start it when no tray
+  or app is connected to the daemon) becomes it at once (`become_prompt`).
+  Its followed downloads are kept in `followed.json` in the data directory,
+  so the tray can bring it back for "Download complete". (`PromptApp` of
+  `@wdm/ui` is the web version it follows; the desktop app no longer loads
+  it.)
 - **Folder picker.** The default folder (Settings) and the add dialog's folder
   have a *Browse…* button (`tauri-plugin-dialog`, `dialog:allow-open` only).
 - **`whoosh://` links.** `whoosh://add?url=<percent-encoded address>` brings

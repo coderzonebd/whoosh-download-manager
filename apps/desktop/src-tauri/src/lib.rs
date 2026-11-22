@@ -19,9 +19,9 @@
 //! at the first start of an installed build, and starts only the tray
 //! ([`wdm_tray::AUTOSTART_ARG`]); Settings turns it off for good. What the
 //! browser hands over (a download that waits for confirmation, a video page
-//! for the media picker) is asked about in a small prompt window of its
-//! own, never in the main one ([`prompt`]). On macOS ⌘Q keeps WDM in the
-//! menu bar like closing the window does ([`macos_menu`]). The browsers are
+//! for the media picker) is asked about in a small native prompt window of
+//! its own, `wdm-prompt`, never in the main one ([`prompt`]). On macOS ⌘Q
+//! keeps WDM in the menu bar like closing the window does ([`macos_menu`]). The browsers are
 //! connected at start where no installer did it ([`browsers`]), and the app
 //! updates itself from signed GitHub releases ([`updates`]; with no window
 //! open the tray has it look once a day, `--update-check`).
@@ -58,7 +58,7 @@ pub(crate) static UPDATE_BUSY: AtomicBool = AtomicBool::new(false);
 const MAIN_WINDOW: &str = "main";
 
 /// The app runs while a window is open; the tray leaves the notifications
-/// and the prompt window to it meanwhile ([`wdm_tray::locks::APP`]).
+/// to it meanwhile ([`wdm_tray::locks::APP`]).
 #[derive(Debug)]
 struct AppLock(#[allow(dead_code)] Option<std::fs::File>);
 
@@ -122,7 +122,7 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The UI (the prompt window) asks for the main window. Async: making a
+/// A UI asks for the main window. Async: making a
 /// window inside a synchronous command deadlocks on Windows.
 #[tauri::command]
 async fn show_window<R: Runtime>(app: AppHandle<R>) {
@@ -314,33 +314,46 @@ fn quit_from_app_menu<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// `wdm-desktop --tray` (or `--autostart`, the login item): become the tray
-/// process, with no window. On Linux and macOS this process is replaced by
-/// `wdm-tray` (from an AppImage that keeps the image's files there); on
-/// Windows the tray is started and this one ends.
-fn become_tray() -> ! {
-    let tray = std::env::current_exe()
-        .map(|exe| wdm_tray::launch::tray_exe_next_to(&exe))
-        .unwrap_or_else(|_| std::path::PathBuf::from("wdm-tray"));
+/// This process becomes `program` (next to it): replaced by it on Linux and
+/// macOS (from an AppImage that keeps the image's files there), started on
+/// Windows, where this one then ends.
+fn become_program(program: std::path::PathBuf) -> ! {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        let err = std::process::Command::new(&tray).exec();
-        eprintln!("wdm-desktop: could not start {}: {err}", tray.display());
+        let err = std::process::Command::new(&program).exec();
+        eprintln!("wdm-desktop: could not start {}: {err}", program.display());
         std::process::exit(1);
     }
     #[cfg(not(unix))]
     {
         let plan = wdm_tray::launch::Plan {
-            program: tray,
+            program,
             args: Vec::new(),
         };
         if let Err(err) = wdm_tray::launch::spawn(&plan) {
-            eprintln!("wdm-desktop: could not start the tray: {err}");
+            eprintln!(
+                "wdm-desktop: could not start {}: {err}",
+                plan.program.display()
+            );
             std::process::exit(1);
         }
         std::process::exit(0);
     }
+}
+
+/// `wdm-desktop --tray` (or `--autostart`, the login item): become the tray
+/// process, with no window.
+fn become_tray() -> ! {
+    let exe = std::env::current_exe().unwrap_or_else(|_| "wdm-desktop".into());
+    become_program(wdm_tray::launch::tray_exe_next_to(&exe))
+}
+
+/// `wdm-desktop --prompt` (from the browser's native host, or `$APPIMAGE
+/// --prompt` from the tray): become the native prompt window.
+fn become_prompt() -> ! {
+    let exe = std::env::current_exe().unwrap_or_else(|_| "wdm-desktop".into());
+    become_program(wdm_tray::launch::prompt_exe_next_to(&exe))
 }
 
 /// Remembers where the bundled media tools are, for the daemon the tray
@@ -365,6 +378,9 @@ pub fn run() {
     {
         become_tray();
     }
+    if prompt::wants_prompt(&args) {
+        become_prompt();
+    }
     let for_update = args.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG);
     // Crash reports (on unless turned off), before anything that could panic.
     crash::init();
@@ -372,14 +388,9 @@ pub fn run() {
         // First, so a second launch hands over before anything else starts.
         // With its `deep-link` feature, a second launch's whoosh:// link
         // reaches `deep_links` through the deep-link plugin.
-        // `--prompt` (from wdm-nmhost) opens the prompt window instead.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if argv.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG) {
                 // The tray's daily look while a window is open: the app does it itself.
-            } else if prompt::wants_prompt(&argv) {
-                if let Err(err) = prompt::open(app) {
-                    eprintln!("wdm-desktop: could not open the prompt window: {err}");
-                }
             } else {
                 show_main_window(app);
             }
@@ -411,7 +422,6 @@ pub fn run() {
             app.manage(prefs::PrefsState(std::sync::Mutex::new(loaded)));
             app.manage(updates::Pending::default());
             app.manage(updates::Ready::default());
-            app.manage(watch::Followed::default());
             app.manage(prefs::ThisRun::new(&data_dir));
             record_media_tools(app.handle());
             // The tray holds the icon and keeps the daemon running.
@@ -435,10 +445,8 @@ pub fn run() {
                 });
             }
             watch::start(app.handle(), &QUITTING);
-            // Started by the tray for the prompt window or an update check:
-            // no main window until it is wanted.
-            let for_prompt = prompt::wants_prompt(std::env::args());
-            if for_prompt || for_update {
+            // Started by the tray for an update check: no main window until it is wanted.
+            if for_update {
                 // In the menu bar, not the Dock.
                 #[cfg(target_os = "macos")]
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -448,17 +456,12 @@ pub fn run() {
                 let _ = window.set_focus();
             }
             deep_links::setup(app);
-            if for_prompt && let Err(err) = prompt::open(app.handle()) {
-                eprintln!("wdm-desktop: could not open the prompt window: {err}");
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             show_window,
             prompt::open_prompt,
-            prompt::close_prompt,
             files::open_download,
-            watch::set_followed,
             daemon::daemon_connection,
             deep_links::take_deep_links,
             prefs::desktop_prefs,
