@@ -56,7 +56,7 @@ build() {
       --config '{"build":{"beforeBuildCommand":"pnpm build"}}' -- --frozen
   )
   # The app starts wdm-daemon from PATH when it is not next to it.
-  cargo build --release --frozen -p wdm-daemon -p wdm-cli -p wdm-nmhost -p wdm-tray
+  cargo build --release --frozen -p wdm-daemon -p wdm-cli -p wdm-nmhost -p wdm-tray -p wdm-prompt
 }
 
 check() {
@@ -71,6 +71,7 @@ package() {
   install -Dm755 target/release/wdm-desktop "$pkgdir/usr/bin/wdm-desktop"
   install -Dm755 target/release/wdm-nmhost "$pkgdir/usr/bin/wdm-nmhost"
   install -Dm755 target/release/wdm-tray "$pkgdir/usr/bin/wdm-tray"
+  install -Dm755 target/release/wdm-prompt "$pkgdir/usr/bin/wdm-prompt"
   install -Dm755 target/release/wdm-daemon "$pkgdir/usr/bin/wdm-daemon"
   install -Dm755 target/release/wdm "$pkgdir/usr/bin/wdm"
 

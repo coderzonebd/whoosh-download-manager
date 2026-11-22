@@ -1,0 +1,784 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The prompt window, drawn natively: the confirmation dialog for a browser
+// download, the add dialog for a page the extension offered (with the
+// video format picker), and the progress / "Download complete" dialog for
+// a download started here. One at a time; Rust (src/ui.rs) decides which
+// and fills in every text, already translated and ordered for the
+// language's direction.
+
+import { CheckBox, ComboBox, LineEdit, Palette, ScrollView, Spinner } from "std-widgets.slint";
+
+// The app's design tokens (packages/design-tokens/src/tokens.css), light and dark.
+export global Theme {
+    in property <bool> dark;
+    in property <bool> rtl;
+    out property <color> surface: dark ? #14204a : #ffffff;
+    out property <color> bg: dark ? #0c1533 : #ffffff;
+    out property <color> border: dark ? #1d2b57 : #e1e8fa;
+    out property <color> text: dark ? #eef2ff : #10204d;
+    out property <color> muted: dark ? #aab8de : #47557e;
+    out property <color> subtle: dark ? #94a3cf : #5a678f;
+    out property <color> accent: dark ? #5b93ff : #2563eb;
+    out property <color> primary: #ffd84d;
+    out property <color> primary-text: #10204d;
+    out property <color> primary-hover: #ffe074;
+    out property <color> primary-edge: dark ? #050a1c : #10204d;
+    out property <color> hover: dark ? #121d44 : #f1f5ff;
+    out property <color> pressed: dark ? #1a2858 : #e4ecff;
+    out property <color> accent-subtle: dark ? #16275a : #e6eeff;
+    out property <color> border-strong: dark ? #6577ad : #7381a8;
+    out property <color> focus: dark ? #8fb5ff : #2563eb;
+    out property <color> success: dark ? #5bd99b : #126b39;
+    out property <color> warning: dark ? #f5b764 : #874900;
+    out property <color> danger: dark ? #ff8a92 : #ad222b;
+    out property <color> danger-subtle: dark ? #3a161a : #fde8e9;
+    out property <color> track: dark ? #1d2b57 : #e1e8fa;
+    out property <color> bar: dark ? #3ccf86 : #178547;
+    out property <color> info: dark ? #a586ff : #7445d6;
+    out property <color> warning-tint: dark ? #f0a33a : #c46a00;
+    out property <color> neutral: dark ? #6f7fae : #7381a8;
+    out property <TextHorizontalAlignment> start: rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+}
+
+// Hand-drawn 24×24 stroke icons (packages/ui/src/components/icons.ts).
+export global Icons {
+    out property <string> check: "M5 12.5l4.5 4.5L19 7.5";
+    out property <string> alert: "M10.3 4.6 2.7 17.8a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0zM12 9.5v4M12 17h.01";
+    out property <string> folder: "M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2h7.2a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z";
+    out property <string> file: "M7 3.5h7l4.5 4.5v12a.5.5 0 0 1-.5.5H7a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5zM13.5 3.5V8h5";
+    out property <string> video: "M4.5 6h15A1.5 1.5 0 0 1 21 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5v-9A1.5 1.5 0 0 1 4.5 6zM10 9.5v5l4.2-2.5z";
+    out property <string> music: "M9 17.5V6.5l10-2v11M9 17.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 15.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z";
+    out property <string> document: "M7 3.5h7l4.5 4.5v12a.5.5 0 0 1-.5.5H7a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5zM13.5 3.5V8h5M9.5 12.5h5M9.5 16h5";
+    out property <string> archive: "M4 4.5h16v4H4zM5.5 8.5h13V19a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM10 12h4";
+    out property <string> app: "M5 4.5h14A1.5 1.5 0 0 1 20.5 6v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5zM3.5 9h17M6.5 6.8h.01M9 6.8h.01";
+    out property <string> image: "M5 4.5h14A1.5 1.5 0 0 1 20.5 6v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5zM3.5 16l5-5 4.5 4.5 2.5-2.5 5 5M15.5 9h.01";
+}
+
+export struct Btn {
+    id: string,
+    label: string,
+    primary: bool,
+    enabled: bool,
+}
+
+// A row of facts: two side by side, or one across (`label2` empty).
+export struct Fact {
+    label: string,
+    value: string,
+    label2: string,
+    value2: string,
+}
+
+export struct Sub {
+    label: string,
+    checked: bool,
+}
+
+component Icon inherits Path {
+    in property <string> name;
+    in property <color> tint;
+    width: 16px;
+    height: 16px;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    commands: name;
+    stroke: tint;
+    stroke-width: 1.75px;
+    fill: transparent;
+    accessible-role: none;
+}
+
+// The category tile of the file (`FileIcon.svelte`).
+component Tile inherits Rectangle {
+    in property <string> category;
+    property <color> tint: category == "video" ? Theme.info
+        : category == "music" ? Theme.danger
+        : category == "documents" ? Theme.accent
+        : category == "compressed" ? Theme.warning-tint
+        : category == "programs" ? Theme.bar
+        : category == "images" ? Theme.bar.mix(Theme.accent, 55%)
+        : Theme.neutral;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: tint.with-alpha(0.13);
+    Icon {
+        width: 22px;
+        height: 22px;
+        tint: root.tint;
+        name: category == "video" ? Icons.video
+            : category == "music" ? Icons.music
+            : category == "documents" ? Icons.document
+            : category == "compressed" ? Icons.archive
+            : category == "programs" ? Icons.app
+            : category == "images" ? Icons.image
+            : Icons.file;
+    }
+}
+
+// A button in the app's style (`.vy-btn`): the main action yellow, the rest
+// outlined; `checkable` ones make a two-way choice ("Video" / "Audio only").
+component Button inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    in property <bool> checkable;
+    in property <bool> checked;
+    callback clicked();
+    min-width: max(64px, label.preferred-width + 28px);
+    min-height: 34px;
+    border-radius: 8px;
+    background: !root.enabled ? (root.primary ? Theme.primary.with-alpha(0.45) : Theme.surface)
+        : root.primary ? (touch.pressed ? Theme.primary-hover.darker(8%) : touch.has-hover ? Theme.primary-hover : Theme.primary)
+        : root.checked ? Theme.accent-subtle
+        : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.surface;
+    border-width: 1px;
+    border-color: root.primary ? Theme.primary-edge : root.checked ? Theme.accent : Theme.border-strong;
+    opacity: root.enabled ? 1 : 0.55;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-checkable: root.checkable;
+    accessible-checked: root.checked;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    forward-focus: focus;
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            focus.focus();
+            root.clicked();
+        }
+    }
+    label := Text {
+        text: root.text;
+        color: root.primary ? Theme.primary-text : root.checked ? Theme.accent : Theme.text;
+        font-size: 13px;
+        font-weight: root.primary ? 600 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if focus.has-focus: Rectangle {
+        x: -3px;
+        y: -3px;
+        width: parent.width + 6px;
+        height: parent.height + 6px;
+        border-radius: 11px;
+        border-width: 2px;
+        border-color: Theme.focus;
+    }
+}
+
+component Label inherits Text {
+    color: Theme.text;
+    font-size: 13px;
+    font-weight: 600;
+    horizontal-alignment: Theme.start;
+}
+
+component Hint inherits Text {
+    color: Theme.muted;
+    font-size: 12px;
+    wrap: word-wrap;
+    horizontal-alignment: Theme.start;
+}
+
+// A line with an icon: "Can pause and resume", "Pausing restarts this download".
+component Status inherits HorizontalLayout {
+    in property <string> icon;
+    in property <color> tint;
+    in property <string> text;
+    in property <bool> busy;
+    spacing: 6px;
+    alignment: Theme.rtl ? end : start;
+    if busy && !Theme.rtl: Spinner { width: 14px; height: 14px; indeterminate: true; }
+    if !busy && icon != "" && !Theme.rtl: Icon { name: icon; tint: tint; width: 14px; height: 14px; y: (parent.height - self.height) / 2; }
+    Text {
+        text: root.text;
+        color: tint;
+        font-size: 12px;
+        wrap: word-wrap;
+        horizontal-alignment: Theme.start;
+        vertical-alignment: center;
+    }
+    if !busy && icon != "" && Theme.rtl: Icon { name: icon; tint: tint; width: 14px; height: 14px; y: (parent.height - self.height) / 2; }
+    if busy && Theme.rtl: Spinner { width: 14px; height: 14px; indeterminate: true; }
+}
+
+// The file at a glance: tile, size, resumability, where it comes from.
+component Preview inherits Rectangle {
+    in property <string> category;
+    in property <string> size;
+    in property <bool> resumable;
+    in property <string> resumable-text;
+    in property <string> note;
+    border-radius: 10px;
+    background: Theme.bg;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding: 12px;
+        spacing: 12px;
+        if !Theme.rtl: Tile { category: root.category; }
+        VerticalLayout {
+            spacing: 2px;
+            alignment: center;
+            Text {
+                text: root.size;
+                color: Theme.text;
+                font-size: 16px;
+                font-weight: 600;
+                horizontal-alignment: Theme.start;
+            }
+            Status {
+                icon: root.resumable ? Icons.check : Icons.alert;
+                tint: root.resumable ? Theme.success : Theme.warning;
+                text: root.resumable-text;
+            }
+            if root.note != "": Text {
+                text: root.note;
+                color: Theme.muted;
+                font-size: 12px;
+                overflow: elide;
+                horizontal-alignment: Theme.start;
+            }
+        }
+        if Theme.rtl: Tile { category: root.category; }
+    }
+}
+
+export component PromptWindow inherits Window {
+    title: "Whoosh Download Manager";
+    icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
+    width: 520px;
+    height: 460px;
+    background: Theme.surface;
+    default-font-size: 14px;
+    always-on-top: true;
+
+    // 0: nothing (or not loaded yet), 1: confirm, 2: add, 3: follow.
+    in property <int> screen;
+    in property <string> heading;
+    in property <string> description;
+    in property <string> empty-text;
+    in property <string> close-text;
+    in property <string> error-text;
+
+    // The file's fields (confirm and add).
+    in property <string> name-label;
+    in-out property <string> name;
+    in property <string> folder-label;
+    in-out property <string> folder;
+    in property <string> browse-text;
+    in property <bool> can-browse: true;
+    in property <string> sorted-hint;
+    in property <string> category-label;
+    in property <[string]> categories;
+    in-out property <int> category-index;
+    in property <string> queue-label;
+    in property <[string]> queues;
+    in-out property <int> queue-index;
+
+    // The file at a glance.
+    in property <string> category;
+    in property <string> size;
+    in property <bool> resumable;
+    in property <string> resumable-text;
+    in property <string> note;
+    in property <bool> has-preview;
+
+    // The add dialog.
+    in property <string> url-label;
+    in-out property <string> url;
+    in property <string> url-placeholder;
+    // 0: nothing, 1: checking, 2: a problem (with "Check again"), 3: "Download the page itself instead" / back, 4: a note.
+    in property <int> url-status;
+    in property <string> url-status-text;
+    in property <string> url-action-text;
+    in property <bool> picking;
+    in property <string> media-title;
+    in property <string> media-sub;
+    in property <bool> has-playlist;
+    in property <string> scope-label;
+    in property <string> this-video-text;
+    in property <string> playlist-text;
+    in property <bool> scope-playlist;
+    in property <bool> can-this-video;
+    in property <string> kind-label;
+    in property <string> video-text;
+    in property <string> audio-text;
+    in property <bool> audio-ok;
+    in property <bool> mode-audio;
+    in property <string> quality-label;
+    in property <[string]> qualities;
+    in-out property <int> quality-index;
+    in property <string> audio-format-label;
+    in property <[string]> audio-formats;
+    in-out property <int> audio-format-index;
+    in property <string> subs-label;
+    in property <[Sub]> subs;
+    in property <string> subs-hint;
+    in property <string> estimate-text;
+    in property <string> via-text;
+    in property <bool> via-direct;
+    in property <bool> show-stem;
+    in-out property <string> stem;
+    in property <string> stem-hint;
+    in property <string> start-now-text;
+    in-out property <bool> start-now: true;
+
+    // The download followed here.
+    in property <string> f-name;
+    in property <string> f-state;
+    in property <bool> f-running;
+    in property <bool> f-failed;
+    in property <float> f-progress;
+    in property <bool> f-known-size;
+    in property <string> f-progress-text;
+    in property <[Fact]> facts;
+    in property <string> f-hint;
+    in property <bool> f-waiting;
+
+    // The buttons along the bottom, in reading order for the language.
+    in property <[Btn]> lead;
+    in property <[Btn]> trail;
+    in property <string> position-text;
+    in property <bool> busy;
+
+    callback button(string);
+    callback escape();
+    callback submit();
+    callback name-edited(string);
+    callback folder-edited(string);
+    callback category-picked(int);
+    callback queue-picked(int);
+    callback browse();
+    callback url-edited(string);
+    callback url-action();
+    callback scope-picked(bool);
+    callback mode-picked(bool);
+    callback quality-picked(int);
+    callback audio-format-picked(int);
+    callback sub-toggled(int, bool);
+    callback stem-edited(string);
+    callback start-now-toggled(bool);
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.escape();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 20px;
+            padding-bottom: 16px;
+            spacing: 12px;
+
+            if root.screen != 0: VerticalLayout {
+                spacing: 4px;
+                Text {
+                    text: root.heading;
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 600;
+                    horizontal-alignment: Theme.start;
+                    accessible-role: text;
+                }
+                if root.description != "": Hint { text: root.description; font-size: 13px; }
+            }
+
+            if root.screen == 0: VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+                vertical-stretch: 1;
+                Text {
+                    text: root.empty-text;
+                    color: Theme.muted;
+                    horizontal-alignment: center;
+                }
+                if root.empty-text != "": HorizontalLayout {
+                    alignment: center;
+                    Button {
+                        text: root.close-text;
+                        clicked => { root.button("close"); }
+                    }
+                }
+            }
+
+            if root.screen != 0: ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 14px;
+                    padding-right: Theme.rtl ? 0px : 6px;
+                    padding-left: Theme.rtl ? 6px : 0px;
+                    alignment: start;
+
+                    // ---------------------------------------------------- add: the address
+                    if root.screen == 2: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.url-label; }
+                        LineEdit {
+                            text <=> root.url;
+                            placeholder-text: root.url-placeholder;
+                            input-type: text;
+                            horizontal-alignment: left;
+                            edited(t) => { root.url-edited(t); }
+                            accepted => { root.submit(); }
+                        }
+                        if root.url-status == 1: Status { busy: true; tint: Theme.muted; text: root.url-status-text; }
+                        if root.url-status == 2: HorizontalLayout {
+                            spacing: 8px;
+                            Status { icon: Icons.alert; tint: Theme.danger; text: root.url-status-text; horizontal-stretch: 1; }
+                            Button { text: root.url-action-text; clicked => { root.url-action(); } }
+                        }
+                        if root.url-status == 3: HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: root.url-action-text; clicked => { root.url-action(); } }
+                        }
+                        if root.url-status == 4: Hint { text: root.url-status-text; }
+                    }
+
+                    // ---------------------------------------------------- add: the video on the page
+                    if root.screen == 2 && root.picking: Rectangle {
+                        border-radius: 10px;
+                        background: Theme.bg;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 10px;
+                            HorizontalLayout {
+                                spacing: 10px;
+                                if !Theme.rtl: Icon { name: Icons.video; tint: Theme.accent; width: 18px; height: 18px; }
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    Text {
+                                        text: root.media-title;
+                                        color: Theme.text;
+                                        font-weight: 600;
+                                        overflow: elide;
+                                        horizontal-alignment: Theme.start;
+                                    }
+                                    if root.media-sub != "": Hint { text: root.media-sub; }
+                                }
+                                if Theme.rtl: Icon { name: Icons.video; tint: Theme.accent; width: 18px; height: 18px; }
+                            }
+                            if root.has-playlist: VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.scope-label; }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: Theme.rtl ? end : start;
+                                    Button {
+                                        text: Theme.rtl ? root.playlist-text : root.this-video-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? root.scope-playlist : !root.scope-playlist;
+                                        enabled: Theme.rtl || root.can-this-video;
+                                        clicked => { root.scope-picked(Theme.rtl); }
+                                    }
+                                    Button {
+                                        text: Theme.rtl ? root.this-video-text : root.playlist-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? !root.scope-playlist : root.scope-playlist;
+                                        enabled: !Theme.rtl || root.can-this-video;
+                                        clicked => { root.scope-picked(!Theme.rtl); }
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.kind-label; }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: Theme.rtl ? end : start;
+                                    Button {
+                                        text: Theme.rtl ? root.audio-text : root.video-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? root.mode-audio : !root.mode-audio;
+                                        enabled: !Theme.rtl || root.audio-ok;
+                                        clicked => { root.mode-picked(Theme.rtl); }
+                                    }
+                                    Button {
+                                        text: Theme.rtl ? root.video-text : root.audio-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? !root.mode-audio : root.mode-audio;
+                                        enabled: Theme.rtl || root.audio-ok;
+                                        clicked => { root.mode-picked(!Theme.rtl); }
+                                    }
+                                }
+                            }
+                            if !root.mode-audio: VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.quality-label; }
+                                ComboBox {
+                                    model: root.qualities;
+                                    current-index <=> root.quality-index;
+                                    selected => { root.quality-picked(self.current-index); }
+                                }
+                            }
+                            if root.mode-audio: VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.audio-format-label; }
+                                ComboBox {
+                                    model: root.audio-formats;
+                                    current-index <=> root.audio-format-index;
+                                    selected => { root.audio-format-picked(self.current-index); }
+                                }
+                            }
+                            if root.subs.length > 0: VerticalLayout {
+                                spacing: 4px;
+                                Label { text: root.subs-label; }
+                                for s[i] in root.subs: CheckBox {
+                                    text: s.label;
+                                    checked: s.checked;
+                                    toggled => { root.sub-toggled(i, self.checked); }
+                                }
+                                Hint { text: root.subs-hint; }
+                            }
+                            VerticalLayout {
+                                spacing: 2px;
+                                Text {
+                                    text: root.estimate-text;
+                                    color: Theme.text;
+                                    font-weight: 600;
+                                    horizontal-alignment: Theme.start;
+                                    wrap: word-wrap;
+                                }
+                                if root.via-text != "": Status {
+                                    icon: root.via-direct ? Icons.check : Icons.alert;
+                                    tint: root.via-direct ? Theme.success : Theme.warning;
+                                    text: root.via-text;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.screen == 2 && root.picking && root.show-stem: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.name-label; }
+                        LineEdit {
+                            text <=> root.stem;
+                            horizontal-alignment: Theme.rtl ? right : left;
+                            edited(t) => { root.stem-edited(t); }
+                            accepted => { root.submit(); }
+                        }
+                        Hint { text: root.stem-hint; }
+                    }
+
+                    // ---------------------------------------------------- confirm / add: the file
+                    if (root.screen == 1 || (root.screen == 2 && !root.picking)) && root.has-preview: Preview {
+                        category: root.category;
+                        size: root.size;
+                        resumable: root.resumable;
+                        resumable-text: root.resumable-text;
+                        note: root.note;
+                    }
+                    if (root.screen == 1 || (root.screen == 2 && !root.picking)) && root.has-preview: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.name-label; }
+                        LineEdit {
+                            text <=> root.name;
+                            horizontal-alignment: Theme.rtl ? right : left;
+                            edited(t) => { root.name-edited(t); }
+                            accepted => { root.submit(); }
+                        }
+                    }
+                    if (root.screen == 1 || root.screen == 2) && (root.has-preview || root.picking): VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.folder-label; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            if Theme.rtl && root.can-browse: Button { text: root.browse-text; clicked => { root.browse(); } }
+                            LineEdit {
+                                text <=> root.folder;
+                                horizontal-alignment: left;
+                                edited(t) => { root.folder-edited(t); }
+                                accepted => { root.submit(); }
+                            }
+                            if !Theme.rtl && root.can-browse: Button { text: root.browse-text; clicked => { root.browse(); } }
+                        }
+                        if root.sorted-hint != "": Hint { text: root.sorted-hint; }
+                    }
+                    if (root.screen == 1 || (root.screen == 2 && !root.picking)) && root.has-preview: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.category-label; }
+                        ComboBox {
+                            model: root.categories;
+                            current-index <=> root.category-index;
+                            selected => { root.category-picked(self.current-index); }
+                        }
+                    }
+                    if (root.screen == 1 || root.screen == 2) && (root.has-preview || root.picking) && root.queues.length > 1: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.queue-label; }
+                        ComboBox {
+                            model: root.queues;
+                            current-index <=> root.queue-index;
+                            selected => { root.queue-picked(self.current-index); }
+                        }
+                    }
+
+                    // ---------------------------------------------------- follow
+                    if root.screen == 3: Rectangle {
+                        border-radius: 10px;
+                        background: Theme.bg;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        HorizontalLayout {
+                            padding: 12px;
+                            spacing: 12px;
+                            if !Theme.rtl: Tile { category: root.category; }
+                            VerticalLayout {
+                                spacing: 4px;
+                                alignment: center;
+                                Text {
+                                    text: root.f-name;
+                                    color: Theme.text;
+                                    font-weight: 600;
+                                    wrap: word-wrap;
+                                    overflow: elide;
+                                    max-height: 2.6rem;
+                                    horizontal-alignment: Theme.start;
+                                }
+                                Text {
+                                    text: root.f-state;
+                                    color: root.f-failed ? Theme.danger : root.f-running ? Theme.accent : Theme.success;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    horizontal-alignment: Theme.start;
+                                }
+                            }
+                            if Theme.rtl: Tile { category: root.category; }
+                        }
+                    }
+                    if root.screen == 3 && root.f-running: VerticalLayout {
+                        spacing: 6px;
+                        Rectangle {
+                            height: 8px;
+                            border-radius: 4px;
+                            background: Theme.track;
+                            clip: true;
+                            accessible-role: progress-indicator;
+                            accessible-value: root.f-progress-text;
+                            Rectangle {
+                                width: root.f-known-size ? parent.width * clamp(root.f-progress, 0, 1) : parent.width * 0.3;
+                                x: Theme.rtl ? parent.width - self.width : 0px;
+                                height: parent.height;
+                                border-radius: 4px;
+                                background: Theme.bar;
+                            }
+                        }
+                        Text {
+                            text: root.f-progress-text;
+                            color: Theme.muted;
+                            font-size: 12px;
+                            horizontal-alignment: Theme.start;
+                        }
+                    }
+                    if root.screen == 3 && root.f-failed: Rectangle {
+                        border-radius: 10px;
+                        background: Theme.danger-subtle;
+                        HorizontalLayout {
+                            padding: 12px;
+                            Status { icon: Icons.alert; tint: Theme.danger; text: root.note; }
+                        }
+                    }
+                    if root.screen == 3: VerticalLayout {
+                        spacing: 10px;
+                        for f in root.facts: HorizontalLayout {
+                            spacing: 16px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                preferred-width: 0px;
+                                spacing: 2px;
+                                Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+                                Text { text: f.value; color: Theme.text; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: f.label2 != "" ? 1 : 0;
+                                preferred-width: 0px;
+                                visible: f.label2 != "";
+                                spacing: 2px;
+                                Text { text: f.label2; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+                                Text { text: f.value2; color: Theme.text; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                            }
+                        }
+                    }
+                    if root.screen == 3 && root.f-hint != "": Status {
+                        busy: root.f-waiting;
+                        tint: root.f-waiting ? Theme.warning : Theme.muted;
+                        text: root.f-hint;
+                    }
+
+                    if root.error-text != "": Status { icon: Icons.alert; tint: Theme.danger; text: root.error-text; }
+                }
+            }
+
+            // ---------------------------------------------------- the buttons
+            if root.screen != 0: HorizontalLayout {
+                spacing: 8px;
+                if root.screen == 2 && !Theme.rtl: CheckBox {
+                    text: root.start-now-text;
+                    checked <=> root.start-now;
+                    toggled => { root.start-now-toggled(self.checked); }
+                }
+                for b in root.lead: Button {
+                    text: b.label;
+                    primary: b.primary;
+                    enabled: b.enabled;
+                    clicked => { root.button(b.id); }
+                }
+                if root.busy && Theme.rtl: Spinner { width: 18px; height: 18px; indeterminate: true; y: (parent.height - self.height) / 2; }
+                if root.position-text != "" && !Theme.rtl: Text {
+                    text: root.position-text;
+                    color: Theme.muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if root.position-text != "" && Theme.rtl: Text {
+                    text: root.position-text;
+                    color: Theme.muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                if root.busy && !Theme.rtl: Spinner { width: 18px; height: 18px; indeterminate: true; y: (parent.height - self.height) / 2; }
+                for b in root.trail: Button {
+                    text: b.label;
+                    primary: b.primary;
+                    enabled: b.enabled;
+                    clicked => { root.button(b.id); }
+                }
+                if root.screen == 2 && Theme.rtl: CheckBox {
+                    text: root.start-now-text;
+                    checked <=> root.start-now;
+                    toggled => { root.start-now-toggled(self.checked); }
+                }
+            }
+        }
+    }
+
+    // The std widgets (text fields, lists, check boxes) follow the light or dark scheme.
+    // The system's scheme, before the app's replaces it ("theme: system" follows it).
+    out property <bool> system-dark;
+    init => {
+        system-dark = Palette.color-scheme == ColorScheme.dark;
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    property <bool> dark: Theme.dark;
+    changed dark => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+}

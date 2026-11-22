@@ -9,7 +9,10 @@
 //!   the front instead, without the arguments.
 //! * **AppImage**: its files exist only while a process started from it
 //!   runs, so each is started from the image itself (`$APPIMAGE`); the tray
-//!   as `$APPIMAGE --tray`, which `wdm-desktop` turns into the tray process.
+//!   as `$APPIMAGE --tray`, which `wdm-desktop` turns into the tray process,
+//!   and the prompt window as `$APPIMAGE --prompt`, likewise.
+//! * The prompt window (`wdm-prompt`, a native window with no web view) is
+//!   next to both and started directly, by either.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -23,6 +26,12 @@ const TRAY_EXE: &str = if cfg!(windows) {
     "wdm-tray.exe"
 } else {
     "wdm-tray"
+};
+
+const PROMPT_EXE: &str = if cfg!(windows) {
+    "wdm-prompt.exe"
+} else {
+    "wdm-prompt"
 };
 
 /// A program and its arguments.
@@ -95,6 +104,30 @@ pub fn tray_plan(
     })
 }
 
+/// How to start the prompt window, from the tray or the app at `exe`.
+pub fn prompt_plan(
+    exe: &Path,
+    appimage: Option<&Path>,
+    exists: impl Fn(&Path) -> bool,
+) -> Option<Plan> {
+    if let Some(image) = appimage {
+        return Some(Plan {
+            program: image.to_owned(),
+            args: vec![crate::PROMPT_ARG.into()],
+        });
+    }
+    let program = exe.parent()?.join(PROMPT_EXE);
+    exists(&program).then(|| Plan {
+        program,
+        args: Vec::new(),
+    })
+}
+
+/// The prompt window next to the app at `exe` (for `wdm-desktop --prompt`).
+pub fn prompt_exe_next_to(exe: &Path) -> PathBuf {
+    exe.with_file_name(PROMPT_EXE)
+}
+
 /// The tray next to the app at `exe` (for `wdm-desktop --tray`).
 pub fn tray_exe_next_to(exe: &Path) -> PathBuf {
     exe.with_file_name(TRAY_EXE)
@@ -138,6 +171,15 @@ pub fn start_tray() -> std::io::Result<()> {
     spawn(&plan)
 }
 
+/// Starts the prompt window (from the tray or the app). One that is
+/// already open stays, and the new one ends at once ([`crate::locks::PROMPT`]).
+pub fn start_prompt() -> std::io::Result<()> {
+    let exe = this_exe().ok_or_else(|| std::io::Error::other("no current executable"))?;
+    let plan = prompt_plan(&exe, appimage().as_deref(), Path::is_file)
+        .ok_or_else(|| std::io::Error::other("wdm-prompt is not next to this program"))?;
+    spawn(&plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,6 +208,13 @@ mod tests {
                 args: vec![]
             })
         );
+        assert_eq!(
+            prompt_plan(&p("/usr/bin/wdm-tray"), None, all),
+            Some(Plan {
+                program: p("/usr/bin/wdm-prompt"),
+                args: vec![]
+            })
+        );
         // A bundler that named the app after the product.
         let product = |f: &Path| f.ends_with("Whoosh Download Manager");
         assert_eq!(
@@ -176,6 +225,7 @@ mod tests {
         let none = |_: &Path| false;
         assert_eq!(app_plan(&p("/usr/bin/wdm-tray"), None, &[], none), None);
         assert_eq!(tray_plan(&p("/usr/bin/wdm-desktop"), None, none), None);
+        assert_eq!(prompt_plan(&p("/usr/bin/wdm-tray"), None, none), None);
     }
 
     #[test]
@@ -197,8 +247,15 @@ mod tests {
         assert_eq!(
             tray_plan(&p("/tmp/.mount_x/usr/bin/wdm-desktop"), Some(&image), none),
             Some(Plan {
-                program: image,
+                program: image.clone(),
                 args: vec!["--tray".into()]
+            })
+        );
+        assert_eq!(
+            prompt_plan(&p("/tmp/.mount_x/usr/bin/wdm-tray"), Some(&image), none),
+            Some(Plan {
+                program: image,
+                args: vec!["--prompt".into()]
             })
         );
     }

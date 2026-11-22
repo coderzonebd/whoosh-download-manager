@@ -271,7 +271,7 @@ jobs:
           mkdir -p staging/exe
           cp "target/$TARGET/release/wdm-desktop.exe" staging/exe/
           # The sidecars go into the installers too; SignPath signs every .exe.
-          for b in wdm-daemon wdm-nmhost wdm-tray; do
+          for b in wdm-daemon wdm-nmhost wdm-tray wdm-prompt; do
             cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" staging/exe/
           done
       - name: Check the executables need no VC++ runtime
@@ -301,7 +301,7 @@ jobs:
         if: runner.os == 'Windows' && env.SIGNPATH_ENABLED == 'true'
         run: |
           cp signed/exe/wdm-desktop.exe "target/$TARGET/release/wdm-desktop.exe"
-          for b in wdm-daemon wdm-nmhost wdm-tray; do
+          for b in wdm-daemon wdm-nmhost wdm-tray wdm-prompt; do
             cp "signed/exe/$b-$TARGET.exe" "apps/desktop/src-tauri/binaries/$b-$TARGET.exe"
           done
       - name: Bundle the installers
@@ -379,7 +379,7 @@ jobs:
               # come on first start, as with the installers.
               mkdir -p portable
               cp "target/$TARGET/release/wdm-desktop.exe" portable/
-              for b in wdm-daemon wdm-nmhost wdm-tray; do
+              for b in wdm-daemon wdm-nmhost wdm-tray wdm-prompt; do
                 cp "apps/desktop/src-tauri/binaries/$b-$TARGET.exe" "portable/$b.exe"
               done
               (cd portable && 7z a -tzip -mx=9 "../out/${ASSET_PREFIX}_${VERSION}_${WINDOWS_ARCH}_portable.zip" . >/dev/null) ;;

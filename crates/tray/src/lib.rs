@@ -7,15 +7,22 @@
 //!   download, and the daily update check. It has no web view, so it takes
 //!   a few megabytes. It runs while WDM runs: started at login, or by the
 //!   app.
-//! * **`wdm-desktop`** (`apps/desktop`): the windows (the main window and
-//!   the small prompt window), each a web page. It runs only while a window
-//!   is open: closing the main window to the tray ends it, and the tray
-//!   starts it again when it is wanted.
+//! * **`wdm-desktop`** (`apps/desktop`): the main window, a web page. It
+//!   runs only while the window is open: closing it to the tray ends it,
+//!   and the tray starts it again when it is wanted.
 //!
-//! This library holds what both use: the strings ([`i18n`]), the shared
+//! The prompt window for what the browser hands over is a third program,
+//! **`wdm-prompt`** (`crates/prompt`), a native window that runs only while
+//! it has something to ask.
+//!
+//! This library holds what they share: the strings ([`i18n`]), the shared
 //! prefs file ([`prefs`]), the locks that say which process runs
-//! ([`locks`]), and how one starts the other ([`launch`]).
+//! ([`locks`]), how one starts another ([`launch`]), the prompt window's
+//! followed downloads ([`followed`]) and opening a finished download
+//! ([`files`]).
 
+pub mod files;
+pub mod followed;
 pub mod i18n;
 pub mod launch;
 pub mod locks;
@@ -25,7 +32,8 @@ pub mod prefs;
 /// notifications' app id on Windows and macOS.
 pub const IDENTIFIER: &str = "com.coderzonebd.whoosh";
 
-/// Passed to `wdm-desktop` by the tray: open only the prompt window.
+/// `wdm-desktop --prompt` (from the browser's native host, or `$APPIMAGE
+/// --prompt`) becomes the prompt window, `wdm-prompt`.
 pub const PROMPT_ARG: &str = "--prompt";
 /// Passed to `wdm-desktop` by the tray: look for an update, with no window.
 pub const UPDATE_CHECK_ARG: &str = "--update-check";
@@ -41,8 +49,8 @@ pub fn data_dir() -> Option<std::path::PathBuf> {
 }
 
 /// The downloads the prompt window follows (`followed.json` in the data
-/// directory), written by the app: when one ends while no window is open,
-/// the tray opens the prompt window for its "Download complete".
+/// directory, [`followed`]), written by the prompt window: when one ends,
+/// the tray opens the prompt window again for its "Download complete".
 pub const FOLLOWED_FILE: &str = "followed.json";
 
 /// Small answers the UI keeps while WDM runs (`host.thisRun`, in the data

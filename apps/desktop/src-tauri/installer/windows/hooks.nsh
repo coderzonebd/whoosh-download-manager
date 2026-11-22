@@ -7,9 +7,9 @@
 ; Failures are ignored: the app can register again from "Connect your browser".
 ;
 ; Before installing over an earlier version, and before uninstalling, the
-; tray, the app, the daemon and the browser host are stopped: they keep running after the app's
-; window is closed (the tray and the daemon while WDM is in the tray; the host serves an open
-; browser), and Windows does not let the installer replace or delete a running
+; tray, the prompt window, the app, the daemon and the browser host are stopped: they keep running
+; after the app's window is closed (the tray and the daemon while WDM is in the tray; the host
+; serves an open browser), and Windows does not let the installer replace or delete a running
 ; .exe ("Error opening file for writing: ...\wdm-daemon.exe"). Stopping them
 ; is safe: a download resumes from its journal, and the browser starts the
 ; host again when the extension next connects. taskkill only reaches this
@@ -23,6 +23,7 @@
   ; Each is stopped until taskkill reports it is no longer running (exit code
   ; 128), at most 20 tries a quarter of a second apart.
   !insertmacro WDM_STOP_ONE "wdm-tray.exe"
+  !insertmacro WDM_STOP_ONE "wdm-prompt.exe"
   !insertmacro WDM_STOP_ONE "wdm-desktop.exe"
   !insertmacro WDM_STOP_ONE "wdm-daemon.exe"
   !insertmacro WDM_STOP_ONE "wdm-nmhost.exe"
