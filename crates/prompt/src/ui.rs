@@ -26,6 +26,7 @@ mod browsers;
 mod history;
 mod main_window;
 mod settings;
+mod tools;
 #[cfg(test)]
 pub use browsers::Source as BrowserSource;
 pub use main_window::{Page, SHOW_MAIN_FILE};
@@ -163,6 +164,7 @@ pub struct Controller {
     settings_page: settings::Page,
     history: history::Page,
     browsers: browsers::Page,
+    tools: tools::Page,
 }
 
 impl std::fmt::Debug for Controller {
@@ -266,6 +268,7 @@ impl Controller {
             settings_page: settings::Page::default(),
             history: history::Page::default(),
             browsers: browsers::Page::default(),
+            tools: tools::Page::default(),
         };
         CTRL.with(|c| *c.borrow_mut() = Some(Rc::new(RefCell::new(ctrl))));
         wire(ui);
@@ -358,6 +361,7 @@ impl Controller {
                 None => self.model.queues = None,
             },
             Msg::Media(on) => self.model.media = on,
+            Msg::MediaTools(s) => self.model.media_tools = Some(s),
             Msg::Offer(offer) => self.model.add_offer(offer),
             Msg::Event(method, params) => {
                 let settings = method == wdm_proto::event::SETTINGS;
@@ -455,6 +459,7 @@ impl Controller {
                 }
             }
             Tag::Settings => self.on_settings_saved(answer),
+            Tag::MediaTools => self.on_media_tools(answer),
             Tag::Quiet => {
                 if let Err(err) = answer {
                     eprintln!("wdm-prompt: {err}");

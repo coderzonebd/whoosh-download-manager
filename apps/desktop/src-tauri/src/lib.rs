@@ -363,6 +363,18 @@ fn become_prompt(main: bool) -> ! {
     become_program(wdm_tray::launch::prompt_exe_next_to(&exe), main)
 }
 
+/// `--update-now <check|install>`: `Some(true)` to install.
+fn update_now_arg<S: AsRef<str>>(args: &[S]) -> Option<bool> {
+    let i = args
+        .iter()
+        .position(|a| a.as_ref() == wdm_tray::update_state::ARG)?;
+    match args.get(i + 1).map(AsRef::as_ref) {
+        Some("install") => Some(true),
+        Some("check") => Some(false),
+        _ => None,
+    }
+}
+
 /// `--page <history|browsers|settings>`: the native main window's page.
 fn page_arg<S: AsRef<str>>(args: &[S]) -> Option<String> {
     let i = args.iter().position(|a| a.as_ref() == wdm_tray::PAGE_ARG)?;
@@ -428,6 +440,9 @@ pub fn run() {
         become_prompt(true);
     }
     let for_update = args.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG);
+    // `--update-now <check|install>` from the native window's Settings.
+    let update_now = update_now_arg(&args);
+    let for_update = for_update || update_now.is_some();
     // Opened plainly (from the menu, a second time): the native main window
     // takes over once the start-up work is done (on "Connect your browser"
     // the first time), unless a page of the web window (`--view`) or a
@@ -443,6 +458,8 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if argv.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG) {
                 // The tray's daily look while a window is open: the app does it itself.
+            } else if let Some(install) = update_now_arg(&argv) {
+                updates::run_now(app.clone(), install);
             } else {
                 show_main_window(app);
                 if let Some(view) = view_arg(&argv) {
@@ -510,7 +527,9 @@ pub fn run() {
                 return Ok(());
             }
             std::thread::spawn(move || browsers::ensure_registered(first_run));
-            if for_update {
+            if let Some(install) = update_now {
+                updates::run_now(app.handle().clone(), install);
+            } else if for_update {
                 updates::check_once(app.handle().clone());
             } else {
                 updates::start_daily_check(app.handle().clone());

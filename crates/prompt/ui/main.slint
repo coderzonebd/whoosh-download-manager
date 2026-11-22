@@ -365,6 +365,33 @@ component Field inherits VerticalLayout {
     if root.error == "" && root.hint != "": Hint { text: root.hint; }
 }
 
+// A time window of the speed schedule (src/ui/settings.rs).
+export struct SpeedWin {
+    from: string,
+    to: string,
+    limit: string,
+    unit-index: int,
+    days: [bool],
+    label: string,
+    remove-label: string,
+    time-error: string,
+    limit-error: string,
+    days-hint: string,
+}
+
+// A media tool (src/ui/tools.rs).
+export struct MediaToolRow {
+    name: string,
+    state: string,
+    ready: bool,
+    busy: bool,
+    facts: string,
+    update: string,
+    upstream: string,
+    error: string,
+    action: string,
+}
+
 // What the Settings page shows and what it reports (src/ui/settings.rs).
 export global SettingsData {
     in-out property <string> title;
@@ -410,8 +437,15 @@ export global SettingsData {
     in-out property <string> limit-error;
     in-out property <[string]> units;
     in-out property <int> unit-index;
-    in-out property <string> schedule-text;
+    in-out property <string> schedule-title;
     in-out property <string> schedule-hint;
+    in-out property <[SpeedWin]> windows;
+    in-out property <[string]> weekdays;
+    in-out property <string> win-from-label;
+    in-out property <string> win-to-label;
+    in-out property <string> win-limit-label;
+    in-out property <string> win-days-label;
+    in-out property <string> win-add-text;
 
     in-out property <string> computer-title;
     in-out property <string> computer-hint;
@@ -436,6 +470,11 @@ export global SettingsData {
     in-out property <string> auto-update-hint;
     in-out property <bool> auto-update;
     in-out property <string> check-now-text;
+    in-out property <bool> update-busy;
+    in-out property <bool> can-install;
+    in-out property <string> install-text;
+    in-out property <string> update-text;
+    in-out property <bool> update-error;
 
     in-out property <bool> has-crash;
     in-out property <string> privacy-title;
@@ -445,7 +484,15 @@ export global SettingsData {
 
     in-out property <string> media-title;
     in-out property <string> media-hint;
-    in-out property <string> media-open;
+    in-out property <bool> has-media-tools;
+    in-out property <[MediaToolRow]> media-tools;
+    in-out property <string> media-check-text;
+    in-out property <bool> media-checking;
+    in-out property <string> media-last-check;
+    in-out property <string> media-error;
+    in-out property <bool> media-auto;
+    in-out property <string> media-auto-text;
+    in-out property <string> media-auto-hint;
 
     callback changed();
     callback browse();
@@ -453,7 +500,98 @@ export global SettingsData {
     callback revert();
     callback desktop(string, bool);
     callback web(string);
+    // A time window: (its place, "from" | "to" | "limit" | "unit" | "day" | "add" | "remove", the value).
+    callback window(int, string, string);
+    // "Check for a new version" (false) or "Install and restart" (true).
+    callback update-now(bool);
+    // A media tool: ("check" | "update" | "auto-on" | "auto-off", its name).
+    callback media(string, string);
 
+}
+
+
+// One time window: from, until, the limit, the days.
+component WindowEditor inherits Rectangle {
+    in property <SpeedWin> item;
+    in property <int> index;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.sunken;
+    height: col.preferred-height;
+    accessible-role: groupbox;
+    accessible-label: item.label;
+    col := VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 10px;
+            if Theme.rtl: VerticalLayout { alignment: end; horizontal-stretch: 0; Button { icon: Icons.trash; a11y-label: item.remove-label; clicked => { SettingsData.window(index, "remove", ""); } } }
+            VerticalLayout {
+                spacing: 4px;
+                Label { text: SettingsData.win-from-label; }
+                LineEdit { text: item.from; width: 90px; placeholder-text: "09:00"; edited(v) => { SettingsData.window(index, "from", v); } }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                Label { text: SettingsData.win-to-label; }
+                LineEdit { text: item.to; width: 90px; placeholder-text: "18:00"; edited(v) => { SettingsData.window(index, "to", v); } }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                horizontal-stretch: 1;
+                Label { text: SettingsData.win-limit-label; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    LineEdit { text: item.limit; input-type: decimal; horizontal-stretch: 1; edited(v) => { SettingsData.window(index, "limit", v); } }
+                    ComboBox { model: SettingsData.units; current-index: item.unit-index; width: 100px; selected => { SettingsData.window(index, "unit", self.current-index == 1 ? "1" : "0"); } }
+                }
+            }
+            if !Theme.rtl: VerticalLayout { alignment: end; horizontal-stretch: 0; Button { icon: Icons.trash; a11y-label: item.remove-label; clicked => { SettingsData.window(index, "remove", ""); } } }
+        }
+        if item.time-error != "": Text { text: item.time-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+        if item.limit-error != "": Text { text: item.limit-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+        Label { text: SettingsData.win-days-label; font-weight: 500; }
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: Theme.rtl ? end : start;
+            for name[j] in SettingsData.weekdays: Button {
+                text: name;
+                checkable: true;
+                checked: item.days[j];
+                clicked => { SettingsData.window(index, "day", "\{j}"); }
+            }
+        }
+        Hint { text: item.days-hint; }
+    }
+}
+
+// A media tool: its state, version, where it comes from, and the next step.
+component MediaToolCard inherits Rectangle {
+    in property <MediaToolRow> item;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.sunken;
+    height: row.preferred-height;
+    accessible-role: groupbox;
+    accessible-label: item.name;
+    row := HorizontalLayout {
+        padding: 12px;
+        spacing: 10px;
+        if Theme.rtl && item.action != "": VerticalLayout { alignment: center; horizontal-stretch: 0; Button { text: item.action; icon: Icons.download; clicked => { SettingsData.media("update", item.name); } } }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 3px;
+            Text { text: item.name; color: Theme.text; font-size: 14px; font-weight: 600; horizontal-alignment: Theme.start; }
+            Status { text: item.state; busy: item.busy; icon: item.ready ? Icons.check : ""; tint: item.ready ? Theme.success : Theme.muted; }
+            if item.facts != "": Hint { text: item.facts; }
+            if item.update != "": Text { text: item.update; color: item.action != "" ? Theme.accent-text : Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+            Hint { text: item.upstream; color: Theme.subtle; }
+            if item.error != "": Text { text: item.error; color: Theme.danger; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+        }
+        if !Theme.rtl && item.action != "": VerticalLayout { alignment: center; horizontal-stretch: 0; Button { text: item.action; icon: Icons.download; clicked => { SettingsData.media("update", item.name); } } }
+    }
 }
 
 // Settings (the web UI's SettingsView): what the daemon keeps is saved
@@ -541,10 +679,12 @@ component SettingsPage inherits Rectangle {
                             }
                             if SettingsData.limit-error != "": Text { text: SettingsData.limit-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
                         }
-                        if SettingsData.schedule-hint != "": Hint { text: SettingsData.schedule-hint; }
+                        Label { text: SettingsData.schedule-title; }
+                        Hint { text: SettingsData.schedule-hint; }
+                        for w[i] in SettingsData.windows: WindowEditor { item: w; index: i; }
                         HorizontalLayout {
                             alignment: Theme.rtl ? end : start;
-                            Button { text: SettingsData.schedule-text; clicked => { SettingsData.web("settings"); } }
+                            Button { text: SettingsData.win-add-text; icon: Icons.plus; clicked => { SettingsData.window(0, "add", ""); } }
                         }
                     }
 
@@ -570,8 +710,13 @@ component SettingsPage inherits Rectangle {
                         Toggle { text: SettingsData.auto-update-text; hint: SettingsData.auto-update-hint; checked <=> SettingsData.auto-update; toggled(on) => { SettingsData.desktop("updates", on); } }
                         HorizontalLayout {
                             alignment: Theme.rtl ? end : start;
-                            Button { text: SettingsData.check-now-text; clicked => { SettingsData.web("settings"); } }
+                            spacing: 8px;
+                            if Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
+                            Button { text: SettingsData.check-now-text; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(false); } }
+                            if !Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
                         }
+                        if SettingsData.update-busy: Status { busy: true; text: ""; tint: Theme.muted; }
+                        if SettingsData.update-text != "": Text { text: SettingsData.update-text; color: SettingsData.update-error ? Theme.danger : Theme.muted; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
                     }
 
                     if SettingsData.has-crash: Section {
@@ -582,10 +727,17 @@ component SettingsPage inherits Rectangle {
                     Section {
                         title: SettingsData.media-title;
                         Hint { text: SettingsData.media-hint; }
-                        HorizontalLayout {
+                        for m in SettingsData.media-tools: MediaToolCard { item: m; }
+                        if SettingsData.has-media-tools: HorizontalLayout {
                             alignment: Theme.rtl ? end : start;
-                            Button { text: SettingsData.media-open; clicked => { SettingsData.web("settings"); } }
+                            spacing: 10px;
+                            if Theme.rtl && SettingsData.media-last-check != "": Hint { text: SettingsData.media-last-check; vertical-alignment: center; }
+                            Button { text: SettingsData.media-check-text; icon: Icons.refresh; enabled: !SettingsData.media-checking; clicked => { SettingsData.media("check", ""); } }
+                            if !Theme.rtl && SettingsData.media-last-check != "": Hint { text: SettingsData.media-last-check; vertical-alignment: center; }
                         }
+                        if SettingsData.media-checking: Status { busy: true; text: SettingsData.media-check-text; tint: Theme.muted; }
+                        if SettingsData.media-error != "": Text { text: SettingsData.media-error; color: Theme.danger; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                        if SettingsData.has-media-tools: Toggle { text: SettingsData.media-auto-text; hint: SettingsData.media-auto-hint; checked: SettingsData.media-auto; toggled(on) => { SettingsData.media(on ? "auto-on" : "auto-off", ""); } }
                     }
                 }
             }

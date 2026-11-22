@@ -19,8 +19,13 @@ web view. GPL-3.0-or-later, like the app.
   draft saved with *Save* (`settings.set`, keeping what the page does not
   show); launch at login (the same login item as the app's), keeping WDM in
   the tray, automatic updates and crash reports apply at once. The speed
-  schedule, checking for an update now and the media tools still open the
-  web window (`wdm-desktop --view settings`).
+  by time of day is part of the draft (from, until, limit, days). The media
+  tools (`src/ui/tools.rs`) come straight from the daemon (`media.tools`,
+  `media.checkUpdates`, `media.updateTools`, `media.configure`). Checking
+  for a new version and installing it needs the app's signed updater, so
+  the window starts `wdm-desktop --update-now <check|install>` and reads its
+  answer from `update-state.json` in the data directory; after installing,
+  the window closes and the new version opens.
 - **History** (`src/ui/history.rs`): finished and failed downloads, newest
   first, with search and All / Completed / Failed; Retry, *Show* (the
   download in the list, selected) and clearing entries (`download.remove`,
