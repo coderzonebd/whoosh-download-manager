@@ -5,8 +5,8 @@
 //! browser downloads) is edited as a draft and saved with Save; what
 //! belongs to this computer (launch at login, keep in the tray, automatic
 //! updates, crash reports) applies at once. The speed schedule, the media
-//! tools, checking for an update now and connecting the browsers open the
-//! web page for now.
+//! tools and checking for an update now open the web page for now;
+//! Browsers opens the window's own "Connect your browser".
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use wdm_proto::Settings;
@@ -446,6 +446,10 @@ pub(super) fn wire_settings(w: &MainWindow) {
     g.on_browse(|| with(Controller::settings_browse));
     g.on_desktop(|which, on| with(|c| c.settings_desktop(&which, on)));
     g.on_web(|view| {
+        if view == "browsers" {
+            with(|c| c.open_page(super::main_window::Page::Browsers));
+            return;
+        }
         if let Err(err) = wdm_tray::launch::start_app(&["--view", &view]) {
             eprintln!("wdm-prompt: could not open {view}: {err}");
         }

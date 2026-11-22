@@ -19,15 +19,24 @@ web view. GPL-3.0-or-later, like the app.
   draft saved with *Save* (`settings.set`, keeping what the page does not
   show); launch at login (the same login item as the app's), keeping WDM in
   the tray, automatic updates and crash reports apply at once. The speed
-  schedule, checking for an update now, the media tools, *History* and
-  *Connect your browser* still open the web window (`wdm-desktop --view
-  <page>`). About 25 MB with the window
+  schedule, checking for an update now and the media tools still open the
+  web window (`wdm-desktop --view settings`).
+- **History** (`src/ui/history.rs`): finished and failed downloads, newest
+  first, with search and All / Completed / Failed; Retry, *Show* (the
+  download in the list, selected) and clearing entries (`download.remove`,
+  files kept; clearing several asks first). Dates are local time as numbers.
+- **Connect your browser** (`src/ui/browsers.rs`, the shared work in
+  `wdm_nmhost::connect`): each browser this user has, whether it is linked
+  to WDM and has the extension, with *Link to WDM* or the store page. The
+  first run of the app opens the main window on it (`--main --page
+  browsers`), and Settings → Browsers leads to it. About 25 MB with the window
   open; closing it ends the process unless the prompt window has something to
   show, and with "keep WDM in the tray" off it quits WDM as the tray's Quit
   does.
 
 Both windows live in one process with one connection to the daemon. A second
-`wdm-prompt --main` while one runs leaves a `show-main` request in the data
+`wdm-prompt --main` (with `--page <history|browsers|settings>`, the page
+name goes in the file) while one runs leaves a `show-main` request in the data
 directory, which the running one picks up within a third of a second.
 
 It is drawn with [Slint](https://slint.dev) (its software renderer, through

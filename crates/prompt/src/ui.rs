@@ -22,9 +22,13 @@ use crate::media;
 use crate::model::{self, Effect, Item, Model};
 use crate::{Btn, Fact, PromptWindow, Sub, Theme};
 
+mod browsers;
+mod history;
 mod main_window;
 mod settings;
-pub use main_window::SHOW_MAIN_FILE;
+#[cfg(test)]
+pub use browsers::Source as BrowserSource;
+pub use main_window::{Page, SHOW_MAIN_FILE};
 
 /// How long the window stays once nothing is left, so the next item can arrive.
 const CLOSE_DELAY: Duration = Duration::from_millis(400);
@@ -157,6 +161,8 @@ pub struct Controller {
     give_up: Timer,
     main: main_window::Main,
     settings_page: settings::Page,
+    history: history::Page,
+    browsers: browsers::Page,
 }
 
 impl std::fmt::Debug for Controller {
@@ -258,6 +264,8 @@ impl Controller {
             give_up: Timer::default(),
             main: main_window::Main::default(),
             settings_page: settings::Page::default(),
+            history: history::Page::default(),
+            browsers: browsers::Page::default(),
         };
         CTRL.with(|c| *c.borrow_mut() = Some(Rc::new(RefCell::new(ctrl))));
         wire(ui);

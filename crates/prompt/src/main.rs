@@ -35,12 +35,21 @@ fn main() {
         eprintln!("wdm-prompt: no data directory");
         std::process::exit(1);
     };
-    let main_window = std::env::args().any(|a| a == wdm_tray::MAIN_ARG);
+    let args: Vec<String> = std::env::args().collect();
+    let main_window = args.iter().any(|a| a == wdm_tray::MAIN_ARG);
+    // `--page browsers`: the page to open the main window on.
+    let page = args
+        .iter()
+        .position(|a| a == wdm_tray::PAGE_ARG)
+        .and_then(|i| args.get(i + 1))
+        .filter(|p| ui::Page::parse(p).is_some())
+        .cloned()
+        .unwrap_or_default();
     // Another one runs: it shows the prompt itself, and the main window
-    // when asked (`ui::SHOW_MAIN_FILE`).
+    // (on that page) when asked (`ui::SHOW_MAIN_FILE`).
     let Some(lock) = locks::take(&dir, locks::PROMPT) else {
         if main_window {
-            let _ = std::fs::write(dir.join(ui::SHOW_MAIN_FILE), b"");
+            let _ = std::fs::write(dir.join(ui::SHOW_MAIN_FILE), page.as_bytes());
         }
         return;
     };
@@ -64,7 +73,12 @@ fn main() {
     });
     ui::Controller::install(&window, dir, tx, lock);
     if main_window {
-        ui::with(ui::Controller::show_main);
+        ui::with(|c| {
+            c.show_main();
+            if let Some(page) = ui::Page::parse(&page) {
+                c.open_page(page);
+            }
+        });
     }
     if let Err(err) = slint::run_event_loop_until_quit() {
         eprintln!("wdm-prompt: {err}");

@@ -37,6 +37,8 @@ pub const IDENTIFIER: &str = "com.coderzonebd.whoosh";
 pub const PROMPT_ARG: &str = "--prompt";
 /// `wdm-prompt --main` (or `wdm-desktop --main`) opens the native main window.
 pub const MAIN_ARG: &str = "--main";
+/// `--main --page <history|browsers|settings>`: the main window opens on that page.
+pub const PAGE_ARG: &str = "--page";
 /// Passed to `wdm-desktop` by the tray: look for an update, with no window.
 pub const UPDATE_CHECK_ARG: &str = "--update-check";
 /// `wdm-desktop --tray` becomes the tray process (from an AppImage, whose

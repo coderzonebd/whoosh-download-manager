@@ -49,6 +49,26 @@ pub fn open_file(path: &Path) -> Result<(), String> {
     spawn(cmd)
 }
 
+/// A web page in the user's browser. Only for addresses the program
+/// builds itself (an extension's store page), never one a window names.
+pub fn open_web_page(url: &str) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("not a web page".into());
+    }
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(url);
+    spawn(cmd)
+}
+
 /// The file's folder, with the file selected where the system can.
 pub fn reveal_file(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]

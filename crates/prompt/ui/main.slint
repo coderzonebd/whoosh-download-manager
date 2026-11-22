@@ -5,8 +5,8 @@
 // App.svelte. Rust (src/main_window.rs) fills in every text, already
 // translated, and every list in reading order for the language.
 
-import { CheckBox, ComboBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
-import { Theme, Icons, Btn, Fact, Icon, Tile, Button, Hint, Label } from "common.slint";
+import { CheckBox, ComboBox, LineEdit, ListView, Palette, ScrollView, Spinner } from "std-widgets.slint";
+import { Theme, Icons, Btn, Fact, Icon, Tile, Button, Hint, Label, Status } from "common.slint";
 
 // An entry of the library: a section title (`header`), or a view with its count.
 export struct NavItem {
@@ -593,6 +593,313 @@ component SettingsPage inherits Rectangle {
     }
 }
 
+// ------------------------------------------------------------------ History
+
+// A finished or failed download (src/ui/history.rs).
+export struct HistoryRow {
+    id: string,
+    name: string,
+    category: string,
+    failed: bool,
+    state: string,
+    size: string,
+    date: string,
+    folder: string,
+    error: string,
+    remove-label: string,
+}
+
+export global HistoryData {
+    in-out property <string> title;
+    in-out property <string> search-label;
+    in-out property <string> search-placeholder;
+    in-out property <string> query;
+    in-out property <string> filter-label;
+    // In reading order; `filter` is the shown one's place.
+    in-out property <[string]> filters;
+    in-out property <int> filter;
+    in-out property <string> clear-text;
+    in-out property <bool> can-clear;
+    in-out property <string> count-text;
+    in-out property <string> status-text;
+    in-out property <string> retry-text;
+    in-out property <string> show-text;
+    // 0: the entries, 1: nothing finished yet, 2: nothing matches.
+    in-out property <int> empty;
+    in-out property <string> empty-title;
+    in-out property <string> empty-body;
+    in-out property <[HistoryRow]> rows;
+    in-out property <bool> clearing;
+    in-out property <string> clear-title;
+    in-out property <string> clear-body;
+    in-out property <string> clear-confirm;
+    in-out property <string> cancel-text;
+    callback action(string, string);
+    callback search(string);
+    callback pick-filter(int);
+}
+
+component HistoryEntry inherits Rectangle {
+    in property <HistoryRow> item;
+    callback action(string);
+    height: item.error != "" ? 72px : 58px;
+    accessible-role: list-item;
+    accessible-label: item.name + ", " + item.state + ", " + item.date;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
+        if !Theme.rtl: Tile { category: item.category; size: 32px; y: (parent.height - self.height) / 2; }
+        if Theme.rtl: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            HorizontalLayout {
+            spacing: 6px;
+            Button { icon: Icons.x; a11y-label: item.remove-label; clicked => { root.action("remove"); } }
+            Button { text: HistoryData.show-text; clicked => { root.action("show"); } }
+            if item.failed: Button { text: HistoryData.retry-text; icon: Icons.refresh; clicked => { root.action("retry"); } }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            Text { text: item.name; color: Theme.text; font-size: 13px; font-weight: 500; overflow: elide; horizontal-alignment: Theme.start; }
+            HorizontalLayout {
+                spacing: 12px;
+                if Theme.rtl: Text { text: item.folder; color: Theme.subtle; font-size: 12px; overflow: elide; horizontal-stretch: 1; horizontal-alignment: right; }
+                if Theme.rtl: Text { text: item.date; color: Theme.muted; font-size: 12px; }
+                if Theme.rtl && item.size != "": Text { text: item.size; color: Theme.muted; font-size: 12px; }
+                Text { text: item.state; color: item.failed ? Theme.danger : Theme.success; font-size: 12px; font-weight: 600; }
+                if !Theme.rtl && item.size != "": Text { text: item.size; color: Theme.muted; font-size: 12px; }
+                if !Theme.rtl: Text { text: item.date; color: Theme.muted; font-size: 12px; }
+                if !Theme.rtl: Text { text: item.folder; color: Theme.subtle; font-size: 12px; overflow: elide; horizontal-stretch: 1; }
+            }
+            if item.error != "": Text { text: item.error; color: Theme.danger; font-size: 12px; overflow: elide; horizontal-alignment: Theme.start; }
+        }
+        if !Theme.rtl: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            HorizontalLayout {
+            spacing: 6px;
+            if item.failed: Button { text: HistoryData.retry-text; icon: Icons.refresh; clicked => { root.action("retry"); } }
+            Button { text: HistoryData.show-text; clicked => { root.action("show"); } }
+            Button { icon: Icons.x; a11y-label: item.remove-label; clicked => { root.action("remove"); } }
+            }
+        }
+        if Theme.rtl: Tile { category: item.category; size: 32px; y: (parent.height - self.height) / 2; }
+    }
+    Rectangle { y: parent.height - 1px; x: 18px; width: parent.width - 36px; height: 1px; background: Theme.border; }
+}
+
+// History (the web UI's HistoryView).
+component HistoryPage inherits Rectangle {
+    background: Theme.surface;
+    VerticalLayout {
+        Rectangle {
+            height: 58px;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 10px;
+                if !Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+                if !Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Button { text: HistoryData.clear-text; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if Theme.rtl: HorizontalLayout {
+                    spacing: 4px;
+                    accessible-role: tab-list;
+                    accessible-label: HistoryData.filter-label;
+                    for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                LineEdit {
+                    width: 220px;
+                    text <=> HistoryData.query;
+                    placeholder-text: HistoryData.search-placeholder;
+                    accessible-label: HistoryData.search-label;
+                    horizontal-alignment: Theme.rtl ? right : left;
+                    edited(t) => { HistoryData.search(t); }
+                }
+                if !Theme.rtl: HorizontalLayout {
+                    spacing: 4px;
+                    accessible-role: tab-list;
+                    accessible-label: HistoryData.filter-label;
+                    for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
+                }
+                if !Theme.rtl: Button { text: HistoryData.clear-text; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        if HistoryData.empty == 0: ListView {
+            vertical-stretch: 1;
+            accessible-role: list;
+            accessible-label: HistoryData.title + ", " + HistoryData.count-text;
+            for r in HistoryData.rows: HistoryEntry {
+                item: r;
+                action(a) => { HistoryData.action(a, r.id); }
+            }
+        }
+        if HistoryData.empty != 0: VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: 8px;
+            Icon { name: HistoryData.empty == 1 ? Icons.history : Icons.search; tint: Theme.subtle; width: 36px; height: 36px; x: (parent.width - self.width) / 2; }
+            Text { text: HistoryData.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
+            if HistoryData.empty-body != "": Text { text: HistoryData.empty-body; color: Theme.muted; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
+        }
+    }
+    // "Clear N entries from history?"
+    if HistoryData.clearing: Rectangle {
+        background: #000000.with-alpha(0.35);
+        TouchArea {}
+        Rectangle {
+            width: min(420px, parent.width - 40px);
+            height: clear-card.preferred-height;
+            border-radius: 14px;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border;
+            accessible-role: groupbox;
+            accessible-label: HistoryData.clear-title;
+            clear-card := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                Text { text: HistoryData.clear-title; color: Theme.text; font-size: 17px; font-weight: 600; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                Hint { text: HistoryData.clear-body; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: Theme.rtl ? start : end;
+                    if Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
+                    Button { text: HistoryData.cancel-text; clicked => { HistoryData.action("clear-no", ""); } }
+                    if !Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------- Connect your browser
+
+// A browser this user has (src/ui/browsers.rs).
+export struct BrowserItem {
+    id: string,
+    name: string,
+    ready: bool,
+    linked: bool,
+    state: string,
+    hint: string,
+    // "connect", "store" or "" (nothing left to do).
+    action: string,
+    action-text: string,
+    busy: bool,
+}
+
+export global BrowsersData {
+    in-out property <string> title;
+    in-out property <string> intro;
+    in-out property <bool> loading;
+    in-out property <string> loading-text;
+    in-out property <string> none-text;
+    in-out property <string> not-found-text;
+    in-out property <[BrowserItem]> items;
+    in-out property <bool> busy;
+    in-out property <string> status-text;
+    in-out property <bool> status-error;
+    in-out property <string> recheck-text;
+    in-out property <string> done-text;
+    in-out property <string> later-text;
+    callback action(string, string);
+}
+
+component BrowserCard inherits Rectangle {
+    in property <BrowserItem> item;
+    callback action();
+    height: row.preferred-height;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+    accessible-role: list-item;
+    accessible-label: item.name + ", " + item.state;
+    row := HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 12px;
+        if Theme.rtl && item.action != "": VerticalLayout { alignment: center; Button { text: item.action-text; enabled: !BrowsersData.busy; clicked => { root.action(); } } }
+        if Theme.rtl && item.busy: Spinner { width: 16px; height: 16px; indeterminate: true; y: (parent.height - self.height) / 2; }
+        if !Theme.rtl: Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: item.ready ? Theme.success.with-alpha(0.15) : Theme.sunken;
+            Icon { name: item.ready ? Icons.check : item.linked ? Icons.download : Icons.link; tint: item.ready ? Theme.success : Theme.muted; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 3px;
+            alignment: center;
+            Text { text: item.name; color: Theme.text; font-size: 14px; font-weight: 600; horizontal-alignment: Theme.start; }
+            Text { text: item.state; color: Theme.muted; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+            if item.hint != "": Hint { text: item.hint; }
+        }
+        if !Theme.rtl && item.busy: Spinner { width: 16px; height: 16px; indeterminate: true; y: (parent.height - self.height) / 2; }
+        if !Theme.rtl && item.action != "": VerticalLayout { alignment: center; Button { text: item.action-text; enabled: !BrowsersData.busy; clicked => { root.action(); } } }
+        if Theme.rtl: Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: item.ready ? Theme.success.with-alpha(0.15) : Theme.sunken;
+            Icon { name: item.ready ? Icons.check : item.linked ? Icons.download : Icons.link; tint: item.ready ? Theme.success : Theme.muted; }
+        }
+    }
+}
+
+// "Connect your browser" (the web UI's BrowsersView).
+component BrowsersPage inherits Rectangle {
+    background: Theme.sunken;
+    ScrollView {
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                width: min(720px, root.width - 48px);
+                alignment: start;
+                padding-top: 24px;
+                padding-bottom: 28px;
+                spacing: 14px;
+                Text { text: BrowsersData.title; color: Theme.text; font-size: 20px; font-weight: 600; horizontal-alignment: Theme.start; }
+                Text { text: BrowsersData.intro; color: Theme.muted; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                if BrowsersData.loading: Status { busy: true; text: BrowsersData.loading-text; tint: Theme.muted; }
+                if BrowsersData.none-text != "": Text { text: BrowsersData.none-text; color: Theme.muted; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                VerticalLayout {
+                    spacing: 8px;
+                    accessible-role: list;
+                    accessible-label: BrowsersData.title;
+                    for b in BrowsersData.items: BrowserCard {
+                        item: b;
+                        action => { BrowsersData.action(b.action, b.id); }
+                    }
+                }
+                if BrowsersData.not-found-text != "": Hint { text: BrowsersData.not-found-text; }
+                if BrowsersData.status-text != "": Text { text: BrowsersData.status-text; color: BrowsersData.status-error ? Theme.danger : Theme.success; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: Theme.rtl ? start : end;
+                    if Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
+                    Button { text: BrowsersData.recheck-text; icon: Icons.refresh; enabled: !BrowsersData.loading; clicked => { BrowsersData.action("recheck", ""); } }
+                    if !Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
+                }
+                Hint { text: BrowsersData.later-text; }
+            }
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "Whoosh Download Manager";
     icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
@@ -605,7 +912,7 @@ export component MainWindow inherits Window {
 
     in property <[NavItem]> nav;
     in property <[NavItem]> nav-more;
-    // 0: the downloads, 1: Settings.
+    // 0: the downloads, 1: Settings, 2: History, 3: Connect your browser.
     in property <int> page;
     in property <string> view-title;
     in property <[Column]> columns;
@@ -715,6 +1022,8 @@ export component MainWindow inherits Window {
                 }
 
                 if root.page == 1: SettingsPage { horizontal-stretch: 1; }
+                if root.page == 2: HistoryPage { horizontal-stretch: 1; }
+                if root.page == 3: BrowsersPage { horizontal-stretch: 1; }
                 if root.page == 0: VerticalLayout {
                     horizontal-stretch: 1;
                     // ---------------------------------------------------- toolbar
