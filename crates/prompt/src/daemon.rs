@@ -38,6 +38,8 @@ pub enum Tag {
     Add {
         start: bool,
     },
+    /// Settings saved (`settings.set`).
+    Settings,
     /// Pause, Resume, Retry: their answer only matters when it fails.
     Quiet,
 }

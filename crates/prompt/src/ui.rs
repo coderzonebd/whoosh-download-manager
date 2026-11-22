@@ -23,6 +23,7 @@ use crate::model::{self, Effect, Item, Model};
 use crate::{Btn, Fact, PromptWindow, Sub, Theme};
 
 mod main_window;
+mod settings;
 pub use main_window::SHOW_MAIN_FILE;
 
 /// How long the window stays once nothing is left, so the next item can arrive.
@@ -155,6 +156,7 @@ pub struct Controller {
     disarm_timer: Timer,
     give_up: Timer,
     main: main_window::Main,
+    settings_page: settings::Page,
 }
 
 impl std::fmt::Debug for Controller {
@@ -255,6 +257,7 @@ impl Controller {
             disarm_timer: Timer::default(),
             give_up: Timer::default(),
             main: main_window::Main::default(),
+            settings_page: settings::Page::default(),
         };
         CTRL.with(|c| *c.borrow_mut() = Some(Rc::new(RefCell::new(ctrl))));
         wire(ui);
@@ -443,6 +446,7 @@ impl Controller {
                     }
                 }
             }
+            Tag::Settings => self.on_settings_saved(answer),
             Tag::Quiet => {
                 if let Err(err) = answer {
                     eprintln!("wdm-prompt: {err}");

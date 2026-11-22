@@ -25,6 +25,8 @@ slint = { version = "1.19", default-features = false, features = ["std", "compat
 # The folder picker, as the desktop app's dialog plugin uses it (portal on Linux).
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland", "common-controls-v6"] }
 
+# Launch at login, as the app's tauri-plugin-autostart writes it.
+auto-launch = "0.6"
 # Copy address (as the desktop app's clipboard plugin uses it).
 arboard = { version = "3", default-features = false }
 

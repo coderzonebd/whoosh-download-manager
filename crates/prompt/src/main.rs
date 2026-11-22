@@ -15,6 +15,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod daemon;
+mod login;
 mod media;
 mod model;
 mod ui;
