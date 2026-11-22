@@ -317,11 +317,16 @@ fn quit_from_app_menu<R: Runtime>(app: &AppHandle<R>) {
 /// This process becomes `program` (next to it): replaced by it on Linux and
 /// macOS (from an AppImage that keeps the image's files there), started on
 /// Windows, where this one then ends.
-fn become_program(program: std::path::PathBuf) -> ! {
+fn become_program(program: std::path::PathBuf, main: bool) -> ! {
+    let args: Vec<&str> = if main {
+        vec![wdm_tray::MAIN_ARG]
+    } else {
+        Vec::new()
+    };
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        let err = std::process::Command::new(&program).exec();
+        let err = std::process::Command::new(&program).args(&args).exec();
         eprintln!("wdm-desktop: could not start {}: {err}", program.display());
         std::process::exit(1);
     }
@@ -329,7 +334,7 @@ fn become_program(program: std::path::PathBuf) -> ! {
     {
         let plan = wdm_tray::launch::Plan {
             program,
-            args: Vec::new(),
+            args: args.iter().map(|a| (*a).to_owned()).collect(),
         };
         if let Err(err) = wdm_tray::launch::spawn(&plan) {
             eprintln!(
@@ -346,14 +351,34 @@ fn become_program(program: std::path::PathBuf) -> ! {
 /// process, with no window.
 fn become_tray() -> ! {
     let exe = std::env::current_exe().unwrap_or_else(|_| "wdm-desktop".into());
-    become_program(wdm_tray::launch::tray_exe_next_to(&exe))
+    become_program(wdm_tray::launch::tray_exe_next_to(&exe), false)
 }
 
 /// `wdm-desktop --prompt` (from the browser's native host, or `$APPIMAGE
-/// --prompt` from the tray): become the native prompt window.
-fn become_prompt() -> ! {
+/// --prompt` from the tray): become the native prompt window; with
+/// `--main`, the native main window.
+fn become_prompt(main: bool) -> ! {
     let exe = std::env::current_exe().unwrap_or_else(|_| "wdm-desktop".into());
-    become_program(wdm_tray::launch::prompt_exe_next_to(&exe))
+    become_program(wdm_tray::launch::prompt_exe_next_to(&exe), main)
+}
+
+/// `--view <settings|history|browsers>`: the web window opens on that page
+/// (the native main window has no page of its own for them yet).
+fn view_arg<S: AsRef<str>>(args: &[S]) -> Option<String> {
+    let i = args.iter().position(|a| a.as_ref() == VIEW_ARG)?;
+    let view = args.get(i + 1)?.as_ref();
+    ["settings", "history", "browsers", "downloads"]
+        .contains(&view)
+        .then(|| view.to_owned())
+}
+
+/// `wdm-desktop --view settings`: see [`view_arg`].
+const VIEW_ARG: &str = "--view";
+
+/// The page the web window was asked to open on.
+#[tauri::command]
+fn initial_view() -> Option<String> {
+    view_arg(&std::env::args().collect::<Vec<_>>())
 }
 
 /// Remembers where the bundled media tools are, for the daemon the tray
@@ -369,6 +394,14 @@ fn record_media_tools<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// `wdm-prompt` is next to this app (installed builds; `cargo build`).
+fn native_main_available() -> bool {
+    std::env::var_os("WDM_WEB_MAIN").is_none()
+        && std::env::current_exe()
+            .map(|exe| wdm_tray::launch::prompt_exe_next_to(&exe).is_file())
+            .unwrap_or(false)
+}
+
 /// Entry point shared by the binary (and, later, the mobile targets).
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
@@ -379,9 +412,18 @@ pub fn run() {
         become_tray();
     }
     if prompt::wants_prompt(&args) {
-        become_prompt();
+        become_prompt(false);
+    }
+    if args.iter().any(|a| a == wdm_tray::MAIN_ARG) {
+        become_prompt(true);
     }
     let for_update = args.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG);
+    // Opened plainly (from the menu, a second time): the native main window
+    // takes over once the start-up work is done, unless a page of the web
+    // window (`--view`), a whoosh:// link, or the first run's "Connect your
+    // browser" is wanted.
+    let wants_web =
+        view_arg(&args).is_some() || args.iter().skip(1).any(|a| a.starts_with("whoosh:"));
     // Crash reports (on unless turned off), before anything that could panic.
     crash::init();
     let app = tauri::Builder::default()
@@ -393,6 +435,10 @@ pub fn run() {
                 // The tray's daily look while a window is open: the app does it itself.
             } else {
                 show_main_window(app);
+                if let Some(view) = view_arg(&argv) {
+                    use tauri::Emitter;
+                    let _ = app.emit("wdm-view", view);
+                }
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
@@ -426,6 +472,22 @@ pub fn run() {
             record_media_tools(app.handle());
             // The tray holds the icon and keeps the daemon running.
             ensure_tray();
+            if !for_update && !wants_web && !first_run && native_main_available() {
+                // No Dock icon for the moment this takes.
+                #[cfg(target_os = "macos")]
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                // Installed builds start at login unless the user turned that off.
+                login_item::first_run(app.handle());
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    browsers::ensure_registered(false);
+                    if let Err(err) = wdm_tray::launch::start_main() {
+                        eprintln!("wdm-desktop: could not open the main window: {err}");
+                    }
+                    handle.exit(0);
+                });
+                return Ok(());
+            }
             std::thread::spawn(move || browsers::ensure_registered(first_run));
             if for_update {
                 updates::check_once(app.handle().clone());
@@ -461,6 +523,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             show_window,
             prompt::open_prompt,
+            initial_view,
             files::open_download,
             daemon::daemon_connection,
             deep_links::take_deep_links,

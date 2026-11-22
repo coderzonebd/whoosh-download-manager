@@ -1,0 +1,635 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The main window, drawn natively: the library on one side (downloads by
+// state, by category, by queue), the toolbar, the download list, the
+// details of the selected download and the status bar, like the web UI's
+// App.svelte. Rust (src/main_window.rs) fills in every text, already
+// translated, and every list in reading order for the language.
+
+import { CheckBox, LineEdit, ListView, Palette } from "std-widgets.slint";
+import { Theme, Icons, Btn, Fact, Icon, Tile, Button, Hint } from "common.slint";
+
+// An entry of the library: a section title (`header`), or a view with its count.
+export struct NavItem {
+    id: string,
+    label: string,
+    count: string,
+    icon: string,
+    active: bool,
+    header: bool,
+}
+
+// A download in the list.
+export struct Row {
+    id: string,
+    name: string,
+    category: string,
+    size: string,
+    progress: float,
+    known: bool,
+    percent: string,
+    status: string,
+    // 0 neutral, 1 moving, 2 done, 3 needs attention.
+    tone: int,
+    speed: string,
+    eta: string,
+    selected: bool,
+}
+
+// A column header; `arrow` shows how the list is sorted by it.
+export struct Column {
+    key: string,
+    label: string,
+    arrow: string,
+}
+
+component NavEntry inherits Rectangle {
+    in property <NavItem> item;
+    callback picked();
+    height: item.header ? 30px : 34px;
+    border-radius: 8px;
+    background: item.active ? Theme.selected : touch.has-hover && !item.header ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: item.label;
+    accessible-checked: item.active;
+    accessible-action-default => { if !item.header { root.picked(); } }
+    touch := TouchArea {
+        enabled: !item.header;
+        mouse-cursor: item.header ? default : pointer;
+        clicked => { root.picked(); }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        if item.icon != "" && !Theme.rtl: Icon {
+            name: item.icon;
+            tint: item.active ? Theme.accent-text : Theme.muted;
+            y: (parent.height - self.height) / 2;
+        }
+        if Theme.rtl: Text {
+            text: item.count;
+            color: Theme.muted;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: item.label;
+            color: item.header ? Theme.subtle : item.active ? Theme.accent-text : Theme.text;
+            font-size: item.header ? 11px : 13px;
+            font-weight: item.header || item.active ? 600 : 400;
+            vertical-alignment: item.header ? bottom : center;
+            horizontal-alignment: Theme.start;
+            overflow: elide;
+        }
+        if !Theme.rtl: Text {
+            text: item.count;
+            color: Theme.muted;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        if item.icon != "" && Theme.rtl: Icon {
+            name: item.icon;
+            tint: item.active ? Theme.accent-text : Theme.muted;
+            y: (parent.height - self.height) / 2;
+        }
+    }
+}
+
+// The columns' widths (the name takes the rest).
+global Cols {
+    out property <length> size: 84px;
+    out property <length> progress: 170px;
+    out property <length> speed: 92px;
+    out property <length> eta: 82px;
+}
+
+component Cell inherits Text {
+    color: Theme.text;
+    font-size: 13px;
+    vertical-alignment: center;
+    horizontal-alignment: Theme.rtl ? left : right;
+    overflow: elide;
+}
+
+component ProgressCell inherits VerticalLayout {
+    in property <Row> item;
+    alignment: center;
+    spacing: 3px;
+    Rectangle {
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.track;
+        clip: true;
+        Rectangle {
+            width: item.known ? parent.width * clamp(item.progress, 0, 1) : (item.tone == 1 ? parent.width * 0.3 : 0px);
+            x: Theme.rtl ? parent.width - self.width : 0px;
+            height: parent.height;
+            border-radius: 3px;
+            background: item.tone == 3 ? Theme.danger : item.tone == 2 ? Theme.bar : item.tone == 1 ? Theme.bar : Theme.neutral;
+        }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        Text {
+            text: Theme.rtl ? item.percent : item.status;
+            color: Theme.rtl ? Theme.muted : (item.tone == 3 ? Theme.danger : item.tone == 1 ? Theme.accent-text : item.tone == 2 ? Theme.success : Theme.muted);
+            font-size: 11px;
+            horizontal-stretch: 1;
+            horizontal-alignment: Theme.start;
+            overflow: elide;
+        }
+        Text {
+            text: Theme.rtl ? item.status : item.percent;
+            color: Theme.rtl ? (item.tone == 3 ? Theme.danger : item.tone == 1 ? Theme.accent-text : item.tone == 2 ? Theme.success : Theme.muted) : Theme.muted;
+            font-size: 11px;
+        }
+    }
+}
+
+component NameCell inherits HorizontalLayout {
+    in property <Row> item;
+    spacing: 10px;
+    if !Theme.rtl: Tile { category: item.category; size: 26px; y: (parent.height - self.height) / 2; }
+    Text {
+        horizontal-stretch: 1;
+        text: item.name;
+        color: Theme.text;
+        font-size: 13px;
+        vertical-alignment: center;
+        horizontal-alignment: Theme.start;
+        overflow: elide;
+    }
+    if Theme.rtl: Tile { category: item.category; size: 26px; y: (parent.height - self.height) / 2; }
+}
+
+component RowView inherits Rectangle {
+    in property <Row> item;
+    // Speed and time left go while the details are open (they show there).
+    in property <bool> compact;
+    in property <bool> odd;
+    callback pressed(bool /* ctrl */, bool /* shift */, bool /* right */);
+    callback activated();
+    height: 46px;
+    background: item.selected ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: list-item;
+    accessible-label: item.name + ", " + item.status + ", " + item.percent;
+    accessible-action-default => { root.activated(); }
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.pressed(e.modifiers.control || e.modifiers.meta, e.modifiers.shift, e.button == PointerEventButton.right);
+            }
+        }
+        double-clicked => { root.activated(); }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 14px;
+        if !Theme.rtl: NameCell { item: root.item; horizontal-stretch: 1; }
+        if Theme.rtl && !compact: Cell { text: item.eta; width: Cols.eta; }
+        if Theme.rtl && !compact: Cell { text: item.speed; width: Cols.speed; }
+        if Theme.rtl: ProgressCell { item: root.item; width: Cols.progress; }
+        Cell { text: item.size; width: Cols.size; }
+        if !Theme.rtl: ProgressCell { item: root.item; width: Cols.progress; }
+        if !Theme.rtl && !compact: Cell { text: item.speed; width: Cols.speed; }
+        if !Theme.rtl && !compact: Cell { text: item.eta; width: Cols.eta; }
+        if Theme.rtl: NameCell { item: root.item; horizontal-stretch: 1; }
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+component HeaderCell inherits Rectangle {
+    in property <Column> column;
+    in property <TextHorizontalAlignment> align;
+    callback sort(string);
+    accessible-role: button;
+    accessible-label: column.label;
+    accessible-action-default => { root.sort(column.key); }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.sort(column.key); }
+    }
+    Text {
+        width: 100%;
+        text: Theme.rtl ? column.arrow + " " + column.label : column.label + " " + column.arrow;
+        color: touch.has-hover ? Theme.text : Theme.muted;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-alignment: center;
+        horizontal-alignment: root.align;
+        overflow: elide;
+    }
+}
+
+// The details of the selected download, beside the list.
+component DetailPanel inherits Rectangle {
+    in property <string> label;
+    in property <string> name;
+    in property <string> category;
+    in property <string> state;
+    in property <int> tone;
+    in property <float> progress;
+    in property <bool> known;
+    in property <string> progress-text;
+    in property <[Fact]> facts;
+    in property <[Btn]> actions;
+    callback action(string);
+    width: 300px;
+    background: Theme.surface;
+    accessible-role: groupbox;
+    accessible-label: root.label;
+    Rectangle { x: Theme.rtl ? parent.width - 1px : 0; width: 1px; background: Theme.border; }
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 12px;
+            if !Theme.rtl: Tile { category: root.category; }
+            VerticalLayout {
+                spacing: 4px;
+                alignment: center;
+                Text {
+                    text: root.name;
+                    color: Theme.text;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                    max-height: 3.9rem;
+                    overflow: elide;
+                    horizontal-alignment: Theme.start;
+                }
+                Text {
+                    text: root.state;
+                    color: root.tone == 3 ? Theme.danger : root.tone == 1 ? Theme.accent-text : root.tone == 2 ? Theme.success : Theme.muted;
+                    font-size: 12px;
+                    font-weight: 600;
+                    horizontal-alignment: Theme.start;
+                }
+            }
+            if Theme.rtl: Tile { category: root.category; }
+        }
+        VerticalLayout {
+            spacing: 6px;
+            Rectangle {
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.track;
+                clip: true;
+                accessible-role: progress-indicator;
+                accessible-value: root.progress-text;
+                Rectangle {
+                    width: root.known ? parent.width * clamp(root.progress, 0, 1) : (root.tone == 1 ? parent.width * 0.3 : 0px);
+                    x: Theme.rtl ? parent.width - self.width : 0px;
+                    height: parent.height;
+                    border-radius: 4px;
+                    background: root.tone == 3 ? Theme.danger : Theme.bar;
+                }
+            }
+            Text { text: root.progress-text; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+        }
+        if root.actions.length > 0: HorizontalLayout {
+            spacing: 6px;
+            alignment: Theme.rtl ? end : start;
+            for b in root.actions: Button { text: b.label; primary: b.primary; enabled: b.enabled; clicked => { root.action(b.id); } }
+        }
+        for f in root.facts: VerticalLayout {
+            spacing: 2px;
+            Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+            Text { text: f.value; color: Theme.text; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Whoosh Download Manager";
+    icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
+    preferred-width: 1120px;
+    preferred-height: 700px;
+    min-width: 760px;
+    min-height: 440px;
+    background: Theme.surface;
+    default-font-size: 14px;
+
+    in property <[NavItem]> nav;
+    in property <[NavItem]> nav-more;
+    in property <string> view-title;
+    in property <[Column]> columns;
+    in property <[Row]> rows;
+    in property <string> empty-title;
+    in property <string> empty-body;
+    in property <string> empty-action;
+
+    in property <string> add-text;
+    in property <string> resume-text;
+    in property <string> pause-text;
+    in property <string> remove-text;
+    in property <bool> can-resume;
+    in property <bool> can-pause;
+    in property <bool> can-remove;
+    in property <bool> can-open;
+    in property <string> search-placeholder;
+    in-out property <string> query;
+    in property <string> selected-text;
+
+    // The selected download.
+    in property <bool> detail;
+    in property <string> d-name;
+    in property <string> d-category;
+    in property <string> d-state;
+    in property <int> d-tone;
+    in property <float> d-progress;
+    in property <bool> d-known;
+    in property <string> d-progress-text;
+    in property <[Fact]> d-facts;
+    in property <[Btn]> d-actions;
+    in property <string> open-text;
+    in property <string> open-folder-text;
+    in property <string> copy-text;
+    in property <string> details-label;
+    in property <string> close-details;
+
+    // The status bar.
+    in property <string> speed-text;
+    in property <string> counts-text;
+    in property <string> connection-text;
+    in property <bool> connected;
+    in property <string> version-text;
+
+    // "Remove …?"
+    in property <bool> removing;
+    in property <string> remove-title;
+    in property <string> remove-body;
+    in property <string> delete-files-text;
+    in-out property <bool> delete-files;
+    in property <string> cancel-text;
+    in property <string> confirm-remove-text;
+
+    // The address to put on the clipboard (Copy address).
+    in property <string> clipboard;
+
+    callback nav-picked(string);
+    callback sort(string);
+    callback row-pressed(int, bool, bool, bool);
+    callback row-activated(int);
+    callback action(string);
+    callback search(string);
+    callback key(string, bool, bool);
+    callback remove-confirmed(bool);
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            root.key(event.text, event.modifiers.control || event.modifiers.meta, event.modifiers.shift);
+            if event.text == Key.Delete || event.text == Key.Escape || event.text == Key.Return
+                || ((event.modifiers.control || event.modifiers.meta) && (event.text == "a" || event.text == "n" || event.text == "f")) {
+                if (event.modifiers.control || event.modifiers.meta) && event.text == "f" {
+                    search-box.focus();
+                }
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            HorizontalLayout {
+                vertical-stretch: 1;
+                if !Theme.rtl: sidebar-l := Rectangle {
+                    width: 224px;
+                    background: Theme.sunken;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 2px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-bottom: 10px;
+                            spacing: 8px;
+                            Image {
+                                source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
+                                width: 22px;
+                                height: 22px;
+                            }
+                            Text {
+                                text: "Whoosh";
+                                color: Theme.text;
+                                font-size: 17px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                        for n in root.nav: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
+                        Rectangle { vertical-stretch: 1; }
+                        for n in root.nav-more: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
+                    }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    // ---------------------------------------------------- toolbar
+                    Rectangle {
+                        height: 58px;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            padding-top: 12px;
+                            padding-bottom: 12px;
+                            spacing: 8px;
+                            if !Theme.rtl: Button { text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                            if !Theme.rtl: Button { text: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if !Theme.rtl: Button { text: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if !Theme.rtl: Button { text: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if !Theme.rtl: Rectangle { horizontal-stretch: 1; }
+                            search-box := LineEdit { width: 240px; text <=> root.query; placeholder-text: root.search-placeholder; horizontal-alignment: Theme.rtl ? right : left; edited(t) => { root.search(t); } }
+                            if Theme.rtl: Rectangle { horizontal-stretch: 1; }
+                            if Theme.rtl: Button { text: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if Theme.rtl: Button { text: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if Theme.rtl: Button { text: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if Theme.rtl: Button { text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                        }
+                        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                    }
+
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        if Theme.rtl && root.detail: DetailPanel {
+                            label: root.details-label;
+                            name: root.d-name;
+                            category: root.d-category;
+                            state: root.d-state;
+                            tone: root.d-tone;
+                            progress: root.d-progress;
+                            known: root.d-known;
+                            progress-text: root.d-progress-text;
+                            facts: root.d-facts;
+                            actions: root.d-actions;
+                            action(id) => { root.action(id); }
+                        }
+                        // ------------------------------------------------ the list
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Rectangle {
+                                height: 34px;
+                                background: Theme.surface;
+                                HorizontalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    spacing: 14px;
+                                    if !Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && !root.detail: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && !root.detail: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
+                                    HeaderCell { column: root.columns[1]; width: Cols.size; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && !root.detail: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && !root.detail: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
+                                }
+                                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                            }
+                            if root.rows.length > 0: ContextMenuArea {
+                                vertical-stretch: 1;
+                                Menu {
+                                    MenuItem { title: root.open-text; enabled: root.can-open; activated => { root.action("open"); } }
+                                    MenuItem { title: root.open-folder-text; enabled: root.can-open; activated => { root.action("reveal"); } }
+                                    MenuSeparator {}
+                                    MenuItem { title: root.resume-text; enabled: root.can-resume; activated => { root.action("resume"); } }
+                                    MenuItem { title: root.pause-text; enabled: root.can-pause; activated => { root.action("pause"); } }
+                                    MenuItem { title: root.copy-text; activated => { root.action("copy"); } }
+                                    MenuSeparator {}
+                                    MenuItem { title: root.remove-text; enabled: root.can-remove; activated => { root.action("remove"); } }
+                                }
+                                ListView {
+                                width: 100%;
+                                height: 100%;
+                                accessible-role: list;
+                                accessible-label: root.view-title;
+                                for r[i] in root.rows: RowView {
+                                    item: r;
+                                    compact: root.detail;
+                                    pressed(ctrl, shift, right) => { keys.focus(); root.row-pressed(i, ctrl, shift, right); }
+                                    activated => { root.row-activated(i); }
+                                }
+                                }
+                            }
+                            if root.rows.length == 0: VerticalLayout {
+                                vertical-stretch: 1;
+                                alignment: center;
+                                spacing: 8px;
+                                Icon { name: Icons.inbox; tint: Theme.subtle; width: 40px; height: 40px; x: (parent.width - self.width) / 2; }
+                                Text { text: root.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
+                                Text { text: root.empty-body; color: Theme.muted; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
+                                if root.empty-action != "": HorizontalLayout {
+                                    alignment: center;
+                                    Button { text: root.empty-action; clicked => { root.action(root.empty-action-id); } }
+                                }
+                            }
+                        }
+                        if !Theme.rtl && root.detail: DetailPanel {
+                            label: root.details-label;
+                            name: root.d-name;
+                            category: root.d-category;
+                            state: root.d-state;
+                            tone: root.d-tone;
+                            progress: root.d-progress;
+                            known: root.d-known;
+                            progress-text: root.d-progress-text;
+                            facts: root.d-facts;
+                            actions: root.d-actions;
+                            action(id) => { root.action(id); }
+                        }
+                    }
+                }
+
+                if Theme.rtl: Rectangle {
+                    width: 224px;
+                    background: Theme.sunken;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 2px;
+                        HorizontalLayout {
+                            padding-right: 10px;
+                            padding-bottom: 10px;
+                            spacing: 8px;
+                            alignment: end;
+                            Text {
+                                text: "Whoosh";
+                                color: Theme.text;
+                                font-size: 17px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                            Image {
+                                source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
+                                width: 22px;
+                                height: 22px;
+                            }
+                        }
+                        for n in root.nav: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
+                        Rectangle { vertical-stretch: 1; }
+                        for n in root.nav-more: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
+                    }
+                }
+            }
+
+            // ---------------------------------------------------- status bar
+            Rectangle {
+                height: 30px;
+                background: Theme.sunken;
+                Rectangle { height: 1px; y: 0; background: Theme.border; }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 16px;
+                    Text { text: Theme.rtl ? root.version-text : root.speed-text; color: Theme.rtl ? Theme.subtle : Theme.text; font-size: 12px; font-weight: Theme.rtl ? 400 : 600; vertical-alignment: center; }
+                    Text { text: Theme.rtl ? root.connection-text : root.counts-text; color: Theme.rtl ? (root.connected ? Theme.success : Theme.warning) : Theme.muted; font-size: 12px; vertical-alignment: center; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: Theme.rtl ? root.counts-text : root.connection-text; color: Theme.rtl ? Theme.muted : (root.connected ? Theme.success : Theme.warning); font-size: 12px; vertical-alignment: center; }
+                    Text { text: Theme.rtl ? root.speed-text : root.version-text; color: Theme.rtl ? Theme.text : Theme.subtle; font-size: 12px; font-weight: Theme.rtl ? 600 : 400; vertical-alignment: center; }
+                }
+            }
+        }
+
+        // ---------------------------------------------------- "Remove …?"
+        if root.removing: Rectangle {
+            background: #000000.with-alpha(0.35);
+            TouchArea {}
+            Rectangle {
+                width: min(440px, parent.width - 40px);
+                height: card.preferred-height;
+                border-radius: 14px;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+                accessible-role: groupbox;
+                accessible-label: root.remove-title;
+                card := VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+                    Text { text: root.remove-title; color: Theme.text; font-size: 17px; font-weight: 600; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                    Hint { text: root.remove-body; font-size: 13px; }
+                    CheckBox { text: root.delete-files-text; checked <=> root.delete-files; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: Theme.rtl ? start : end;
+                        if Theme.rtl: Button { text: root.confirm-remove-text; primary: true; clicked => { root.remove-confirmed(true); } }
+                        Button { text: root.cancel-text; clicked => { root.remove-confirmed(false); } }
+                        if !Theme.rtl: Button { text: root.confirm-remove-text; primary: true; clicked => { root.remove-confirmed(true); } }
+                    }
+                }
+            }
+        }
+    }
+
+    in property <string> empty-action-id;
+
+    init => {
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    property <bool> dark: Theme.dark;
+    changed dark => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+}

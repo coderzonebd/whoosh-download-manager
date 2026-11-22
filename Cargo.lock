@@ -9162,6 +9162,7 @@ dependencies = [
 name = "wdm-prompt"
 version = "1.0.0-beta.3"
 dependencies = [
+ "arboard",
  "png",
  "rfd",
  "serde_json",

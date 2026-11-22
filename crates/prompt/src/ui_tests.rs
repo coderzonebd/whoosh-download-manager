@@ -15,7 +15,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PlatformError, WindowAdapter};
-use slint::{PhysicalSize, Rgb8Pixel};
+use slint::{Model as _, PhysicalSize, Rgb8Pixel};
 use tokio::sync::mpsc;
 use wdm_proto::{event, method};
 
@@ -24,16 +24,22 @@ use crate::{PromptWindow, ui};
 
 const W: u32 = 520;
 const H: u32 = 460;
+const MW: u32 = 1120;
+const MH: u32 = 700;
 
 thread_local! {
     static NOW: Cell<Duration> = const { Cell::new(Duration::ZERO) };
+    /// Every window made so far: the prompt window first, then each main window.
+    static WINDOWS: std::cell::RefCell<Vec<Rc<MinimalSoftwareWindow>>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-struct TestPlatform(Rc<MinimalSoftwareWindow>);
+struct TestPlatform;
 
 impl Platform for TestPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        Ok(self.0.clone())
+        let w = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        WINDOWS.with(|ws| ws.borrow_mut().push(w.clone()));
+        Ok(w)
     }
     fn duration_since_start(&self) -> Duration {
         NOW.with(Cell::get)
@@ -83,14 +89,25 @@ impl Harness {
         self.ui.invoke_button(id.into());
     }
 
-    /// Draws the window; it must not be blank. Saved as `<name>.png` when asked.
+    /// Draws the prompt window; it must not be blank. Saved as `<name>.png` when asked.
     fn shot(&self, name: &str) {
-        let mut buffer = vec![Rgb8Pixel::default(); (W * H) as usize];
-        self.window.request_redraw();
+        self.draw(&self.window.clone(), W, H, name);
+    }
+
+    /// Draws the main window (the newest).
+    fn main_shot(&self, name: &str) {
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        w.set_size(PhysicalSize::new(MW, MH));
+        self.draw(&w, MW, MH, name);
+    }
+
+    fn draw(&self, window: &Rc<MinimalSoftwareWindow>, w: u32, h: u32, name: &str) {
+        let mut buffer = vec![Rgb8Pixel::default(); (w * h) as usize];
+        window.request_redraw();
         self.wait(Duration::from_millis(16));
-        self.window.draw_if_needed(|r| {
+        window.draw_if_needed(|r| {
             r.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
-            r.render(&mut buffer, W as usize);
+            r.render(&mut buffer, w as usize);
         });
         let colours: std::collections::HashSet<(u8, u8, u8)> =
             buffer.iter().step_by(37).map(|p| (p.r, p.g, p.b)).collect();
@@ -101,7 +118,7 @@ impl Harness {
         );
         if let Some(dir) = &self.shots {
             let file = std::fs::File::create(dir.join(format!("{name}.png"))).unwrap();
-            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, H);
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
             enc.set_color(png::ColorType::Rgb);
             enc.set_depth(png::BitDepth::Eight);
             let bytes: Vec<u8> = buffer.iter().flat_map(|p| [p.r, p.g, p.b]).collect();
@@ -147,14 +164,14 @@ fn summary(v: Value) -> wdm_proto::DownloadSummary {
 }
 
 fn setup() -> Harness {
-    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-    slint::platform::set_platform(Box::new(TestPlatform(window.clone()))).ok();
-    window.set_size(PhysicalSize::new(W, H));
+    slint::platform::set_platform(Box::new(TestPlatform)).ok();
     let dir = std::env::temp_dir().join(format!("wdm-prompt-ui-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let lock = wdm_tray::locks::take(&dir, wdm_tray::locks::PROMPT).unwrap();
     let ui = PromptWindow::new().unwrap();
+    let window = WINDOWS.with(|ws| ws.borrow()[0].clone());
+    window.set_size(PhysicalSize::new(W, H));
     let (tx, cmds) = mpsc::unbounded_channel();
     ui::Controller::install(&ui, dir.clone(), tx, lock);
     let shots = std::env::var_os("WDM_PROMPT_SHOTS").map(PathBuf::from);
@@ -356,6 +373,134 @@ fn the_prompt_window_from_start_to_end() {
         "the main button comes first"
     );
     h.shot("progress-ar");
+
+    // ---------------------------------------------------------------- the main window
+    h.settings("en", "light");
+    let item = |id: &str, name: &str, state: &str, done: u64, total: Option<u64>, speed: u64| {
+        json!({
+            "id": id, "url": format!("https://cdn.example.org/{name}"), "filename": name,
+            "directory": "/home/u/Downloads", "state": state, "totalBytes": total,
+            "downloadedBytes": done, "speedBps": speed, "etaSecs": 130,
+            "connections": if state == "downloading" { 8 } else { 0 }, "resumable": true,
+            "addedAt": done % 97, "error": if state == "failed" { json!({"code": "http_404", "message": "The server says the file is not there (404)."}) } else { Value::Null },
+            "activeMs": 61_000,
+        })
+    };
+    h.msg(Msg::List(
+        [
+            item(
+                "u",
+                "ubuntu-26.10-desktop-amd64.iso",
+                "downloading",
+                2_147_483_648,
+                Some(6_120_000_000),
+                12_582_912,
+            ),
+            item(
+                "v",
+                "A walk through Dhaka at night.mp4",
+                "downloading",
+                88_000_000,
+                Some(160_000_000),
+                3_145_728,
+            ),
+            item(
+                "r",
+                "report-2026-final.pdf",
+                "completed",
+                3_500_000,
+                Some(3_500_000),
+                0,
+            ),
+            item(
+                "z",
+                "photos-backup.zip",
+                "paused",
+                410_000_000,
+                Some(1_200_000_000),
+                0,
+            ),
+            item("s", "setup-tool-v4.exe", "failed", 0, None, 0),
+            item("q", "song.mp3", "queued", 0, Some(8_000_000), 0),
+        ]
+        .into_iter()
+        .map(summary)
+        .collect(),
+    ));
+    ui::with(ui::Controller::show_main);
+    let main = ui::with_ret(|c| c.main_window())
+        .flatten()
+        .expect("the main window");
+    assert_eq!(main.get_rows().row_count(), 6);
+    h.main_shot("main");
+
+    // Sorted by name, then a click selects and shows the details.
+    main.invoke_sort("name".into());
+    let names: Vec<String> = main.get_rows().iter().map(|r| r.name.to_string()).collect();
+    assert_eq!(names[0], "A walk through Dhaka at night.mp4");
+    main.invoke_row_pressed(0, false, false, false);
+    assert!(main.get_detail());
+    assert!(main.get_can_pause() && !main.get_can_resume());
+    // Shift adds the run down to the fourth row.
+    main.invoke_row_pressed(3, false, true, false);
+    assert_eq!(main.get_rows().iter().filter(|r| r.selected).count(), 4);
+    h.main_shot("main-selected");
+    main.invoke_action("pause".into());
+    let calls = h.calls();
+    assert_eq!(calls[0].0, method::DOWNLOAD_PAUSE);
+    assert_eq!(
+        calls[0].1["ids"],
+        json!(["v"]),
+        "only the ones that can pause"
+    );
+
+    // Remove asks first; the files stay unless ticked.
+    main.invoke_action("remove".into());
+    assert!(main.get_removing());
+    h.main_shot("main-remove");
+    main.invoke_remove_confirmed(true);
+    let calls = h.calls();
+    assert_eq!(calls[0].0, method::DOWNLOAD_REMOVE);
+    assert_eq!(calls[0].1["deleteFiles"], json!(false));
+    assert!(!main.get_removing());
+
+    // A view and a search.
+    main.invoke_nav_picked("group:completed".into());
+    assert_eq!(main.get_rows().row_count(), 1);
+    main.invoke_row_pressed(0, false, false, false);
+    assert!(main.get_can_open());
+    h.main_shot("main-completed");
+    main.invoke_nav_picked("group:all".into());
+    main.invoke_search("zip".into());
+    assert_eq!(main.get_rows().row_count(), 1);
+    main.invoke_search("nothing like this".into());
+    assert_eq!(main.get_rows().row_count(), 0);
+    assert_eq!(
+        main.get_empty_title(),
+        "Nothing matches “nothing like this”"
+    );
+    main.invoke_action("clear-search".into());
+    assert_eq!(main.get_rows().row_count(), 6);
+
+    // Progress updates a row in place, without reordering.
+    h.event(event::DOWNLOAD_PROGRESS, json!({"items": [{"id": "v", "downloadedBytes": 120_000_000, "totalBytes": 160_000_000, "speedBps": 1, "connections": 8}]}));
+    let v = main.get_rows().iter().find(|r| r.id == "v").unwrap();
+    assert_eq!(v.percent, "75.0%");
+
+    // Add opens the add dialog in the prompt window.
+    main.invoke_action("add".into());
+    assert_eq!(h.ui.get_screen(), 2);
+    assert_eq!(h.ui.get_url(), "");
+    h.press("cancel");
+    assert_eq!(h.ui.get_screen(), 0);
+
+    // Bangla in the dark, Arabic right to left.
+    h.settings("bn", "dark");
+    main.invoke_row_pressed(0, false, false, false);
+    h.main_shot("main-bn-dark");
+    h.settings("ar", "light");
+    h.main_shot("main-ar");
+    h.settings("en", "light");
 
     // ---------------------------------------------------------------- nothing left: it closes
     h.event(event::DOWNLOAD_REMOVED, json!({"ids": ["m"]}));

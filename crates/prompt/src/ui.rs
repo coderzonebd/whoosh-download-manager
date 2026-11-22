@@ -22,6 +22,9 @@ use crate::media;
 use crate::model::{self, Effect, Item, Model};
 use crate::{Btn, Fact, PromptWindow, Sub, Theme};
 
+mod main_window;
+pub use main_window::SHOW_MAIN_FILE;
+
 /// How long the window stays once nothing is left, so the next item can arrive.
 const CLOSE_DELAY: Duration = Duration::from_millis(400);
 /// After letting go of the prompt lock: how long to still listen before ending.
@@ -47,6 +50,14 @@ pub fn with(f: impl FnOnce(&mut Controller)) {
     {
         f(&mut c);
     }
+}
+
+/// Runs `f` on the controller and returns its answer (tests).
+#[cfg(test)]
+pub fn with_ret<T>(f: impl FnOnce(&mut Controller) -> T) -> Option<T> {
+    let mut out = None;
+    with(|c| out = Some(f(c)));
+    out
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +154,7 @@ pub struct Controller {
     slow_timer: Timer,
     disarm_timer: Timer,
     give_up: Timer,
+    main: main_window::Main,
 }
 
 impl std::fmt::Debug for Controller {
@@ -242,17 +254,19 @@ impl Controller {
             slow_timer: Timer::default(),
             disarm_timer: Timer::default(),
             give_up: Timer::default(),
+            main: main_window::Main::default(),
         };
         CTRL.with(|c| *c.borrow_mut() = Some(Rc::new(RefCell::new(ctrl))));
         wire(ui);
         with(|c| {
             c.give_up.start(TimerMode::SingleShot, GIVE_UP, || {
                 with(|c| {
-                    if !c.model.loaded && !c.shown {
+                    if !c.model.loaded && !c.shown && !c.main.shown() {
                         c.quit();
                     }
                 });
             });
+            c.start_polling();
             c.apply_look();
             c.render();
         });
@@ -302,12 +316,24 @@ impl Controller {
         let theme = ui.global::<Theme>();
         theme.set_dark(dark);
         theme.set_rtl(self.lang.rtl());
+        self.apply_main_look(dark, self.lang.rtl());
     }
 
     pub fn on_msg(&mut self, msg: Msg) {
+        let progress_only = matches!(&msg, Msg::Event(m, _) if m == wdm_proto::event::DOWNLOAD_PROGRESS)
+            || matches!(msg, Msg::Reply(..) | Msg::PlaylistProgress(..));
+        if !progress_only {
+            self.main.restructure();
+        }
         match msg {
-            Msg::Connected => {}
-            Msg::Disconnected => {}
+            Msg::Connected => self.main.connected = true,
+            Msg::Disconnected => {
+                self.main.connected = false;
+                // The tray's Quit stopped the daemon: the windows go too.
+                if self.dir.join(wdm_proto::runtime::APP_QUIT_FILE).exists() {
+                    return self.quit();
+                }
+            }
             Msg::List(list) => {
                 let e = self.model.replace_all(list);
                 self.effect(e);
@@ -619,7 +645,13 @@ impl Controller {
         }
     }
 
+    /// Both windows show what is now true.
     pub fn render(&mut self) {
+        self.render_prompt();
+        self.render_main();
+    }
+
+    fn render_prompt(&mut self) {
         let Some(ui) = self.ui.upgrade() else { return };
         let item = self.model.current();
         let key = item.key();
@@ -697,6 +729,11 @@ impl Controller {
                     let _ = ui.hide();
                 }
                 c.shown = false;
+                c.closing = None;
+                // The main window is open: the process stays for it.
+                if c.main.shown() {
+                    return;
+                }
                 // Let a new window start from here on, but listen a little
                 // longer for what may already be on its way.
                 c.lock = None;
@@ -714,11 +751,25 @@ impl Controller {
         self.closing = Some(timer);
     }
 
+    /// "Close" with nothing left: the prompt window goes; the process ends
+    /// unless the main window is open.
+    fn close_prompt_window(&mut self) {
+        if self.main.shown() {
+            if let Some(ui) = self.ui.upgrade() {
+                let _ = ui.hide();
+            }
+            self.shown = false;
+        } else {
+            self.quit();
+        }
+    }
+
     fn quit(&mut self) {
         self.lock = None;
         if let Some(ui) = self.ui.upgrade() {
             let _ = ui.hide();
         }
+        self.main.hide();
         let _ = slint::quit_event_loop();
     }
 
@@ -1289,7 +1340,7 @@ impl Controller {
             Form::Follow(_) => self.follow_button(id),
             Form::None => {
                 if id == "close" {
-                    self.quit();
+                    self.close_prompt_window();
                 }
             }
         }
@@ -1316,7 +1367,7 @@ impl Controller {
                 }
                 self.save_followed();
             }
-            Form::None => self.quit(),
+            Form::None => self.close_prompt_window(),
         }
         self.render();
     }
