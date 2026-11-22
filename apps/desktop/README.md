@@ -19,8 +19,12 @@ GPL-3.0-or-later.
   fetched by the daemon on first use; see
   [`crates/media`](../../crates/media/README.md)). Nothing is bundled.
 - **One instance.** A second launch shows the first one's window and exits.
-- **Closing and quitting.** Closing the window hides it to the tray, and
-  downloads go on; the first time, a notification says so. Without a tray
+- **Closing and quitting.** Closing the window leaves WDM in the tray, and
+  downloads go on; the first time, a notification says so. The window is
+  closed for real, not hidden: its web page (WebKitGTK's or WebView2's
+  processes, about 100 MB) is freed, and the tray (or a second launch, a
+  `whoosh://` link, the prompt window) makes it again. In the tray the app
+  is the daemon and the small shell process. Without a tray
   (a Linux desktop with no status notifier) closing quits. *Quit* in the tray
   closes WDM completely: the daemon stops, and the app leaves an `app-quit`
   mark in the data directory, so the browser's native host does not start
@@ -32,8 +36,8 @@ GPL-3.0-or-later.
 - **Launch at login.** Off by default; turned on in Settings → *This
   computer* (`tauri-plugin-autostart`: a LaunchAgent on macOS, the registry
   on Windows, an XDG autostart entry on Linux). The login item passes
-  `--autostart`, and the app then starts hidden in the tray (when there is a
-  tray).
+  `--autostart`, and the app then starts in the tray (when there is a
+  tray), without making the window until it is wanted.
 - **Prompt window** (`src-tauri/src/prompt.rs`). A browser download that waits
   for confirmation, or a video page offered by the extension's button
   (`media.offer`), is asked about in a small window of its own (`prompt`,
@@ -42,8 +46,8 @@ GPL-3.0-or-later.
   time and closes itself when nothing is left; the main window does not come
   up for them. A UI asks for it with `open_prompt` (opening it again only
   focuses it). The native host starts the app with `--prompt` when no app
-  window is connected: the main window then stays hidden in the tray (when
-  there is one) and only the prompt window opens; a running app gets the
+  window is connected: the main window is then not made (when there is a
+  tray) and only the prompt window opens; a running app gets the
   argument through the single-instance plugin.
 - **Folder picker.** The default folder (Settings) and the add dialog's folder
   have a *Browse…* button (`tauri-plugin-dialog`, `dialog:allow-open` only).
@@ -72,7 +76,10 @@ GPL-3.0-or-later.
   daemon's data directory so the daemon follows it too. See
   [docs/privacy.md](../../docs/privacy.md).
 - **Notifications.** A download that finishes or fails while the window is
-  not in front raises a system notification, in the UI's language.
+  not in front (or closed to the tray) raises a system notification, in the
+  UI's language. The shell sends them itself from its own watch on the
+  daemon (`src-tauri/src/watch.rs`), so they come with no window at all; so
+  does "a new version is available" where installing needs the password.
 - In a plain browser (`pnpm --filter @wdm/desktop dev`) there is no shell,
   so the UI runs on the mock daemon, labelled "Demo data".
 
@@ -84,11 +91,12 @@ GPL-3.0-or-later.
   does not let apps read or set their position, so only size and maximised
   state apply there.
 - Tray icon with *Show Whoosh Download Manager* / *Quit*; left-click shows the window (and
-  on macOS, so does the Dock icon). The UI pushes "WDM — ↓ 12.5 MB/s ·
-  3 active" from the daemon's stats into the tooltip once a second
-  (`set_tray_tooltip` command). The menu is in the UI's language: Rust
+  on macOS, so does the Dock icon). The shell writes "WDM — ↓ 12.5 MB/s ·
+  3 active" from the daemon's stats into the tooltip, in the UI's language
+  and number style (`shell_i18n::tooltip`, with the UI's `tray.tooltip`,
+  `status.active` and `unit.*` strings). The menu is in the UI's language: Rust
   embeds the UI's locale files at build time (`build.rs`) and reads the
-  `tray.*` strings; the UI calls `set_shell_language` whenever its language
+  strings it needs; the UI calls `set_shell_language` whenever its language
   (the daemon's `Settings.language`) changes, and the shell remembers it in
   `desktop.json` so the tray starts translated (`src-tauri/src/shell_i18n.rs`).
   The language picker's "help improve the translation" link opens the

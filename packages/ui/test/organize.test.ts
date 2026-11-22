@@ -57,6 +57,26 @@ describe("sorting into folders by type", () => {
     expect(screen.queryByRole("dialog", { name: "Sort downloads into folders?" })).toBeNull();
   });
 
+  it("closed, it is not asked again while the app runs, even in a window made again", async () => {
+    const kept = new Set<string>();
+    const thisRun = { get: async (k: string) => kept.has(k), set: async (k: string) => void kept.add(k) };
+    client = createMockClient({ autoTick: false });
+    const user = userEvent.setup();
+    render(App, { props: { client, storage: null, locale: "en", host: { thisRun } } });
+    await screen.findByRole("dialog", { name: "Sort downloads into folders?" });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(kept.has("organizeDismissed")).toBe(true));
+    cleanup();
+
+    // The window closed to the tray and opened again: a new page, same shell.
+    let again: AppState | undefined;
+    render(App, { props: { client, storage: null, locale: "en", host: { thisRun }, onready: (a: AppState) => (again = a) } });
+    await waitFor(() => expect(again?.settings).toBeDefined());
+    await waitFor(() => expect(again?.organizeDismissed).toBe(true));
+    expect(screen.queryByRole("dialog", { name: "Sort downloads into folders?" })).toBeNull();
+    expect(again?.settings?.organizeByCategory).toBeUndefined();
+  });
+
   it("closing the question asks again next time, without saving anything", async () => {
     const { app, user } = await setup();
     await screen.findByRole("dialog", { name: "Sort downloads into folders?" });

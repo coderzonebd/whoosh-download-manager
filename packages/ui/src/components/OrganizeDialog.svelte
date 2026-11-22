@@ -24,7 +24,7 @@
   title={t("organize.title")}
   description={t("organize.body", { folder })}
   closeLabel={t("action.close")}
-  onclose={() => (app.organizeDismissed = true)}
+  onclose={() => app.dismissOrganize()}
   initialFocus=".yes"
 >
   {#snippet children()}

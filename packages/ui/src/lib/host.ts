@@ -120,6 +120,14 @@ export interface Host {
    * its name and the command that updates now (may be empty). undefined: the app updates itself.
    */
   updatesFrom?: () => Promise<{ manager: string; command: string } | undefined>;
+  /**
+   * Small answers kept while the app runs, across its main window being closed to the tray and
+   * made again (desktop app: closed, the window and its page are gone). Not kept on disk.
+   */
+  thisRun?: {
+    get(key: string): Promise<boolean>;
+    set(key: string): Promise<void>;
+  };
   /** Signed in-app updates (desktop app). */
   updates?: {
     /** undefined when this is the newest version. */

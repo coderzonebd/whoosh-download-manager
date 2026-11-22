@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The shell's own watch on the daemon, for the prompt window.
+//! The shell's own watch on the daemon: the prompt window, the tray
+//! tooltip, and the notifications for downloads that end.
 //!
 //! The main window could open the prompt window by itself, but hidden in
 //! the tray (closed, or ⌘Q on macOS) its page may be suspended by the
@@ -12,6 +13,12 @@
 //! extension offers a page, and when a download the prompt window follows
 //! (`set_followed`) ends, so its "Download complete" comes up even after
 //! the user hid its progress.
+//!
+//! Closed to the tray, the main window does not exist at all (it is made
+//! again when shown), so the tray tooltip and the "finished" / "failed"
+//! notifications come from here too, in the UI's language
+//! ([`crate::shell_i18n`]). With the window in front, its own toast says it
+//! instead.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -24,6 +31,8 @@ use wdm_client::daemon::{self, Found};
 use wdm_proto::{event, method};
 
 use crate::daemon::{client_info, data_dir};
+use crate::prefs::PrefsState;
+use crate::shell_i18n::{self, Notice};
 
 /// How long to wait before connecting again (no daemon yet, or it went away).
 const RETRY: Duration = Duration::from_secs(3);
@@ -78,6 +87,47 @@ fn waits(summary: &Value) -> bool {
         && summary.get("state").and_then(Value::as_str) == Some("paused")
 }
 
+/// The id of a download that ended, and whether it completed (else it failed).
+fn ended(params: &Value) -> Option<(&str, bool)> {
+    let id = params.get("id").and_then(Value::as_str)?;
+    match params.get("state").and_then(Value::as_str)? {
+        "completed" => Some((id, true)),
+        "failed" => Some((id, false)),
+        _ => None,
+    }
+}
+
+/// Says that a download ended, unless the main window is in front.
+async fn notify_ended<R: Runtime>(
+    app: &AppHandle<R>,
+    client: &wdm_client::Client,
+    id: &str,
+    ok: bool,
+) {
+    if crate::main_window_in_front(app) {
+        return;
+    }
+    let detail: Result<Value, _> = client
+        .call(method::DOWNLOAD_GET, serde_json::json!({ "id": id }))
+        .await;
+    let name = detail
+        .ok()
+        .and_then(|d| d.get("filename").and_then(Value::as_str).map(str::to_owned))
+        .unwrap_or_default();
+    let notice = if ok {
+        Notice::Completed(&name)
+    } else {
+        Notice::Failed(&name)
+    };
+    crate::notify(app, &notice);
+}
+
+/// The tray tooltip for an `event.stats`.
+fn tooltip(language: &str, stats: &Value) -> String {
+    let n = |k: &str| stats.get(k).and_then(Value::as_u64).unwrap_or(0);
+    shell_i18n::tooltip(language, n("downloadBps"), n("active"))
+}
+
 /// Something already waits when the shell connects (it started after it arrived).
 async fn waiting_now(client: &wdm_client::Client) -> bool {
     let offers: Result<Value, _> = client.call(method::MEDIA_OFFERS, Value::Null).await;
@@ -120,6 +170,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, stop: &'static AtomicBool) {
                 open(&app);
             }
             first = false;
+            let mut shown_tooltip = String::new();
             while let Some(ev) = client.next_event().await {
                 if stop.load(Ordering::SeqCst) {
                     break;
@@ -127,6 +178,21 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, stop: &'static AtomicBool) {
                 let followed = |id: &str| app.state::<Followed>().contains(id);
                 if wants_prompt(&ev.method, &ev.params, &followed) {
                     open(&app);
+                }
+                match ev.method.as_str() {
+                    event::STATS => {
+                        let text = tooltip(&app.state::<PrefsState>().get().language, &ev.params);
+                        if text != shown_tooltip {
+                            crate::set_tray_tooltip(&app, &text);
+                            shown_tooltip = text;
+                        }
+                    }
+                    event::DOWNLOAD_STATE => {
+                        if let Some((id, ok)) = ended(&ev.params) {
+                            notify_ended(&app, &client, id, ok).await;
+                        }
+                    }
+                    _ => {}
                 }
             }
             client.close().await;
@@ -140,6 +206,28 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn tells_which_downloads_ended() {
+        assert_eq!(
+            ended(&json!({ "id": "dl_1", "state": "completed" })),
+            Some(("dl_1", true))
+        );
+        assert_eq!(
+            ended(&json!({ "id": "dl_2", "state": "failed", "error": "x" })),
+            Some(("dl_2", false))
+        );
+        assert_eq!(ended(&json!({ "id": "dl_3", "state": "paused" })), None);
+        assert_eq!(ended(&json!({ "state": "completed" })), None);
+    }
+
+    #[test]
+    fn the_tooltip_follows_the_stats() {
+        let busy = json!({ "downloadBps": 13_107_200, "uploadBps": 0, "active": 3, "queued": 1 });
+        assert_eq!(tooltip("en", &busy), "WDM — ↓ 12.5 MB/s · 3 active");
+        let idle = json!({ "downloadBps": 0, "uploadBps": 0, "active": 0, "queued": 0 });
+        assert_eq!(tooltip("en", &idle), "Whoosh Download Manager");
+    }
 
     #[test]
     fn opens_for_waiting_downloads_offers_and_followed_downloads_that_end() {

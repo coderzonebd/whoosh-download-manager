@@ -4,6 +4,10 @@ All notable changes are listed here, newest first. Versions follow [Semantic Ver
 
 ## Unreleased
 
+### Less memory in the tray
+- **Closed to the tray, WDM frees its window.** The window and its web page (WebKitGTK's or WebView2's processes) used to stay in memory, hidden; now they are closed and made again when you open WDM from the tray, a second launch, a `whoosh://` link or the browser. Measured on Linux: about 95 MB in the tray after using the window, down from about 220 MB; started at login, the window is not made at all and WDM takes about 36 MB (the daemon and the small shell process), down from about 70 MB.
+- The tray tooltip, the "finished" and "failed" notifications and "a new version is available" now come from the shell itself, so they work with no window. Closing "Sort downloads into folders?" without an answer is remembered until WDM quits, not asked again each time the window comes back.
+
 ### Release
 - **The browser extension reaches Firefox and Edge users by itself.** Publishing a release now submits the extension to Firefox Add-ons and Microsoft Edge Add-ons (`publish-channels.yml`); once a store has reviewed it, the browser updates everyone's extension. From 1.0.0 on only full releases go to the stores (until then the 1.0.0 betas do), so the stores always list a plain version. CI no longer runs on pushes to `pub`, which only takes tested PRs from `dev`.
 - **The release page lists only what people need** to install and run WDM: 19 files instead of 28. The command-line archive now includes the browser's native host (`wdm-nmhost`), so the five separate host archives are gone. What only the release jobs use (`latest.json`, the store uploads, the package manifests, the SBOMs) is kept with the release run as its `release-internal` artifact.

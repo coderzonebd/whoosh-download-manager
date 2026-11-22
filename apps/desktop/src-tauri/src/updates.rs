@@ -55,6 +55,22 @@ pub struct Pending(Mutex<Option<Update>>);
 #[derive(Default)]
 pub struct Ready(Mutex<Option<(Update, Vec<u8>)>>);
 
+/// A new version announced where installing needs the password, until it is
+/// installed: the main window, made again after the tray, shows it too.
+#[derive(Default)]
+pub struct Announced(Mutex<Option<String>>);
+
+/// The version announced with [`EVENT_UPDATE_AVAILABLE`], if any (asked by
+/// the main window when it opens).
+#[tauri::command]
+pub fn update_notice(announced: tauri::State<'_, Announced>) -> Option<String> {
+    announced
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
 /// Set while an automatic install runs, so it happens once.
 static INSTALLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -320,10 +336,21 @@ pub fn start_daily_check<R: Runtime>(app: AppHandle<R>) {
                     Ok(Some(info)) if needs_password() => {
                         // One click (and the password) away; never a password prompt out of nowhere.
                         if info.version != announced {
+                            *app.state::<Announced>()
+                                .0
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner()) = Some(info.version.clone());
                             let _ = app.emit(
                                 EVENT_UPDATE_AVAILABLE,
                                 serde_json::json!({ "version": info.version }),
                             );
+                            // With the window closed to the tray, nobody hears the event.
+                            if !crate::main_window_in_front(&app) {
+                                crate::notify(
+                                    &app,
+                                    &crate::shell_i18n::Notice::UpdateAvailable(&info.version),
+                                );
+                            }
                             announced = info.version;
                         }
                     }

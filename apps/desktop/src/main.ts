@@ -28,8 +28,7 @@ import { startDeepLinks } from "./deeplinks.ts";
 import { desktopHost } from "./host.ts";
 import { startUpdateNotices } from "./updates.ts";
 import { startShellLanguage } from "./shell-language.svelte.ts";
-import { startNotifications } from "./notify.ts";
-import { startTrayUpdates } from "./tray.ts";
+import { startLoginNotice } from "./notify.ts";
 
 declare const __APP_VERSION__: string;
 
@@ -93,9 +92,9 @@ if (promptView) {
       // The folder picker, tray and login settings exist only in the app.
       ...(live ? { host: desktopHost() } : {}),
       onready: (app: AppState) => {
-        startTrayUpdates(client, (bps, active) => app.i18n.t("tray.tooltip", { speed: app.i18n.speed(bps), active: app.i18n.t("status.active", { count: active }) }));
+        // The tray tooltip and the system notifications come from the shell (`watch.rs`).
         if (live) {
-          startNotifications(client, app);
+          startLoginNotice(app);
           startShellLanguage(app);
           void startDeepLinks(app);
           void startUpdateNotices(app);
