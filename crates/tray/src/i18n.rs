@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The few strings the shell shows itself (the tray menu and tooltip, and
-//! the system notifications it sends while the window is closed), in the
-//! UI's language. They live in the UI's locale files (`tray.*` in
-//! `packages/ui/src/lib/i18n/locales/<tag>.json`, one Weblate component for
-//! the whole app) and are embedded at build time (`build.rs`). The UI calls
-//! [`set_shell_language`] whenever its language changes, which follows the
-//! daemon's `Settings.language`; the choice is kept in `desktop.json` so the
-//! tray starts in the right language before the window loads.
+//! the system notifications), in the UI's language. They live in the UI's
+//! locale files (`packages/ui/src/lib/i18n/locales/<tag>.json`, one Weblate
+//! component for the whole app) and are embedded at build time
+//! (`build.rs`). The UI tells the app whenever its language changes (it
+//! follows the daemon's `Settings.language`); the app keeps it in
+//! `desktop.json` ([`crate::prefs`]), where the tray process reads it.
 
 use serde_json::Value;
-use tauri::menu::MenuItem;
-use tauri::{AppHandle, Manager, Runtime, State};
-
-use crate::prefs;
 
 include!(concat!(env!("OUT_DIR"), "/locales.rs"));
 
@@ -23,12 +18,6 @@ const SOURCE: &str = "en";
 pub struct ShellStrings {
     pub show: String,
     pub quit: String,
-}
-
-/// The menu items whose text follows the language.
-pub struct TrayItems<R: Runtime> {
-    pub show: MenuItem<R>,
-    pub quit: MenuItem<R>,
 }
 
 /// The bundled locale that best matches `tag`: exact (any case), then the
@@ -229,6 +218,7 @@ pub fn tooltip(tag: &str, bps: u64, active: u64) -> String {
 }
 
 /// What a system notification from the shell says.
+#[derive(Debug, Clone, Copy)]
 pub enum Notice<'a> {
     Completed(&'a str),
     Failed(&'a str),
@@ -270,20 +260,151 @@ pub fn notice(tag: &str, which: &Notice<'_>) -> (String, String) {
     (title, body)
 }
 
-/// Called by the UI with its current language.
-#[tauri::command]
-pub fn set_shell_language<R: Runtime>(
-    app: AppHandle<R>,
-    language: String,
-    items: State<'_, TrayItems<R>>,
-) -> Result<(), String> {
-    let s = strings(&language);
-    items.show.set_text(&s.show).map_err(|e| e.to_string())?;
-    items.quit.set_text(&s.quit).map_err(|e| e.to_string())?;
-    if app.state::<prefs::PrefsState>().get().language != language {
-        prefs::update(&app, |p| p.language = language)?;
+/// One language for a window of its own (the native prompt window): the
+/// locale parsed once, with the formatting the UI's `I18n` does (`t`,
+/// `bytes`, `speed`, `eta`, `percent`, `progress`), so the two read alike.
+#[derive(Debug, Clone)]
+pub struct Lang {
+    tag: &'static str,
+    own: Value,
+    source: Value,
+}
+
+fn parsed(tag: &str) -> Value {
+    LOCALES
+        .iter()
+        .find(|(name, _)| *name == tag)
+        .and_then(|(_, json)| serde_json::from_str(json).ok())
+        .unwrap_or(Value::Null)
+}
+
+impl Lang {
+    /// The bundled language that best matches `tag` (the system's when empty).
+    pub fn new(tag: &str) -> Self {
+        let tag = resolve(tag);
+        Self {
+            tag,
+            own: parsed(tag),
+            source: parsed(SOURCE),
+        }
     }
-    Ok(())
+
+    pub fn tag(&self) -> &'static str {
+        self.tag
+    }
+
+    /// Written right to left (Arabic, Urdu).
+    pub fn rtl(&self) -> bool {
+        rtl(self.tag)
+    }
+
+    fn find(value: &Value, key: &str) -> Option<String> {
+        let mut v = value;
+        for part in key.split('.') {
+            v = v.get(part)?;
+        }
+        let text = v.as_str()?.trim();
+        (!text.is_empty()).then(|| text.to_owned())
+    }
+
+    fn template(&self, key: &str) -> String {
+        Self::find(&self.own, key)
+            .or_else(|| Self::find(&self.source, key))
+            .unwrap_or_else(|| key.to_owned())
+    }
+
+    /// The message `key` ("follow.title"), falling back to English.
+    pub fn t(&self, key: &str) -> String {
+        self.template(key)
+    }
+
+    /// `key` with its `{{name}}` placeholders filled in.
+    pub fn tf(&self, key: &str, params: &[(&str, &str)]) -> String {
+        fill(self.tag, &self.template(key), params)
+    }
+
+    /// A plural message: `key_one`, `key_other`, … for `count`, which also
+    /// fills `{{count}}`.
+    pub fn tn(&self, key: &str, count: u64, params: &[(&str, &str)]) -> String {
+        let pick = |v: &Value, tag: &str| {
+            Self::find(v, &format!("{key}_{}", plural(tag, count)))
+                .or_else(|| Self::find(v, &format!("{key}_other")))
+        };
+        let template = pick(&self.own, self.tag)
+            .or_else(|| pick(&self.source, SOURCE))
+            .unwrap_or_else(|| key.to_owned());
+        let n = self.number(count);
+        let mut all = vec![("count", n.as_str())];
+        all.extend_from_slice(params);
+        fill(self.tag, &template, &all)
+    }
+
+    /// A whole number in the language's digits.
+    pub fn number(&self, n: u64) -> String {
+        number(self.tag, n as f64, 0)
+    }
+
+    /// "12.5 MB"; unknown: "Unknown size".
+    pub fn bytes(&self, n: Option<u64>) -> String {
+        match n {
+            Some(n) => bytes(self.tag, n as f64),
+            None => self.t("size.unknown"),
+        }
+    }
+
+    /// "12.5 MB/s".
+    pub fn speed(&self, bps: u64) -> String {
+        let size = bytes(self.tag, bps as f64);
+        self.tf("unit.speed", &[("size", &size)])
+    }
+
+    /// "4m 12s", two units at most, as the UI's `eta` (`etaTemplate`).
+    pub fn eta(&self, secs: Option<u64>) -> String {
+        let Some(t) = secs else {
+            return self.t("eta.unknown");
+        };
+        let (d, h, m, s) = (t / 86_400, t % 86_400 / 3600, t % 3600 / 60, t % 60);
+        let key = match t {
+            0..60 => "eta.s",
+            60..600 => "eta.ms",
+            600..3600 => "eta.m",
+            3600..86_400 => "eta.hm",
+            _ if t < 10 * 86_400 => "eta.dh",
+            _ => "eta.d",
+        };
+        let f = |v: u64| self.number(v);
+        let (d, h, m, s) = (f(d), f(h), f(m), f(s));
+        self.tf(key, &[("d", &d), ("h", &h), ("m", &m), ("s", &s)])
+    }
+
+    /// 0.4237 → "42.3%" (one decimal under 100%, never 100% early), with the
+    /// sign where `Intl` puts it for the language.
+    pub fn percent(&self, fraction: f64) -> String {
+        let pct = (fraction.clamp(0.0, 1.0) * 1000.0).floor() / 10.0;
+        let digits = if pct >= 100.0 { 0 } else { 1 };
+        let n = number(self.tag, pct, digits);
+        match self.tag {
+            "tr" => format!("%{n}"),
+            "es" | "ru" => format!("{n}\u{a0}%"),
+            _ => format!("{n}%"),
+        }
+    }
+
+    /// "42.3% · 12.5 MB of 30.0 MB", or "12.5 MB so far" without a size.
+    pub fn progress(&self, done: u64, total: Option<u64>) -> String {
+        let done_s = bytes(self.tag, done as f64);
+        match total {
+            Some(total) if total > 0 => {
+                let pct = self.percent(done as f64 / total as f64);
+                let total = bytes(self.tag, total as f64);
+                self.tf(
+                    "progress.value",
+                    &[("percent", &pct), ("done", &done_s), ("total", &total)],
+                )
+            }
+            _ => self.tf("progress.indeterminate", &[("done", &done_s)]),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -406,5 +527,36 @@ mod tests {
             let (_, body) = notice(tag, &Notice::InTray);
             assert!(!body.is_empty() && !body.contains("{{"), "{tag}");
         }
+    }
+
+    #[test]
+    fn a_lang_formats_like_the_ui() {
+        let en = Lang::new("en");
+        assert_eq!(en.t("follow.title"), "Downloading");
+        assert_eq!(
+            en.tf("confirm.from", &[("host", "a.example")]),
+            "From a.example"
+        );
+        assert_eq!(en.tn("status.active", 1, &[]), "1 active");
+        assert_eq!(en.speed(13_107_200), "12.5 MB/s");
+        assert_eq!(en.bytes(None), "Unknown size");
+        assert_eq!(en.eta(Some(42)), "42s");
+        assert_eq!(en.eta(Some(252)), "4m 12s");
+        assert_eq!(en.eta(Some(3 * 3600 + 120)), "3h 2m");
+        assert_eq!(en.eta(None), "—");
+        assert_eq!(en.percent(0.4237), "42.3%");
+        assert_eq!(en.percent(0.9999), "99.9%");
+        assert_eq!(en.percent(1.0), "100%");
+        assert_eq!(
+            en.progress(5 * 1024 * 1024, Some(10 * 1024 * 1024)),
+            "50.0% · 5.00 MB of 10.0 MB"
+        );
+        assert_eq!(en.progress(1024, None), "1.00 KB so far");
+        assert_eq!(en.t("no.such.key"), "no.such.key");
+        let bn = Lang::new("bn");
+        assert_eq!(bn.percent(0.5), "৫০.০%");
+        assert_eq!(Lang::new("tr").percent(0.5), "%50,0");
+        assert!(Lang::new("ar").rtl() && !bn.rtl());
+        assert_eq!(Lang::new("xx").tag(), "en");
     }
 }

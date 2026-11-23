@@ -1,31 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! WDM desktop app: `packages/ui` over the wdm daemon (ADR 0007).
 //!
+//! The app is two processes (see `crates/tray`): this one shows the windows
+//! and runs only while one is open; `wdm-tray`, a small process with no web
+//! view, holds the tray icon, starts the daemon and keeps it running, and
+//! opens this app again when it is wanted. This one starts the tray when it
+//! is not running.
+//!
 //! The UI talks to the daemon over its WebSocket API and asks this side for
 //! the address and token ([`daemon::daemon_connection`]), which starts the
 //! bundled daemon when none is running. One instance per user: a second
-//! launch shows the first one's window. Closing the window leaves the app in
-//! the tray while downloads go on, with the window and its web page gone so
-//! they take no memory ([`show_main_window`] makes it again); the tray
-//! tooltip and the notifications come from the shell ([`watch`]); Quit leaves the daemon running unless the
-//! user asked otherwise ([`prefs`]). Window size, position and maximised
-//! state are remembered. `whoosh://add?url=…` links open the add dialog
-//! ([`deep_links`]); launch at login is turned on once, at the first start
-//! of an installed build, and starts hidden in the tray ([`AUTOSTART_ARG`]);
-//! Settings turns it off for good. What the browser hands over (a download
-//! that waits for confirmation, a video page for the media picker) is asked
-//! about in a small prompt window of its own, never in the main one
-//! ([`prompt`]). On macOS ⌘Q keeps the app in the menu bar
-//! like closing the window does ([`macos_menu`]); the tray's Quit quits. The browsers are
+//! launch shows the first one's window. Closing the window leaves WDM in the
+//! tray while downloads go on: this process ends, so the window and its web
+//! page take no memory. Quit (in the tray, or closing the window when the
+//! user does not keep WDM in the tray) closes WDM completely. Window size,
+//! position and maximised state are remembered. `whoosh://add?url=…` links
+//! open the add dialog ([`deep_links`]); launch at login is turned on once,
+//! at the first start of an installed build, and starts only the tray
+//! ([`wdm_tray::AUTOSTART_ARG`]); Settings turns it off for good. What the
+//! browser hands over (a download that waits for confirmation, a video page
+//! for the media picker) is asked about in a small native prompt window of
+//! its own, `wdm-prompt`, never in the main one ([`prompt`]). On macOS ⌘Q
+//! keeps WDM in the menu bar like closing the window does ([`macos_menu`]). The browsers are
 //! connected at start where no installer did it ([`browsers`]), and the app
-//! updates itself from signed GitHub releases ([`updates`]).
+//! updates itself from signed GitHub releases ([`updates`]; with no window
+//! open the tray has it look once a day, `--update-check`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Runtime, WindowEvent};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+use wdm_tray::i18n::{self, Notice};
+use wdm_tray::locks;
 
 mod browsers;
 mod crash;
@@ -37,50 +43,35 @@ mod login_item;
 mod macos_menu;
 mod prefs;
 mod prompt;
-mod shell_i18n;
+mod shell_language;
 mod updates;
 mod watch;
 mod window_size;
 
-/// Whether the tray icon exists. Without one (a Linux desktop with no status
-/// notifier), closing the window quits, or the app could not be reached.
-static TRAY_SHOWN: AtomicBool = AtomicBool::new(false);
 /// Set once Quit has started, so closing the window then really closes it.
 pub(crate) static QUITTING: AtomicBool = AtomicBool::new(false);
-/// Set when the window was closed to quit (the user does not keep WDM in
-/// the tray): the app then ends with its last window.
-static CLOSED_TO_QUIT: AtomicBool = AtomicBool::new(false);
+/// Set while a look for an update runs with no window (`--update-check`),
+/// or an update is being installed: the app does not end with its last
+/// window then.
+pub(crate) static UPDATE_BUSY: AtomicBool = AtomicBool::new(false);
 
-/// Passed by the login item (`tauri-plugin-autostart`): start in the tray,
-/// without showing the window.
-pub const AUTOSTART_ARG: &str = "--autostart";
-
-/// Tray icon id, so commands can find it again.
-pub const TRAY_ID: &str = "wdm-tray";
 const MAIN_WINDOW: &str = "main";
 
-/// Longest tooltip we pass on; Windows truncates at 127 UTF-16 units anyway.
-const MAX_TOOLTIP_CHARS: usize = 120;
+/// The app runs while a window is open; the tray leaves the notifications
+/// to it meanwhile ([`wdm_tray::locks::APP`]).
+#[derive(Debug)]
+struct AppLock(#[allow(dead_code)] Option<std::fs::File>);
 
 /// The plugin restores position and maximised state; size is ours (see `window_size`).
 fn window_state_flags() -> StateFlags {
     StateFlags::all() - StateFlags::SIZE
 }
 
-/// Sets the tray icon's tooltip ([`watch`] keeps it up to date).
-pub(crate) fn set_tray_tooltip<R: Runtime>(app: &AppHandle<R>, text: &str) {
-    let text: String = text.chars().take(MAX_TOOLTIP_CHARS).collect();
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        // No tray (no status notifier on this desktop): nothing to update.
-        let _ = tray.set_tooltip(Some(text));
-    }
-}
-
 /// A system notification, in the UI's language.
-pub(crate) fn notify<R: Runtime>(app: &AppHandle<R>, which: &shell_i18n::Notice<'_>) {
+pub(crate) fn notify<R: Runtime>(app: &AppHandle<R>, which: &Notice<'_>) {
     use tauri_plugin_notification::NotificationExt;
     let language = app.state::<prefs::PrefsState>().get().language;
-    let (title, body) = shell_i18n::notice(&language, which);
+    let (title, body) = i18n::notice(&language, which);
     if let Err(err) = app.notification().builder().title(title).body(body).show() {
         eprintln!("wdm-desktop: could not show a notification: {err}");
     }
@@ -131,7 +122,7 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The UI (the prompt window) asks for the main window. Async: making a
+/// A UI asks for the main window. Async: making a
 /// window inside a synchronous command deadlocks on Windows.
 #[tauri::command]
 async fn show_window<R: Runtime>(app: AppHandle<R>) {
@@ -143,7 +134,7 @@ pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     let handle = app.clone();
     // Windows are made on the main thread.
     let _ = app.run_on_main_thread(move || {
-        // Back in the Dock while the window is open (see `went_to_tray`).
+        // Back in the Dock while the window is open.
         #[cfg(target_os = "macos")]
         let _ = handle.set_activation_policy(tauri::ActivationPolicy::Regular);
         let window = match handle.get_webview_window(MAIN_WINDOW) {
@@ -197,7 +188,9 @@ fn save_window_state<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Quit from the tray. The window state is saved first, while the window
+/// Quit (closing the window when the user does not keep WDM in the tray, or
+/// the macOS app menu's Quit then; the tray's Quit does the same from the
+/// tray). The window state is saved first, while the window
 /// still exists: once `exit()` starts, the window-state plugin can only fall
 /// back to sizes from resize events, which on GTK include client-side
 /// decorations — the window would grow a little on every launch. Quit
@@ -250,48 +243,65 @@ pub(crate) async fn exit_cleanly<R: Runtime>(app: &AppHandle<R>) {
     app.exit(0);
 }
 
-/// Whether closing the window (or ⌘Q on macOS) should keep the app in the
-/// tray: there is a tray, the user wants that, and the app is not quitting.
-fn keeps_running_in_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
-    TRAY_SHOWN.load(Ordering::SeqCst)
-        && !QUITTING.load(Ordering::SeqCst)
-        && app.state::<prefs::PrefsState>().get().close_to_tray
+/// The tray process runs (it holds [`wdm_tray::locks::TRAY`]). Without one
+/// (a Linux desktop with no status notifier), closing the window quits.
+fn tray_running() -> bool {
+    wdm_tray::data_dir().is_some_and(|dir| locks::held(&dir, locks::TRAY))
 }
 
-/// The window is closing and the app stays in the tray; downloads go on.
-/// The window is closed for real, not hidden: its web page (WebKit's or
-/// WebView2's processes) would otherwise hold some 100 MB while nobody sees
-/// it. The first time, a notification says the app is still there. On
-/// macOS the app also leaves the Dock and lives in the menu bar until the
-/// window is shown again.
+/// Starts the tray process when it is not running.
+fn ensure_tray() {
+    if !tray_running()
+        && let Err(err) = wdm_tray::launch::start_tray()
+    {
+        eprintln!("wdm-desktop: could not start the tray: {err}");
+    }
+}
+
+/// Whether closing the window (or ⌘Q on macOS) keeps WDM in the tray: the
+/// tray is there, the user wants that, and the app is not quitting.
+fn keeps_running_in_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
+    !QUITTING.load(Ordering::SeqCst)
+        && app.state::<prefs::PrefsState>().get().close_to_tray
+        && tray_running()
+}
+
+/// The window is closing and WDM stays in the tray; downloads go on. The
+/// window is closed for real, and with the last window this process ends:
+/// its web page (WebKit's or WebView2's processes) would otherwise hold
+/// some 100 MB while nobody sees it. The tray makes it again. The first
+/// time, a notification says WDM is still there.
 fn went_to_tray<R: Runtime>(app: &AppHandle<R>) {
     save_window_state(app);
-    #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     let first = !app.state::<prefs::PrefsState>().get().tray_notice_shown;
     if first {
         if let Err(err) = prefs::update(app, |p| p.tray_notice_shown = true) {
             eprintln!("wdm-desktop: could not save desktop.json: {err}");
         }
-        notify(app, &shell_i18n::Notice::InTray);
+        notify(app, &Notice::InTray);
     }
 }
 
-/// Closing the window: the app stays in the tray (downloads go on) when
-/// there is a tray and the user wants that; otherwise closing quits.
-fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, _: &tauri::CloseRequestApi) {
+/// Closing the window: WDM stays in the tray (downloads go on) when there
+/// is a tray and the user wants that; when the user does not, closing quits
+/// WDM like the tray's Quit. With no tray at all the app just ends.
+fn on_close_requested<R: Runtime>(window: &tauri::WebviewWindow<R>, api: &tauri::CloseRequestApi) {
     let app = window.app_handle();
+    if QUITTING.load(Ordering::SeqCst) {
+        return;
+    }
     if keeps_running_in_tray(app) {
         went_to_tray(app);
+    } else if tray_running() {
+        api.prevent_close();
+        quit_app(app);
     } else {
-        CLOSED_TO_QUIT.store(true, Ordering::SeqCst);
         save_window_state(app);
     }
 }
 
-/// ⌘Q, the app menu's Quit (macOS): the same as closing the window when the
-/// app keeps running in the tray, else a real quit. The tray's Quit always
-/// quits.
+/// ⌘Q, the app menu's Quit (macOS): the same as closing the window when
+/// WDM stays in the tray, else a real quit. The tray's Quit always quits.
 #[cfg(target_os = "macos")]
 fn quit_from_app_menu<R: Runtime>(app: &AppHandle<R>) {
     if keeps_running_in_tray(app) {
@@ -304,58 +314,83 @@ fn quit_from_app_menu<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-fn build_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
-    // In the language the UI last used; the UI updates it (`shell_i18n`).
-    let text = shell_i18n::strings(&app.state::<prefs::PrefsState>().get().language);
-    let show = MenuItem::with_id(app, "show", &text.show, true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", &text.quit, true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
-    app.manage(shell_i18n::TrayItems {
-        show: show.clone(),
-        quit: quit.clone(),
-    });
-
-    let mut tray = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Whoosh Download Manager")
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => show_main_window(app),
-            "quit" => quit_app(app),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                show_main_window(tray.app_handle());
-            }
-        });
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
+/// This process becomes `program` (next to it): replaced by it on Linux and
+/// macOS (from an AppImage that keeps the image's files there), started on
+/// Windows, where this one then ends.
+fn become_program(program: std::path::PathBuf) -> ! {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = std::process::Command::new(&program).exec();
+        eprintln!("wdm-desktop: could not start {}: {err}", program.display());
+        std::process::exit(1);
     }
-    tray.build(app)?;
-    TRAY_SHOWN.store(true, Ordering::SeqCst);
-    Ok(())
+    #[cfg(not(unix))]
+    {
+        let plan = wdm_tray::launch::Plan {
+            program,
+            args: Vec::new(),
+        };
+        if let Err(err) = wdm_tray::launch::spawn(&plan) {
+            eprintln!(
+                "wdm-desktop: could not start {}: {err}",
+                plan.program.display()
+            );
+            std::process::exit(1);
+        }
+        std::process::exit(0);
+    }
+}
+
+/// `wdm-desktop --tray` (or `--autostart`, the login item): become the tray
+/// process, with no window.
+fn become_tray() -> ! {
+    let exe = std::env::current_exe().unwrap_or_else(|_| "wdm-desktop".into());
+    become_program(wdm_tray::launch::tray_exe_next_to(&exe))
+}
+
+/// `wdm-desktop --prompt` (from the browser's native host, or `$APPIMAGE
+/// --prompt` from the tray): become the native prompt window.
+fn become_prompt() -> ! {
+    let exe = std::env::current_exe().unwrap_or_else(|_| "wdm-desktop".into());
+    become_program(wdm_tray::launch::prompt_exe_next_to(&exe))
+}
+
+/// Remembers where the bundled media tools are, for the daemon the tray
+/// starts (the tray cannot ask Tauri for the resource directory).
+fn record_media_tools<R: Runtime>(app: &AppHandle<R>) {
+    let dir = daemon::media_tools_dir(app)
+        .map(|d| d.display().to_string())
+        .unwrap_or_default();
+    if app.state::<prefs::PrefsState>().get().media_tools_dir != dir
+        && let Err(err) = prefs::update(app, |p| p.media_tools_dir = dir)
+    {
+        eprintln!("wdm-desktop: could not save desktop.json: {err}");
+    }
 }
 
 /// Entry point shared by the binary (and, later, the mobile targets).
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    if args
+        .iter()
+        .any(|a| a == wdm_tray::TRAY_ARG || a == wdm_tray::AUTOSTART_ARG)
+    {
+        become_tray();
+    }
+    if prompt::wants_prompt(&args) {
+        become_prompt();
+    }
+    let for_update = args.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG);
     // Crash reports (on unless turned off), before anything that could panic.
     crash::init();
     let app = tauri::Builder::default()
         // First, so a second launch hands over before anything else starts.
         // With its `deep-link` feature, a second launch's whoosh:// link
         // reaches `deep_links` through the deep-link plugin.
-        // `--prompt` (from wdm-nmhost) opens the prompt window instead.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            if prompt::wants_prompt(&argv) {
-                if let Err(err) = prompt::open(app) {
-                    eprintln!("wdm-desktop: could not open the prompt window: {err}");
-                }
+            if argv.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG) {
+                // The tray's daily look while a window is open: the app does it itself.
             } else {
                 show_main_window(app);
             }
@@ -367,7 +402,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec![AUTOSTART_ARG]),
+            Some(vec![wdm_tray::AUTOSTART_ARG]),
         ))
         // Position and maximised state; the size is handled by `window_size`.
         .plugin(
@@ -375,19 +410,28 @@ pub fn run() {
                 .with_state_flags(window_state_flags())
                 .build(),
         )
-        .setup(|app| {
+        .setup(move |app| {
+            let data_dir = daemon::data_dir()?;
+            app.manage(AppLock(locks::take(&data_dir, locks::APP)));
             // Opened again: the browser may hand downloads to WDM (and start it) again.
-            daemon::mark_quit(false);
+            if !for_update {
+                daemon::mark_quit(false);
+            }
             let loaded = prefs::load(app.handle());
             let first_run = !loaded.browser_setup_shown;
             app.manage(prefs::PrefsState(std::sync::Mutex::new(loaded)));
             app.manage(updates::Pending::default());
             app.manage(updates::Ready::default());
-            app.manage(updates::Announced::default());
-            app.manage(watch::Followed::default());
-            app.manage(prefs::ThisRun::default());
+            app.manage(prefs::ThisRun::new(&data_dir));
+            record_media_tools(app.handle());
+            // The tray holds the icon and keeps the daemon running.
+            ensure_tray();
             std::thread::spawn(move || browsers::ensure_registered(first_run));
-            updates::start_daily_check(app.handle().clone());
+            if for_update {
+                updates::check_once(app.handle().clone());
+            } else {
+                updates::start_daily_check(app.handle().clone());
+            }
             // Installed builds start at login unless the user turned that off.
             login_item::first_run(app.handle());
             #[cfg(target_os = "macos")]
@@ -400,21 +444,10 @@ pub fn run() {
                     }
                 });
             }
-            // A daemon that crashes comes back even while the window is in the tray.
-            daemon::supervise(app.handle(), &QUITTING);
             watch::start(app.handle(), &QUITTING);
-            // No tray is not fatal: closing the window then quits.
-            if let Err(err) = build_tray(app) {
-                eprintln!("wdm-desktop: no tray icon: {err}");
-            }
-            // Started at login, or by the browser for the prompt window:
-            // stay in the tray (when there is one), without making the
-            // window at all until it is wanted.
-            let for_prompt = prompt::wants_prompt(std::env::args());
-            let in_tray = TRAY_SHOWN.load(Ordering::SeqCst)
-                && (for_prompt || std::env::args().any(|a| a == AUTOSTART_ARG));
-            if in_tray {
-                // In the menu bar, not the Dock, as when closed to the tray.
+            // Started by the tray for an update check: no main window until it is wanted.
+            if for_update {
+                // In the menu bar, not the Dock.
                 #[cfg(target_os = "macos")]
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             } else {
@@ -423,24 +456,19 @@ pub fn run() {
                 let _ = window.set_focus();
             }
             deep_links::setup(app);
-            if for_prompt && let Err(err) = prompt::open(app.handle()) {
-                eprintln!("wdm-desktop: could not open the prompt window: {err}");
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             show_window,
             prompt::open_prompt,
-            prompt::close_prompt,
             files::open_download,
-            watch::set_followed,
             daemon::daemon_connection,
             deep_links::take_deep_links,
             prefs::desktop_prefs,
             prefs::set_desktop_prefs,
             prefs::this_run,
             prefs::set_this_run,
-            shell_i18n::set_shell_language,
+            shell_language::set_shell_language,
             open_translation_page,
             browsers::browser_status,
             browsers::connect_browser,
@@ -461,17 +489,14 @@ pub fn run() {
             std::process::exit(1);
         });
     app.run(|app, event| match event {
-        // The last window closed while the app stays in the tray: keep running.
-        // (Quit exits with a code, which goes through.)
+        // The last window closed: the app ends (the tray stays), unless a
+        // look for an update is still running.
         tauri::RunEvent::ExitRequested {
             code: None, api, ..
-        } if TRAY_SHOWN.load(Ordering::SeqCst)
-            && !QUITTING.load(Ordering::SeqCst)
-            && !CLOSED_TO_QUIT.load(Ordering::SeqCst) =>
-        {
+        } if UPDATE_BUSY.load(Ordering::SeqCst) && !QUITTING.load(Ordering::SeqCst) => {
             api.prevent_exit();
         }
-        // macOS: clicking the Dock icon brings back a window closed to the tray.
+        // macOS: clicking the Dock icon brings back the window.
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => show_main_window(app),
         _ => {

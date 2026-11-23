@@ -41,6 +41,10 @@ modules:
       - install -Dm755 usr/bin/wdm-desktop /app/bin/wdm-desktop
       # The app starts the daemon that sits next to it.
       - install -Dm755 usr/bin/wdm-daemon /app/bin/wdm-daemon
+      # The tray icon is a process of its own, next to the app.
+      - install -Dm755 usr/bin/wdm-tray /app/bin/wdm-tray
+      # So is the prompt window (a native window for what the browser hands over).
+      - install -Dm755 usr/bin/wdm-prompt /app/bin/wdm-prompt
       - install -Dm644 com.coderzonebd.whoosh.desktop /app/share/applications/com.coderzonebd.whoosh.desktop
       - install -Dm644 com.coderzonebd.whoosh.metainfo.xml /app/share/metainfo/com.coderzonebd.whoosh.metainfo.xml
       - install -Dm644 usr/share/icons/hicolor/32x32/apps/wdm-desktop.png /app/share/icons/hicolor/32x32/apps/com.coderzonebd.whoosh.png
