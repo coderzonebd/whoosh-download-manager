@@ -425,6 +425,7 @@ fn route(mut req: Request<Incoming>, shared: Arc<Shared>) -> Response<Body> {
             };
             let on_upgrade = hyper::upgrade::on(&mut req);
             let config = WebSocketConfig::default()
+                .read_buffer_size(wdm_proto::RPC_READ_BUFFER)
                 .max_message_size(Some(shared.config.max_message_bytes))
                 .max_frame_size(Some(shared.config.max_message_bytes));
             // Room for the hello plus frame headers and a few control frames.
