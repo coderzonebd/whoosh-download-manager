@@ -3,7 +3,8 @@
 # (WDM: wdm-prompt with its main window, wdm-tray, wdm-daemon; IDM: IDMan,
 # IEMonitor and helpers), one after the other, never together.
 #
-# For each app, from the same local server (wdm-labserver, loopback):
+# For each app, from the same local server (wdm-labserver, loopback), or
+# from real servers over HTTPS (-Urls, checked against -SumsUrl):
 #   1. main window open, nothing downloading (15 s);
 #   2. N files downloading at once, until all are complete (time, memory, CPU);
 #   3. main window closed, the app in the tray (15 s).
@@ -20,7 +21,14 @@ param(
     [Parameter(Mandatory)] [string] $Bin,
     [Parameter(Mandatory)] [string] $Out,
     [int] $Files = 8,
-    [string] $Size = "200MiB"
+    [string] $Size = "200MiB",
+    # Real files instead of the local server (all at once, as with it).
+    [string[]] $Urls = @(),
+    # SHA-256 list (sha256sum format, may be signed) to check them against.
+    [string] $SumsUrl = "",
+    # Measure IDM first: a CDN serves the second app from a warmer cache,
+    # so real-file runs are made in both orders.
+    [switch] $IdmFirst
 )
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -29,17 +37,38 @@ Add-Type -Namespace W -Name Win -MemberDefinition @"
 [DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr h, uint m, System.IntPtr w, System.IntPtr l);
 "@
 
-# ------------------------------------------------------------- the server
-$scen = New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "scenarios")
-$toml = "description = `"head to head`"`n"
-for ($i = 1; $i -le $Files; $i++) { $toml += "[[files]]`nname = `"f$i.bin`"`nsize = `"$Size`"`n" }
-Set-Content (Join-Path $scen "h2h.toml") $toml
-$lab = Start-Process "$Bin\wdm-labserver.exe" -ArgumentList "--no-tls", "--port", "18080", "--scenarios", "$scen" -PassThru -WindowStyle Hidden
-Start-Sleep 3
-$bytes = (Invoke-WebRequest -UseBasicParsing -Method Head "http://127.0.0.1:18080/s/h2h/f1.bin").Headers["Content-Length"]
-$bytes = [int64]("$bytes")
-"server up, $Files files of $bytes bytes"
-$urls = 1..$Files | ForEach-Object { "http://127.0.0.1:18080/s/h2h/f$_.bin" }
+# ------------------------------------------------------------- the files
+$lab = $null
+if ($Urls.Count -gt 0) {
+    $urls = $Urls
+    $Files = $urls.Count
+    $where = "real servers over HTTPS"
+} else {
+    $scen = New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "scenarios")
+    $toml = "description = `"head to head`"`n"
+    for ($i = 1; $i -le $Files; $i++) { $toml += "[[files]]`nname = `"f$i.bin`"`nsize = `"$Size`"`n" }
+    Set-Content (Join-Path $scen "h2h.toml") $toml
+    $lab = Start-Process "$Bin\wdm-labserver.exe" -ArgumentList "--no-tls", "--port", "18080", "--scenarios", "$scen" -PassThru -WindowStyle Hidden
+    Start-Sleep 3
+    $urls = 1..$Files | ForEach-Object { "http://127.0.0.1:18080/s/h2h/f$_.bin" }
+    $where = "loopback"
+}
+# Each file's name and length, from the server.
+$expect = [ordered]@{}
+foreach ($u in $urls) {
+    $len = (Invoke-WebRequest -UseBasicParsing -Method Head $u).Headers["Content-Length"]
+    $expect[[uri]::UnescapeDataString(([uri]$u).Segments[-1])] = [int64]("$len")
+}
+$bytes = ($expect.Values | Measure-Object -Sum).Sum
+"$Files files, $bytes bytes in all, from $where"
+$sums = @{}
+if ($SumsUrl) {
+    foreach ($line in ((Invoke-WebRequest -UseBasicParsing $SumsUrl).Content -split "`n")) {
+        $line = $line.Trim()
+        if ($line -match '^([0-9a-f]{64})\s+\*?(\S+)$' -and $expect.Contains($Matches[2])) { $sums[$Matches[2]] = $Matches[1] }
+    }
+    if ($sums.Count -ne $Files) { throw "SHA-256 found for $($sums.Count) of $Files files" }
+}
 
 # ------------------------------------------------------------- measuring
 function Private-Set([string[]] $names) {
@@ -93,8 +122,19 @@ function Watch([string[]] $names, [scriptblock] $start, [scriptblock] $until, [i
     }
 }
 function Complete([string] $dir) {
-    $ok = @(Get-ChildItem $dir -Filter "f*.bin" -ErrorAction SilentlyContinue | Where-Object { $_.Length -eq $bytes })
-    $ok.Count -ge $Files
+    foreach ($name in $expect.Keys) {
+        $f = Get-Item -LiteralPath (Join-Path $dir $name) -ErrorAction SilentlyContinue
+        if (-not $f -or $f.Length -ne $expect[$name]) { return $false }
+    }
+    $true
+}
+# Every file's SHA-256 matches the list (true when there is none).
+function Verified([string] $dir) {
+    foreach ($name in $sums.Keys) {
+        $h = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $dir $name) -ErrorAction SilentlyContinue).Hash
+        if (-not $h -or $h.ToLower() -ne $sums[$name]) { Write-Host "$name does not match its SHA-256"; return $false }
+    }
+    $true
 }
 function Windows([string[]] $names) {
     @(Get-Process -Name $names -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { "$($_.Name): $($_.MainWindowTitle)" })
@@ -113,6 +153,7 @@ $nothing = { }
 $results = [ordered]@{ files = $Files; bytes_each = $bytes }
 
 # ------------------------------------------------------------- WDM
+$wdmPhase = {
 $wdmNames = @("wdm-prompt", "wdm-tray", "wdm-daemon")
 $env:WDM_DATA_DIR = Join-Path $env:RUNNER_TEMP "wdm-data"
 # When and how much the daemon gives memory back, in its log (copied to -Out).
@@ -137,13 +178,16 @@ $results.wdm_downloading = Watch $wdmNames {
 } { Complete $wdmDir } 900
 $results.wdm_window_closed = Close-Window "wdm-prompt"
 $results.wdm_idle_tray = Watch $wdmNames $nothing $never 15
+$results.wdm_verified = Verified $wdmDir
 "WDM: " + ($results | ConvertTo-Json -Compress)
 Get-Process -Name $wdmNames -ErrorAction SilentlyContinue | Stop-Process -Force
 Get-ChildItem $env:WDM_DATA_DIR -Recurse -Filter "*.log*" -ErrorAction SilentlyContinue | Copy-Item -Destination $Out
 Remove-Item -Recurse -Force $wdmDir
 Start-Sleep 3
+}
 
 # ------------------------------------------------------------- IDM
+$idmPhase = {
 $idmNames = @("IDMan", "IEMonitor", "IDMIntegrator64", "idmBroker", "IDMMsgHost")
 $idmDir = New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "dl-idm")
 $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
@@ -163,8 +207,16 @@ $results.idm_downloading = Watch $idmNames {
 } { Complete $idmDir } 900
 $results.idm_window_closed = Close-Window "IDMan"
 $results.idm_idle_tray = Watch $idmNames $nothing $never 15
+$results.idm_verified = Verified $idmDir
+"IDM: " + ($results | ConvertTo-Json -Compress)
 Get-Process -Name $idmNames -ErrorAction SilentlyContinue | Stop-Process -Force
-$lab | Stop-Process -Force
+Remove-Item -Recurse -Force $idmDir
+Start-Sleep 3
+}
+
+$results.order = if ($IdmFirst) { "IDM first" } else { "WDM first" }
+if ($IdmFirst) { . $idmPhase; . $wdmPhase } else { . $wdmPhase; . $idmPhase }
+if ($lab) { $lab | Stop-Process -Force }
 
 # ------------------------------------------------------------- report
 $results | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Out "results.json")
@@ -172,9 +224,9 @@ function Row([string] $what, $w, $i, [string] $unit, [switch] $lowerWins) {
     $win = if ($w -eq $i) { "tie" } elseif (($w -lt $i) -eq [bool]$lowerWins) { "**WDM**" } else { "IDM" }
     "| $what | $w $unit | $i $unit | $win |"
 }
-$mbps = { param($r) if ($r.done -and $r.seconds -gt 0) { [math]::Round($Files * $bytes / 1MB / $r.seconds, 1) } else { 0 } }
+$mbps = { param($r) if ($r.done -and $r.seconds -gt 0) { [math]::Round($bytes / 1MB / $r.seconds, 1) } else { 0 } }
 $md = @(
-    "## WDM vs IDM, the whole app ($Files files of $([math]::Round($bytes / 1MB)) MB at once, loopback)",
+    "## WDM vs IDM, the whole app ($Files files, $([math]::Round($bytes / 1MB)) MB in all, at once, $where; $($results.order))",
     "",
     "| | WDM | IDM | Better |",
     "|---|---|---|---|",
@@ -188,7 +240,7 @@ $md = @(
     "",
     "Peak memory by process while downloading: WDM $(($results.wdm_downloading.peak_by_process_mb | ConvertTo-Json -Compress)); IDM $(($results.idm_downloading.peak_by_process_mb | ConvertTo-Json -Compress)). Average by process, window open and idle: WDM $(($results.wdm_idle_window.avg_by_process_mb | ConvertTo-Json -Compress)); IDM $(($results.idm_idle_window.avg_by_process_mb | ConvertTo-Json -Compress)). Main window closed for the tray rows: WDM $($results.wdm_window_closed), IDM $($results.idm_window_closed).",
     "",
-    "Memory is the private working set (Task Manager's number) summed over each app's processes. Each app runs alone, with its default settings, started once before it is measured; WDM is allowed $Files downloads at once like IDM. Completed: WDM $($results.wdm_downloading.done), IDM $($results.idm_downloading.done)."
+    "Memory is the private working set (Task Manager's number) summed over each app's processes. Each app runs alone, with its default settings, started once before it is measured; WDM is allowed $Files downloads at once like IDM. Completed: WDM $($results.wdm_downloading.done), IDM $($results.idm_downloading.done). SHA-256 checked: WDM $($results.wdm_verified), IDM $($results.idm_verified)."
 )
 $md -join "`n" | Set-Content (Join-Path $Out "summary.md")
 $md -join "`n"

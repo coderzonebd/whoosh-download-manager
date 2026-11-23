@@ -1,7 +1,8 @@
 # WDM against IDM, the whole app as people run it, on a GitHub Windows
 # runner: memory with the main window open and in the tray, and time,
-# memory and CPU while 8 files download at once from a local server
-# (docs/bench/apps-vs-idm.ps1). IDM is its trial from
+# memory and CPU while 8 files download at once, from a local server and
+# from cdn.kernel.org over HTTPS (each order on its own machine, since a
+# CDN serves the second app from a warmer cache; docs/bench/apps-vs-idm.ps1). IDM is its trial from
 # internetdownloadmanager.com, signature checked, as in bench-kit.yml.
 # Runs on a push to a bench/* branch, or by hand. Nothing is released.
 name: WDM vs IDM (apps)
@@ -20,9 +21,13 @@ concurrency:
 
 jobs:
   apps:
-    name: Head to head on Windows
+    name: Head to head on Windows (${{ matrix.scenario }})
     runs-on: windows-2025
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [loopback, internet-wdm-first, internet-idm-first]
     steps:
       - name: Keep line endings as committed
         run: git config --global core.autocrlf false
@@ -131,8 +136,18 @@ jobs:
           if (Test-Path "$diag\idm-dialogs.log") { "dialogs closed at start:"; Get-Content "$diag\idm-dialogs.log" }
       - name: Head to head
         shell: pwsh
+        env:
+          SCENARIO: ${{ matrix.scenario }}
         run: |
-          .\docs\bench\apps-vs-idm.ps1 -Bin "$PWD\app" -Out "$env:RUNNER_TEMP\h2h"
+          $a = @{ Bin = "$PWD\app"; Out = "$env:RUNNER_TEMP\h2h" }
+          if ($env:SCENARIO -ne "loopback") {
+            # Eight Linux releases from one CDN, ~1.1 GB, SHA-256 checked.
+            $b = "https://cdn.kernel.org/pub/linux/kernel/v6.x"
+            $a.Urls = 0..7 | ForEach-Object { "$b/linux-6.$_.tar.xz" }
+            $a.SumsUrl = "$b/sha256sums.asc"
+            $a.IdmFirst = $env:SCENARIO -eq "internet-idm-first"
+          }
+          .\docs\bench\apps-vs-idm.ps1 @a
           Get-Content "$env:RUNNER_TEMP\h2h\summary.md" | Add-Content $env:GITHUB_STEP_SUMMARY
       - name: Keep IDM's dialog log
         if: always()
@@ -141,6 +156,6 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: apps-vs-idm
+          name: apps-vs-idm-${{ matrix.scenario }}
           path: ${{ runner.temp }}/h2h
           retention-days: 30
