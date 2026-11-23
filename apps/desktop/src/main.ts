@@ -83,6 +83,7 @@ mount(App, {
     onready: (app: AppState) => {
       // The tray tooltip and the system notifications come from the shell (`watch.rs`).
       if (live) {
+        startViews(app);
         startLoginNotice(app);
         startShellLanguage(app);
         void startDeepLinks(app);
@@ -91,3 +92,20 @@ mount(App, {
     },
   },
 });
+
+/**
+ * The native main window opens Settings, History and "Connect your browser" here
+ * (`wdm-desktop --view <page>`, `initial_view`); a second such start while this window
+ * is open comes as the `wdm-view` event.
+ */
+function startViews(app: AppState): void {
+  const pages = new Set(["downloads", "settings", "history", "browsers"]);
+  const open = (view: unknown) => {
+    if (typeof view === "string" && pages.has(view)) app.view = view as AppState["view"];
+  };
+  void (async () => {
+    const [{ invoke }, { listen }] = await Promise.all([import("@tauri-apps/api/core"), import("@tauri-apps/api/event")]);
+    open(await invoke<string | null>("initial_view"));
+    await listen<string>("wdm-view", (e) => open(e.payload));
+  })().catch(() => undefined);
+}

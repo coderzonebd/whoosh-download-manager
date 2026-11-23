@@ -48,6 +48,15 @@ GPL-3.0-or-later.
   `--autostart`, and `wdm-desktop` then becomes the tray process at once
   (`--tray` does the same; an AppImage starts its tray that way), with no
   window and no web view.
+- **Main window: native.** Opening WDM (the menu, the tray's *Show*, a
+  second start) opens the native main window (`wdm-prompt --main`,
+  [`crates/prompt`](../../crates/prompt/README.md)), about 25 MB. A plain
+  `wdm-desktop` does its start-up work (the tray, the media tools' place, the
+  browsers' link, launch at login) with no window and hands over to it. The
+  web window here opens for what the native one does not have yet:
+  *Settings*, *History*, *Connect your browser* (`--view <page>`, also passed
+  to a running app as the `wdm-view` event), `whoosh://` links, and the first
+  start. `WDM_WEB_MAIN=1` keeps the web main window.
 - **Prompt window** (`wdm-prompt`, [`crates/prompt`](../../crates/prompt/README.md)).
   A browser download that waits for confirmation, or a video page offered by
   the extension's button (`media.offer`), is asked about in a small native

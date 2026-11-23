@@ -174,9 +174,24 @@ pub fn start_tray() -> std::io::Result<()> {
 /// Starts the prompt window (from the tray or the app). One that is
 /// already open stays, and the new one ends at once ([`crate::locks::PROMPT`]).
 pub fn start_prompt() -> std::io::Result<()> {
+    start_native(&[])
+}
+
+/// Opens the native main window (`wdm-prompt --main`); a running
+/// `wdm-prompt` is asked to show it instead.
+pub fn start_main() -> std::io::Result<()> {
+    start_native(&[crate::MAIN_ARG])
+}
+
+fn start_native(args: &[&str]) -> std::io::Result<()> {
     let exe = this_exe().ok_or_else(|| std::io::Error::other("no current executable"))?;
-    let plan = prompt_plan(&exe, appimage().as_deref(), Path::is_file)
+    let mut plan = prompt_plan(&exe, appimage().as_deref(), Path::is_file)
         .ok_or_else(|| std::io::Error::other("wdm-prompt is not next to this program"))?;
+    // From an AppImage, `$APPIMAGE --main` (which `wdm-desktop` passes on).
+    if !args.is_empty() && plan.args.first().is_some_and(|a| a == crate::PROMPT_ARG) {
+        plan.args.clear();
+    }
+    plan.args.extend(args.iter().map(|a| (*a).to_owned()));
     spawn(&plan)
 }
 

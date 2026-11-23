@@ -45,10 +45,11 @@ fn icon() -> Option<tray_icon::Icon> {
     tray_icon::Icon::from_rgba(buf, info.width, info.height).ok()
 }
 
-/// Asks the app for its main window (it shows the running one).
+/// Opens the main window: the native one (`wdm-prompt --main`), which a
+/// running `wdm-prompt` shows itself.
 fn show_app() {
-    if let Err(err) = wdm_tray::launch::start_app(&[]) {
-        eprintln!("wdm-tray: could not start the app: {err}");
+    if let Err(err) = wdm_tray::launch::start_main() {
+        eprintln!("wdm-tray: could not open the main window: {err}");
     }
 }
 

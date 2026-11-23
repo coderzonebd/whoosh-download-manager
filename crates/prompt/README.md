@@ -1,8 +1,26 @@
 # wdm-prompt (`crates/prompt`)
 
-The prompt window of the Whoosh Download Manager desktop app, like IDM's
-"Download File Info": a small native window that asks only about what the
-browser handed over, one thing at a time. GPL-3.0-or-later, like the app.
+The native windows of the Whoosh Download Manager desktop app, drawn without a
+web view. GPL-3.0-or-later, like the app.
+
+- **The prompt window**, like IDM's "Download File Info": a small window that
+  asks only about what the browser handed over, one thing at a time (below).
+- **The main window** (`wdm-prompt --main`, `src/ui/main_window.rs`,
+  `ui/main.slint`): the library (downloads by state, by category, by queue,
+  with counts), the toolbar (Add, Resume, Pause, Remove, search), the download
+  list (sorted by any column, selected as in a file manager: click, Ctrl,
+  Shift, Ctrl+A; right click for Open, Open folder, Resume, Pause, Copy
+  address, Remove; double click opens a finished file), the details of the
+  selected download and the status bar. *Add* opens the add dialog in the
+  prompt window. *Settings*, *History* and *Connect your browser* still open
+  the web window (`wdm-desktop --view <page>`). About 25 MB with the window
+  open; closing it ends the process unless the prompt window has something to
+  show, and with "keep WDM in the tray" off it quits WDM as the tray's Quit
+  does.
+
+Both windows live in one process with one connection to the daemon. A second
+`wdm-prompt --main` while one runs leaves a `show-main` request in the data
+directory, which the running one picks up within a third of a second.
 
 It is drawn with [Slint](https://slint.dev) (its software renderer, through
 winit), with no web view: it takes about 20 MB while it is open, where the web
@@ -46,9 +64,10 @@ system). The colours are the design tokens of `packages/design-tokens`.
 | `main.rs` | the lock, the tray, the window and the event loop |
 | `daemon.rs` | the connection to `wdm-daemon` on its own thread (Tokio) |
 | `model.rs` | what the daemon says, and which one thing to show |
-| `ui.rs` | the window's side: what each screen shows, what each button sends |
+| `ui.rs` | the prompt window's side: what each screen shows, what each button sends |
+| `ui/main_window.rs` | the main window's side: views, sorting, selection, details, actions |
 | `media.rs` | the format picker's choices and estimates, file categories |
-| `ui/prompt.slint` | the window |
+| `ui/app.slint` | both windows (`prompt.slint`, `main.slint`, shared parts in `common.slint`) |
 | `ui_tests.rs` | every screen driven as the daemon and the user would |
 
 `cargo test -p wdm-prompt` draws each screen with Slint's software renderer, no

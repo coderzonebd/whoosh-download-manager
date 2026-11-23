@@ -25,6 +25,9 @@ slint = { version = "1.19", default-features = false, features = ["std", "compat
 # The folder picker, as the desktop app's dialog plugin uses it (portal on Linux).
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland", "common-controls-v6"] }
 
+# Copy address (as the desktop app's clipboard plugin uses it).
+arboard = { version = "3", default-features = false }
+
 [dev-dependencies]
 # The UI tests render each screen to PNG (WDM_PROMPT_SHOTS=<dir>).
 png = "0.18"
