@@ -19,7 +19,7 @@ use wdm_core::{Journal, StateStore, StorageProvider};
 use wdm_store::{FileJournal, FileStorageProvider, SqliteStateStore, StorageOptions};
 
 let files: Arc<dyn StorageProvider> =
-    Arc::new(FileStorageProvider::new(StorageOptions::default())); // 4 MiB buffer, all files together
+    Arc::new(FileStorageProvider::new(StorageOptions::default())); // 16 MiB buffer per file
 let journal: Arc<dyn Journal> = Arc::new(FileJournal::open(data_dir.join("journal"))?);
 let state: Arc<dyn StateStore> = Arc::new(SqliteStateStore::open(data_dir.join("state.db")).await?);
 ```
@@ -43,7 +43,7 @@ C toolchain (see [Testing](#testing)).
 
 - **One writer thread per open file.** `write_at` takes as many permits
   from a byte-counting semaphore (the buffer, `StorageOptions::buffer_bytes`,
-  4 MiB by default, shared by all files) as the chunk is long. It queues the chunk and resolves
+  16 MiB by default) as the chunk is long. It queues the chunk and resolves
   at once. When the buffer is full, `write_at` waits; that is the
   backpressure.
   - A chunk larger than the whole buffer takes the whole buffer. It is
@@ -230,7 +230,7 @@ C toolchain (see [Testing](#testing)).
       (leaving the storage usable), and fails on an earlier sticky error.
     - After it, every call fails.
   - What remains in their cost is writing the store's own buffer (up to
-    4 MiB) into the page cache. See [the numbers](#what-power-cut-safety-costs-finish_bench).
+    16 MiB) into the page cache. See [the numbers](#what-power-cut-safety-costs-finish_bench).
 - **The provider** hands out one storage per path.
   - Opening a path that is open and usable returns the same storage, like
     the in-memory double.

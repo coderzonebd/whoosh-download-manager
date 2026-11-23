@@ -45,11 +45,9 @@ pub struct StorageOptions {
     /// Bytes accepted by `write_at` but not yet written, for all files of a
     /// provider together (one file may use all of it). When it is full,
     /// `write_at` waits: this is the backpressure between a fast network and
-    /// a slow disk. Default 4 MiB; clamped to at least 4 KiB. (It was 16
-    /// MiB per file, then 16 MiB in all: eight downloads faster than the
-    /// disk kept it full, most of the daemon's ~20 MB while IDM's whole app
-    /// stays near 14 MB, docs/bench/apps-vs-idm.ps1. A deeper queue only
-    /// lets the network run further ahead of a disk it must wait for anyway.)
+    /// a slow disk. Default 16 MiB; clamped to at least 4 KiB. (It was per
+    /// file: eight downloads faster than the disk kept ~30 MB queued where
+    /// IDM keeps ~9 MB in all, docs/bench/apps-vs-idm.ps1.)
     pub buffer_bytes: usize,
     /// Linux: after each successful `flush`, drop the file's (now clean)
     /// pages from the page cache (`posix_fadvise(DONTNEED)`), so a large
@@ -71,7 +69,7 @@ pub struct StorageOptions {
 impl Default for StorageOptions {
     fn default() -> Self {
         Self {
-            buffer_bytes: 4 << 20,
+            buffer_bytes: 16 << 20,
             drop_cache_after_flush: false,
             write_inline: true,
         }
