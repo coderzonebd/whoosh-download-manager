@@ -45,7 +45,7 @@ const H2_MAX_FRAME: u32 = 256 << 10;
 /// (docs/bench/apps-vs-idm.ps1), and a buffer may reach about twice this
 /// (one read fills its capacity); the engine gathers into its own buffer
 /// before writing anyway.
-const H1_MAX_BUF: usize = 16 << 10;
+const H1_MAX_BUF: usize = 32 << 10;
 /// UDP socket buffers for QUIC; the default 208 KiB overflows on bursts.
 const UDP_BUF: usize = 4 << 20;
 /// How long a pooled HTTP/1.1 connection may take to become ready.
