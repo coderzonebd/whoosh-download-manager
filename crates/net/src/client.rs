@@ -40,11 +40,12 @@ const H2_MAX_FRAME: u32 = 256 << 10;
 /// 1 MiB (README, "Whole-daemon CPU"): page faults -45 %, read-buffer
 /// memory per connection -75 %, wdm-net's own CPU -15-20 % at 8-16
 /// connections with higher throughput; unchanged at one connection, and
-/// whole-daemon CPU unchanged within noise. Then 64 KiB, the engine's
-/// write size once many connections share its budget: eight downloads of
-/// sixteen connections kept ~70 MB of buffers against IDM's ~11 MB in all
-/// (docs/bench/apps-vs-idm.ps1).
-const H1_MAX_BUF: usize = 64 << 10;
+/// whole-daemon CPU unchanged within noise. Then 32 KiB: eight downloads
+/// kept ~70 MB of buffers in the daemon against IDM's ~11 MB in all
+/// (docs/bench/apps-vs-idm.ps1), and a buffer may reach about twice this
+/// (one read fills its capacity); the engine gathers into its own buffer
+/// before writing anyway.
+const H1_MAX_BUF: usize = 32 << 10;
 /// UDP socket buffers for QUIC; the default 208 KiB overflows on bursts.
 const UDP_BUF: usize = 4 << 20;
 /// How long a pooled HTTP/1.1 connection may take to become ready.

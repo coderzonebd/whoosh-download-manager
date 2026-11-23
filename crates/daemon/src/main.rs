@@ -89,7 +89,13 @@ struct Startup {
     serve: f64,
 }
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() -> ExitCode {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
     let started = Instant::now();
     let mut startup = Startup::default();
     let args = Args::parse();

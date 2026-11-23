@@ -69,8 +69,11 @@ pub(crate) struct Job {
     pub cancel: CancellationToken,
     pub limiter: Arc<RateLimiter>,
     pub epoch: Instant,
-    /// Gather up to this many bytes per `write_at` (0 = no gathering).
+    /// Gather up to this many bytes per `write_at` (0 = no gathering),
+    /// less while many connections work (`run::coalesce_for`).
     pub coalesce: usize,
+    /// Connections working now, across every download.
+    pub working: Arc<std::sync::atomic::AtomicUsize>,
     pub coalesce_delay: Duration,
 }
 
@@ -143,9 +146,17 @@ async fn pump(job: Job) -> Exit {
         cancel,
         limiter,
         epoch,
-        coalesce,
+        coalesce: coalesce_max,
+        working,
         coalesce_delay,
     } = job;
+    let size_now = || {
+        crate::run::coalesce_for(
+            coalesce_max,
+            working.load(std::sync::atomic::Ordering::Relaxed),
+        )
+    };
+    let mut coalesce = size_now();
     let mut pos = req.range.map_or(0, |r| r.start);
     let mut streamed = false;
     let mut stream = match first {
@@ -231,6 +242,10 @@ async fn pump(job: Job) -> Exit {
                 _ = limiter.acquire(len) => {}
             }
         }
+        if gather.claims == 0 {
+            // Each new gather takes the share of the moment.
+            coalesce = size_now();
+        }
         match seg.claim(wid, pos, len) {
             Claim::Write {
                 offset,
@@ -251,6 +266,18 @@ async fn pump(job: Job) -> Exit {
                     }
                 }
                 let n = to - from;
+                // Would not fit: write what is gathered first, so the buffer
+                // never outgrows `coalesce` (growing past it doubled each
+                // buffer: ~490 KiB each where the budget allowed ~170 KiB).
+                if coalesce > 0 && gather.claims > 0 && gather.buf.len() + n > coalesce {
+                    match gather.flush(&seg, &*storage).await {
+                        Ok(done) => debug_assert!(!done, "range complete before a later claim"),
+                        Err(e) => {
+                            seg.abort_writes(1); // this claim, not gathered yet
+                            return Exit::Storage(e);
+                        }
+                    }
+                }
                 if coalesce == 0 || (gather.claims == 0 && n >= coalesce) {
                     // Big enough on its own: no copy.
                     let data = if from == 0 && to == chunk.len() {
@@ -273,8 +300,15 @@ async fn pump(job: Job) -> Exit {
                         gather.since = Some(now);
                         // One allocation per write (the last one went to
                         // storage), never a chain of doublings and copies.
-                        // It reuses the old buffer once storage dropped it.
-                        gather.buf.reserve(coalesce);
+                        // It reuses the old buffer once storage dropped it,
+                        // unless the share changed: then one of the size
+                        // of the moment (`reserve` keeps a bigger one).
+                        let cap = gather.buf.capacity();
+                        if cap < coalesce || cap > coalesce + coalesce / 2 {
+                            gather.buf = BytesMut::with_capacity(coalesce);
+                        } else {
+                            gather.buf.reserve(coalesce);
+                        }
                     }
                     gather.buf.extend_from_slice(&chunk[from..to]);
                     gather.claims += 1;

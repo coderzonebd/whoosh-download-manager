@@ -183,15 +183,15 @@ fn io_failed(e: io::Error) -> Outcome {
 }
 
 /// One connection, as the scheduler sees it.
-/// All connections' write buffers together stay near this (8 downloads of
-/// 16 connections: 64 KiB each instead of 256 KiB, 8 MiB instead of 32).
-const WRITE_BUDGET: usize = 8 << 20;
+/// All connections' write buffers together stay near this: 256 KiB each
+/// for up to 16 connections, 64 KiB each at 64 (eight downloads).
+const WRITE_BUDGET: usize = 4 << 20;
 /// Smaller writes than this cost more in wake-ups than they save.
-const MIN_COALESCE: usize = 64 << 10;
+const MIN_COALESCE: usize = 32 << 10;
 
 /// The write size for a new connection while `live` connections work:
 /// `max` (the configured size) until the budget is shared out.
-fn coalesce_for(max: usize, live: usize) -> usize {
+pub(crate) fn coalesce_for(max: usize, live: usize) -> usize {
     if max == 0 {
         return 0;
     }
@@ -1901,7 +1901,7 @@ impl Driver {
                 .store(now_us_since(self.epoch, now).max(1), Ordering::Relaxed);
             stream
         });
-        let (live, working) = Working::new(&self.inner.live_workers);
+        let (live, _) = Working::new(&self.inner.live_workers);
         self.tasks.spawn(worker::work(Job {
             wid,
             seg: seg.clone(),
@@ -1913,7 +1913,8 @@ impl Driver {
             cancel: cancel.clone(),
             limiter: self.inner.limiter.clone(),
             epoch: self.epoch,
-            coalesce: coalesce_for(self.t.write_coalesce, working),
+            coalesce: self.t.write_coalesce,
+            working: self.inner.live_workers.clone(),
             coalesce_delay: self.t.write_coalesce_delay,
         }));
         self.workers.insert(
@@ -2746,9 +2747,10 @@ mod coalesce_tests {
         const MAX: usize = 256 << 10;
         // A few connections: the configured size.
         assert_eq!(coalesce_for(MAX, 1), MAX);
-        assert_eq!(coalesce_for(MAX, 32), MAX);
-        // Eight downloads of sixteen: a quarter each, the budget in all.
-        assert_eq!(coalesce_for(MAX, 128), 64 << 10);
+        assert_eq!(coalesce_for(MAX, 32), 128 << 10);
+        // 64 connections (eight downloads): a quarter each, the budget in all.
+        assert_eq!(coalesce_for(MAX, 64), 64 << 10);
+        assert_eq!(coalesce_for(MAX, 16), MAX);
         // Never below the floor, never above the configured size.
         assert_eq!(coalesce_for(MAX, 10_000), MIN_COALESCE);
         assert_eq!(coalesce_for(16 << 10, 1), 16 << 10);
