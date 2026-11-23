@@ -74,19 +74,24 @@ fn releases_at(quiet: u32) -> bool {
     AGAIN_AFTER.contains(&quiet)
 }
 
-/// Watches `busy` (the engine's downloads and connections at work) and
-/// gives memory back once it has dropped to zero and stayed there for a
-/// moment, and again a little later.
-pub fn watch(busy: Arc<dyn Fn() -> usize + Send + Sync>) {
+/// Watches the engine (`busy`: its downloads and connections at work, and
+/// how many downloads it has started) and gives memory back once it has
+/// been quiet for a moment, and again a little later. Downloads that come
+/// and go between two looks count too: the number started has changed.
+pub fn watch(busy: Arc<dyn Fn() -> (usize, u64) + Send + Sync>) {
     tokio::spawn(async move {
         // As if busy just before: the first quiet looks also give back what
         // starting took.
         let mut quiet: u32 = 0;
+        let mut seen = busy().1;
         let mut tick = tokio::time::interval(LOOK);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tick.tick().await;
-            if busy() > 0 {
+            let (at_work, started) = busy();
+            let worked = started != seen;
+            seen = started;
+            if at_work > 0 || worked {
                 quiet = 0;
                 continue;
             }

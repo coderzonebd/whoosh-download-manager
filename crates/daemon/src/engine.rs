@@ -72,7 +72,7 @@ async fn start_engine(
     .await?;
     tracing::info!("download engine started");
     let watched = engine.clone();
-    crate::memory::watch(Arc::new(move || watched.busy()));
+    crate::memory::watch(Arc::new(move || (watched.busy(), watched.runs_started())));
     Ok(engine)
 }
 

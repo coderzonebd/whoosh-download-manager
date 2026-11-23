@@ -173,6 +173,8 @@ pub(crate) struct Inner {
     pub(crate) live_workers: Arc<std::sync::atomic::AtomicUsize>,
     /// Downloads running right now: they share `TOTAL_CONNECTIONS`.
     pub(crate) running: Arc<std::sync::atomic::AtomicUsize>,
+    /// Downloads started since the engine began (runs, not records).
+    pub(crate) started: AtomicU64,
     shutting_down: AtomicBool,
     closed: AtomicBool,
 }
@@ -271,6 +273,7 @@ impl Engine {
             max_conns: AtomicU32::new(settings.max_connections_per_download),
             live_workers: Arc::default(),
             running: Arc::default(),
+            started: AtomicU64::new(0),
             st: Mutex::new(St {
                 settings,
                 downloads,
@@ -319,6 +322,12 @@ impl Engine {
     /// is left that will touch the buffers.
     pub fn busy(&self) -> usize {
         self.inner.running.load(Ordering::Relaxed) + self.working_connections()
+    }
+
+    /// Downloads started so far: a change since the last look means work
+    /// happened in between, even if it was all over before the look.
+    pub fn runs_started(&self) -> u64 {
+        self.inner.started.load(Ordering::Relaxed)
     }
 }
 

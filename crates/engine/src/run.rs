@@ -263,6 +263,7 @@ pub(crate) async fn supervise(
     let generation = spec.generation;
     // Counted among the running downloads that share the connections.
     let _running = Working::new(&inner.running).0;
+    inner.started.fetch_add(1, Ordering::Relaxed);
     let ran = std::panic::AssertUnwindSafe(run(inner.clone(), spec, stop))
         .catch_unwind()
         .await;
