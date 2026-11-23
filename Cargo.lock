@@ -9193,6 +9193,7 @@ version = "1.0.0-beta.3"
 dependencies = [
  "arboard",
  "auto-launch",
+ "dhat",
  "jiff",
  "png",
  "rfd",
@@ -9259,6 +9260,7 @@ dependencies = [
  "wdm-client",
  "wdm-crash",
  "wdm-proto",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

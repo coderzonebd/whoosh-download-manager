@@ -37,5 +37,8 @@ tray-icon = { version = "0.25", optional = true, default-features = false, featu
 wdm-client = { workspace = true, optional = true }
 wdm-crash = { workspace = true, optional = true }
 
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Memory", "Win32_System_Threading"] }
+
 [lints]
 workspace = true

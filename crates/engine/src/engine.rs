@@ -313,6 +313,13 @@ impl Engine {
             .live_workers
             .load(std::sync::atomic::Ordering::Relaxed)
     }
+
+    /// Downloads at work, finishing included (writing the last bytes,
+    /// flushing them to disk), plus connections fetching: 0 means nothing
+    /// is left that will touch the buffers.
+    pub fn busy(&self) -> usize {
+        self.inner.running.load(Ordering::Relaxed) + self.working_connections()
+    }
 }
 
 impl Inner {

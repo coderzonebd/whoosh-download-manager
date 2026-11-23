@@ -18,8 +18,8 @@
 //! This library holds what they share: the strings ([`i18n`]), the shared
 //! prefs file ([`prefs`]), the locks that say which process runs
 //! ([`locks`]), how one starts another ([`launch`]), the prompt window's
-//! followed downloads ([`followed`]) and opening a finished download
-//! ([`files`]).
+//! followed downloads ([`followed`]), opening a finished download
+//! ([`files`]) and giving memory back ([`trim`]).
 
 pub mod files;
 pub mod followed;
@@ -27,6 +27,7 @@ pub mod i18n;
 pub mod launch;
 pub mod locks;
 pub mod prefs;
+pub mod trim;
 pub mod update_state;
 
 /// The app's identifier (`tauri.conf.json`): its config directory, and its
