@@ -8,7 +8,11 @@
 #   2. N files downloading at once, until all are complete (time, memory, CPU);
 #   3. main window closed, the app in the tray (15 s).
 # Memory is the private working set, the number Task Manager shows, summed
-# over the app's processes and sampled twice a second.
+# over the app's processes and sampled about four times a second.
+#
+# Each app is started once and closed before it is measured, so both are
+# measured as people run them every day, not on first start (WDM fetches
+# yt-dlp, ffmpeg and deno on its first start; IDM finishes setting up).
 #
 # Run by .github/workflows/apps-vs-idm.yml; needs the WDM binaries in -Bin
 # and IDM installed. Writes results.json and summary.md to -Out.
@@ -59,6 +63,7 @@ function Cpu-Seconds([string[]] $names) {
 function Watch([string[]] $names, [scriptblock] $start, [scriptblock] $until, [int] $limitSec) {
     $samples = @()
     $peaks = @{}
+    $sums = @{}
     $cpu0 = Cpu-Seconds $names
     $sw = [Diagnostics.Stopwatch]::StartNew()
     & $start
@@ -66,13 +71,17 @@ function Watch([string[]] $names, [scriptblock] $start, [scriptblock] $until, [i
         if (& $until) { break }
         $by = Private-Set $names
         $sum = 0
-        foreach ($k in $by.Keys) { $sum += $by[$k]; if ($by[$k] -gt [int64]$peaks[$k]) { $peaks[$k] = $by[$k] } }
+        foreach ($k in $by.Keys) { $sum += $by[$k]; $sums[$k] = [int64]$sums[$k] + $by[$k]; if ($by[$k] -gt [int64]$peaks[$k]) { $peaks[$k] = $by[$k] } }
         $samples += $sum
         Start-Sleep -Milliseconds 250
     }
     $secs = $sw.Elapsed.TotalSeconds
     $each = [ordered]@{}
-    foreach ($k in ($peaks.Keys | Sort-Object)) { $each[$k] = [math]::Round($peaks[$k] / 1MB, 1) }
+    $avgEach = [ordered]@{}
+    foreach ($k in ($peaks.Keys | Sort-Object)) {
+        $each[$k] = [math]::Round($peaks[$k] / 1MB, 1)
+        $avgEach[$k] = [math]::Round($sums[$k] / [math]::Max(1, $samples.Count) / 1MB, 1)
+    }
     [pscustomobject]@{
         seconds = [math]::Round($secs, 2)
         peak_mb = [math]::Round((($samples | Measure-Object -Maximum).Maximum) / 1MB, 1)
@@ -80,6 +89,7 @@ function Watch([string[]] $names, [scriptblock] $start, [scriptblock] $until, [i
         cpu_s   = [math]::Round((Cpu-Seconds $names) - $cpu0, 1)
         done    = [bool](& $until)
         peak_by_process_mb = $each
+        avg_by_process_mb = $avgEach
     }
 }
 function Complete([string] $dir) {
@@ -108,6 +118,11 @@ $env:WDM_DATA_DIR = Join-Path $env:RUNNER_TEMP "wdm-data"
 # When and how much the daemon gives memory back, in its log (copied to -Out).
 $env:WDM_LOG = "info,wdm_daemon::memory=debug"
 $wdmDir = New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "dl-wdm")
+# Once before measuring (first-start setup), then as every day.
+Start-Process "$Bin\wdm-prompt.exe" -ArgumentList "--main"
+Start-Sleep 45
+Get-Process -Name $wdmNames -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep 3
 Start-Process "$Bin\wdm-prompt.exe" -ArgumentList "--main"
 Start-Sleep 15
 foreach ($n in $wdmNames) { if (-not (Get-Process $n -ErrorAction SilentlyContinue)) { throw "$n is not running" } }
@@ -132,6 +147,11 @@ Start-Sleep 3
 $idmNames = @("IDMan", "IEMonitor", "IDMIntegrator64", "idmBroker", "IDMMsgHost")
 $idmDir = New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "dl-idm")
 $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
+# Once before measuring, as for WDM.
+Start-Process $idm
+Start-Sleep 45
+Get-Process -Name $idmNames -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep 3
 Start-Process $idm
 Start-Sleep 15
 if (-not (Get-Process IDMan -ErrorAction SilentlyContinue)) { throw "IDM is not running" }
@@ -166,9 +186,9 @@ $md = @(
     (Row "Throughput" (& $mbps $results.wdm_downloading) (& $mbps $results.idm_downloading) "MB/s"),
     (Row "CPU time while downloading" $results.wdm_downloading.cpu_s $results.idm_downloading.cpu_s "s" -lowerWins),
     "",
-    "Peak memory by process while downloading: WDM $(($results.wdm_downloading.peak_by_process_mb | ConvertTo-Json -Compress)); IDM $(($results.idm_downloading.peak_by_process_mb | ConvertTo-Json -Compress)). Main window closed for the tray rows: WDM $($results.wdm_window_closed), IDM $($results.idm_window_closed).",
+    "Peak memory by process while downloading: WDM $(($results.wdm_downloading.peak_by_process_mb | ConvertTo-Json -Compress)); IDM $(($results.idm_downloading.peak_by_process_mb | ConvertTo-Json -Compress)). Average by process, window open and idle: WDM $(($results.wdm_idle_window.avg_by_process_mb | ConvertTo-Json -Compress)); IDM $(($results.idm_idle_window.avg_by_process_mb | ConvertTo-Json -Compress)). Main window closed for the tray rows: WDM $($results.wdm_window_closed), IDM $($results.idm_window_closed).",
     "",
-    "Memory is the private working set (Task Manager's number) summed over each app's processes. Each app runs alone, with its default settings; WDM is allowed $Files downloads at once like IDM. Completed: WDM $($results.wdm_downloading.done), IDM $($results.idm_downloading.done)."
+    "Memory is the private working set (Task Manager's number) summed over each app's processes. Each app runs alone, with its default settings, started once before it is measured; WDM is allowed $Files downloads at once like IDM. Completed: WDM $($results.wdm_downloading.done), IDM $($results.idm_downloading.done)."
 )
 $md -join "`n" | Set-Content (Join-Path $Out "summary.md")
 $md -join "`n"

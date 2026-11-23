@@ -298,6 +298,9 @@ impl Watch {
             if waiting_now(&client).await {
                 self.prompt();
             }
+            // Starting (the menu, the icon, the connection) touched memory
+            // the tray then holds for nothing.
+            trim_soon();
             while let Some(ev) = client.next_event().await {
                 self.on_event(&client, &ev.method, &ev.params).await;
             }
@@ -307,8 +310,8 @@ impl Watch {
     }
 }
 
-/// After the downloads end (or a notification): what following them took
-/// goes back to the system once things settle.
+/// After starting, after the downloads end, after a notification: what that
+/// took goes back to the system once things settle.
 fn trim_soon() {
     tokio::spawn(async {
         for wait in TRIM_AFTER {
