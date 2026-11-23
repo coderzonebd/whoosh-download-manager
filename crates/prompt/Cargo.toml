@@ -27,6 +27,10 @@ rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "w
 
 # Launch at login, as the app's tauri-plugin-autostart writes it.
 auto-launch = "0.6"
+# History's dates in local time (the system's time zone).
+jiff = "0.2"
+# "Connect your browser": finding the browsers and linking the host to them.
+wdm-nmhost = { path = "../nmhost" }
 # Copy address (as the desktop app's clipboard plugin uses it).
 arboard = { version = "3", default-features = false }
 

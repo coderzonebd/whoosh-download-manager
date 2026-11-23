@@ -339,6 +339,20 @@ impl Lang {
         fill(self.tag, &template, &all)
     }
 
+    /// `text` with its ASCII digits in the language's (a date, a time).
+    pub fn digits(&self, text: &str) -> String {
+        if self.tag == "bn" {
+            text.chars()
+                .map(|c| match c.to_digit(10) {
+                    Some(d) => char::from_u32(0x09E6 + d).unwrap_or(c),
+                    None => c,
+                })
+                .collect()
+        } else {
+            text.to_owned()
+        }
+    }
+
     /// A whole number in the language's digits.
     pub fn number(&self, n: u64) -> String {
         number(self.tag, n as f64, 0)

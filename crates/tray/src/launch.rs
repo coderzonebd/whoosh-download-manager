@@ -189,6 +189,11 @@ pub fn start_main() -> std::io::Result<()> {
     start_native(&[crate::MAIN_ARG])
 }
 
+/// The main window on one of its pages (`history`, `browsers`, `settings`).
+pub fn start_main_on(page: &str) -> std::io::Result<()> {
+    start_native(&[crate::MAIN_ARG, crate::PAGE_ARG, page])
+}
+
 fn start_native(args: &[&str]) -> std::io::Result<()> {
     let exe = this_exe().ok_or_else(|| std::io::Error::other("no current executable"))?;
     let mut plan = prompt_plan(&exe, appimage().as_deref(), Path::is_file)

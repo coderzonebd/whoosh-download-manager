@@ -7,6 +7,7 @@
 //!
 //! See `docs/api/PROTOCOL.md` §1 and ADR 0003.
 
+pub mod connect;
 pub mod detect;
 pub mod external;
 pub mod framing;

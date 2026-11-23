@@ -4,8 +4,8 @@
 //! details of the selected download and the status bar, as the web UI's
 //! App.svelte. It shares the model, the language and the daemon connection
 //! with the prompt window ([`Controller`]); Add opens the add dialog in the
-//! prompt window. Settings, History and "Connect your browser" still open
-//! the web app (`wdm-desktop --view …`).
+//! prompt window. Settings, History and "Connect your browser" are pages
+//! of the window (`settings`, `history`, `browsers`).
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -127,8 +127,8 @@ pub struct Main {
     rows: Rc<VecModel<Row>>,
     removing: Option<Vec<String>>,
     pub connected: bool,
-    /// Settings instead of the downloads.
-    settings: bool,
+    /// The page shown instead of the downloads.
+    page: Page,
     poll: Timer,
     next_local: u32,
 }
@@ -149,9 +149,49 @@ impl Default for Main {
             rows: Rc::new(VecModel::default()),
             removing: None,
             connected: false,
-            settings: false,
+            page: Page::Downloads,
             poll: Timer::default(),
             next_local: 0,
+        }
+    }
+}
+
+/// What the window shows besides the library.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    Downloads,
+    Settings,
+    History,
+    Browsers,
+}
+
+impl Page {
+    /// `--page <name>`, and the library's `page:<name>` entries.
+    pub fn parse(name: &str) -> Option<Page> {
+        match name {
+            "settings" => Some(Page::Settings),
+            "history" => Some(Page::History),
+            "browsers" => Some(Page::Browsers),
+            _ => None,
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Page::Downloads => "",
+            Page::Settings => "page:settings",
+            Page::History => "page:history",
+            Page::Browsers => "page:browsers",
+        }
+    }
+
+    /// The window's `page` property.
+    fn index(self) -> i32 {
+        match self {
+            Page::Downloads => 0,
+            Page::Settings => 1,
+            Page::History => 2,
+            Page::Browsers => 3,
         }
     }
 }
@@ -199,9 +239,12 @@ impl Controller {
         self.main.poll.start(TimerMode::Repeated, POLL, || {
             super::with(|c| {
                 let file = c.dir.join(SHOW_MAIN_FILE);
-                if file.exists() {
+                if let Ok(page) = std::fs::read_to_string(&file) {
                     let _ = std::fs::remove_file(&file);
                     c.show_main();
+                    if let Some(page) = Page::parse(page.trim()) {
+                        c.open_page(page);
+                    }
                 }
             });
         });
@@ -226,6 +269,8 @@ impl Controller {
             };
             wire_main(&window);
             super::settings::wire_settings(&window);
+            super::history::wire_history(&window);
+            super::browsers::wire_browsers(&window);
             window.set_rows(ModelRc::from(self.main.rows.clone()));
             self.main.window = Some(window);
             self.main.dirty = true;
@@ -359,10 +404,9 @@ impl Controller {
 
     fn nav(&self) -> (Vec<NavItem>, Vec<NavItem>) {
         let lang = &self.lang;
-        let current = if self.main.settings {
-            "page:settings".to_owned()
-        } else {
-            self.main.view.id()
+        let current = match self.main.page {
+            Page::Downloads => self.main.view.id(),
+            page => page.id().to_owned(),
         };
         let all: Vec<&DownloadSummary> = self.model.downloads.values().collect();
         let count = |n: usize| {
@@ -437,16 +481,16 @@ impl Controller {
         }
         let more = vec![
             item(
-                "web:browsers".into(),
+                "page:browsers".into(),
                 lang.t("browsers.title"),
                 0,
                 "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9s1.2-6.5 3.6-9z",
             ),
             item(
-                "web:history".into(),
+                "page:history".into(),
                 lang.t("nav.history"),
                 0,
-                "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3.2 2",
+                "M4 12a8 8 0 1 0 2.4-5.7M4 4.5v4.2h4.2M12 8v4l2.8 1.8",
             ),
             item(
                 "page:settings".into(),
@@ -522,9 +566,12 @@ impl Controller {
             model.set_vec(rows);
         }
 
-        w.set_page(i32::from(self.main.settings));
-        if self.main.settings {
-            self.render_settings(&w);
+        w.set_page(self.main.page.index());
+        match self.main.page {
+            Page::Settings => self.render_settings(&w),
+            Page::History => self.render_history(&w),
+            Page::Browsers => self.render_browsers(&w),
+            Page::Downloads => {}
         }
         let lang = &self.lang;
         let t = |k: &str| s(lang.t(k));
@@ -753,23 +800,46 @@ impl Controller {
 
     // ------------------------------------------------------------ what the user does
 
-    fn nav_picked(&mut self, id: &str) {
-        if let Some(view) = id.strip_prefix("web:") {
-            if let Err(err) = wdm_tray::launch::start_app(&["--view", view]) {
-                eprintln!("wdm-prompt: could not open {view}: {err}");
-            }
-            return;
-        }
-        if id == "page:settings" {
-            self.main.settings = true;
-            self.open_settings();
+    pub(super) fn nav_picked(&mut self, id: &str) {
+        if let Some(page) = id.strip_prefix("page:").and_then(Page::parse) {
+            self.open_page(page);
             return;
         }
         if let Some(view) = View::parse(id) {
             self.main.view = view;
-            self.main.settings = false;
+            self.main.page = Page::Downloads;
             self.main.dirty = true;
         }
+        self.render_main();
+    }
+
+    /// Settings, History or "Connect your browser".
+    pub fn open_page(&mut self, page: Page) {
+        self.main.page = page;
+        match page {
+            Page::Settings => self.open_settings(),
+            Page::History => self.open_history(),
+            Page::Browsers => self.open_browsers(),
+            Page::Downloads => self.render_main(),
+        }
+    }
+
+    /// Shows a download in the list (History's "Show"): every download,
+    /// no search, only it selected, its details open.
+    pub(super) fn reveal(&mut self, id: &str) {
+        if !self.model.downloads.contains_key(id) {
+            return;
+        }
+        self.main.page = Page::Downloads;
+        self.main.view = View::Group("all".into());
+        self.main.query.clear();
+        if let Some(w) = &self.main.window {
+            w.set_query(s(""));
+        }
+        self.main.selection = vec![id.to_owned()];
+        self.main.anchor = Some(id.to_owned());
+        self.main.active = Some(id.to_owned());
+        self.main.dirty = true;
         self.render_main();
     }
 
@@ -968,6 +1038,9 @@ impl Controller {
         match key {
             "\u{7f}" => self.main_action("remove"),
             "\u{1b}" => {
+                if self.main.page == Page::History && self.history_escape() {
+                    return;
+                }
                 if self.main.removing.is_some() {
                     self.remove_confirmed(false);
                 } else {

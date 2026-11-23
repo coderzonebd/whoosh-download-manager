@@ -318,11 +318,15 @@ fn quit_from_app_menu<R: Runtime>(app: &AppHandle<R>) {
 /// macOS (from an AppImage that keeps the image's files there), started on
 /// Windows, where this one then ends.
 fn become_program(program: std::path::PathBuf, main: bool) -> ! {
-    let args: Vec<&str> = if main {
-        vec![wdm_tray::MAIN_ARG]
-    } else {
-        Vec::new()
-    };
+    let mut args: Vec<String> = Vec::new();
+    if main {
+        args.push(wdm_tray::MAIN_ARG.to_owned());
+        // `--page <name>` goes along (from an AppImage, `$APPIMAGE --main --page browsers`).
+        if let Some(page) = page_arg(&std::env::args().collect::<Vec<_>>()) {
+            args.push(wdm_tray::PAGE_ARG.to_owned());
+            args.push(page);
+        }
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -332,10 +336,7 @@ fn become_program(program: std::path::PathBuf, main: bool) -> ! {
     }
     #[cfg(not(unix))]
     {
-        let plan = wdm_tray::launch::Plan {
-            program,
-            args: args.iter().map(|a| (*a).to_owned()).collect(),
-        };
+        let plan = wdm_tray::launch::Plan { program, args };
         if let Err(err) = wdm_tray::launch::spawn(&plan) {
             eprintln!(
                 "wdm-desktop: could not start {}: {err}",
@@ -362,8 +363,17 @@ fn become_prompt(main: bool) -> ! {
     become_program(wdm_tray::launch::prompt_exe_next_to(&exe), main)
 }
 
+/// `--page <history|browsers|settings>`: the native main window's page.
+fn page_arg<S: AsRef<str>>(args: &[S]) -> Option<String> {
+    let i = args.iter().position(|a| a.as_ref() == wdm_tray::PAGE_ARG)?;
+    let page = args.get(i + 1)?.as_ref();
+    ["settings", "history", "browsers"]
+        .contains(&page)
+        .then(|| page.to_owned())
+}
+
 /// `--view <settings|history|browsers>`: the web window opens on that page
-/// (the native main window has no page of its own for them yet).
+/// (`WDM_WEB_MAIN=1`, or where the native main window is missing).
 fn view_arg<S: AsRef<str>>(args: &[S]) -> Option<String> {
     let i = args.iter().position(|a| a.as_ref() == VIEW_ARG)?;
     let view = args.get(i + 1)?.as_ref();
@@ -419,9 +429,9 @@ pub fn run() {
     }
     let for_update = args.iter().any(|a| a == wdm_tray::UPDATE_CHECK_ARG);
     // Opened plainly (from the menu, a second time): the native main window
-    // takes over once the start-up work is done, unless a page of the web
-    // window (`--view`), a whoosh:// link, or the first run's "Connect your
-    // browser" is wanted.
+    // takes over once the start-up work is done (on "Connect your browser"
+    // the first time), unless a page of the web window (`--view`) or a
+    // whoosh:// link is wanted.
     let wants_web =
         view_arg(&args).is_some() || args.iter().skip(1).any(|a| a.starts_with("whoosh:"));
     // Crash reports (on unless turned off), before anything that could panic.
@@ -472,16 +482,27 @@ pub fn run() {
             record_media_tools(app.handle());
             // The tray holds the icon and keeps the daemon running.
             ensure_tray();
-            if !for_update && !wants_web && !first_run && native_main_available() {
+            if !for_update && !wants_web && native_main_available() {
                 // No Dock icon for the moment this takes.
                 #[cfg(target_os = "macos")]
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 // Installed builds start at login unless the user turned that off.
                 login_item::first_run(app.handle());
+                // The first run opens on "Connect your browser", once.
+                if first_run
+                    && let Err(err) = prefs::update(app.handle(), |p| p.browser_setup_shown = true)
+                {
+                    eprintln!("wdm-desktop: could not save desktop.json: {err}");
+                }
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
-                    browsers::ensure_registered(false);
-                    if let Err(err) = wdm_tray::launch::start_main() {
+                    browsers::ensure_registered(first_run);
+                    let started = if first_run {
+                        wdm_tray::launch::start_main_on("browsers")
+                    } else {
+                        wdm_tray::launch::start_main()
+                    };
+                    if let Err(err) = started {
                         eprintln!("wdm-desktop: could not open the main window: {err}");
                     }
                     handle.exit(0);

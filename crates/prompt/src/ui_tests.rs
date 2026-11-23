@@ -548,6 +548,123 @@ fn the_prompt_window_from_start_to_end() {
     main.invoke_nav_picked("group:all".into());
     assert_eq!(main.get_page(), 0);
 
+    // ---------------------------------------------------------------- History
+    main.invoke_nav_picked("page:history".into());
+    assert_eq!(main.get_page(), 2);
+    let hd = main.global::<crate::HistoryData>();
+    let shown = |hd: &crate::HistoryData| {
+        hd.get_rows()
+            .iter()
+            .map(|r| r.id.to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(hd.get_empty(), 0);
+    let all = shown(&hd);
+    assert_eq!(all.len(), 2, "the completed and the failed one: {all:?}");
+    h.main_shot("history");
+    hd.invoke_pick_filter(2);
+    assert_eq!(shown(&hd), vec!["s".to_owned()]);
+    assert_eq!(hd.get_clear_text(), "Clear these…");
+    let failed = hd.get_rows().row_data(0).unwrap();
+    assert!(failed.failed && failed.size.is_empty());
+    hd.invoke_action("retry".into(), "s".into());
+    let calls = h.calls();
+    assert_eq!(calls[0].0, method::DOWNLOAD_RESUME);
+    hd.invoke_pick_filter(0);
+    hd.invoke_search("no such file".into());
+    assert_eq!(hd.get_empty(), 2);
+    assert_eq!(hd.get_empty_title(), "No entries match");
+    main.invoke_key("\u{1b}".into(), false, false);
+    assert_eq!(shown(&hd).len(), 2, "Escape clears the search");
+    // Clearing several asks first; the files stay.
+    hd.invoke_action("clear".into(), "".into());
+    assert!(hd.get_clearing());
+    assert_eq!(hd.get_clear_title(), "Clear 2 entries from history?");
+    h.main_shot("history-clear");
+    hd.invoke_action("clear-no".into(), "".into());
+    assert!(!hd.get_clearing() && h.calls().is_empty());
+    // "Show" opens the download in the list.
+    let done = all[0].clone();
+    hd.invoke_action("show".into(), done.clone().into());
+    assert_eq!(main.get_page(), 0);
+    assert!(main.get_detail());
+    assert!(
+        main.get_rows()
+            .iter()
+            .any(|r| r.id == done.as_str() && r.selected)
+    );
+    main.invoke_nav_picked("page:history".into());
+    hd.invoke_action("remove".into(), "s".into());
+    let calls = h.calls();
+    assert_eq!(calls[0].0, method::DOWNLOAD_REMOVE);
+    assert_eq!(calls[0].1, json!({"ids": ["s"], "deleteFiles": false}));
+    assert_eq!(shown(&hd), vec![done.clone()]);
+    assert_eq!(hd.get_status_text(), "Cleared 1 entry");
+    h.settings("ar", "dark");
+    h.main_shot("history-ar-dark");
+    h.settings("en", "light");
+
+    // ---------------------------------------------------------------- Connect your browser
+    use wdm_nmhost::connect::{Listing, Row as BRow};
+    use wdm_nmhost::register::Browser;
+    fn fake_rows() -> Vec<BRow> {
+        let r = |browser, in_use, host_registered, extension_found, store| BRow {
+            browser,
+            in_use,
+            host_registered,
+            extension_found,
+            store,
+        };
+        vec![
+            r(Browser::Chrome, true, true, true, Listing::ChromeWebStore),
+            r(Browser::Firefox, true, false, false, Listing::Github),
+            r(Browser::Edge, true, true, false, Listing::EdgeAddOns),
+            r(Browser::Brave, false, false, false, Listing::ChromeWebStore),
+            r(
+                Browser::Vivaldi,
+                false,
+                false,
+                false,
+                Listing::ChromeWebStore,
+            ),
+        ]
+    }
+    fn fake_link(_: Browser, _: &std::path::Path) -> Result<(), String> {
+        Err("no permission".into())
+    }
+    ui::with(|c| {
+        c.set_browser_source(ui::BrowserSource {
+            rows: fake_rows,
+            link: fake_link,
+        })
+    });
+    main.invoke_nav_picked("page:browsers".into());
+    assert_eq!(main.get_page(), 3);
+    let bd = main.global::<crate::BrowsersData>();
+    assert!(!bd.get_loading());
+    let items: Vec<_> = bd.get_items().iter().collect();
+    assert_eq!(items.len(), 3);
+    assert!(items[0].ready && items[0].action.is_empty());
+    assert_eq!(items[1].action, "connect");
+    assert_eq!(items[2].action, "store");
+    assert_eq!(items[2].action_text, "Get it from Edge Add-ons");
+    assert_eq!(
+        bd.get_not_found_text(),
+        "Not found on this computer: Brave and Vivaldi."
+    );
+    bd.invoke_action("connect".into(), "firefox".into());
+    assert_eq!(
+        bd.get_status_text(),
+        "Could not link Firefox: no permission"
+    );
+    assert!(bd.get_status_error() && !bd.get_busy());
+    h.main_shot("browsers");
+    h.settings("bn", "dark");
+    h.main_shot("browsers-bn-dark");
+    h.settings("en", "light");
+    bd.invoke_action("done".into(), "".into());
+    assert_eq!(main.get_page(), 0);
+
     // Bangla in the dark, Arabic right to left.
     h.settings("bn", "dark");
     main.invoke_row_pressed(0, false, false, false);
