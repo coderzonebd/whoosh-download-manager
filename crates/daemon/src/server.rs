@@ -424,8 +424,12 @@ fn route(mut req: Request<Incoming>, shared: Arc<Shared>) -> Response<Body> {
                 return res;
             };
             let on_upgrade = hyper::upgrade::on(&mut req);
+            // The library's read buffer here, not `RPC_READ_BUFFER`: with a
+            // smaller one, an oversized message is refused after a partial
+            // read and the socket closed while the client is still sending,
+            // which on Windows resets the connection before the client reads
+            // the 1009 close (tests/conformance.rs).
             let config = WebSocketConfig::default()
-                .read_buffer_size(wdm_proto::RPC_READ_BUFFER)
                 .max_message_size(Some(shared.config.max_message_bytes))
                 .max_frame_size(Some(shared.config.max_message_bytes));
             // Room for the hello plus frame headers and a few control frames.
