@@ -148,8 +148,9 @@ function Close-Window([string] $name) {
     "windows of $name after closing: $($left -join '; ')"
     $left.Count -eq 0
 }
-# Where each process's memory is, by kind (heap, stacks, images, private
-# data), from Sysinternals VMMap (Microsoft-signed), into -Out/vmmap.
+# Where WDM's memory is, by kind (heap, stacks, images, private data),
+# from Sysinternals VMMap (Microsoft-signed), into -Out/vmmap. Not for IDM:
+# vmmap64 never returned on its 32-bit IDMan.
 $vmmap = $null
 try {
     $vmmap = Join-Path $env:RUNNER_TEMP "vmmap64.exe"
@@ -162,7 +163,8 @@ function Snapshot([string[]] $names, [string] $when) {
     if (-not $vmmap) { return }
     foreach ($p in Get-Process -Name $names -ErrorAction SilentlyContinue) {
         $f = Join-Path $Out "vmmap\$($p.Name)-$($p.Id)-$when.csv"
-        Start-Process $vmmap -ArgumentList "-accepteula", "-p", $p.Id, $f -Wait -WindowStyle Hidden
+        $v = Start-Process $vmmap -ArgumentList "-accepteula", "-p", $p.Id, $f -PassThru -WindowStyle Hidden
+        if (-not $v.WaitForExit(90000)) { $v.Kill(); "VMMap gave up on $($p.Name)" }
     }
 }
 $never = { $false }
@@ -189,6 +191,7 @@ foreach ($n in $wdmNames) { if (-not (Get-Process $n -ErrorAction SilentlyContin
 if ($LASTEXITCODE -ne 0) { throw "wdm settings set failed" }
 "WDM windows: $((Windows $wdmNames) -join '; ')"
 $results.wdm_idle_window = Watch $wdmNames $nothing $never 15
+Snapshot $wdmNames "idle"
 $results.wdm_downloading = Watch $wdmNames {
     & "$Bin\wdm.exe" add @urls | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "wdm add failed" }
@@ -223,7 +226,6 @@ $results.idm_idle_window = Watch $idmNames $nothing $never 15
 $results.idm_downloading = Watch $idmNames {
     foreach ($u in $urls) { Start-Process $idm -ArgumentList "/d", $u, "/p", "$idmDir", "/n" -Wait }
 } { Complete $idmDir } 900
-Snapshot $idmNames "downloaded"
 $results.idm_window_closed = Close-Window "IDMan"
 $results.idm_idle_tray = Watch $idmNames $nothing $never 15
 $results.idm_verified = Verified $idmDir
