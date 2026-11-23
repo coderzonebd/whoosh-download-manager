@@ -105,6 +105,8 @@ $results = [ordered]@{ files = $Files; bytes_each = $bytes }
 # ------------------------------------------------------------- WDM
 $wdmNames = @("wdm-prompt", "wdm-tray", "wdm-daemon")
 $env:WDM_DATA_DIR = Join-Path $env:RUNNER_TEMP "wdm-data"
+# When and how much the daemon gives memory back, in its log (copied to -Out).
+$env:WDM_LOG = "info,wdm_daemon::memory=debug"
 $wdmDir = New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "dl-wdm")
 Start-Process "$Bin\wdm-prompt.exe" -ArgumentList "--main"
 Start-Sleep 15
@@ -122,6 +124,7 @@ $results.wdm_window_closed = Close-Window "wdm-prompt"
 $results.wdm_idle_tray = Watch $wdmNames $nothing $never 15
 "WDM: " + ($results | ConvertTo-Json -Compress)
 Get-Process -Name $wdmNames -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-ChildItem $env:WDM_DATA_DIR -Recurse -Filter "*.log*" -ErrorAction SilentlyContinue | Copy-Item -Destination $Out
 Remove-Item -Recurse -Force $wdmDir
 Start-Sleep 3
 

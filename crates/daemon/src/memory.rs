@@ -33,10 +33,16 @@ pub fn release() {
         // SAFETY: the process heap and current-process handles are always
         // valid; HeapCompact only coalesces and decommits free blocks, and
         // (-1, -1) asks Windows to trim this process's working set.
+        let before = working_set();
         unsafe {
             HeapCompact(GetProcessHeap(), 0);
             SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
         }
+        tracing::debug!(
+            before_kib = before / 1024,
+            after_kib = working_set() / 1024,
+            "memory given back"
+        );
     }
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     {
@@ -49,6 +55,18 @@ pub fn release() {
             malloc_trim(0);
         }
     }
+}
+
+/// The process's working set in bytes (0 if unknown).
+#[cfg(windows)]
+fn working_set() -> usize {
+    use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    let mut c: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    // SAFETY: `c` is a valid, writable counters struct of `size` bytes.
+    let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, size) };
+    if ok == 0 { 0 } else { c.WorkingSetSize }
 }
 
 /// Whether the `quiet`-th quiet look in a row gives memory back.

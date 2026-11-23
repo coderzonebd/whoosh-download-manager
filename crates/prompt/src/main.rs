@@ -86,6 +86,23 @@ fn main() {
             }
         });
     }
+    // Profiling: `DHAT_SECONDS=20` closes the program after that long, so
+    // the profile is written.
+    #[cfg(feature = "dhat-heap")]
+    let _quit = std::env::var("DHAT_SECONDS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|secs| {
+            let t = slint::Timer::default();
+            t.start(
+                slint::TimerMode::SingleShot,
+                std::time::Duration::from_secs(secs),
+                || {
+                    let _ = slint::quit_event_loop();
+                },
+            );
+            t
+        });
     if let Err(err) = slint::run_event_loop_until_quit() {
         eprintln!("wdm-prompt: {err}");
     }
