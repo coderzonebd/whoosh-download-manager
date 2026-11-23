@@ -388,6 +388,8 @@ struct Driver {
     next_wid: WorkerId,
     tuner: Option<Tuner>,
     host: Option<String>,
+    /// Counts this run among its server's while it runs.
+    host_slot: Option<crate::engine::HostSlot>,
     profile: Option<HostProfile>,
     rng: fastrand::Rng,
     consecutive: u32,
@@ -473,6 +475,7 @@ impl Driver {
             next_wid: 1,
             tuner: None,
             host: None,
+            host_slot: None,
             profile: None,
             rng,
             consecutive: 0,
@@ -751,11 +754,12 @@ impl Driver {
         if self.tuner.is_none() {
             self.host = host_key(meta.final_url.as_deref().unwrap_or(&self.url));
             if let Some(h) = &self.host {
+                self.host_slot = Some(self.inner.host_slot(h));
                 self.profile = self.inner.deps.state.host_profile(h).await.ok().flatten();
             }
             self.tuner = Some(Tuner::new(
                 &self.t,
-                self.inner.connections_now(),
+                self.inner.connections_now(self.host.as_deref()),
                 self.profile.as_ref(),
                 self.connections,
             ));
@@ -2262,7 +2266,7 @@ impl Driver {
         }
         let streaming = self.streaming_owners();
         let work_left: u64 = self.segs.iter().map(|s| s.snapshot().remaining()).sum();
-        let max = self.inner.connections_now();
+        let max = self.inner.connections_now(self.host.as_deref());
         let recv = self.recv_total;
         let ttfb = self.median_ttfb();
         let Some(tuner) = self.tuner.as_mut() else {
