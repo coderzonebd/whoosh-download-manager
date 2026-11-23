@@ -1,0 +1,146 @@
+# WDM against IDM, the whole app as people run it, on a GitHub Windows
+# runner: memory with the main window open and in the tray, and time,
+# memory and CPU while 8 files download at once from a local server
+# (docs/bench/apps-vs-idm.ps1). IDM is its trial from
+# internetdownloadmanager.com, signature checked, as in bench-kit.yml.
+# Runs on a push to a bench/* branch, or by hand. Nothing is released.
+name: WDM vs IDM (apps)
+
+on:
+  push:
+    branches: ["bench/*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-vs-idm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apps:
+    name: Head to head on Windows
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: Build WDM (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p wdm-prompt -p wdm-tray -p wdm-daemon -p wdm-cli -p wdm-labserver
+          mkdir app
+          cp target/release/{wdm-prompt,wdm-tray,wdm-daemon,wdm,wdm-labserver}.exe app/
+          ls -la app
+      - name: Install IDM (signature checked)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $page = (Invoke-WebRequest -UseBasicParsing https://www.internetdownloadmanager.com/download.html).Content
+          $url = [regex]::Match($page, 'https://download\.internetdownloadmanager\.com/idman\d+build\d+\.exe').Value
+          if (-not $url) { throw "no installer link on the download page" }
+          $exe = Join-Path $env:RUNNER_TEMP "idm-setup.exe"
+          Invoke-WebRequest -UseBasicParsing $url -OutFile $exe
+          $sig = Get-AuthenticodeSignature $exe
+          "installer: $url"; "signature: $($sig.Status) $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "Tonec") { throw "installer is not validly signed by Tonec" }
+          $p = Start-Process $exe -ArgumentList "/skipdlgs" -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "installer did not finish in 5 minutes" }
+          Start-Sleep 5
+          Get-Process IDMan, IEMonitor, IDMIntegrator64 -ErrorAction SilentlyContinue | Stop-Process -Force
+          $idm = "${env:ProgramFiles(x86)}\Internet Download Manager\IDMan.exe"
+          if (-not (Test-Path $idm)) { throw "IDMan.exe not found after install" }
+          "IDM $((Get-Item $idm).VersionInfo.ProductVersion) installed"
+      - name: Start IDM with its pop-ups off
+        shell: pwsh
+        run: |
+          # IDM resident, as people run it (idm-warm hands each URL to it).
+          # A "Download complete" dialog after each download, or IDM's
+          # one-time "browser integration" notice, stops IDM from taking the
+          # next URL while it is open. bComlDlgVMS=1 is what ticking "Don't
+          # show this dialog again" writes (seen on IDM 6.43); set it before
+          # IDM starts. A watcher closes those dialogs if they still appear,
+          # answers No to the trial's "register now?" reminder, and logs
+          # every IDM dialog (diag/idm-dialogs.log), so a run is never left stuck.
+          $ErrorActionPreference = "Stop"
+          $diag = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\bench\diag"
+          reg add "HKCU\Software\DownloadManager" /v bComlDlgVMS /t REG_DWORD /d 1 /f | Out-Null
+          reg add "HKCU\Software\DownloadManager" /v ComplDlgShowing /t REG_DWORD /d 0 /f | Out-Null
+          $watch = @'
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          Add-Type -Namespace W -Name Mouse -MemberDefinition @"
+          [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+          [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, System.UIntPtr e);
+          "@
+          $A = [System.Windows.Automation.AutomationElement]
+          $T = [System.Windows.Automation.TreeScope]
+          $log = $args[0]
+          $titles = @("Download complete", "IDM browser integration")
+          $seen = @{}
+          while ($true) {
+            foreach ($w in $A::RootElement.FindAll($T::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
+              $n = $w.Current.Name
+              if ($w.Current.ClassName -ne "#32770") { continue }
+              if ((Get-Process -Id $w.Current.ProcessId -ErrorAction SilentlyContinue).Name -ne "IDMan") { continue }
+              # The trial's "N days left ... register now?" question: answer No
+              # (keep using the trial), as a user evaluating IDM would.
+              if ($n -match '^Internet Download Manager [\d.]+$') {
+                # Its text is not exposed to UI Automation; it is the only
+                # IDM dialog with this title and Yes/No buttons.
+                $yes = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, "Yes")))
+                $btn = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, "No")))
+                if ($yes -and $btn) {
+                  if ($true) {
+                    $r = $btn.Current.BoundingRectangle
+                    [W.Mouse]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)) | Out-Null
+                    [W.Mouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [W.Mouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+                    Add-Content $log ("{0:o} answered No to the trial reminder" -f (Get-Date))
+                    continue
+                  }
+                }
+              }
+              if ($titles -notcontains $n) {
+                # Any other IDM dialog: log it once, leave it alone.
+                if (-not $seen[$n]) { $seen[$n] = 1; Add-Content $log ("{0:o} saw '{1}' (left open)" -f (Get-Date), $n) }
+                continue
+              }
+              foreach ($b in @("Close", "OK")) {
+                $btn = $w.FindFirst($T::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $b)))
+                if ($btn) {
+                  $r = $btn.Current.BoundingRectangle
+                  [W.Mouse]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)) | Out-Null
+                  [W.Mouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [W.Mouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+                  Add-Content $log ("{0:o} closed '{1}' with {2}" -f (Get-Date), $n, $b)
+                  break
+                }
+              }
+            }
+            Start-Sleep -Milliseconds 300
+          }
+          '@
+          Set-Content "$env:RUNNER_TEMP\idm-watch.ps1" $watch
+          Start-Process pwsh -ArgumentList "-NoProfile", "-File", "$env:RUNNER_TEMP\idm-watch.ps1", "$diag\idm-dialogs.log" -WindowStyle Hidden
+          reg export "HKCU\Software\DownloadManager" "$diag\idm-before.reg" /y | Out-Null
+          if (Test-Path "$diag\idm-dialogs.log") { "dialogs closed at start:"; Get-Content "$diag\idm-dialogs.log" }
+      - name: Head to head
+        shell: pwsh
+        run: |
+          .\docs\bench\apps-vs-idm.ps1 -Bin "$PWD\app" -Out "$env:RUNNER_TEMP\h2h"
+          Get-Content "$env:RUNNER_TEMP\h2h\summary.md" | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: Keep IDM's dialog log
+        if: always()
+        shell: pwsh
+        run: Copy-Item -Recurse -Force "$env:RUNNER_TEMP\bench\diag" "$env:RUNNER_TEMP\h2h\diag" -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: apps-vs-idm
+          path: ${{ runner.temp }}/h2h
+          retention-days: 30
