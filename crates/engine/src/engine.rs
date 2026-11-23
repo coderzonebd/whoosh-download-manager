@@ -152,6 +152,9 @@ pub(crate) struct Inner {
     /// yet: it will save whatever is newest, so another is not needed.
     queued_saves: Mutex<HashSet<DownloadId>>,
     max_conns: AtomicU32,
+    /// Connections working right now, across every download: their write
+    /// buffers share one budget (`run::coalesce_for`).
+    pub(crate) live_workers: Arc<std::sync::atomic::AtomicUsize>,
     shutting_down: AtomicBool,
     closed: AtomicBool,
 }
@@ -248,6 +251,7 @@ impl Engine {
         let inner = Arc::new(Inner {
             limiter: Arc::new(RateLimiter::new(speed_limit)),
             max_conns: AtomicU32::new(settings.max_connections_per_download),
+            live_workers: Arc::default(),
             st: Mutex::new(St {
                 settings,
                 downloads,
@@ -281,6 +285,14 @@ impl Engine {
     /// daemon's diagnostics).
     pub fn record(&self, id: &str) -> Option<DownloadRecord> {
         self.inner.record(id)
+    }
+
+    /// Connections fetching right now, across every download (0: the
+    /// network is quiet, a moment for the daemon to give memory back).
+    pub fn working_connections(&self) -> usize {
+        self.inner
+            .live_workers
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

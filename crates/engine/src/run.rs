@@ -183,7 +183,40 @@ fn io_failed(e: io::Error) -> Outcome {
 }
 
 /// One connection, as the scheduler sees it.
+/// All connections' write buffers together stay near this (8 downloads of
+/// 16 connections: 64 KiB each instead of 256 KiB, 8 MiB instead of 32).
+const WRITE_BUDGET: usize = 8 << 20;
+/// Smaller writes than this cost more in wake-ups than they save.
+const MIN_COALESCE: usize = 64 << 10;
+
+/// The write size for a new connection while `live` connections work:
+/// `max` (the configured size) until the budget is shared out.
+fn coalesce_for(max: usize, live: usize) -> usize {
+    if max == 0 {
+        return 0;
+    }
+    (WRITE_BUDGET / live.max(1)).clamp(MIN_COALESCE.min(max), max)
+}
+
+/// Counts a working connection while it exists (`Inner::live_workers`).
+struct Working(Arc<std::sync::atomic::AtomicUsize>);
+
+impl Working {
+    fn new(count: &Arc<std::sync::atomic::AtomicUsize>) -> (Working, usize) {
+        let n = count.fetch_add(1, Ordering::Relaxed) + 1;
+        (Working(count.clone()), n)
+    }
+}
+
+impl Drop for Working {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 struct Wk {
+    /// Counted in `Inner::live_workers` until it goes.
+    _live: Working,
     seg: Arc<Segment>,
     counters: Arc<Counters>,
     cancel: CancellationToken,
@@ -1866,6 +1899,7 @@ impl Driver {
                 .store(now_us_since(self.epoch, now).max(1), Ordering::Relaxed);
             stream
         });
+        let (live, working) = Working::new(&self.inner.live_workers);
         self.tasks.spawn(worker::work(Job {
             wid,
             seg: seg.clone(),
@@ -1877,12 +1911,13 @@ impl Driver {
             cancel: cancel.clone(),
             limiter: self.inner.limiter.clone(),
             epoch: self.epoch,
-            coalesce: self.t.write_coalesce,
+            coalesce: coalesce_for(self.t.write_coalesce, working),
             coalesce_delay: self.t.write_coalesce_delay,
         }));
         self.workers.insert(
             wid,
             Wk {
+                _live: live,
                 seg,
                 counters,
                 cancel,
@@ -2697,5 +2732,37 @@ async fn compare(
 impl std::fmt::Debug for Driver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Driver").field("id", &self.id).finish()
+    }
+}
+
+#[cfg(test)]
+mod coalesce_tests {
+    use super::*;
+
+    #[test]
+    fn write_buffers_share_one_budget() {
+        const MAX: usize = 256 << 10;
+        // A few connections: the configured size.
+        assert_eq!(coalesce_for(MAX, 1), MAX);
+        assert_eq!(coalesce_for(MAX, 32), MAX);
+        // Eight downloads of sixteen: a quarter each, the budget in all.
+        assert_eq!(coalesce_for(MAX, 128), 64 << 10);
+        // Never below the floor, never above the configured size.
+        assert_eq!(coalesce_for(MAX, 10_000), MIN_COALESCE);
+        assert_eq!(coalesce_for(16 << 10, 1), 16 << 10);
+        assert_eq!(coalesce_for(0, 5), 0);
+    }
+
+    #[test]
+    fn live_connections_are_counted_while_they_exist() {
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (a, n) = Working::new(&count);
+        assert_eq!(n, 1);
+        let (b, n) = Working::new(&count);
+        assert_eq!(n, 2);
+        drop(a);
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+        drop(b);
+        assert_eq!(count.load(Ordering::Relaxed), 0);
     }
 }

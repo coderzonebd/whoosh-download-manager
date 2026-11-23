@@ -54,6 +54,10 @@ tracing-appender = "0.2"
 [target."cfg(unix)".dependencies]
 rustix = { version = "1", default-features = false, features = ["std", "process"] }
 
+[target."cfg(windows)".dependencies]
+# Giving freed memory back once downloads end (`memory.rs`).
+windows-sys = { version = "0.61", features = ["Win32_System_Memory"] }
+
 [target."cfg(windows)".dev-dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_System_Console",
