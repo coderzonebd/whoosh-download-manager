@@ -27,10 +27,23 @@ use crate::pool::{H1Conn, H2Sender, H3Sender, Mux, MuxLease, Pool};
 use crate::tls::Tls;
 use crate::{NetConfig, lock};
 
-/// HTTP/2 flow-control windows: ~1 Gbit/s at 100 ms RTT per connection;
-/// also the most a slow reader leaves buffered in memory.
-const H2_STREAM_WINDOW: u32 = 16 << 20;
-const H2_CONN_WINDOW: u32 = 32 << 20;
+/// HTTP/2 flow-control window per stream (hyper's own default): ~160
+/// Mbit/s at 100 ms RTT, and a download uses several connections. It is
+/// also the most a reader behind the network leaves buffered in the daemon:
+/// at 16 MiB per stream (32 MiB per connection), eight downloads from
+/// cdn.kernel.org on GitHub's Windows runner held 15-35 MB on average (73
+/// MB at the peak) where HTTP/1.1 leaves that in the kernel's socket buffer
+/// and IDM's whole app stayed at 10-16 MB. The connection's window holds a
+/// full window for each stream it may carry, so a stream read later never
+/// blocks one read now. (hyper's adaptive window cannot: it keeps the two
+/// equal.)
+const H2_STREAM_WINDOW: u32 = 2 << 20;
+/// One stream window for each stream a connection may carry.
+fn h2_conn_window(streams: usize) -> u32 {
+    let streams = u32::try_from(streams.max(1)).unwrap_or(u32::MAX);
+    H2_STREAM_WINDOW.saturating_mul(streams).min(i32::MAX as u32)
+}
+
 /// Lets HTTP/2 servers send DATA frames bigger than the 16 KiB default:
 /// fewer frames, less per-frame work on both ends.
 const H2_MAX_FRAME: u32 = 256 << 10;
@@ -290,7 +303,7 @@ impl Client {
         let (sender, conn) = hyper::client::conn::http2::Builder::new(TokioExecutor::new())
             .timer(TokioTimer::new())
             .initial_stream_window_size(H2_STREAM_WINDOW)
-            .initial_connection_window_size(H2_CONN_WINDOW)
+            .initial_connection_window_size(h2_conn_window(self.cfg.max_streams_per_connection))
             .max_frame_size(H2_MAX_FRAME)
             .handshake(TokioIo::new(io))
             .await
