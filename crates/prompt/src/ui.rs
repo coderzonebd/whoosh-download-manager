@@ -179,6 +179,31 @@ fn s(text: impl AsRef<str>) -> SharedString {
     SharedString::from(text.as_ref())
 }
 
+/// Puts `rows` into a list of the window, keeping the model it already has:
+/// only rows that changed are set. A new model on every update (progress
+/// comes several times a second) made Slint build all of the list's items
+/// again each time, which cost CPU and left the heap fragmented.
+fn put<T: Clone + PartialEq + 'static>(
+    current: ModelRc<T>,
+    rows: Vec<T>,
+    set: impl FnOnce(ModelRc<T>),
+) {
+    use slint::Model as _;
+    if let Some(list) = current.as_any().downcast_ref::<VecModel<T>>() {
+        if list.row_count() == rows.len() {
+            for (i, row) in rows.into_iter().enumerate() {
+                if list.row_data(i).as_ref() != Some(&row) {
+                    list.set_row_data(i, row);
+                }
+            }
+        } else {
+            list.set_vec(rows);
+        }
+        return;
+    }
+    set(ModelRc::new(VecModel::from(rows)));
+}
+
 fn strings(list: Vec<String>) -> ModelRc<SharedString> {
     ModelRc::new(VecModel::from(
         list.into_iter().map(SharedString::from).collect::<Vec<_>>(),
@@ -796,8 +821,8 @@ impl Controller {
             trail.reverse();
             std::mem::swap(&mut lead, &mut trail);
         }
-        ui.set_lead(ModelRc::new(VecModel::from(lead)));
-        ui.set_trail(ModelRc::new(VecModel::from(trail)));
+        put(ui.get_lead(), lead, |m| ui.set_lead(m));
+        put(ui.get_trail(), trail, |m| ui.set_trail(m));
     }
 
     /// The labels of the file's fields (confirm and add).
@@ -1099,7 +1124,7 @@ impl Controller {
                     })
                     .collect()
             };
-            ui.set_subs(ModelRc::new(VecModel::from(subs)));
+            put(ui.get_subs(), subs, |m| ui.set_subs(m));
             ui.set_subs_label(s(lang.t("media.subtitles")));
             ui.set_subs_hint(s(lang.t("media.subtitlesHint")));
             if listing {
@@ -1296,7 +1321,7 @@ impl Controller {
             ui.set_f_waiting(false);
             ui.set_f_hint(s(""));
         }
-        ui.set_facts(ModelRc::new(VecModel::from(facts)));
+        put(ui.get_facts(), facts, |m| ui.set_facts(m));
         ui.set_busy(f.cancelling);
         let t = |k: &str| lang.t(k);
         let (lead, trail) = if !ended {

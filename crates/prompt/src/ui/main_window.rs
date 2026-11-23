@@ -617,8 +617,8 @@ impl Controller {
         let lang = &self.lang;
         let t = |k: &str| s(lang.t(k));
         let (nav, more) = self.nav();
-        w.set_nav(ModelRc::new(VecModel::from(nav)));
-        w.set_nav_more(ModelRc::new(VecModel::from(more)));
+        super::put(w.get_nav(), nav, |m| w.set_nav(m));
+        super::put(w.get_nav_more(), more, |m| w.set_nav_more(m));
         w.set_view_title(s(self.view_title()));
         let arrow = |k: &str| {
             if self.main.sort == k {
@@ -635,7 +635,7 @@ impl Controller {
                 arrow: s(arrow(k)),
             })
             .collect::<Vec<_>>();
-        w.set_columns(ModelRc::new(VecModel::from(cols)));
+        super::put(w.get_columns(), cols, |m| w.set_columns(m));
 
         // The toolbar.
         let sel = self.selected();
@@ -812,7 +812,7 @@ impl Controller {
         let path = std::path::Path::new(&d.directory).join(&d.filename);
         facts.push(fact("detail.savedTo", path.display().to_string()));
         facts.push(fact("detail.source", d.url.clone()));
-        w.set_d_facts(ModelRc::new(VecModel::from(facts)));
+        super::put(w.get_d_facts(), facts, |m| w.set_d_facts(m));
         let btn = |id: &str, label: String, primary: bool| Btn {
             id: s(id),
             label: s(label),
@@ -836,7 +836,7 @@ impl Controller {
         if lang.rtl() {
             actions.reverse();
         }
-        w.set_d_actions(ModelRc::new(VecModel::from(actions)));
+        super::put(w.get_d_actions(), actions, |m| w.set_d_actions(m));
     }
 
     // ------------------------------------------------------------ what the user does

@@ -5,7 +5,7 @@
 //! clearing several asks first. "Show" opens the download in the list.
 
 use serde_json::json;
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::ComponentHandle;
 use wdm_proto::{DownloadState, DownloadSummary, method};
 
 use super::{Controller, s, tile_category};
@@ -176,7 +176,7 @@ impl Controller {
         } else {
             s("")
         });
-        g.set_rows(ModelRc::new(VecModel::from(rows)));
+        super::put(g.get_rows(), rows, |m| g.set_rows(m));
         match &self.history.clearing {
             Some(ids) => {
                 g.set_clearing(true);

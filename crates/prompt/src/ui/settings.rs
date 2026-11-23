@@ -496,7 +496,7 @@ impl Controller {
         g.set_appearance_title(t("settings.appearance"));
         g.set_language_label(t("settings.language"));
         let names: Vec<SharedString> = LANGUAGES.iter().map(|(_, n)| s(n)).collect();
-        g.set_languages(ModelRc::new(VecModel::from(names)));
+        super::put(g.get_languages(), names, |m| g.set_languages(m));
         let picked = LANGUAGES[d.language].0;
         g.set_language_note(s(if MACHINE.contains(&picked) {
             wdm_tray::i18n::Lang::new(picked).t("settings.machineTranslated")
@@ -505,7 +505,7 @@ impl Controller {
         }));
         g.set_theme_label(t("settings.theme"));
         let themes: Vec<SharedString> = THEMES.iter().map(|k| t(&format!("theme.{k}"))).collect();
-        g.set_themes(ModelRc::new(VecModel::from(themes)));
+        super::put(g.get_themes(), themes, |m| g.set_themes(m));
         g.set_downloads_title(t("settings.downloads"));
         g.set_folder_label(t("settings.defaultDirectory"));
         g.set_browse_text(t("action.browse"));
@@ -525,7 +525,7 @@ impl Controller {
             s(lang.tf("unit.speed", &[("size", "KB")])),
             s(lang.tf("unit.speed", &[("size", "MB")])),
         ];
-        g.set_units(ModelRc::new(VecModel::from(units)));
+        super::put(g.get_units(), units, |m| g.set_units(m));
         g.set_schedule_title(t("speedSchedule.title"));
         g.set_schedule_hint(t("speedSchedule.hint"));
         g.set_win_from_label(t("speedSchedule.from"));

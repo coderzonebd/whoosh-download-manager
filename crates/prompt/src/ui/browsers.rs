@@ -7,7 +7,7 @@
 //! Browsers. Looking at the browsers and linking them reads and writes the
 //! disk, so it happens on a thread of its own (`wdm_nmhost::connect`).
 
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::ComponentHandle;
 use wdm_nmhost::connect::{self, Listing, Row};
 use wdm_nmhost::register::Browser;
 
@@ -226,7 +226,7 @@ impl Controller {
             })
             .collect();
         g.set_busy(page.busy.is_some());
-        g.set_items(ModelRc::new(VecModel::from(items)));
+        super::put(g.get_items(), items, |m| g.set_items(m));
     }
 }
 
