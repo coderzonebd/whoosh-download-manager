@@ -198,6 +198,18 @@ fn the_prompt_window_from_start_to_end() {
     h.settings("en", "light");
     h.msg(Msg::Queues(None));
     h.msg(Msg::Media(true));
+    h.msg(Msg::MediaTools(
+        serde_json::from_value(json!({
+            "autoUpdate": true, "lastCheckAt": 1_700_000_000_000i64,
+            "tools": [
+                {"name": "yt-dlp", "state": "ready", "source": "managed", "version": "2026.10.01", "latestVersion": "2026.11.20", "updateAvailable": true, "upstream": "github.com/yt-dlp/yt-dlp", "license": "Unlicense"},
+                {"name": "ffmpeg", "state": "installing", "downloadedBytes": 25, "totalBytes": 100, "upstream": "github.com/BtbN/FFmpeg-Builds", "license": "GPL-3.0"},
+                {"name": "quickjs", "state": "missing", "upstream": "bellard.org/quickjs", "license": "MIT"},
+                {"name": "deno", "state": "ready", "source": "managed", "version": "2.5.0", "latestVersion": "2.5.0", "upstream": "github.com/denoland/deno", "license": "MIT"}
+            ]
+        }))
+        .unwrap(),
+    ));
 
     // ---------------------------------------------------------------- a browser download waits
     h.msg(Msg::List(vec![
@@ -542,6 +554,81 @@ fn the_prompt_window_from_start_to_end() {
     assert_eq!(g.get_folder(), "/home/u/Downloads");
     assert!(!g.get_dirty());
     h.main_shot("settings-dark");
+
+    // Speed by time of day: a window, a bad time, the days, saved with the rest.
+    g.invoke_window(0, "add".into(), "".into());
+    assert_eq!(g.get_windows().row_count(), 1);
+    assert!(g.get_dirty());
+    g.invoke_window(0, "from".into(), "25:00".into());
+    assert_eq!(
+        g.get_windows().row_data(0).unwrap().time_error,
+        "Enter a time such as 23:30."
+    );
+    assert!(!g.get_valid());
+    g.invoke_window(0, "from".into(), "23:00".into());
+    g.invoke_window(0, "to".into(), "06:30".into());
+    g.invoke_window(0, "limit".into(), "512".into());
+    g.invoke_window(0, "unit".into(), "0".into());
+    g.invoke_window(0, "day".into(), "1".into());
+    g.invoke_window(0, "day".into(), "5".into());
+    let row = g.get_windows().row_data(0).unwrap();
+    assert!(row.time_error.is_empty() && row.limit_error.is_empty());
+    assert_eq!(row.days_hint, "Only on the ticked days.");
+    assert!(g.get_valid());
+    h.main_shot_sized("settings-schedule", 1900);
+    g.invoke_save();
+    let calls = h.calls();
+    assert_eq!(
+        calls[0].1["speedSchedule"],
+        json!([{"days": [1, 5], "from": "23:00", "to": "06:30", "limitBps": 524_288}])
+    );
+    h.msg(Msg::Reply(Tag::Settings, Ok(calls[0].1.clone())));
+    assert_eq!(g.get_windows().row_count(), 1, "the saved window stays");
+    g.invoke_window(0, "remove".into(), "".into());
+    assert_eq!(g.get_windows().row_count(), 0);
+    g.invoke_revert();
+    assert_eq!(g.get_windows().row_count(), 1);
+
+    // The media tools: an update, one downloading, QuickJS not needed while Deno works.
+    let tools: Vec<_> = g.get_media_tools().iter().collect();
+    assert_eq!(tools.len(), 4);
+    assert_eq!(tools[0].action, "Update yt-dlp");
+    assert_eq!(tools[0].update, "Version 2026.11.20 is available");
+    assert_eq!(tools[1].state, "Downloading… 25.0%");
+    assert!(tools[2].action.is_empty() && tools[2].state.starts_with("Not needed"));
+    assert!(tools[3].action.is_empty());
+    g.invoke_media("update".into(), "yt-dlp".into());
+    g.invoke_media("check".into(), "".into());
+    assert!(g.get_media_checking());
+    g.invoke_media("auto-off".into(), "".into());
+    let calls = h.calls();
+    assert_eq!(calls[0].0, method::MEDIA_UPDATE_TOOLS);
+    assert_eq!(calls[0].1, json!({"tools": ["yt-dlp"]}));
+    assert_eq!(calls[1].0, method::MEDIA_CHECK_UPDATES);
+    assert_eq!(calls[2].1, json!({"autoUpdate": false}));
+    h.msg(Msg::Reply(Tag::MediaTools, Err("offline".into())));
+    assert_eq!(g.get_media_error(), "Couldn’t check for updates: offline");
+    assert!(!g.get_media_checking());
+
+    // A new version: the app's answer comes through update-state.json.
+    let asked = wdm_tray::update_state::now_ms();
+    ui::with(|c| c.pretend_update_asked(asked, false));
+    wdm_tray::update_state::write(
+        &h.dir,
+        &wdm_tray::update_state::State {
+            at: asked + 1,
+            kind: wdm_tray::update_state::Kind::Available,
+            version: Some("1.0.0".into()),
+            error: None,
+            managed_by: None,
+            command: None,
+        },
+    )
+    .unwrap();
+    h.wait(Duration::from_millis(400));
+    assert_eq!(g.get_update_text(), "Version 1.0.0 is available.");
+    assert!(g.get_can_install() && !g.get_update_busy());
+    h.main_shot_sized("settings-tools", 2700);
     h.settings("bn", "light");
     h.main_shot("settings-bn");
     h.settings("en", "light");

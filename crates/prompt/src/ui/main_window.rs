@@ -238,6 +238,7 @@ impl Controller {
     pub(super) fn start_polling(&mut self) {
         self.main.poll.start(TimerMode::Repeated, POLL, || {
             super::with(|c| {
+                c.poll_update();
                 let file = c.dir.join(SHOW_MAIN_FILE);
                 if let Ok(page) = std::fs::read_to_string(&file) {
                     let _ = std::fs::remove_file(&file);

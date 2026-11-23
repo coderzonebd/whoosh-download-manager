@@ -92,6 +92,8 @@ pub struct Model {
     pub queues: Option<Vec<String>>,
     /// The daemon can download from video sites (yt-dlp).
     pub media: bool,
+    /// The media tools, as the daemon last said.
+    pub media_tools: Option<MediaToolsStatus>,
     /// The download list loaded at least once: only then may the window close.
     pub loaded: bool,
 }
@@ -298,8 +300,9 @@ impl Model {
                 }
             }
             event::MEDIA_TOOLS => {
-                if serde_json::from_value::<MediaToolsStatus>(params).is_ok() {
+                if let Ok(s) = serde_json::from_value::<MediaToolsStatus>(params) {
                     self.media = true;
+                    self.media_tools = Some(s);
                 }
             }
             event::MEDIA_OFFERED => {

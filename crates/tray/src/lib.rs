@@ -27,6 +27,7 @@ pub mod i18n;
 pub mod launch;
 pub mod locks;
 pub mod prefs;
+pub mod update_state;
 
 /// The app's identifier (`tauri.conf.json`): its config directory, and its
 /// notifications' app id on Windows and macOS.

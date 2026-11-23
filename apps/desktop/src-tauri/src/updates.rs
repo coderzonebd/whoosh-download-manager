@@ -7,7 +7,8 @@
 //! does not verify is refused by the plugin.
 //!
 //! The UI checks on request ([`check_for_update`]) and installs
-//! ([`install_update`], which restarts the app). Unless the user turned it
+//! ([`install_update`], which restarts the app); the native main window
+//! does the same through `wdm-desktop --update-now` ([`run_now`]). Unless the user turned it
 //! off (`autoUpdateCheck` in `desktop.json`), [`start_daily_check`] keeps the
 //! app up to date by itself: once a day it looks, downloads a new version
 //! quietly, and installs it at a quiet moment — nothing downloading and the
@@ -420,6 +421,84 @@ pub fn check_once<R: Runtime>(app: AppHandle<R>) {
             }
         }
         crate::UPDATE_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+        if app.webview_windows().is_empty() {
+            app.exit(0);
+        }
+    });
+}
+
+/// `wdm-desktop --update-now <check|install>`, from the native main
+/// window's Settings: looks now (whatever the day's check did) and, with
+/// `install`, downloads and installs a newer version. Each step is written
+/// to `update-state.json` for the window ([`wdm_tray::update_state`]).
+/// After installing, the window closes and the new version opens.
+pub fn run_now<R: Runtime>(app: AppHandle<R>, install: bool) {
+    use wdm_tray::update_state::{self as us, Kind, State};
+    crate::UPDATE_BUSY.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::spawn(move || {
+        let Ok(dir) = crate::daemon::data_dir() else {
+            app.exit(1);
+            return;
+        };
+        let say = |kind: Kind, version: Option<String>, error: Option<String>| {
+            let managed = managed_by();
+            let state = State {
+                at: us::now_ms(),
+                kind,
+                version,
+                error,
+                managed_by: managed.as_ref().map(|m| m.manager.to_owned()),
+                command: managed
+                    .as_ref()
+                    .map(|m| m.command.to_owned())
+                    .filter(|c| !c.is_empty()),
+            };
+            if let Err(err) = us::write(&dir, &state) {
+                eprintln!("wdm-desktop: could not write {}: {err}", us::FILE);
+            }
+        };
+        let mut restart = false;
+        match tauri::async_runtime::block_on(check(&app)) {
+            Ok(None) => say(Kind::Current, None, None),
+            Ok(Some(info)) if !install => say(Kind::Available, Some(info.version), None),
+            Ok(Some(info)) => {
+                say(Kind::Installing, Some(info.version.clone()), None);
+                let update = app
+                    .state::<Pending>()
+                    .0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+                let done = match update {
+                    Some(u) => {
+                        tauri::async_runtime::block_on(u.download_and_install(|_, _| {}, || {}))
+                            .map_err(|e| e.to_string())
+                    }
+                    None => Err("the update went away".to_owned()),
+                };
+                match done {
+                    Ok(()) => {
+                        say(Kind::Installed, Some(info.version), None);
+                        restart = true;
+                    }
+                    Err(err) => say(Kind::Failed, Some(info.version), Some(err)),
+                }
+            }
+            Err(err) => say(Kind::Failed, None, Some(err)),
+        }
+        crate::UPDATE_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+        if restart {
+            // The window closes when it reads "installed"; then the new version opens.
+            for _ in 0..50 {
+                if !wdm_tray::locks::held(&dir, wdm_tray::locks::PROMPT) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            if let Err(err) = wdm_tray::launch::start_main() {
+                eprintln!("wdm-desktop: could not open the main window: {err}");
+            }
+        }
         if app.webview_windows().is_empty() {
             app.exit(0);
         }

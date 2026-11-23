@@ -14,7 +14,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use wdm_client::daemon;
-use wdm_proto::media::{MediaAddParams, MediaOffer};
+use wdm_proto::media::{MediaAddParams, MediaOffer, MediaToolsStatus};
 use wdm_proto::queue::Queue;
 use wdm_proto::{ClientInfo, DownloadSummary, ListParams, Settings, method};
 
@@ -40,6 +40,9 @@ pub enum Tag {
     },
     /// Settings saved (`settings.set`).
     Settings,
+    /// `media.checkUpdates`, `media.updateTools`, `media.configure`: the
+    /// tools' new status, or why not.
+    MediaTools,
     /// Pause, Resume, Retry: their answer only matters when it fails.
     Quiet,
 }
@@ -65,6 +68,8 @@ pub enum Msg {
     Queues(Option<Vec<Queue>>),
     /// The daemon downloads from video sites.
     Media(bool),
+    /// Its media tools (yt-dlp, ffmpeg, …), for Settings.
+    MediaTools(MediaToolsStatus),
     /// A page the extension offered, now this window's.
     Offer(MediaOffer),
     Event(String, Value),
@@ -175,12 +180,13 @@ async fn load(client: &wdm_client::Client, post: &Post) {
             .await
             .ok(),
     ));
-    post(Msg::Media(
-        client
-            .call_value(method::MEDIA_TOOLS, Value::Null)
-            .await
-            .is_ok(),
-    ));
+    let tools = client
+        .call::<_, MediaToolsStatus>(method::MEDIA_TOOLS, Value::Null)
+        .await;
+    post(Msg::Media(tools.is_ok()));
+    if let Ok(t) = tools {
+        post(Msg::MediaTools(t));
+    }
     // Offers before the list: the window may close once the list is in.
     if let Ok(offers) = client
         .call::<_, Vec<MediaOffer>>(method::MEDIA_OFFERS, Value::Null)

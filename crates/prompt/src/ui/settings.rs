@@ -4,16 +4,18 @@
 //! folders, downloads at once, connections, the speed limit, asking before
 //! browser downloads) is edited as a draft and saved with Save; what
 //! belongs to this computer (launch at login, keep in the tray, automatic
-//! updates, crash reports) applies at once. The speed schedule, the media
-//! tools and checking for an update now open the web page for now;
-//! Browsers opens the window's own "Connect your browser".
+//! updates, crash reports) applies at once, as do checking for a new version
+//! and the media tools ([`super::tools`]). The speed schedule is part of
+//! the draft. Browsers opens the window's own "Connect your browser".
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use wdm_proto::Settings;
+use std::rc::Rc;
+
+use slint::{ComponentHandle, Model as _, ModelRc, SharedString, VecModel};
+use wdm_proto::{Settings, SpeedWindow};
 
 use super::{Controller, s};
 use crate::daemon::Tag;
-use crate::{MainWindow, SettingsData};
+use crate::{MainWindow, SettingsData, SpeedWin};
 
 /// The bundled languages in the web UI's order, with their own names.
 const LANGUAGES: [(&str, &str); 12] = [
@@ -51,13 +53,129 @@ pub struct Draft {
     limit: String,
     mb: bool,
     confirm: bool,
+    /// Speed by time of day.
+    windows: Vec<Win>,
+}
+
+/// A time window of the speed schedule, as the page edits it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Win {
+    from: String,
+    to: String,
+    limit: String,
+    mb: bool,
+    /// Sunday first; none or all ticked means every day.
+    days: [bool; 7],
+}
+
+impl Win {
+    fn from(w: &SpeedWindow) -> Win {
+        let (limit, mb) = limit_text(w.limit_bps);
+        let mut days = [false; 7];
+        for d in &w.days {
+            if let Some(slot) = days.get_mut(usize::from(*d)) {
+                *slot = true;
+            }
+        }
+        Win {
+            from: w.from.clone(),
+            to: w.to.clone(),
+            limit,
+            mb,
+            days,
+        }
+    }
+
+    fn fresh() -> Win {
+        Win {
+            from: "09:00".into(),
+            to: "18:00".into(),
+            limit: "1".into(),
+            mb: true,
+            days: [false; 7],
+        }
+    }
+
+    /// What is wrong with its times: "time" (not HH:MM) or "same".
+    fn problem(&self) -> Option<&'static str> {
+        if !clock(&self.from) || !clock(&self.to) {
+            Some("time")
+        } else if self.from == self.to {
+            Some("same")
+        } else {
+            None
+        }
+    }
+
+    fn build(&self) -> Option<SpeedWindow> {
+        if self.problem().is_some() {
+            return None;
+        }
+        let unit = if self.mb { MB } else { KB };
+        let picked: Vec<u8> = (0u8..7).filter(|d| self.days[usize::from(*d)]).collect();
+        Some(SpeedWindow {
+            days: if picked.len() == 7 {
+                Vec::new()
+            } else {
+                picked
+            },
+            from: self.from.clone(),
+            to: self.to.clone(),
+            limit_bps: ((limit_value(&self.limit)? * unit).round() as u64).max(1),
+        })
+    }
+}
+
+/// "HH:MM", 24-hour, as the protocol wants it.
+fn clock(v: &str) -> bool {
+    let b = v.as_bytes();
+    b.len() == 5
+        && b[2] == b':'
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| i == 2 || c.is_ascii_digit())
+        && v[..2].parse::<u8>().is_ok_and(|h| h < 24)
+        && v[3..].parse::<u8>().is_ok_and(|m| m < 60)
+}
+
+/// A speed in the unit that writes it shortly: "2" MB/s, "512" KB/s.
+fn limit_text(bps: u64) -> (String, bool) {
+    let mb = bps >= 1_048_576 && (bps * 10).is_multiple_of(1_048_576);
+    let unit = if mb { MB } else { KB };
+    (trim((bps as f64 / unit * 10.0).round() / 10.0), mb)
+}
+
+/// Short weekday names, Sunday first, for the bundled languages.
+fn weekdays(tag: &str) -> [&'static str; 7] {
+    match tag {
+        "bn" => ["রবি", "সোম", "মঙ্গল", "বুধ", "বৃহস্পতি", "শুক্র", "শনি"],
+        "ar" => [
+            "الأحد",
+            "الاثنين",
+            "الثلاثاء",
+            "الأربعاء",
+            "الخميس",
+            "الجمعة",
+            "السبت",
+        ],
+        "es" => ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"],
+        "hi" => ["रवि", "सोम", "मंगल", "बुध", "गुरु", "शुक्र", "शनि"],
+        "id" => ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"],
+        "pt-BR" => ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."],
+        "ru" => ["вс", "пн", "вт", "ср", "чт", "пт", "сб"],
+        "tr" => ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"],
+        "ur" => ["اتوار", "پیر", "منگل", "بدھ", "جمعرات", "جمعہ", "ہفتہ"],
+        "vi" => ["CN", "T2", "T3", "T4", "T5", "T6", "T7"],
+        "zh-Hans" => ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
+        _ => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    }
 }
 
 impl Draft {
     fn from(s: &Settings) -> Draft {
         let tag = wdm_tray::i18n::resolve(&s.language);
         let bps = s.speed_limit_bps;
-        let mb = bps.is_some_and(|b| b >= 1_048_576 && (b * 10) % 1_048_576 == 0);
+        let mb = bps.is_some_and(|b| b >= 1_048_576 && (b * 10).is_multiple_of(1_048_576));
         let unit = if mb { MB } else { KB };
         let value = bps.map_or_else(
             || "1".to_owned(),
@@ -74,6 +192,7 @@ impl Draft {
             limit: value,
             mb,
             confirm: s.confirm_browser_downloads,
+            windows: s.speed_schedule.iter().map(Win::from).collect(),
         }
     }
 }
@@ -101,7 +220,7 @@ fn limit_value(v: &str) -> Option<f64> {
 }
 
 /// The settings to save: the daemon's, with the draft's fields in place,
-/// so fields this page does not show (durability, the schedule) survive.
+/// so fields this page does not show (durability) survive.
 fn build(base: &Settings, d: &Draft) -> Option<Settings> {
     let mut s = base.clone();
     s.max_active_downloads = whole(&d.active, 1, 64)?;
@@ -119,6 +238,11 @@ fn build(base: &Settings, d: &Draft) -> Option<Settings> {
     } else {
         None
     };
+    s.speed_schedule = d
+        .windows
+        .iter()
+        .map(Win::build)
+        .collect::<Option<Vec<_>>>()?;
     s.confirm_browser_downloads = d.confirm;
     // Undecided stays undecided until it is ticked.
     if d.organize || base.organize_by_category.is_some() {
@@ -128,13 +252,23 @@ fn build(base: &Settings, d: &Draft) -> Option<Settings> {
 }
 
 /// The Settings page's own state.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Page {
     /// The daemon's settings the draft started from.
     base: Option<Settings>,
     draft: Option<Draft>,
     saving: bool,
     status: Option<(String, bool)>,
+    /// The time windows the page shows (kept, so a field being typed in stays).
+    windows: Rc<VecModel<SpeedWin>>,
+}
+
+impl std::fmt::Debug for Page {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Page")
+            .field("draft", &self.draft)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Controller {
@@ -180,6 +314,123 @@ impl Controller {
         g.set_limit(s(&d.limit));
         g.set_unit_index(i32::from(d.mb));
         g.set_confirm(d.confirm);
+        let rows: Vec<SpeedWin> = (0..d.windows.len()).map(|i| self.win_row(i)).collect();
+        self.settings_page.windows.set_vec(rows);
+    }
+
+    /// The page's row for time window `i` of the draft.
+    fn win_row(&self, i: usize) -> SpeedWin {
+        let lang = &self.lang;
+        let Some(w) = self
+            .settings_page
+            .draft
+            .as_ref()
+            .and_then(|d| d.windows.get(i))
+        else {
+            return SpeedWin::default();
+        };
+        let n = lang.number(i as u64 + 1);
+        SpeedWin {
+            from: s(&w.from),
+            to: s(&w.to),
+            limit: s(&w.limit),
+            unit_index: i32::from(w.mb),
+            days: ModelRc::new(VecModel::from(w.days.to_vec())),
+            label: s(lang.tf("speedSchedule.window", &[("n", &n)])),
+            remove_label: s(lang.tf("speedSchedule.remove", &[("n", &n)])),
+            time_error: s(match w.problem() {
+                Some("time") => lang.t("schedule.badTime"),
+                Some(_) => lang.t("speedSchedule.same"),
+                None => String::new(),
+            }),
+            limit_error: s(if limit_value(&w.limit).is_none() {
+                lang.tf(
+                    "settings.range",
+                    &[("min", &lang.number(1)), ("max", &lang.number(1_000_000))],
+                )
+            } else {
+                String::new()
+            }),
+            days_hint: s(
+                lang.t(if w.days.iter().all(|d| *d) || !w.days.iter().any(|d| *d) {
+                    "schedule.everyDay"
+                } else {
+                    "schedule.someDays"
+                }),
+            ),
+        }
+    }
+
+    /// The rows again after an edit: in place, so a field being typed in keeps its text.
+    fn sync_windows(&self) {
+        let n = self
+            .settings_page
+            .draft
+            .as_ref()
+            .map_or(0, |d| d.windows.len());
+        let model = &self.settings_page.windows;
+        if model.row_count() != n {
+            let rows: Vec<SpeedWin> = (0..n).map(|i| self.win_row(i)).collect();
+            model.set_vec(rows);
+            return;
+        }
+        for i in 0..n {
+            let row = self.win_row(i);
+            let old = model.row_data(i);
+            let same = old.as_ref().is_some_and(|o| {
+                o.time_error == row.time_error
+                    && o.limit_error == row.limit_error
+                    && o.days_hint == row.days_hint
+                    && o.unit_index == row.unit_index
+                    && o.label == row.label
+                    && o.days.iter().eq(row.days.iter())
+            });
+            if !same {
+                model.set_row_data(i, row);
+            }
+        }
+    }
+
+    /// An edit of time window `i`: `field` is from, to, limit, unit or day.
+    pub(super) fn settings_window(&mut self, i: i32, field: &str, value: &str) {
+        let Some(w) = self.main_handle() else { return };
+        self.read_draft(&w);
+        let Some(d) = self.settings_page.draft.as_mut() else {
+            return;
+        };
+        let i = usize::try_from(i).unwrap_or(usize::MAX);
+        match field {
+            "add" => d.windows.push(Win::fresh()),
+            "remove" if i < d.windows.len() => {
+                d.windows.remove(i);
+                // The rows after it move up: made again.
+                self.settings_page.windows.set_vec(Vec::new());
+            }
+            _ => {
+                let Some(win) = d.windows.get_mut(i) else {
+                    return;
+                };
+                match field {
+                    "from" => win.from = value.trim().to_owned(),
+                    "to" => win.to = value.trim().to_owned(),
+                    "limit" => win.limit = value.to_owned(),
+                    "unit" => win.mb = value == "1",
+                    "day" => {
+                        if let Some(day) = value
+                            .parse::<usize>()
+                            .ok()
+                            .and_then(|x| win.days.get_mut(x))
+                        {
+                            *day = !*day;
+                        }
+                    }
+                    _ => return,
+                }
+            }
+        }
+        self.settings_page.status = None;
+        self.sync_windows();
+        self.render_settings(&w);
     }
 
     pub(super) fn render_settings(&mut self, w: &MainWindow) {
@@ -275,8 +526,20 @@ impl Controller {
             s(lang.tf("unit.speed", &[("size", "MB")])),
         ];
         g.set_units(ModelRc::new(VecModel::from(units)));
-        g.set_schedule_text(s(format!("{}…", lang.t("speedSchedule.title"))));
-        g.set_schedule_hint(s(""));
+        g.set_schedule_title(t("speedSchedule.title"));
+        g.set_schedule_hint(t("speedSchedule.hint"));
+        g.set_win_from_label(t("speedSchedule.from"));
+        g.set_win_to_label(t("speedSchedule.to"));
+        g.set_win_limit_label(t("speedSchedule.limit"));
+        g.set_win_days_label(t("speedSchedule.days"));
+        g.set_win_add_text(t("speedSchedule.add"));
+        g.set_weekdays(super::strings(
+            weekdays(lang.tag())
+                .iter()
+                .map(|d| (*d).to_owned())
+                .collect(),
+        ));
+        g.set_windows(ModelRc::from(page.windows.clone()));
         g.set_computer_title(t("settings.desktop"));
         g.set_computer_hint(t("settings.desktopHint"));
         g.set_login_text(t("settings.launchAtLogin"));
@@ -292,14 +555,13 @@ impl Controller {
         g.set_updates_title(t("settings.updates"));
         g.set_auto_update_text(t("settings.autoUpdateCheck"));
         g.set_auto_update_hint(t("settings.autoUpdateCheckHint"));
-        g.set_check_now_text(t("settings.checkNow"));
         g.set_has_crash(wdm_crash::available());
         g.set_privacy_title(t("settings.privacy"));
         g.set_crash_text(t("settings.crashReports"));
         g.set_crash_hint(t("settings.crashReportsHint"));
         g.set_media_title(t("settings.media"));
         g.set_media_hint(t("settings.mediaHint"));
-        g.set_media_open(s(format!("{}…", lang.t("settings.media"))));
+        self.render_tools(w);
     }
 
     /// The switches that belong to this computer, as they are now.
@@ -445,6 +707,9 @@ pub(super) fn wire_settings(w: &MainWindow) {
     g.on_revert(|| with(Controller::settings_revert));
     g.on_browse(|| with(Controller::settings_browse));
     g.on_desktop(|which, on| with(|c| c.settings_desktop(&which, on)));
+    g.on_window(|i, field, value| with(|c| c.settings_window(i, &field, &value)));
+    g.on_update_now(|install| with(|c| c.update_now(install)));
+    g.on_media(|action, name| with(|c| c.media_action(&action, &name)));
     g.on_web(|view| {
         if view == "browsers" {
             with(|c| c.open_page(super::main_window::Page::Browsers));
