@@ -37,6 +37,8 @@ const RETRY: Duration = Duration::from_secs(3);
 const PROMPT_GAP: Duration = Duration::from_secs(1);
 /// The first update check waits this long after the tray starts.
 const UPDATE_FIRST_DELAY: Duration = Duration::from_secs(90);
+/// When memory goes back after the downloads end: soon, and once more.
+const TRIM_AFTER: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(12)];
 /// How often the update schedule is looked at.
 const UPDATE_TICK: Duration = Duration::from_secs(60 * 60);
 const DAY: u64 = 24 * 60 * 60;
@@ -180,6 +182,8 @@ struct Watch {
     proxy: Proxy,
     language: Language,
     tooltip: String,
+    /// Downloads running, from the last stats.
+    active: u64,
     last_prompt: Option<Instant>,
     /// A prompt window asked for within the gap waits for its end.
     prompt_pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -211,7 +215,12 @@ impl Watch {
             let _ = self.proxy.send_event(UserEvent::Language(tag.to_owned()));
         }
         let n = |k: &str| stats.get(k).and_then(Value::as_u64).unwrap_or(0);
-        let text = i18n::tooltip(&self.language.tag, n("downloadBps"), n("active"));
+        let active = n("active");
+        if self.active > 0 && active == 0 {
+            trim_soon();
+        }
+        self.active = active;
+        let text = i18n::tooltip(&self.language.tag, n("downloadBps"), active);
         if text != self.tooltip {
             self.tooltip.clone_from(&text);
             let _ = self.proxy.send_event(UserEvent::Tooltip(text));
@@ -256,6 +265,7 @@ impl Watch {
                 i18n::Notice::Failed(&name)
             };
             notify::show(&self.language.tag, &notice);
+            trim_soon();
         }
     }
 
@@ -288,6 +298,9 @@ impl Watch {
             if waiting_now(&client).await {
                 self.prompt();
             }
+            // Starting (the menu, the icon, the connection) touched memory
+            // the tray then holds for nothing.
+            trim_soon();
             while let Some(ev) = client.next_event().await {
                 self.on_event(&client, &ev.method, &ev.params).await;
             }
@@ -295,6 +308,17 @@ impl Watch {
             tokio::time::sleep(RETRY).await;
         }
     }
+}
+
+/// After starting, after the downloads end, after a notification: what that
+/// took goes back to the system once things settle.
+fn trim_soon() {
+    tokio::spawn(async {
+        for wait in TRIM_AFTER {
+            tokio::time::sleep(wait).await;
+            wdm_tray::trim::release();
+        }
+    });
 }
 
 fn start_prompt() {
@@ -353,6 +377,7 @@ pub fn start(dir: PathBuf, proxy: Proxy, language: String) {
                 proxy,
                 language: Language::new(language),
                 tooltip: String::new(),
+                active: 0,
                 last_prompt: None,
                 prompt_pending: Default::default(),
             }

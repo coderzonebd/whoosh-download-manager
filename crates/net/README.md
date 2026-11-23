@@ -72,8 +72,8 @@ Crypto is rustls with `ring` (no C toolchain), the same as labserver.
    connection, least-loaded connection first; the default of 1 gives every
    concurrent `open` its own connection (one connection = one congestion
    window and one per-connection server cap), so the engine's connection
-   count means connections. HTTP/2 windows are 16 MiB per stream / 32 MiB per
-   connection with 256 KiB frames; QUIC windows 16 / 32 MiB.
+   count means connections. HTTP/2 windows are 2 MiB per stream (one per stream it
+   may carry for the connection) with 256 KiB frames; QUIC windows 2 / 4 MiB.
 2. *Exact bytes.* Ranged requests need `206` and a `Content-Range` equal to
    the request (else `RangesUnsupported`); a body that ends early is
    `Transient`, a long one is cut off at the end of the range.

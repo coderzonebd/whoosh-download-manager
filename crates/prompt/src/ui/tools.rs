@@ -7,7 +7,7 @@
 //! `media.configure`), as the web UI's SettingsView and MediaToolsSection.
 
 use serde_json::json;
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::ComponentHandle;
 use wdm_proto::media::{MediaTool, MediaToolSource, MediaToolState, MediaToolsStatus};
 use wdm_proto::method;
 use wdm_tray::update_state::{self as us, Kind};
@@ -298,7 +298,7 @@ impl Controller {
                 }
             })
             .collect();
-        g.set_media_tools(ModelRc::new(VecModel::from(rows)));
+        super::put(g.get_media_tools(), rows, |m| g.set_media_tools(m));
         g.set_media_check_text(t("mediaTools.check"));
         g.set_media_checking(self.tools.media_checking);
         g.set_media_last_check(s(status

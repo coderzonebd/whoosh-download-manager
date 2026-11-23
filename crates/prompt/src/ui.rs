@@ -31,6 +31,8 @@ mod tools;
 pub use browsers::Source as BrowserSource;
 pub use main_window::{Page, SHOW_MAIN_FILE};
 
+/// Progress is drawn at most this often (`Controller::render_soon`).
+const PAINT_EVERY: Duration = Duration::from_millis(250);
 /// How long the window stays once nothing is left, so the next item can arrive.
 const CLOSE_DELAY: Duration = Duration::from_millis(400);
 /// After letting go of the prompt lock: how long to still listen before ending.
@@ -160,6 +162,8 @@ pub struct Controller {
     slow_timer: Timer,
     disarm_timer: Timer,
     give_up: Timer,
+    /// Draws progress a little later, once for all that came meanwhile.
+    paint: Timer,
     main: main_window::Main,
     settings_page: settings::Page,
     history: history::Page,
@@ -177,6 +181,31 @@ impl std::fmt::Debug for Controller {
 
 fn s(text: impl AsRef<str>) -> SharedString {
     SharedString::from(text.as_ref())
+}
+
+/// Puts `rows` into a list of the window, keeping the model it already has:
+/// only rows that changed are set. A new model on every update (progress
+/// comes several times a second) made Slint build all of the list's items
+/// again each time, which cost CPU and left the heap fragmented.
+fn put<T: Clone + PartialEq + 'static>(
+    current: ModelRc<T>,
+    rows: Vec<T>,
+    set: impl FnOnce(ModelRc<T>),
+) {
+    use slint::Model as _;
+    if let Some(list) = current.as_any().downcast_ref::<VecModel<T>>() {
+        if list.row_count() == rows.len() {
+            for (i, row) in rows.into_iter().enumerate() {
+                if list.row_data(i).as_ref() != Some(&row) {
+                    list.set_row_data(i, row);
+                }
+            }
+        } else {
+            list.set_vec(rows);
+        }
+        return;
+    }
+    set(ModelRc::new(VecModel::from(rows)));
 }
 
 fn strings(list: Vec<String>) -> ModelRc<SharedString> {
@@ -264,6 +293,7 @@ impl Controller {
             slow_timer: Timer::default(),
             disarm_timer: Timer::default(),
             give_up: Timer::default(),
+            paint: Timer::default(),
             main: main_window::Main::default(),
             settings_page: settings::Page::default(),
             history: history::Page::default(),
@@ -334,8 +364,8 @@ impl Controller {
     }
 
     pub fn on_msg(&mut self, msg: Msg) {
-        let progress_only = matches!(&msg, Msg::Event(m, _) if m == wdm_proto::event::DOWNLOAD_PROGRESS)
-            || matches!(msg, Msg::Reply(..) | Msg::PlaylistProgress(..));
+        let progress = matches!(&msg, Msg::Event(m, _) if m == wdm_proto::event::DOWNLOAD_PROGRESS);
+        let progress_only = progress || matches!(msg, Msg::Reply(..) | Msg::PlaylistProgress(..));
         if !progress_only {
             self.main.restructure();
         }
@@ -394,7 +424,24 @@ impl Controller {
                 }
             }
         }
-        self.render();
+        if progress {
+            self.render_soon();
+        } else {
+            self.paint.stop();
+            self.render();
+        }
+    }
+
+    /// Progress of every running download comes as its own message, several
+    /// a second: the windows are drawn at most every `PAINT_EVERY` for them,
+    /// not once per message.
+    fn render_soon(&self) {
+        if self.paint.running() {
+            return;
+        }
+        self.paint.start(TimerMode::SingleShot, PAINT_EVERY, || {
+            with(Controller::render)
+        });
     }
 
     fn on_reply(&mut self, tag: Tag, answer: Result<Value, String>) {
@@ -796,8 +843,8 @@ impl Controller {
             trail.reverse();
             std::mem::swap(&mut lead, &mut trail);
         }
-        ui.set_lead(ModelRc::new(VecModel::from(lead)));
-        ui.set_trail(ModelRc::new(VecModel::from(trail)));
+        put(ui.get_lead(), lead, |m| ui.set_lead(m));
+        put(ui.get_trail(), trail, |m| ui.set_trail(m));
     }
 
     /// The labels of the file's fields (confirm and add).
@@ -1099,7 +1146,7 @@ impl Controller {
                     })
                     .collect()
             };
-            ui.set_subs(ModelRc::new(VecModel::from(subs)));
+            put(ui.get_subs(), subs, |m| ui.set_subs(m));
             ui.set_subs_label(s(lang.t("media.subtitles")));
             ui.set_subs_hint(s(lang.t("media.subtitlesHint")));
             if listing {
@@ -1296,7 +1343,7 @@ impl Controller {
             ui.set_f_waiting(false);
             ui.set_f_hint(s(""));
         }
-        ui.set_facts(ModelRc::new(VecModel::from(facts)));
+        put(ui.get_facts(), facts, |m| ui.set_facts(m));
         ui.set_busy(f.cancelling);
         let t = |k: &str| lang.t(k);
         let (lead, trail) = if !ended {

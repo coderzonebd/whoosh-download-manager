@@ -72,7 +72,9 @@ pub async fn probe(
 impl Client {
     pub async fn connect(port: u16, token: &str, name: &str) -> Result<Self, ClientError> {
         let url = format!("ws://127.0.0.1:{port}{RPC_PATH}");
-        let (ws, _) = tokio_tungstenite::connect_async_with_config(url, None, true).await?;
+        let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+            .read_buffer_size(wdm_proto::RPC_READ_BUFFER);
+        let (ws, _) = tokio_tungstenite::connect_async_with_config(url, Some(config), true).await?;
         let mut client = Self {
             ws,
             next_id: 1,

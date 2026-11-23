@@ -30,7 +30,13 @@ pub use generated::*;
 
 use wdm_tray::locks;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
     let Some(dir) = wdm_tray::data_dir() else {
         eprintln!("wdm-prompt: no data directory");
         std::process::exit(1);
@@ -80,6 +86,23 @@ fn main() {
             }
         });
     }
+    // Profiling: `DHAT_SECONDS=20` closes the program after that long, so
+    // the profile is written.
+    #[cfg(feature = "dhat-heap")]
+    let _quit = std::env::var("DHAT_SECONDS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|secs| {
+            let t = slint::Timer::default();
+            t.start(
+                slint::TimerMode::SingleShot,
+                std::time::Duration::from_secs(secs),
+                || {
+                    let _ = slint::quit_event_loop();
+                },
+            );
+            t
+        });
     if let Err(err) = slint::run_event_loop_until_quit() {
         eprintln!("wdm-prompt: {err}");
     }

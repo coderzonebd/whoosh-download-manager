@@ -760,7 +760,10 @@ fn id_key(id: &Value) -> String {
 async fn connect(cfg: &Config) -> Result<Box<Daemon>, ConnectError> {
     let info = read_runtime(&cfg.runtime_file)?;
     let url = format!("ws://127.0.0.1:{}{RPC_PATH}", info.port);
-    let (mut ws, _response) = tokio_tungstenite::connect_async(url).await?;
+    let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+        .read_buffer_size(wdm_proto::RPC_READ_BUFFER);
+    let (mut ws, _response) =
+        tokio_tungstenite::connect_async_with_config(url, Some(config), false).await?;
 
     let nonce = wdm_proto::auth::new_nonce().map_err(|e| ConnectError::Task(e.to_string()))?;
     let token = info.token;

@@ -501,6 +501,8 @@ fn the_prompt_window_from_start_to_end() {
 
     // Progress updates a row in place, without reordering.
     h.event(event::DOWNLOAD_PROGRESS, json!({"items": [{"id": "v", "downloadedBytes": 120_000_000, "totalBytes": 160_000_000, "speedBps": 1, "connections": 8}]}));
+    // Progress is drawn a moment later, once for all that came meanwhile.
+    h.wait(Duration::from_millis(300));
     let v = main.get_rows().iter().find(|r| r.id == "v").unwrap();
     assert_eq!(v.percent, "75.0%");
 

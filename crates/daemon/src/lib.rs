@@ -33,6 +33,7 @@ pub mod config;
 pub mod engine;
 mod limit;
 pub mod logging;
+mod memory;
 pub mod migrate;
 pub mod mock;
 mod offers;

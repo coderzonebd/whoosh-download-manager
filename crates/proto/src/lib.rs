@@ -42,6 +42,13 @@ pub const DEFAULT_PORT: u16 = 47210;
 /// WebSocket path on the daemon.
 pub const RPC_PATH: &str = "/rpc";
 
+/// Read buffer of a client's RPC WebSocket. The library's default, 128 KiB,
+/// is allocated up front for every connection (the window, the tray, the
+/// browser host and the CLI each hold one), for messages that are mostly a
+/// few hundred bytes; larger ones are still read whole, in more steps. The
+/// daemon's side keeps the default (see its server).
+pub const RPC_READ_BUFFER: usize = 8 << 10;
+
 /// JSON-RPC method names.
 pub mod method {
     pub const SESSION_HELLO: &str = "session.hello";
