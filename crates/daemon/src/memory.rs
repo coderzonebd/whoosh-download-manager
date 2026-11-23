@@ -6,7 +6,11 @@
 //! before, 12.9 MB after, docs/bench/apps-vs-idm.ps1). When the network has
 //! been quiet for a moment, the free space goes back to the system: the
 //! process heap is compacted on Windows (`HeapCompact`), glibc trims its
-//! arenas on Linux (`malloc_trim`).
+//! arenas on Linux (`malloc_trim`). On Windows the pages it no longer
+//! touches also leave RAM (`SetProcessWorkingSetSize(-1, -1)`, what Windows
+//! does to an app whose window is minimized; the daemon has no window, so
+//! it does it itself); they come back on use. Also once shortly after
+//! start, for what starting up touched.
 #![allow(unsafe_code)]
 
 use std::sync::Arc;
@@ -20,10 +24,13 @@ pub fn release() {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Memory::{GetProcessHeap, HeapCompact};
-        // SAFETY: the process heap handle is always valid; HeapCompact only
-        // coalesces and decommits free blocks.
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, SetProcessWorkingSetSize};
+        // SAFETY: the process heap and current-process handles are always
+        // valid; HeapCompact only coalesces and decommits free blocks, and
+        // (-1, -1) asks Windows to trim this process's working set.
         unsafe {
             HeapCompact(GetProcessHeap(), 0);
+            SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
         }
     }
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -43,7 +50,8 @@ pub fn release() {
 /// back each time it has dropped to zero and stayed there for a moment.
 pub fn watch(working: Arc<dyn Fn() -> usize + Send + Sync>) {
     tokio::spawn(async move {
-        let mut was_busy = false;
+        // As if busy: the first quiet look also gives back what starting took.
+        let mut was_busy = true;
         let mut tick = tokio::time::interval(LOOK);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {

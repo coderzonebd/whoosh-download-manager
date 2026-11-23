@@ -261,6 +261,8 @@ pub(crate) async fn supervise(
     use futures::FutureExt;
     let id = spec.record.id.clone();
     let generation = spec.generation;
+    // Counted among the running downloads that share the connections.
+    let _running = Working::new(&inner.running).0;
     let ran = std::panic::AssertUnwindSafe(run(inner.clone(), spec, stop))
         .catch_unwind()
         .await;
@@ -750,7 +752,7 @@ impl Driver {
             }
             self.tuner = Some(Tuner::new(
                 &self.t,
-                self.inner.max_connections(),
+                self.inner.connections_now(),
                 self.profile.as_ref(),
                 self.connections,
             ));
@@ -2256,7 +2258,7 @@ impl Driver {
         }
         let streaming = self.streaming_owners();
         let work_left: u64 = self.segs.iter().map(|s| s.snapshot().remaining()).sum();
-        let max = self.inner.max_connections();
+        let max = self.inner.connections_now();
         let recv = self.recv_total;
         let ttfb = self.median_ttfb();
         let Some(tuner) = self.tuner.as_mut() else {

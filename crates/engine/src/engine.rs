@@ -139,6 +139,22 @@ struct St {
     next_action: u64,
 }
 
+/// Connections all running downloads share. Each gets the setting
+/// (`max_connections_per_download`) until that would pass this, then an
+/// equal share (eight downloads: eight each, as IDM opens): beyond it more
+/// connections add memory and server load, not speed, since they share
+/// one link.
+pub(crate) const TOTAL_CONNECTIONS: usize = 64;
+/// No running download gets fewer.
+const MIN_SHARE: u16 = 2;
+
+/// The connections one of `running` downloads may use, `setting` at most.
+pub(crate) fn connection_share(setting: u16, running: usize) -> u16 {
+    let share = TOTAL_CONNECTIONS / running.max(1);
+    let share = u16::try_from(share).unwrap_or(u16::MAX).max(MIN_SHARE);
+    setting.min(share).max(1)
+}
+
 pub(crate) struct Inner {
     pub(crate) deps: EngineDeps,
     pub(crate) config: EngineConfig,
@@ -155,6 +171,8 @@ pub(crate) struct Inner {
     /// Connections working right now, across every download: their write
     /// buffers share one budget (`run::coalesce_for`).
     pub(crate) live_workers: Arc<std::sync::atomic::AtomicUsize>,
+    /// Downloads running right now: they share `TOTAL_CONNECTIONS`.
+    pub(crate) running: Arc<std::sync::atomic::AtomicUsize>,
     shutting_down: AtomicBool,
     closed: AtomicBool,
 }
@@ -252,6 +270,7 @@ impl Engine {
             limiter: Arc::new(RateLimiter::new(speed_limit)),
             max_conns: AtomicU32::new(settings.max_connections_per_download),
             live_workers: Arc::default(),
+            running: Arc::default(),
             st: Mutex::new(St {
                 settings,
                 downloads,
@@ -310,6 +329,12 @@ impl Inner {
         self.max_conns
             .load(Ordering::Relaxed)
             .clamp(1, u32::from(u16::MAX)) as u16
+    }
+
+    /// A running download's share of connections: the setting, or less
+    /// while many downloads run at once (`connection_share`).
+    pub(crate) fn connections_now(&self) -> u16 {
+        connection_share(self.max_connections(), self.running.load(Ordering::Relaxed))
     }
 
     /// Reserve a unique name for a running download (a probe improved
@@ -1715,5 +1740,20 @@ mod tests {
         assert_eq!(eta(95, Some(100), 10), Some(1));
         assert_eq!(eta(0, None, 10), None);
         assert_eq!(eta(0, Some(100), 0), None);
+    }
+}
+
+#[cfg(test)]
+mod share_tests {
+    use super::connection_share;
+
+    #[test]
+    fn running_downloads_share_the_connections() {
+        assert_eq!(connection_share(16, 1), 16);
+        assert_eq!(connection_share(16, 4), 16);
+        assert_eq!(connection_share(16, 8), 8);
+        assert_eq!(connection_share(16, 40), 2);
+        assert_eq!(connection_share(4, 2), 4);
+        assert_eq!(connection_share(1, 100), 1);
     }
 }
