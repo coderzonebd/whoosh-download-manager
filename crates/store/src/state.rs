@@ -154,7 +154,7 @@ impl SqliteStateStore {
         let thread_stats = stats.clone();
         std::thread::Builder::new()
             .name("wdm-store-sqlite".into())
-            .spawn(move || match open_db(&p) {
+            .spawn(move || match open_db_patiently(&p) {
                 Ok(opened) => {
                     let _ = ready_tx.send(Ok(()));
                     let durability = Durability::new(&p, &opened);
@@ -194,6 +194,27 @@ impl SqliteStateStore {
             .send(Request { op, reply })
             .map_err(|_| closed_error())?;
         rx.await.map_err(|_| closed_error())?
+    }
+}
+
+/// `open_db`, again for a moment while Windows refuses the file: a store
+/// just dropped (which closes without waiting) or a daemon just ended may
+/// still be closing it, and Windows answers "access denied" until it has.
+fn open_db_patiently(path: &Path) -> io::Result<Opened> {
+    const TRIES: u32 = 20;
+    let mut tries = 1;
+    loop {
+        match open_db(path) {
+            Err(e)
+                if cfg!(windows)
+                    && e.kind() == io::ErrorKind::PermissionDenied
+                    && tries < TRIES =>
+            {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            other => return other,
+        }
     }
 }
 
