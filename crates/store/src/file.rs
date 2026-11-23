@@ -42,10 +42,12 @@ use crate::{blocking, sys};
 /// Tuning for [`FileStorageProvider`].
 #[derive(Debug, Clone)]
 pub struct StorageOptions {
-    /// Bytes accepted by `write_at` but not yet written to the file, per
-    /// file. When it is full, `write_at` waits: this is the backpressure
-    /// between a fast network and a slow disk. Default 16 MiB; clamped to
-    /// at least 4 KiB.
+    /// Bytes accepted by `write_at` but not yet written, for all files of a
+    /// provider together (one file may use all of it). When it is full,
+    /// `write_at` waits: this is the backpressure between a fast network and
+    /// a slow disk. Default 16 MiB; clamped to at least 4 KiB. (It was per
+    /// file: eight downloads faster than the disk kept ~30 MB queued where
+    /// IDM keeps ~9 MB in all, docs/bench/apps-vs-idm.ps1.)
     pub buffer_bytes: usize,
     /// Linux: after each successful `flush`, drop the file's (now clean)
     /// pages from the page cache (`posix_fadvise(DONTNEED)`), so a large
@@ -99,10 +101,14 @@ const INLINE_BACKOFF_MAX: Duration = Duration::from_secs(2);
 ///   the file, and only then deletes it. So once `remove` has resolved, no
 ///   write through an old handle can reach a file opened at that path later.
 ///   `open` and `remove` of the same path must not run concurrently.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FileStorageProvider {
     opts: StorageOptions,
     open: Mutex<HashMap<PathBuf, Entry>>,
+    /// `StorageOptions::buffer_bytes` for all its files together; never
+    /// closed, and every permit is held by a queued write, so it comes back
+    /// when that write is written or dropped.
+    total: Arc<Semaphore>,
 }
 
 #[derive(Debug)]
@@ -136,11 +142,19 @@ impl Entry {
     }
 }
 
+impl Default for FileStorageProvider {
+    fn default() -> Self {
+        Self::new(StorageOptions::default())
+    }
+}
+
 impl FileStorageProvider {
     pub fn new(opts: StorageOptions) -> Self {
+        let total = Arc::new(Semaphore::new(buffer_cap(&opts) as usize));
         Self {
             opts,
             open: Mutex::default(),
+            total,
         }
     }
 
@@ -175,7 +189,8 @@ impl FileStorageProvider {
                 move || open_file(&p)
             })
             .await?;
-            let storage = FileStorage::start(key.clone(), file, dirs, &self.opts)?;
+            let storage =
+                FileStorage::start(key.clone(), file, dirs, &self.opts, self.total.clone())?;
             storage
                 .shared
                 .add_pending_dirs(std::mem::take(&mut carried));
@@ -364,6 +379,9 @@ struct PendingWrite {
     offset: u64,
     data: Bytes,
     permits: u32,
+    /// Its share of the provider's budget, given back when it is dropped
+    /// (written, or discarded by a dead storage).
+    _total: tokio::sync::OwnedSemaphorePermit,
 }
 
 impl PendingWrite {
@@ -377,6 +395,8 @@ impl PendingWrite {
 struct Shared {
     buffer: Semaphore,
     cap: u32,
+    /// The provider's budget for all files ([`FileStorageProvider::total`]).
+    total: Arc<Semaphore>,
     /// [`StorageOptions::write_inline`].
     inline: bool,
     /// Held for an inline write, so at most one runtime thread per file is
@@ -595,20 +615,26 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// `StorageOptions::buffer_bytes` as permits.
+fn buffer_cap(opts: &StorageOptions) -> u32 {
+    opts.buffer_bytes
+        .clamp(4096, (u32::MAX as usize).min(Semaphore::MAX_PERMITS)) as u32
+}
+
 impl FileStorage {
     fn start(
         path: PathBuf,
         file: File,
         new_dirs: Vec<PathBuf>,
         opts: &StorageOptions,
+        total: Arc<Semaphore>,
     ) -> io::Result<Arc<Self>> {
-        let cap = opts
-            .buffer_bytes
-            .clamp(4096, (u32::MAX as usize).min(Semaphore::MAX_PERMITS)) as u32;
+        let cap = buffer_cap(opts);
         let file = Arc::new(file);
         let shared = Arc::new(Shared {
             buffer: Semaphore::new(cap as usize),
             cap,
+            total,
             inline: opts.write_inline,
             gate: tokio::sync::Mutex::new(Gate {
                 file: Some(file.clone()),
@@ -730,6 +756,14 @@ impl Storage for FileStorage {
                 .await
                 .map_err(|_| self.shared.error().unwrap_or_else(finished_error))?
                 .forget();
+            // Then its share of what all files may keep queued.
+            let total = match self.shared.total.clone().acquire_many_owned(permits).await {
+                Ok(p) => p,
+                Err(_) => {
+                    self.shared.buffer.add_permits(permits as usize);
+                    return Err(self.shared.error().unwrap_or_else(finished_error));
+                }
+            };
             let range = (offset, offset + data.len() as u64);
             if self.shared.inline {
                 // Before it is sent, so no inline write can overtake it.
@@ -740,6 +774,7 @@ impl Storage for FileStorage {
                     offset,
                     data,
                     permits,
+                    _total: total,
                 }))
             });
             if queued.is_err() {
@@ -1477,6 +1512,37 @@ mod tests {
 
     fn inline_provider() -> FileStorageProvider {
         FileStorageProvider::new(StorageOptions::default())
+    }
+
+    #[tokio::test]
+    async fn files_share_one_buffer() {
+        let d = tempfile::tempdir().unwrap();
+        let p = provider(64 * 1024);
+        let a = p.open_storage(&d.path().join("a")).await.unwrap();
+        let b = p.open_storage(&d.path().join("b")).await.unwrap();
+        a.pause(true);
+        // One file may take the whole buffer…
+        for i in 0..4u64 {
+            a.write_at(i * 16384, Bytes::from(vec![1u8; 16384]))
+                .await
+                .unwrap();
+        }
+        assert_eq!(p.total.available_permits(), 0);
+        // …and then another waits for it, though its own share is empty.
+        let other = b.write_at(0, Bytes::from(vec![2u8; 16384]));
+        let mut other = std::pin::pin!(other);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut other)
+                .await
+                .is_err(),
+            "a second file went past the shared budget"
+        );
+        a.pause(false);
+        other.await.unwrap();
+        a.flush().await.unwrap();
+        b.flush().await.unwrap();
+        // Every permit came back once the writes were written.
+        assert_eq!(p.total.available_permits(), 64 * 1024);
     }
 
     #[tokio::test]
