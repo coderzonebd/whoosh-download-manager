@@ -31,6 +31,8 @@ mod tools;
 pub use browsers::Source as BrowserSource;
 pub use main_window::{Page, SHOW_MAIN_FILE};
 
+/// Progress is drawn at most this often (`Controller::render_soon`).
+const PAINT_EVERY: Duration = Duration::from_millis(250);
 /// How long the window stays once nothing is left, so the next item can arrive.
 const CLOSE_DELAY: Duration = Duration::from_millis(400);
 /// After letting go of the prompt lock: how long to still listen before ending.
@@ -160,6 +162,8 @@ pub struct Controller {
     slow_timer: Timer,
     disarm_timer: Timer,
     give_up: Timer,
+    /// Draws progress a little later, once for all that came meanwhile.
+    paint: Timer,
     main: main_window::Main,
     settings_page: settings::Page,
     history: history::Page,
@@ -289,6 +293,7 @@ impl Controller {
             slow_timer: Timer::default(),
             disarm_timer: Timer::default(),
             give_up: Timer::default(),
+            paint: Timer::default(),
             main: main_window::Main::default(),
             settings_page: settings::Page::default(),
             history: history::Page::default(),
@@ -359,8 +364,8 @@ impl Controller {
     }
 
     pub fn on_msg(&mut self, msg: Msg) {
-        let progress_only = matches!(&msg, Msg::Event(m, _) if m == wdm_proto::event::DOWNLOAD_PROGRESS)
-            || matches!(msg, Msg::Reply(..) | Msg::PlaylistProgress(..));
+        let progress = matches!(&msg, Msg::Event(m, _) if m == wdm_proto::event::DOWNLOAD_PROGRESS);
+        let progress_only = progress || matches!(msg, Msg::Reply(..) | Msg::PlaylistProgress(..));
         if !progress_only {
             self.main.restructure();
         }
@@ -419,7 +424,23 @@ impl Controller {
                 }
             }
         }
-        self.render();
+        if progress {
+            self.render_soon();
+        } else {
+            self.paint.stop();
+            self.render();
+        }
+    }
+
+    /// Progress of every running download comes as its own message, several
+    /// a second: the windows are drawn at most every `PAINT_EVERY` for them,
+    /// not once per message.
+    fn render_soon(&self) {
+        if self.paint.running() {
+            return;
+        }
+        self.paint
+            .start(TimerMode::SingleShot, PAINT_EVERY, || with(Controller::render));
     }
 
     fn on_reply(&mut self, tag: Tag, answer: Result<Value, String>) {
