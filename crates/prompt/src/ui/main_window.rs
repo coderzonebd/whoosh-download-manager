@@ -26,6 +26,9 @@ use crate::{Btn, Column, Fact, MainWindow, NavItem, Row, Theme};
 const POLL: Duration = Duration::from_millis(300);
 /// The request file a second start leaves in the data directory.
 pub const SHOW_MAIN_FILE: &str = "show-main";
+/// After the windows open or close, or the downloads end: when the memory
+/// that took is given back (`wdm_tray::trim`), as the tray does.
+const SETTLE_AFTER: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(9)];
 
 const GROUPS: [&str; 6] = [
     "all",
@@ -131,6 +134,10 @@ pub struct Main {
     page: Page,
     poll: Timer,
     next_local: u32,
+    /// Gives memory back once things settle (`SETTLE_AFTER`).
+    settle: Rc<Timer>,
+    /// Something was downloading at the last poll.
+    was_busy: bool,
 }
 
 impl Default for Main {
@@ -152,6 +159,8 @@ impl Default for Main {
             page: Page::Downloads,
             poll: Timer::default(),
             next_local: 0,
+            settle: Rc::new(Timer::default()),
+            was_busy: false,
         }
     }
 }
@@ -205,6 +214,19 @@ impl std::fmt::Debug for Main {
     }
 }
 
+fn settle_step(timer: &Rc<Timer>, step: usize) {
+    let Some(&wait) = SETTLE_AFTER.get(step) else {
+        return;
+    };
+    let next = Rc::downgrade(timer);
+    timer.start(TimerMode::SingleShot, wait, move || {
+        wdm_tray::trim::release();
+        if let Some(timer) = next.upgrade() {
+            settle_step(&timer, step + 1);
+        }
+    });
+}
+
 impl Main {
     pub fn shown(&self) -> bool {
         self.window.is_some()
@@ -239,6 +261,14 @@ impl Controller {
         self.main.poll.start(TimerMode::Repeated, POLL, || {
             super::with(|c| {
                 c.poll_update();
+                let busy = c
+                    .model
+                    .downloads
+                    .values()
+                    .any(|d| model::pausable(d.state));
+                if std::mem::replace(&mut c.main.was_busy, busy) && !busy {
+                    c.settle_soon();
+                }
                 let file = c.dir.join(SHOW_MAIN_FILE);
                 if let Ok(page) = std::fs::read_to_string(&file) {
                     let _ = std::fs::remove_file(&file);
@@ -281,6 +311,15 @@ impl Controller {
         if let Some(w) = &self.main.window {
             let _ = w.show();
         }
+        self.settle_soon();
+    }
+
+    /// Opening a window, a burst of progress, a notification: the memory
+    /// that took and no longer uses goes back a little later, twice (the
+    /// first pass often finds the last paint still settling). Pages the
+    /// window touches again come back on use.
+    pub(super) fn settle_soon(&self) {
+        settle_step(&self.main.settle, 0);
     }
 
     /// The main window's close button: it goes (and its memory with it);
@@ -288,6 +327,7 @@ impl Controller {
     fn close_main(&mut self) {
         self.main.hide();
         self.main.removing = None;
+        self.settle_soon();
         let prefs = wdm_tray::prefs::load();
         let tray = wdm_tray::locks::held(&self.dir, wdm_tray::locks::TRAY);
         if !prefs.close_to_tray && tray {
