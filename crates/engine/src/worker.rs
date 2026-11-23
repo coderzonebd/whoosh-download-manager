@@ -88,6 +88,13 @@ pub(crate) async fn work(job: Job) -> (WorkerId, Exit) {
 /// exits (finished, failed, cancelled or lost), so a range is never handed
 /// over with a hole. If the task is aborted instead (the whole run is being
 /// stopped) they are simply never journalled and are fetched again.
+/// A chunk at least this long is written as it is, not gathered: on a fast
+/// link the HTTP/1.1 client hands over full 32 KiB reads, and copying them
+/// into a second buffer only doubled the memory (eight downloads: ~7 MB of
+/// gather buffers). Gathering stays for smaller chunks (TLS records of at
+/// most 16 KiB, the short reads of slow links), where it saves most writes.
+const DIRECT_WRITE: usize = 16 << 10;
+
 struct Gather {
     buf: BytesMut,
     /// File offset of `buf[0]`.
@@ -278,7 +285,7 @@ async fn pump(job: Job) -> Exit {
                         }
                     }
                 }
-                if coalesce == 0 || (gather.claims == 0 && n >= coalesce) {
+                if coalesce == 0 || (gather.claims == 0 && n >= coalesce.min(DIRECT_WRITE)) {
                     // Big enough on its own: no copy.
                     let data = if from == 0 && to == chunk.len() {
                         chunk
