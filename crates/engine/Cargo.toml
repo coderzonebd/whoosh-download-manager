@@ -34,7 +34,7 @@ tracing-subscriber.workspace = true
 wdm-core = { workspace = true, features = ["testing"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31", features = ["resource"] }
+nix = { version = "0.32", features = ["resource"] }
 
 [lints]
 workspace = true
