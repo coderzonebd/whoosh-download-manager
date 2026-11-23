@@ -127,6 +127,8 @@ pub struct Main {
     rows: Rc<VecModel<Row>>,
     removing: Option<Vec<String>>,
     pub connected: bool,
+    /// Settings instead of the downloads.
+    settings: bool,
     poll: Timer,
     next_local: u32,
 }
@@ -147,6 +149,7 @@ impl Default for Main {
             rows: Rc::new(VecModel::default()),
             removing: None,
             connected: false,
+            settings: false,
             poll: Timer::default(),
             next_local: 0,
         }
@@ -182,6 +185,10 @@ impl Main {
 }
 
 impl Controller {
+    pub(super) fn main_handle(&self) -> Option<MainWindow> {
+        self.main.window.as_ref().map(ComponentHandle::clone_strong)
+    }
+
     #[cfg(test)]
     pub fn main_window(&self) -> Option<MainWindow> {
         self.main.window.as_ref().map(ComponentHandle::clone_strong)
@@ -218,6 +225,7 @@ impl Controller {
                 }
             };
             wire_main(&window);
+            super::settings::wire_settings(&window);
             window.set_rows(ModelRc::from(self.main.rows.clone()));
             self.main.window = Some(window);
             self.main.dirty = true;
@@ -351,7 +359,11 @@ impl Controller {
 
     fn nav(&self) -> (Vec<NavItem>, Vec<NavItem>) {
         let lang = &self.lang;
-        let current = self.main.view.id();
+        let current = if self.main.settings {
+            "page:settings".to_owned()
+        } else {
+            self.main.view.id()
+        };
         let all: Vec<&DownloadSummary> = self.model.downloads.values().collect();
         let count = |n: usize| {
             if n == 0 {
@@ -437,7 +449,7 @@ impl Controller {
                 "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3.2 2",
             ),
             item(
-                "web:settings".into(),
+                "page:settings".into(),
                 lang.t("nav.settings"),
                 0,
                 "M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM11 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM19 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
@@ -510,6 +522,10 @@ impl Controller {
             model.set_vec(rows);
         }
 
+        w.set_page(i32::from(self.main.settings));
+        if self.main.settings {
+            self.render_settings(&w);
+        }
         let lang = &self.lang;
         let t = |k: &str| s(lang.t(k));
         let (nav, more) = self.nav();
@@ -744,8 +760,14 @@ impl Controller {
             }
             return;
         }
+        if id == "page:settings" {
+            self.main.settings = true;
+            self.open_settings();
+            return;
+        }
         if let Some(view) = View::parse(id) {
             self.main.view = view;
+            self.main.settings = false;
             self.main.dirty = true;
         }
         self.render_main();

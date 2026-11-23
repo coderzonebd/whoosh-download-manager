@@ -12,8 +12,16 @@ web view. GPL-3.0-or-later, like the app.
   Shift, Ctrl+A; right click for Open, Open folder, Resume, Pause, Copy
   address, Remove; double click opens a finished file), the details of the
   selected download and the status bar. *Add* opens the add dialog in the
-  prompt window. *Settings*, *History* and *Connect your browser* still open
-  the web window (`wdm-desktop --view <page>`). About 25 MB with the window
+  prompt window.
+- **Settings** in the main window (`src/ui/settings.rs`): language, theme,
+  the default folder, sorting into folders, downloads at once, connections
+  per download, the speed limit and asking before browser downloads are a
+  draft saved with *Save* (`settings.set`, keeping what the page does not
+  show); launch at login (the same login item as the app's), keeping WDM in
+  the tray, automatic updates and crash reports apply at once. The speed
+  schedule, checking for an update now, the media tools, *History* and
+  *Connect your browser* still open the web window (`wdm-desktop --view
+  <page>`). About 25 MB with the window
   open; closing it ends the process unless the prompt window has something to
   show, and with "keep WDM in the tray" off it quits WDM as the tray's Quit
   does.

@@ -54,7 +54,8 @@ GPL-3.0-or-later.
   `wdm-desktop` does its start-up work (the tray, the media tools' place, the
   browsers' link, launch at login) with no window and hands over to it. The
   web window here opens for what the native one does not have yet:
-  *Settings*, *History*, *Connect your browser* (`--view <page>`, also passed
+  the speed schedule, the update check and the media tools in *Settings*,
+  *History*, *Connect your browser* (`--view <page>`, also passed
   to a running app as the `wdm-view` event), `whoosh://` links, and the first
   start. `WDM_WEB_MAIN=1` keeps the web main window.
 - **Prompt window** (`wdm-prompt`, [`crates/prompt`](../../crates/prompt/README.md)).

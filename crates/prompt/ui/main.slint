@@ -5,8 +5,8 @@
 // App.svelte. Rust (src/main_window.rs) fills in every text, already
 // translated, and every list in reading order for the language.
 
-import { CheckBox, LineEdit, ListView, Palette } from "std-widgets.slint";
-import { Theme, Icons, Btn, Fact, Icon, Tile, Button, Hint } from "common.slint";
+import { CheckBox, ComboBox, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
+import { Theme, Icons, Btn, Fact, Icon, Tile, Button, Hint, Label } from "common.slint";
 
 // An entry of the library: a section title (`header`), or a view with its count.
 export struct NavItem {
@@ -306,6 +306,293 @@ component DetailPanel inherits Rectangle {
     }
 }
 
+// A titled group of settings.
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: 10px;
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: 15px;
+        font-weight: 600;
+        horizontal-alignment: Theme.start;
+    }
+    Rectangle {
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.surface;
+        VerticalLayout {
+            padding: 16px;
+            spacing: 14px;
+            @children
+        }
+    }
+}
+
+// A check box with its explanation under it.
+component Toggle inherits VerticalLayout {
+    in property <string> text;
+    in property <string> hint;
+    in-out property <bool> checked;
+    callback toggled(bool);
+    spacing: 2px;
+    CheckBox {
+        text: root.text;
+        checked <=> root.checked;
+        toggled => { root.toggled(self.checked); }
+    }
+    if root.hint != "": Hint { text: root.hint; }
+}
+
+// A labelled text field with a hint, or an error in its place.
+component Field inherits VerticalLayout {
+    in property <string> label;
+    in property <string> hint;
+    in property <string> error;
+    in-out property <string> text;
+    in property <InputType> input-type: InputType.text;
+    callback edited(string);
+    spacing: 6px;
+    Label { text: root.label; }
+    LineEdit {
+        text <=> root.text;
+        input-type: root.input-type;
+        horizontal-alignment: Theme.rtl && root.input-type == InputType.text ? right : left;
+        edited(t) => { root.edited(t); }
+    }
+    if root.error != "": Text { text: root.error; color: Theme.danger; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+    if root.error == "" && root.hint != "": Hint { text: root.hint; }
+}
+
+// What the Settings page shows and what it reports (src/ui/settings.rs).
+export global SettingsData {
+    in-out property <string> title;
+    in-out property <string> unsaved-text;
+    in-out property <bool> dirty;
+    in-out property <bool> valid;
+    in-out property <string> save-text;
+    in-out property <string> revert-text;
+    in-out property <string> status-text;
+    in-out property <bool> status-error;
+
+    in-out property <string> appearance-title;
+    in-out property <string> language-label;
+    in-out property <[string]> languages;
+    in-out property <int> language-index;
+    in-out property <string> language-note;
+    in-out property <string> theme-label;
+    in-out property <[string]> themes;
+    in-out property <int> theme-index;
+
+    in-out property <string> downloads-title;
+    in-out property <string> folder-label;
+    in-out property <string> folder;
+    in-out property <string> folder-error;
+    in-out property <string> browse-text;
+    in-out property <string> organize-text;
+    in-out property <string> organize-hint;
+    in-out property <bool> organize;
+    in-out property <string> active-label;
+    in-out property <string> active-hint;
+    in-out property <string> active;
+    in-out property <string> active-error;
+    in-out property <string> connections-label;
+    in-out property <string> connections-hint;
+    in-out property <string> connections;
+    in-out property <string> connections-error;
+
+    in-out property <string> speed-title;
+    in-out property <string> limit-text;
+    in-out property <bool> limit-on;
+    in-out property <string> limit-label;
+    in-out property <string> limit;
+    in-out property <string> limit-error;
+    in-out property <[string]> units;
+    in-out property <int> unit-index;
+    in-out property <string> schedule-text;
+    in-out property <string> schedule-hint;
+
+    in-out property <string> computer-title;
+    in-out property <string> computer-hint;
+    in-out property <bool> has-login;
+    in-out property <string> login-text;
+    in-out property <string> login-hint;
+    in-out property <bool> login;
+    in-out property <string> tray-text;
+    in-out property <string> tray-hint;
+    in-out property <bool> tray;
+
+    in-out property <string> browsers-title;
+    in-out property <bool> has-confirm;
+    in-out property <string> confirm-text;
+    in-out property <string> confirm-hint;
+    in-out property <bool> confirm;
+    in-out property <string> browsers-hint;
+    in-out property <string> browsers-open;
+
+    in-out property <string> updates-title;
+    in-out property <string> auto-update-text;
+    in-out property <string> auto-update-hint;
+    in-out property <bool> auto-update;
+    in-out property <string> check-now-text;
+
+    in-out property <bool> has-crash;
+    in-out property <string> privacy-title;
+    in-out property <string> crash-text;
+    in-out property <string> crash-hint;
+    in-out property <bool> crash;
+
+    in-out property <string> media-title;
+    in-out property <string> media-hint;
+    in-out property <string> media-open;
+
+    callback changed();
+    callback browse();
+    callback save();
+    callback revert();
+    callback desktop(string, bool);
+    callback web(string);
+
+}
+
+// Settings (the web UI's SettingsView): what the daemon keeps is saved
+// with Save; what belongs to this computer applies at once.
+component SettingsPage inherits Rectangle {
+    background: Theme.sunken;
+    VerticalLayout {
+        // The header with Save and Revert.
+        Rectangle {
+            height: 58px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 10px;
+                if !Theme.rtl: Text { text: SettingsData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+                if !Theme.rtl && SettingsData.dirty: Text { text: "● " + SettingsData.unsaved-text; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
+                if !Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
+                if Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
+                Rectangle { horizontal-stretch: 1; }
+                if !Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
+                if !Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
+                if Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl && SettingsData.dirty: Text { text: SettingsData.unsaved-text + " ●"; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Text { text: SettingsData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    width: min(680px, root.width - 48px);
+                    padding-top: 20px;
+                    padding-bottom: 28px;
+                    spacing: 22px;
+
+                    Section {
+                        title: SettingsData.appearance-title;
+                        VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.language-label; }
+                            ComboBox { model: SettingsData.languages; current-index <=> SettingsData.language-index; selected => { SettingsData.changed(); } }
+                            if SettingsData.language-note != "": Hint { text: SettingsData.language-note; }
+                        }
+                        VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.theme-label; }
+                            ComboBox { model: SettingsData.themes; current-index <=> SettingsData.theme-index; selected => { SettingsData.changed(); } }
+                        }
+                    }
+
+                    Section {
+                        title: SettingsData.downloads-title;
+                        VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.folder-label; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                if Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
+                                LineEdit { text <=> SettingsData.folder; edited => { SettingsData.changed(); } }
+                                if !Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
+                            }
+                            if SettingsData.folder-error != "": Text { text: SettingsData.folder-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+                        }
+                        Toggle { text: SettingsData.organize-text; hint: SettingsData.organize-hint; checked <=> SettingsData.organize; toggled => { SettingsData.changed(); } }
+                        Field { label: SettingsData.active-label; hint: SettingsData.active-hint; error: SettingsData.active-error; text <=> SettingsData.active; input-type: number; edited => { SettingsData.changed(); } }
+                        Field { label: SettingsData.connections-label; hint: SettingsData.connections-hint; error: SettingsData.connections-error; text <=> SettingsData.connections; input-type: number; edited => { SettingsData.changed(); } }
+                    }
+
+                    Section {
+                        title: SettingsData.speed-title;
+                        Toggle { text: SettingsData.limit-text; checked <=> SettingsData.limit-on; toggled => { SettingsData.changed(); } }
+                        if SettingsData.limit-on: VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.limit-label; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                LineEdit { text <=> SettingsData.limit; input-type: decimal; horizontal-stretch: 1; edited => { SettingsData.changed(); } }
+                                ComboBox { model: SettingsData.units; current-index <=> SettingsData.unit-index; width: 110px; selected => { SettingsData.changed(); } }
+                            }
+                            if SettingsData.limit-error != "": Text { text: SettingsData.limit-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+                        }
+                        if SettingsData.schedule-hint != "": Hint { text: SettingsData.schedule-hint; }
+                        HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: SettingsData.schedule-text; clicked => { SettingsData.web("settings"); } }
+                        }
+                    }
+
+                    Section {
+                        title: SettingsData.computer-title;
+                        if SettingsData.has-login: Toggle { text: SettingsData.login-text; hint: SettingsData.login-hint; checked <=> SettingsData.login; toggled(on) => { SettingsData.desktop("login", on); } }
+                        Toggle { text: SettingsData.tray-text; hint: SettingsData.tray-hint; checked <=> SettingsData.tray; toggled(on) => { SettingsData.desktop("tray", on); } }
+                        Hint { text: SettingsData.computer-hint; }
+                    }
+
+                    Section {
+                        title: SettingsData.browsers-title;
+                        if SettingsData.has-confirm: Toggle { text: SettingsData.confirm-text; hint: SettingsData.confirm-hint; checked <=> SettingsData.confirm; toggled => { SettingsData.changed(); } }
+                        Hint { text: SettingsData.browsers-hint; }
+                        HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: SettingsData.browsers-open; clicked => { SettingsData.web("browsers"); } }
+                        }
+                    }
+
+                    Section {
+                        title: SettingsData.updates-title;
+                        Toggle { text: SettingsData.auto-update-text; hint: SettingsData.auto-update-hint; checked <=> SettingsData.auto-update; toggled(on) => { SettingsData.desktop("updates", on); } }
+                        HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: SettingsData.check-now-text; clicked => { SettingsData.web("settings"); } }
+                        }
+                    }
+
+                    if SettingsData.has-crash: Section {
+                        title: SettingsData.privacy-title;
+                        Toggle { text: SettingsData.crash-text; hint: SettingsData.crash-hint; checked <=> SettingsData.crash; toggled(on) => { SettingsData.desktop("crash", on); } }
+                    }
+
+                    Section {
+                        title: SettingsData.media-title;
+                        Hint { text: SettingsData.media-hint; }
+                        HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: SettingsData.media-open; clicked => { SettingsData.web("settings"); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "Whoosh Download Manager";
     icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
@@ -318,6 +605,8 @@ export component MainWindow inherits Window {
 
     in property <[NavItem]> nav;
     in property <[NavItem]> nav-more;
+    // 0: the downloads, 1: Settings.
+    in property <int> page;
     in property <string> view-title;
     in property <[Column]> columns;
     in property <[Row]> rows;
@@ -387,10 +676,7 @@ export component MainWindow inherits Window {
         key-pressed(event) => {
             root.key(event.text, event.modifiers.control || event.modifiers.meta, event.modifiers.shift);
             if event.text == Key.Delete || event.text == Key.Escape || event.text == Key.Return
-                || ((event.modifiers.control || event.modifiers.meta) && (event.text == "a" || event.text == "n" || event.text == "f")) {
-                if (event.modifiers.control || event.modifiers.meta) && event.text == "f" {
-                    search-box.focus();
-                }
+                || ((event.modifiers.control || event.modifiers.meta) && (event.text == "a" || event.text == "n")) {
                 return accept;
             }
             reject
@@ -428,7 +714,8 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                VerticalLayout {
+                if root.page == 1: SettingsPage { horizontal-stretch: 1; }
+                if root.page == 0: VerticalLayout {
                     horizontal-stretch: 1;
                     // ---------------------------------------------------- toolbar
                     Rectangle {

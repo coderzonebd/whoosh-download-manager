@@ -123,6 +123,12 @@ pub fn prompt_plan(
     })
 }
 
+/// The app (`wdm-desktop`, or the bundler's product-named copy) next to `exe`.
+pub fn app_exe_next_to(exe: &Path, exists: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    APP_EXES.iter().map(|n| dir.join(n)).find(|p| exists(p))
+}
+
 /// The prompt window next to the app at `exe` (for `wdm-desktop --prompt`).
 pub fn prompt_exe_next_to(exe: &Path) -> PathBuf {
     exe.with_file_name(PROMPT_EXE)

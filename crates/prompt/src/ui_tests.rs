@@ -15,7 +15,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PlatformError, WindowAdapter};
-use slint::{Model as _, PhysicalSize, Rgb8Pixel};
+use slint::{ComponentHandle as _, Model as _, PhysicalSize, Rgb8Pixel};
 use tokio::sync::mpsc;
 use wdm_proto::{event, method};
 
@@ -96,9 +96,14 @@ impl Harness {
 
     /// Draws the main window (the newest).
     fn main_shot(&self, name: &str) {
+        self.main_shot_sized(name, MH);
+    }
+
+    fn main_shot_sized(&self, name: &str, height: u32) {
         let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        w.set_size(PhysicalSize::new(MW, height));
+        self.draw(&w, MW, height, name);
         w.set_size(PhysicalSize::new(MW, MH));
-        self.draw(&w, MW, MH, name);
     }
 
     fn draw(&self, window: &Rc<MinimalSoftwareWindow>, w: u32, h: u32, name: &str) {
@@ -493,6 +498,55 @@ fn the_prompt_window_from_start_to_end() {
     assert_eq!(h.ui.get_url(), "");
     h.press("cancel");
     assert_eq!(h.ui.get_screen(), 0);
+
+    // ---------------------------------------------------------------- Settings
+    main.invoke_nav_picked("page:settings".into());
+    assert_eq!(main.get_page(), 1);
+    let g = main.global::<crate::SettingsData>();
+    assert_eq!(g.get_folder(), "/home/u/Downloads");
+    assert_eq!(g.get_active(), "3");
+    assert!(!g.get_dirty());
+    h.main_shot("settings");
+    // The whole page at once.
+    h.main_shot_sized("settings-all", 1640);
+    // A bad value shows its error and cannot be saved.
+    g.set_active("0".into());
+    g.invoke_changed();
+    assert!(g.get_dirty() && !g.get_valid());
+    assert_eq!(g.get_active_error(), "Enter a whole number from 1 to 64.");
+    h.main_shot("settings-error");
+    // Five at once, a 1.5 MB/s limit, dark: Save sends them, with the rest as it was.
+    g.set_active("5".into());
+    g.set_limit_on(true);
+    g.set_limit("1.5".into());
+    g.set_unit_index(1);
+    g.set_theme_index(2);
+    g.invoke_changed();
+    assert!(g.get_valid());
+    g.invoke_save();
+    let calls = h.calls();
+    assert_eq!(calls[0].0, method::SETTINGS_SET);
+    assert_eq!(calls[0].1["maxActiveDownloads"], json!(5));
+    assert_eq!(calls[0].1["speedLimitBps"], json!(1_572_864));
+    assert_eq!(calls[0].1["theme"], json!("dark"));
+    assert_eq!(calls[0].1["maxConnectionsPerDownload"], json!(16));
+    let saved = calls[0].1.clone();
+    h.msg(Msg::Reply(Tag::Settings, Ok(saved)));
+    assert!(!g.get_dirty());
+    assert_eq!(g.get_status_text(), "Settings saved");
+    // Revert puts back what is saved.
+    g.set_folder("/tmp/elsewhere".into());
+    g.invoke_changed();
+    assert!(g.get_dirty());
+    g.invoke_revert();
+    assert_eq!(g.get_folder(), "/home/u/Downloads");
+    assert!(!g.get_dirty());
+    h.main_shot("settings-dark");
+    h.settings("bn", "light");
+    h.main_shot("settings-bn");
+    h.settings("en", "light");
+    main.invoke_nav_picked("group:all".into());
+    assert_eq!(main.get_page(), 0);
 
     // Bangla in the dark, Arabic right to left.
     h.settings("bn", "dark");
