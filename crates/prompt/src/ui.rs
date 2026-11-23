@@ -439,8 +439,9 @@ impl Controller {
         if self.paint.running() {
             return;
         }
-        self.paint
-            .start(TimerMode::SingleShot, PAINT_EVERY, || with(Controller::render));
+        self.paint.start(TimerMode::SingleShot, PAINT_EVERY, || {
+            with(Controller::render)
+        });
     }
 
     fn on_reply(&mut self, tag: Tag, answer: Result<Value, String>) {

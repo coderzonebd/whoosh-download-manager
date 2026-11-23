@@ -41,7 +41,9 @@ const H2_STREAM_WINDOW: u32 = 2 << 20;
 /// One stream window for each stream a connection may carry.
 fn h2_conn_window(streams: usize) -> u32 {
     let streams = u32::try_from(streams.max(1)).unwrap_or(u32::MAX);
-    H2_STREAM_WINDOW.saturating_mul(streams).min(i32::MAX as u32)
+    H2_STREAM_WINDOW
+        .saturating_mul(streams)
+        .min(i32::MAX as u32)
 }
 
 /// Lets HTTP/2 servers send DATA frames bigger than the 16 KiB default:

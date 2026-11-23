@@ -261,11 +261,7 @@ impl Controller {
         self.main.poll.start(TimerMode::Repeated, POLL, || {
             super::with(|c| {
                 c.poll_update();
-                let busy = c
-                    .model
-                    .downloads
-                    .values()
-                    .any(|d| model::pausable(d.state));
+                let busy = c.model.downloads.values().any(|d| model::pausable(d.state));
                 if std::mem::replace(&mut c.main.was_busy, busy) && !busy {
                     c.settle_soon();
                 }

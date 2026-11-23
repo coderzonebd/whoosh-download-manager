@@ -60,7 +60,9 @@ pub fn release() {
 /// The process's working set in bytes (0 if unknown).
 #[cfg(windows)]
 fn working_set() -> usize {
-    use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
     let mut c: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
     let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
