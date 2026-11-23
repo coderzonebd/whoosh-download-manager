@@ -46,7 +46,7 @@ hyper-util = { version = "0.1", features = ["tokio", "server"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31", default-features = false, features = ["resource"] }
+nix = { version = "0.32", default-features = false, features = ["resource"] }
 
 [lints]
 workspace = true

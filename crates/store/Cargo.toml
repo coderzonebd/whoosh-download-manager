@@ -33,7 +33,7 @@ rustix = { version = "1.1", features = ["fs", "std"] }
 # `F_PREALLOCATE` with a length relative to the current size (rustix's
 # `fallocate` asks for the whole length again on every call).
 libc = "0.2"
-nix = { version = "0.31", features = ["fs"] }
+nix = { version = "0.32", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl"] }
@@ -45,7 +45,7 @@ tokio = { workspace = true }
 wdm-core = { workspace = true, features = ["testing"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31", features = ["resource"] }
+nix = { version = "0.32", features = ["resource"] }
 
 [lints]
 workspace = true
