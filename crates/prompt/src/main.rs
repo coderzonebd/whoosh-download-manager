@@ -30,7 +30,13 @@ pub use generated::*;
 
 use wdm_tray::locks;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
     let Some(dir) = wdm_tray::data_dir() else {
         eprintln!("wdm-prompt: no data directory");
         std::process::exit(1);

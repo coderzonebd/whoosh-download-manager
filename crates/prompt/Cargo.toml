@@ -12,7 +12,13 @@ license = "GPL-3.0-or-later"
 name = "wdm-prompt"
 path = "src/main.rs"
 
+[features]
+# Heap profile of a run, written to dhat-heap.json when the window closes
+# (`cargo run -p wdm-prompt --features dhat-heap -- --main`); for finding memory.
+dhat-heap = ["dep:dhat"]
+
 [dependencies]
+dhat = { version = "0.3", optional = true }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
 wdm-client.workspace = true
