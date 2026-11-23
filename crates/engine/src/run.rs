@@ -184,10 +184,11 @@ fn io_failed(e: io::Error) -> Outcome {
 
 /// One connection, as the scheduler sees it.
 /// All connections' write buffers together stay near this: 256 KiB each
-/// for up to 8 connections, 32 KiB each at 64 (eight downloads). (It was
-/// 4 MiB: on eight loopback downloads 2 MiB took the same time and CPU
-/// with ~2 MB less in the daemon.)
-const WRITE_BUDGET: usize = 2 << 20;
+/// for up to 4 connections, 32 KiB each from 32 (eight downloads from one
+/// server). (It was 4 MiB: on eight loopback downloads 2 MiB took the same
+/// time and CPU with ~2 MB less in the daemon; over HTTPS, whose chunks are
+/// small enough to be gathered, 2 MiB was still the daemon's largest heap.)
+const WRITE_BUDGET: usize = 1 << 20;
 /// Smaller writes than this cost more in wake-ups than they save.
 const MIN_COALESCE: usize = 32 << 10;
 
@@ -2754,10 +2755,12 @@ mod coalesce_tests {
         const MAX: usize = 256 << 10;
         // A few connections: the configured size.
         assert_eq!(coalesce_for(MAX, 1), MAX);
-        assert_eq!(coalesce_for(MAX, 16), 128 << 10);
-        // 64 connections (eight downloads): an eighth each, the budget in all.
-        assert_eq!(coalesce_for(MAX, 64), 32 << 10);
-        assert_eq!(coalesce_for(MAX, 8), MAX);
+        assert_eq!(coalesce_for(MAX, 8), 128 << 10);
+        // 32 connections (eight downloads from one server): the budget in all.
+        assert_eq!(coalesce_for(MAX, 32), 32 << 10);
+        assert_eq!(coalesce_for(MAX, 4), MAX);
+        // More than that: the floor.
+        assert_eq!(coalesce_for(MAX, 64), MIN_COALESCE);
         // Never below the floor, never above the configured size.
         assert_eq!(coalesce_for(MAX, 10_000), MIN_COALESCE);
         assert_eq!(coalesce_for(16 << 10, 1), 16 << 10);
