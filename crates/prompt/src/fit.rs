@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Fitting the main window to the screen. Its preferred size (1120×700) is
-//! more than many screens have once the taskbar is counted: 1024×768, or a
-//! 1366×768 laptop at 125 % (~1093×614 to work with). Windows put it where
-//! it puts new windows, so its right side and status bar went off the
-//! screen (seen on GitHub's 1024×768 Windows runner,
-//! docs/bench/windows-handcheck.ps1). On Windows it now takes the size it
-//! wants or what the work area leaves, never less than its minimum, and
-//! opens in the middle of the work area. Elsewhere the window manager
-//! places windows itself.
+//! The main window's size when it opens. Slint opens a window at the
+//! preferred width of what is in it, whatever `preferred-width` the window
+//! itself names: ~944 px once, and the minimum, 760 px, after the toolbar
+//! learned to shrink (seen in the real window on Linux: icons only, no
+//! Speed or Time left, names cut short). So the size is set here, to the
+//! one wanted (the default, or the one the window had when it was closed).
+//!
+//! That is more than many screens have once the taskbar is counted:
+//! 1024×768, or a 1366×768 laptop at 125 % (~1093×614 to work with), and
+//! Windows put the window where it puts new windows, its right side and
+//! status bar off the screen (GitHub's 1024×768 Windows runner,
+//! docs/bench/windows-handcheck.ps1). On Windows it takes what the work
+//! area leaves, never less than its minimum, and opens in the middle of
+//! the work area. Elsewhere the window manager places and bounds windows.
 
 /// Room left around the window inside the work area, in logical pixels.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -61,7 +66,12 @@ pub fn fit(window: &slint::Window, want: (f32, f32), min: (f32, f32)) {
 }
 
 #[cfg(not(windows))]
-pub fn fit(_window: &slint::Window, _want: (f32, f32), _min: (f32, f32)) {}
+pub fn fit(window: &slint::Window, want: (f32, f32), min: (f32, f32)) {
+    window.set_size(slint::LogicalSize::new(
+        want.0.max(min.0),
+        want.1.max(min.1),
+    ));
+}
 
 #[cfg(test)]
 mod tests {

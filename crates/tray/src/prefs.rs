@@ -39,6 +39,10 @@ pub struct Prefs {
     /// The main window's details panel was closed (its x); the toolbar's
     /// Details button shows it again.
     pub hide_details: bool,
+    /// The main window's size when it was last closed (logical pixels; 0:
+    /// never, it opens at its default).
+    pub main_width: f32,
+    pub main_height: f32,
 }
 
 impl Default for Prefs {
@@ -54,6 +58,8 @@ impl Default for Prefs {
             login_item_set: false,
             media_tools_dir: String::new(),
             hide_details: false,
+            main_width: 0.0,
+            main_height: 0.0,
         }
     }
 }

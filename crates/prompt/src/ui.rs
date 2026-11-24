@@ -854,6 +854,7 @@ impl Controller {
     }
 
     fn quit(&mut self) {
+        self.save_size();
         self.lock = None;
         if let Some(ui) = self.ui.upgrade() {
             let _ = ui.hide();

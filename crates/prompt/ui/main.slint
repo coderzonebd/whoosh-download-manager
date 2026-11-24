@@ -1090,8 +1090,10 @@ component BrowsersPage inherits Rectangle {
 export component MainWindow inherits Window {
     title: "Whoosh Download Manager";
     icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
-    preferred-width: 1120px;
-    preferred-height: 700px;
+    // The size it opens at is set from Rust (src/fit.rs): Slint opens a
+    // window at its content's preferred width, not this one.
+    preferred-width: 1240px;
+    preferred-height: 780px;
     min-width: 760px;
     min-height: 440px;
     background: Theme.surface;
