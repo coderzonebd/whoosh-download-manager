@@ -36,9 +36,6 @@ pub struct Prefs {
     /// The bundled media tools, for the daemon the tray starts (written by
     /// the app, which knows its resource directory). Empty: none.
     pub media_tools_dir: String,
-    /// The main window's details panel was closed (its x); the toolbar's
-    /// Details button shows it again.
-    pub hide_details: bool,
     /// The main window's size when it was last closed (logical pixels; 0:
     /// never, it opens at its default).
     pub main_width: f32,
@@ -57,7 +54,6 @@ impl Default for Prefs {
             browser_setup_shown: false,
             login_item_set: false,
             media_tools_dir: String::new(),
-            hide_details: false,
             main_width: 0.0,
             main_height: 0.0,
         }

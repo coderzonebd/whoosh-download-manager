@@ -42,10 +42,9 @@ const MIN_SIZE: (f32, f32) = (760.0, 440.0);
 const WIDE: f32 = 1200.0;
 /// Below this width the list also leaves out Speed and Time left.
 const NARROW: f32 = 900.0;
-/// From these widths the toolbar's buttons have their words (measured with
-/// the sidebar and the smallest search box); below, icons.
-const WORDS: f32 = 1000.0;
-const WORDS_WITH_DETAILS: f32 = 1180.0;
+/// From this width the toolbar's five buttons have their words (measured
+/// with the sidebar and the smallest search box); below, icons.
+const WORDS: f32 = 1180.0;
 
 const GROUPS: [&str; 6] = [
     "all",
@@ -151,8 +150,10 @@ pub struct Main {
     page: Page,
     poll: Timer,
     next_local: u32,
-    /// The details panel was closed by the user (kept in `desktop.json`).
-    hide_details: bool,
+    /// The download whose details are shown, once asked for (the toolbar's
+    /// button, the row's menu). A click on a row never opens them, and
+    /// choosing another download closes them.
+    details_for: Option<String>,
     /// The window's size (logical pixels): the one asked for until the
     /// window is on the screen, then the one it has.
     size: (f32, f32),
@@ -181,7 +182,7 @@ impl Default for Main {
             page: Page::Downloads,
             poll: Timer::default(),
             next_local: 0,
-            hide_details: super::load_prefs().hide_details,
+            details_for: None,
             size: DEFAULT_SIZE,
             settle: Rc::new(Timer::default()),
             was_busy: false,
@@ -366,14 +367,7 @@ impl Controller {
             if room.get_size_class() != class {
                 room.set_size_class(class);
             }
-            // With the Download details button there too, the words need more.
-            let details_button = self.main.active.is_some() && self.main.hide_details;
-            let words = width
-                >= if details_button {
-                    WORDS_WITH_DETAILS
-                } else {
-                    WORDS
-                };
+            let words = width >= WORDS;
             if room.get_words() != words {
                 room.set_words(words);
             }
@@ -745,7 +739,10 @@ impl Controller {
         w.set_copy_text(t("action.copyLink"));
         w.set_details_label(t("detail.label"));
         w.set_close_details(t("detail.close"));
-        w.set_details_open(!self.main.hide_details);
+        if self.main.details_for != self.main.active {
+            self.main.details_for = None;
+        }
+        w.set_details_open(self.main.details_for.is_some());
 
         // The empty list.
         if order.is_empty() {
@@ -1055,16 +1052,12 @@ impl Controller {
         let ids: Vec<String> = self.main.selection.clone();
         let active = self.main.active.clone();
         match id {
-            "details-close" | "details-open" => {
-                let hide = id == "details-close";
-                self.main.hide_details = hide;
-                if let Some(path) = super::prefs_path() {
-                    let mut p = wdm_tray::prefs::load_from(&path);
-                    p.hide_details = hide;
-                    if let Err(err) = wdm_tray::prefs::save_to(&path, &p) {
-                        eprintln!("wdm-prompt: desktop.json: {err}");
-                    }
-                }
+            "details-open" => {
+                self.main.details_for = active;
+                self.render_main();
+            }
+            "details-close" => {
+                self.main.details_for = None;
                 self.render_main();
             }
             "add" => {

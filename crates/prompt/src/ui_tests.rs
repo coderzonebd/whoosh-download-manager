@@ -472,26 +472,28 @@ fn the_prompt_window_from_start_to_end() {
     assert_eq!(main.get_rows().row_count(), 6);
     h.main_shot("main");
 
-    // Sorted by name, then a click selects and shows the details.
+    // Sorted by name, then a click selects (the details wait to be asked for).
     main.invoke_sort("name".into());
     let names: Vec<String> = main.get_rows().iter().map(|r| r.name.to_string()).collect();
     assert_eq!(names[0], "A walk through Dhaka at night.mp4");
     main.invoke_row_pressed(0, false, false, false);
     assert!(main.get_detail());
+    assert!(!main.get_details_open());
     assert!(main.get_can_pause() && !main.get_can_resume());
     // Shift adds the run down to the fourth row.
     main.invoke_row_pressed(3, false, true, false);
     assert_eq!(main.get_rows().iter().filter(|r| r.selected).count(), 4);
     h.main_shot("main-selected");
-    // Wide enough: the details beside every column. Narrower (the default
+    // Asked for. Wide enough: beside every column. Narrower (the default
     // 1120): over the list, which keeps all its columns either way.
+    main.invoke_action("details-open".into());
+    assert!(main.get_details_open());
     h.main_shot_at("main-selected-wide", 1366, 760);
     h.main_shot_at("main-selected-narrow", 900, 600);
-    // Closed (as its x does; not called here, which would write desktop.json):
-    // the toolbar offers Details again.
-    main.set_details_open(false);
+    main.invoke_action("details-close".into());
+    assert!(!main.get_details_open());
     h.main_shot("main-details-closed");
-    main.set_details_open(true);
+    main.invoke_action("details-open".into());
     // Short: the library scrolls instead of cutting off its last entries.
     h.main_shot_at("main-short", 1120, 420);
     main.invoke_action("pause".into());
@@ -867,9 +869,10 @@ impl Harness {
     }
 }
 
-/// The main window used as a person uses it: click a download, close the
-/// details with their x, bring them back with the toolbar's button, make
-/// the window wide, small and short, visit every page.
+/// The main window used as a person uses it: click downloads (that only
+/// selects them), ask for the details with the toolbar's button, close them
+/// with their x, choose another download, make the window wide, small and
+/// short, visit every page.
 #[test]
 fn the_main_window_by_hand() {
     use i_slint_backend_testing::AccessibleRole as Role;
@@ -909,14 +912,31 @@ fn the_main_window_by_hand() {
     h.resize(MW, MH);
     h.snap("hand-1-start");
 
-    // A click on a download shows its details.
+    // A click on a download selects it and nothing more.
     assert!(
         h.click(&main, "platform-tools_r37.2-", Some(Role::ListItem)),
         "a row to click"
     );
     assert!(main.get_detail(), "a click selects the download");
-    assert!(main.get_details_open());
+    assert!(
+        !main.get_details_open(),
+        "a click must not open the details"
+    );
+    // Another one: still no details.
+    assert!(h.click(&main, "platform-tools_r37.14-", Some(Role::ListItem)));
+    assert!(!main.get_details_open());
     h.snap("hand-2-selected");
+
+    // The toolbar's button shows them.
+    assert!(
+        h.click(&main, "Download details", Some(Role::Button)),
+        "the toolbar's Download details button"
+    );
+    assert!(
+        main.get_details_open(),
+        "the toolbar button shows the details"
+    );
+    h.snap("hand-3-details");
 
     // Their x closes them.
     assert!(
@@ -924,27 +944,22 @@ fn the_main_window_by_hand() {
         "the details' close button"
     );
     assert!(!main.get_details_open(), "the x closes the details");
-    h.snap("hand-3-closed");
+    h.snap("hand-4-closed");
 
-    // The toolbar brings them back.
+    // Open, then another download: they close, they do not switch to it.
+    assert!(h.click(&main, "Download details", Some(Role::Button)));
+    assert!(main.get_details_open());
+    assert!(h.click(&main, "platform-tools_r37.18-", Some(Role::ListItem)));
     assert!(
-        h.click(&main, "Download details", Some(Role::Button)),
-        "the toolbar's Download details button"
+        !main.get_details_open(),
+        "choosing another download closes the details"
     );
-    assert!(
-        main.get_details_open(),
-        "the toolbar button shows the details again"
-    );
-    h.snap("hand-4-reopened");
-
-    // Closed again, then another download: they stay closed until asked.
-    assert!(h.click(&main, "Close details", Some(Role::Button)));
-    assert!(h.click(&main, "platform-tools_r37.14-", Some(Role::ListItem)));
-    assert!(!main.get_details_open());
-    assert!(
-        h.click(&main, "Download details", Some(Role::Button)),
-        "still offered"
-    );
+    // The toolbar's button again toggles them.
+    assert!(h.click(&main, "Download details", Some(Role::Button)));
+    assert!(main.get_details_open());
+    assert!(h.click(&main, "Download details", Some(Role::Button)));
+    assert!(!main.get_details_open(), "the button closes them too");
+    assert!(h.click(&main, "Download details", Some(Role::Button)));
     assert!(main.get_details_open());
 
     // Wide, small and short.
@@ -1038,7 +1053,10 @@ fn the_main_window_can_be_any_size() {
     assert_eq!(main.get_rows().row_count(), 2);
     check("the list");
     main.invoke_row_pressed(0, false, false, false);
-    assert!(main.get_detail() && main.get_details_open());
+    assert!(main.get_detail() && !main.get_details_open());
+    check("a download selected");
+    main.invoke_action("details-open".into());
+    assert!(main.get_details_open());
     check("the details open");
     main.invoke_action("remove".into());
     check("the remove question");
