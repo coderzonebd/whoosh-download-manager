@@ -39,6 +39,12 @@ pub fn base_args(dirs: &Dirs) -> Vec<OsString> {
         os("--ignore-config"),
         os("--no-playlist"),
         os("--no-color"),
+        // What it prints is read as UTF-8. On Windows the frozen yt-dlp.exe
+        // otherwise writes in the system's code page, ignoring PYTHONUTF8:
+        // non-Latin titles and file names, and the curly apostrophe in
+        // YouTube's error, came out as U+FFFD.
+        os("--encoding"),
+        os("utf-8"),
         os("--cache-dir"),
         dirs.cache.as_os_str().to_owned(),
     ];
