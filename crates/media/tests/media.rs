@@ -68,6 +68,9 @@ fn main() {
         ("a_found_update_installs_without_waiting_a_day", || {
             Box::pin(a_found_update_installs_without_waiting_a_day())
         }),
+        ("a_program_put_in_bin_by_hand_is_not_updated", || {
+            Box::pin(a_program_put_in_bin_by_hand_is_not_updated())
+        }),
         ("prefetch_fetches_what_is_missing_and_says_so", || {
             Box::pin(prefetch_fetches_what_is_missing_and_says_so())
         }),
@@ -873,6 +876,30 @@ async fn a_found_update_installs_without_waiting_a_day() {
     assert!(!yt.update_available);
     let program = tools.get(Kind::YtDlp).unwrap().program;
     assert_eq!(std::fs::read(program).unwrap(), body);
+}
+
+/// yt-dlp someone put in `bin` by hand (as the desktop e2e puts its fake)
+/// is not WDM's to replace, newer upstream or not.
+async fn a_program_put_in_bin_by_hand_is_not_updated() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join(Kind::YtDlp.program());
+    std::fs::write(&program, b"#!/bin/sh\necho 2020.01.01\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let (new, _) = upstream_at("2026.11.23", None);
+    let tools = Tools::open(tools_config(tmp.path()), new.clone()).await;
+    tools.auto_update_if_due().await;
+    assert_eq!(
+        std::fs::read(&program).unwrap(),
+        b"#!/bin/sh\necho 2020.01.01\n",
+        "replaced: {:?}",
+        new.fetched.lock().unwrap()
+    );
 }
 
 /// The background fetch gets what upstream has and reports a failure for what it has not,

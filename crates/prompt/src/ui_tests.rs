@@ -181,7 +181,13 @@ fn summary(v: Value) -> wdm_proto::DownloadSummary {
 
 fn setup() -> Harness {
     slint::platform::set_platform(Box::new(TestPlatform)).ok();
-    let dir = std::env::temp_dir().join(format!("wdm-prompt-ui-{}", std::process::id()));
+    // A folder of each test's own: tests run side by side, and each takes
+    // the prompt's lock in it.
+    let dir = std::env::temp_dir().join(format!(
+        "wdm-prompt-ui-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let lock = wdm_tray::locks::take(&dir, wdm_tray::locks::PROMPT).unwrap();

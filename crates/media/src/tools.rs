@@ -528,10 +528,15 @@ impl Tools {
         self.install_updates().await;
     }
 
-    /// Installs the newer version of every managed tool that has one.
+    /// Installs the newer version of every tool WDM installed itself
+    /// (recorded in `tools.json`) that has one. A program someone put in
+    /// `bin` by hand is not WDM's to replace (the desktop e2e's fake
+    /// yt-dlp was, by the real one).
     async fn install_updates(&self) {
         for tool in self.status().tools {
-            if tool.update_available
+            let ours = lock(&self.saved).managed.contains_key(&tool.name);
+            if ours
+                && tool.update_available
                 && tool.source == Some(MediaToolSource::Managed)
                 && let Some(kind) = Kind::from_name(&tool.name)
                 && let Err(e) = self.install(kind, true).await
