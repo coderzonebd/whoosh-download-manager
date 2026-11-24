@@ -45,7 +45,7 @@ export struct Column {
 component NavEntry inherits Rectangle {
     in property <NavItem> item;
     callback picked();
-    height: item.header ? 30px : 34px;
+    height: item.header ? 24px : 30px;
     border-radius: 8px;
     background: item.active ? Theme.selected : touch.has-hover && !item.header ? Theme.hover : transparent;
     accessible-role: button;
@@ -97,6 +97,19 @@ component NavEntry inherits Rectangle {
 }
 
 // The columns' widths (the name takes the rest).
+// How much room the main window has, set from its size (computing it from
+// a window's width inside the layout made a layout loop): 2 from 1200 px,
+// where the details sit beside every column and toolbars have words; 1
+// from 900 px: the details open over the list and the toolbars' other
+// buttons are icons; 0 below: the list also leaves out Speed and Time left.
+export global Room {
+    in-out property <int> size-class: 2;
+    // The toolbars' buttons have room for their words (measured: ~960 px
+    // for the downloads' four, ~1150 px with Download details).
+    in-out property <bool> words: true;
+    out property <bool> wide: Room.size-class >= 2;
+}
+
 global Cols {
     out property <length> size: 84px;
     out property <length> progress: 170px;
@@ -297,10 +310,11 @@ component DetailPanel inherits Rectangle {
         a11y-label: root.close-label;
         clicked => { root.close(); }
     }
-    ScrollView {
+    panel-scroll := ScrollView {
         y: 46px;
         height: parent.height - 46px;
     VerticalLayout {
+        width: panel-scroll.visible-width;
         padding: 18px;
         padding-top: 0px;
         spacing: 14px;
@@ -315,7 +329,8 @@ component DetailPanel inherits Rectangle {
                     text: root.name;
                     color: Theme.text;
                     font-weight: 600;
-                    wrap: word-wrap;
+                    // File names often have no spaces to break at.
+                    wrap: char-wrap;
                     max-height: 3.9rem;
                     overflow: elide;
                     horizontal-alignment: Theme.start;
@@ -357,7 +372,8 @@ component DetailPanel inherits Rectangle {
         for f in root.facts: VerticalLayout {
             spacing: 2px;
             Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
-            Text { text: f.value; color: Theme.text; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+            // Paths and addresses have no spaces to break at.
+            Text { text: f.value; color: Theme.text; font-size: 13px; wrap: char-wrap; horizontal-alignment: Theme.start; }
         }
     }
     }
@@ -875,7 +891,7 @@ component HistoryPage inherits Rectangle {
                 spacing: 10px;
                 if !Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
                 if !Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
-                if Theme.rtl: Button { text: HistoryData.clear-text; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
                 if Theme.rtl: HorizontalLayout {
                     spacing: 4px;
                     accessible-role: tab-list;
@@ -884,7 +900,9 @@ component HistoryPage inherits Rectangle {
                 }
                 Rectangle { horizontal-stretch: 1; }
                 LineEdit {
-                    width: 220px;
+                    min-width: 120px;
+                    preferred-width: 220px;
+                    horizontal-stretch: 0;
                     text <=> HistoryData.query;
                     placeholder-text: HistoryData.search-placeholder;
                     accessible-label: HistoryData.search-label;
@@ -897,7 +915,7 @@ component HistoryPage inherits Rectangle {
                     accessible-label: HistoryData.filter-label;
                     for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
                 }
-                if !Theme.rtl: Button { text: HistoryData.clear-text; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if !Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
                 if Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
                 if Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
             }
@@ -1107,10 +1125,8 @@ export component MainWindow inherits Window {
     // The user keeps the details shown (closed with their x, opened with
     // the toolbar's Details button).
     in property <bool> details-open: true;
-    // Room for the details beside every column of the list; narrower, they
-    // open over the list instead of pushing columns out. Set from the
-    // window's size (computing it here from root.width made a layout loop).
-    in property <bool> wide: true;
+    // See Room.
+    out property <bool> wide: Room.wide;
     in property <string> d-name;
     in property <string> d-category;
     in property <string> d-state;
@@ -1184,19 +1200,19 @@ export component MainWindow inherits Window {
                             padding-top: 12px;
                             padding-bottom: 12px;
                             spacing: 8px;
-                            if !Theme.rtl: Button { text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
-                            if !Theme.rtl: Button { text: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
-                            if !Theme.rtl: Button { text: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
-                            if !Theme.rtl: Button { text: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
-                            if !Theme.rtl && root.detail && !root.details-open: Button { text: root.details-label; icon: Icons.panel; clicked => { root.action("details-open"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if !Theme.rtl && root.detail && !root.details-open: Button { horizontal-stretch: 0; text: Room.words ? root.details-label : ""; a11y-label: root.details-label; icon: Icons.panel; clicked => { root.action("details-open"); } }
                             if !Theme.rtl: Rectangle { horizontal-stretch: 1; }
-                            search-box := LineEdit { width: 240px; text <=> root.query; placeholder-text: root.search-placeholder; horizontal-alignment: Theme.rtl ? right : left; edited(t) => { root.search(t); } }
+                            search-box := LineEdit { min-width: 120px; preferred-width: 240px; max-width: 260px; horizontal-stretch: 0; text <=> root.query; placeholder-text: root.search-placeholder; horizontal-alignment: Theme.rtl ? right : left; edited(t) => { root.search(t); } }
                             if Theme.rtl: Rectangle { horizontal-stretch: 1; }
-                            if Theme.rtl && root.detail && !root.details-open: Button { text: root.details-label; icon: Icons.panel; clicked => { root.action("details-open"); } }
-                            if Theme.rtl: Button { text: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
-                            if Theme.rtl: Button { text: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
-                            if Theme.rtl: Button { text: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
-                            if Theme.rtl: Button { text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                            if Theme.rtl && root.detail && !root.details-open: Button { horizontal-stretch: 0; text: Room.words ? root.details-label : ""; a11y-label: root.details-label; icon: Icons.panel; clicked => { root.action("details-open"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
                         }
                         Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
                     }
@@ -1232,13 +1248,13 @@ export component MainWindow inherits Window {
                                     padding-right: 14px;
                                     spacing: 14px;
                                     if !Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
-                                    if Theme.rtl: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
-                                    if Theme.rtl: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
                                     HeaderCell { column: root.columns[1]; width: Cols.size; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if !Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
-                                    if !Theme.rtl: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
-                                    if !Theme.rtl: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
                                 }
                                 Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
@@ -1262,7 +1278,7 @@ export component MainWindow inherits Window {
                                 accessible-label: root.view-title;
                                 for r[i] in root.rows: RowView {
                                     item: r;
-                                    compact: false;
+                                    compact: Room.size-class == 0;
                                     pressed(ctrl, shift, right) => { keys.focus(); root.row-pressed(i, ctrl, shift, right); }
                                     activated => { root.row-activated(i); }
                                 }
@@ -1283,6 +1299,7 @@ export component MainWindow inherits Window {
                         }
                         // Too narrow for both: the details open over the list.
                         if root.detail && root.details-open && !root.wide: DetailPanel {
+                            width: min(300px, parent.width - 24px);
                             x: Theme.rtl ? 0px : parent.width - self.width;
                             height: parent.height;
                             floating: true;

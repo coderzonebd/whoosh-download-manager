@@ -189,6 +189,10 @@ fn setup() -> Harness {
     let window = WINDOWS.with(|ws| ws.borrow()[0].clone());
     window.set_size(PhysicalSize::new(W, H));
     let (tx, cmds) = mpsc::unbounded_channel();
+    // desktop.json of this test's own, never the user's.
+    let prefs = dir.join(format!("desktop-{:?}.json", std::thread::current().id()));
+    let _ = std::fs::remove_file(&prefs);
+    ui::TEST_PREFS.with(|p| *p.borrow_mut() = Some(prefs));
     ui::Controller::install(&ui, dir.clone(), tx, lock);
     let shots = std::env::var_os("WDM_PROMPT_SHOTS").map(PathBuf::from);
     if let Some(d) = &shots {
@@ -790,4 +794,184 @@ fn the_prompt_window_from_start_to_end() {
     assert!(h.followed().is_empty());
     h.wait(Duration::from_secs(2));
     let _ = std::fs::remove_dir_all(&h.dir);
+}
+
+// ------------------------------------------------------------------ by hand
+
+/// The element whose accessible name starts with `label` (and has `role`,
+/// when given), as a person would point at it.
+fn find(
+    main: &crate::MainWindow,
+    label: &str,
+    role: Option<i_slint_backend_testing::AccessibleRole>,
+) -> Option<i_slint_backend_testing::ElementHandle> {
+    use i_slint_backend_testing::ElementRoot as _;
+    main.root_element()
+        .query_descendants()
+        .find_all()
+        .into_iter()
+        .find(|e| {
+            e.accessible_label().is_some_and(|l| l.starts_with(label))
+                && role.is_none_or(|r| e.accessible_role() == Some(r))
+                && e.size().width > 0.0
+        })
+}
+
+impl Harness {
+    /// A left click in the middle of what is named `label`, as the mouse
+    /// does it. False when there is nothing by that name on the screen.
+    fn click(
+        &self,
+        main: &crate::MainWindow,
+        label: &str,
+        role: Option<i_slint_backend_testing::AccessibleRole>,
+    ) -> bool {
+        use slint::platform::{PointerEventButton, WindowEvent};
+        let Some(e) = find(main, label, role) else {
+            return false;
+        };
+        let p = e.absolute_position();
+        let s = e.size();
+        let position = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        let button = PointerEventButton::Left;
+        w.window()
+            .dispatch_event(WindowEvent::PointerMoved { position });
+        w.window()
+            .dispatch_event(WindowEvent::PointerPressed { position, button });
+        self.wait(Duration::from_millis(50));
+        w.window()
+            .dispatch_event(WindowEvent::PointerReleased { position, button });
+        self.wait(Duration::from_millis(50));
+        true
+    }
+
+    /// Resizes the main window as a person drags its edge, and lets its
+    /// poll see the new size.
+    fn resize(&self, width: u32, height: u32) {
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        w.set_size(PhysicalSize::new(width, height));
+        self.wait(Duration::from_millis(400));
+    }
+
+    fn snap(&self, name: &str) {
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        let size = w.window().size();
+        self.draw(&w, size.width, size.height, name);
+    }
+}
+
+/// The main window used as a person uses it: click a download, close the
+/// details with their x, bring them back with the toolbar's button, make
+/// the window wide, small and short, visit every page.
+#[test]
+fn the_main_window_by_hand() {
+    use i_slint_backend_testing::AccessibleRole as Role;
+    let h = setup();
+    h.settings("en", "light");
+    let item = |id: &str, name: &str, state: &str, done: u64, total: Option<u64>, speed: u64| {
+        json!({
+            "id": id, "url": format!("https://release-assets.githubusercontent.com/github-production-release-asset/1456124930/0ecc337b-c52b-4fe1-a162-65dd140aaa10?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-11-21T23%3A33%3A10Z&rscd=attachment%3B+filename%3D{name}"), "filename": name,
+            "directory": "/home/taherakib/Downloads/android-sdk-zips", "state": state, "totalBytes": total,
+            "downloadedBytes": done, "speedBps": speed, "etaSecs": 130,
+            "connections": if state == "downloading" { 8 } else { 0 }, "resumable": true,
+            "addedAt": done % 97, "activeMs": 61_000,
+        })
+    };
+    let mut list = Vec::new();
+    for i in 0..24u64 {
+        let (state, done, speed) = match i % 4 {
+            0 => ("downloading", 40_000_000 + i, 3_145_728),
+            1 => ("completed", 126_000_000, 0),
+            2 => ("paused", 10_000_000, 0),
+            _ => ("completed", 94_800, 0),
+        };
+        list.push(summary(item(
+            &format!("d{i}"),
+            &format!("platform-tools_r37.{i}-linux-with-a-rather-long-name.zip"),
+            state,
+            done,
+            Some(126_000_000),
+            speed,
+        )));
+    }
+    h.msg(Msg::List(list));
+    ui::with(ui::Controller::show_main);
+    let main = ui::with_ret(|c| c.main_window())
+        .flatten()
+        .expect("the main window");
+    h.resize(MW, MH);
+    h.snap("hand-1-start");
+
+    // A click on a download shows its details.
+    assert!(
+        h.click(&main, "platform-tools_r37.2-", Some(Role::ListItem)),
+        "a row to click"
+    );
+    assert!(main.get_detail(), "a click selects the download");
+    assert!(main.get_details_open());
+    h.snap("hand-2-selected");
+
+    // Their x closes them.
+    assert!(
+        h.click(&main, "Close details", Some(Role::Button)),
+        "the details' close button"
+    );
+    assert!(!main.get_details_open(), "the x closes the details");
+    h.snap("hand-3-closed");
+
+    // The toolbar brings them back.
+    assert!(
+        h.click(&main, "Download details", Some(Role::Button)),
+        "the toolbar's Download details button"
+    );
+    assert!(
+        main.get_details_open(),
+        "the toolbar button shows the details again"
+    );
+    h.snap("hand-4-reopened");
+
+    // Closed again, then another download: they stay closed until asked.
+    assert!(h.click(&main, "Close details", Some(Role::Button)));
+    assert!(h.click(&main, "platform-tools_r37.14-", Some(Role::ListItem)));
+    assert!(!main.get_details_open());
+    assert!(
+        h.click(&main, "Download details", Some(Role::Button)),
+        "still offered"
+    );
+    assert!(main.get_details_open());
+
+    // Wide, small and short.
+    h.resize(1366, 768);
+    h.snap("hand-5-wide");
+    h.resize(900, 560);
+    h.snap("hand-6-small");
+    h.resize(760, 440);
+    h.snap("hand-7-smallest");
+
+    // Every page, small (tall enough for the whole library).
+    h.resize(900, 720);
+    for (label, name) in [
+        ("Settings", "hand-8-settings"),
+        ("History", "hand-9-history"),
+        ("Connect your browser", "hand-10-browsers"),
+        ("All downloads", "hand-11-back"),
+    ] {
+        assert!(
+            h.click(&main, label, Some(Role::Button)),
+            "the {label} entry"
+        );
+        h.snap(name);
+    }
+
+    // In Bangla and dark, then Arabic (right to left), small, with details.
+    h.settings("bn", "dark");
+    h.resize(MW, MH);
+    h.snap("hand-12-bn-dark");
+    h.resize(900, 560);
+    h.snap("hand-13-bn-dark-small");
+    h.settings("ar", "light");
+    h.snap("hand-14-ar-small");
+    h.resize(1366, 768);
+    h.snap("hand-15-ar-wide");
 }

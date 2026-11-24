@@ -9257,6 +9257,7 @@ dependencies = [
  "arboard",
  "auto-launch",
  "dhat",
+ "i-slint-backend-testing",
  "jiff 1.0.0",
  "png",
  "rfd",

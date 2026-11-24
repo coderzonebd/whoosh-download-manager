@@ -30,8 +30,15 @@ pub const SHOW_MAIN_FILE: &str = "show-main";
 /// that took is given back (`wdm_tray::trim`), as the tray does.
 const SETTLE_AFTER: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(9)];
 /// From this width (logical pixels) the details fit beside every column
-/// of the list; below it they open over the list.
+/// of the list and the toolbar has room for words; below it the details
+/// open over the list and the toolbar's other buttons are icons.
 const WIDE: f32 = 1200.0;
+/// Below this width the list also leaves out Speed and Time left.
+const NARROW: f32 = 900.0;
+/// From these widths the toolbar's buttons have their words (measured with
+/// the sidebar and the smallest search box); below, icons.
+const WORDS: f32 = 1000.0;
+const WORDS_WITH_DETAILS: f32 = 1180.0;
 
 const GROUPS: [&str; 6] = [
     "all",
@@ -164,7 +171,7 @@ impl Default for Main {
             page: Page::Downloads,
             poll: Timer::default(),
             next_local: 0,
-            hide_details: wdm_tray::prefs::load().hide_details,
+            hide_details: super::load_prefs().hide_details,
             settle: Rc::new(Timer::default()),
             was_busy: false,
         }
@@ -320,14 +327,33 @@ impl Controller {
         self.settle_soon();
     }
 
-    /// Whether the details fit beside the list, from the window's size now
-    /// (the poll: a resize has no event of its own here).
+    /// How much room the window has, from its size now (the poll: a
+    /// resize has no event of its own here).
     fn check_width(&self) {
         if let Some(w) = &self.main.window {
             let win = w.window();
-            let wide = win.size().to_logical(win.scale_factor()).width >= WIDE;
-            if w.get_wide() != wide {
-                w.set_wide(wide);
+            let width = win.size().to_logical(win.scale_factor()).width;
+            let class = if width >= WIDE {
+                2
+            } else if width >= NARROW {
+                1
+            } else {
+                0
+            };
+            let room = w.global::<crate::Room>();
+            if room.get_size_class() != class {
+                room.set_size_class(class);
+            }
+            // With the Download details button there too, the words need more.
+            let details_button = self.main.active.is_some() && self.main.hide_details;
+            let words = width
+                >= if details_button {
+                    WORDS_WITH_DETAILS
+                } else {
+                    WORDS
+                };
+            if room.get_words() != words {
+                room.set_words(words);
             }
         }
     }
@@ -346,7 +372,7 @@ impl Controller {
         self.main.hide();
         self.main.removing = None;
         self.settle_soon();
-        let prefs = wdm_tray::prefs::load();
+        let prefs = super::load_prefs();
         let tray = wdm_tray::locks::held(&self.dir, wdm_tray::locks::TRAY);
         if !prefs.close_to_tray && tray {
             // Not kept in the tray: closing quits WDM (as the tray's Quit).
@@ -992,7 +1018,7 @@ impl Controller {
             "details-close" | "details-open" => {
                 let hide = id == "details-close";
                 self.main.hide_details = hide;
-                if let Some(path) = wdm_tray::prefs::path() {
+                if let Some(path) = super::prefs_path() {
                     let mut p = wdm_tray::prefs::load_from(&path);
                     p.hide_details = hide;
                     if let Err(err) = wdm_tray::prefs::save_to(&path, &p) {
