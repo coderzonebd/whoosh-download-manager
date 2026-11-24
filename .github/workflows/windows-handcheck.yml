@@ -1,0 +1,49 @@
+# WDM tried by hand on a fresh GitHub Windows runner: the main window and its
+# pages, downloads from cdn.kernel.org, the tray, a download and a video page
+# handed over as the browser extension does (through wdm-nmhost). Screenshots
+# of each step, what UI Automation sees in each window, and the logs
+# (docs/bench/windows-handcheck.ps1). Runs on a push to bench/handcheck, or
+# by hand. Nothing is released.
+name: Windows hand-check
+
+on:
+  push:
+    branches: ["bench/handcheck"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-handcheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  handcheck:
+    name: Try WDM on Windows
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: Build WDM (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p wdm-prompt -p wdm-tray -p wdm-daemon -p wdm-cli -p wdm-nmhost
+          mkdir app
+          cp target/release/{wdm-prompt,wdm-tray,wdm-daemon,wdm,wdm-nmhost}.exe app/
+      - name: Try it
+        shell: pwsh
+        run: .\docs\bench\windows-handcheck.ps1 -Bin "$PWD\app" -Out "$env:RUNNER_TEMP\handcheck"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-handcheck
+          path: ${{ runner.temp }}/handcheck
+          retention-days: 30
