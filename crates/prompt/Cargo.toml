@@ -40,6 +40,10 @@ wdm-nmhost = { path = "../nmhost" }
 # Copy address (as the desktop app's clipboard plugin uses it).
 arboard = { version = "3", default-features = false }
 
+[target.'cfg(windows)'.dependencies]
+# The work area and DPI, to fit the main window to the screen (src/fit.rs).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
+
 [dev-dependencies]
 # The UI tests render each screen to PNG (WDM_PROMPT_SHOTS=<dir>).
 png = "0.18"

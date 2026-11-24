@@ -299,6 +299,9 @@ impl Controller {
             super::history::wire_history(&window);
             super::browsers::wire_browsers(&window);
             window.set_rows(ModelRc::from(self.main.rows.clone()));
+            // Its size and place on the screen, before it first shows (the
+            // preferred and minimum sizes of MainWindow in ui/main.slint).
+            crate::fit::fit(window.window(), (1120.0, 700.0), (760.0, 440.0));
             self.main.window = Some(window);
             self.main.dirty = true;
             self.apply_look();
