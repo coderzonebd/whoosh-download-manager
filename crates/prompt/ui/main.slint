@@ -104,8 +104,8 @@ component NavEntry inherits Rectangle {
 // buttons are icons; 0 below: the list also leaves out Speed and Time left.
 export global Room {
     in-out property <int> size-class: 2;
-    // The toolbars' buttons have room for their words (measured: ~1150 px
-    // for the downloads' five).
+    // The toolbars' buttons have room for their words (measured: ~960 px
+    // for the downloads' four).
     in-out property <bool> words: true;
     out property <bool> wide: Room.size-class >= 2;
 }
@@ -1127,9 +1127,9 @@ export component MainWindow inherits Window {
 
     // The selected download.
     in property <bool> detail;
-    // Its details are shown: only once asked for (the toolbar's button or
-    // the row's menu), never by a click on a row; their x, or choosing
-    // another download, closes them.
+    // The selected download's details are shown: a click on a download
+    // shows its details, a click on another one switches them to it; their
+    // x closes them until the next click on a download.
     in property <bool> details-open: false;
     // See Room.
     out property <bool> wide: Room.wide;
@@ -1210,11 +1210,9 @@ export component MainWindow inherits Window {
                             if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
                             if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
                             if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
-                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.details-label : ""; a11y-label: root.details-label; icon: Icons.panel; enabled: root.detail; checkable: true; checked: root.details-open; clicked => { root.action(root.details-open ? "details-close" : "details-open"); } }
                             if !Theme.rtl: Rectangle { horizontal-stretch: 1; }
                             search-box := LineEdit { min-width: 120px; preferred-width: 240px; horizontal-stretch: 0; text <=> root.query; placeholder-text: root.search-placeholder; horizontal-alignment: Theme.rtl ? right : left; edited(t) => { root.search(t); } }
                             if Theme.rtl: Rectangle { horizontal-stretch: 1; }
-                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.details-label : ""; a11y-label: root.details-label; icon: Icons.panel; enabled: root.detail; checkable: true; checked: root.details-open; clicked => { root.action(root.details-open ? "details-close" : "details-open"); } }
                             if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
                             if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
                             if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
@@ -1270,7 +1268,6 @@ export component MainWindow inherits Window {
                                 Menu {
                                     MenuItem { title: root.open-text; enabled: root.can-open; activated => { root.action("open"); } }
                                     MenuItem { title: root.open-folder-text; enabled: root.can-open; activated => { root.action("reveal"); } }
-                                    MenuItem { title: root.details-label; enabled: root.detail; activated => { root.action("details-open"); } }
                                     MenuSeparator {}
                                     MenuItem { title: root.resume-text; enabled: root.can-resume; activated => { root.action("resume"); } }
                                     MenuItem { title: root.pause-text; enabled: root.can-pause; activated => { root.action("pause"); } }
