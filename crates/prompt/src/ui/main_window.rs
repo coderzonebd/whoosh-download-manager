@@ -29,6 +29,9 @@ pub const SHOW_MAIN_FILE: &str = "show-main";
 /// After the windows open or close, or the downloads end: when the memory
 /// that took is given back (`wdm_tray::trim`), as the tray does.
 const SETTLE_AFTER: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(9)];
+/// From this width (logical pixels) the details fit beside every column
+/// of the list; below it they open over the list.
+const WIDE: f32 = 1200.0;
 
 const GROUPS: [&str; 6] = [
     "all",
@@ -134,6 +137,8 @@ pub struct Main {
     page: Page,
     poll: Timer,
     next_local: u32,
+    /// The details panel was closed by the user (kept in `desktop.json`).
+    hide_details: bool,
     /// Gives memory back once things settle (`SETTLE_AFTER`).
     settle: Rc<Timer>,
     /// Something was downloading at the last poll.
@@ -159,6 +164,7 @@ impl Default for Main {
             page: Page::Downloads,
             poll: Timer::default(),
             next_local: 0,
+            hide_details: wdm_tray::prefs::load().hide_details,
             settle: Rc::new(Timer::default()),
             was_busy: false,
         }
@@ -261,6 +267,7 @@ impl Controller {
         self.main.poll.start(TimerMode::Repeated, POLL, || {
             super::with(|c| {
                 c.poll_update();
+                c.check_width();
                 let busy = c.model.downloads.values().any(|d| model::pausable(d.state));
                 if std::mem::replace(&mut c.main.was_busy, busy) && !busy {
                     c.settle_soon();
@@ -311,6 +318,18 @@ impl Controller {
             let _ = w.show();
         }
         self.settle_soon();
+    }
+
+    /// Whether the details fit beside the list, from the window's size now
+    /// (the poll: a resize has no event of its own here).
+    fn check_width(&self) {
+        if let Some(w) = &self.main.window {
+            let win = w.window();
+            let wide = win.size().to_logical(win.scale_factor()).width >= WIDE;
+            if w.get_wide() != wide {
+                w.set_wide(wide);
+            }
+        }
     }
 
     /// Opening a window, a burst of progress, a notification: the memory
@@ -658,6 +677,9 @@ impl Controller {
         w.set_open_folder_text(t("follow.openFolder"));
         w.set_copy_text(t("action.copyLink"));
         w.set_details_label(t("detail.label"));
+        w.set_close_details(t("detail.close"));
+        w.set_details_open(!self.main.hide_details);
+        self.check_width();
 
         // The empty list.
         if order.is_empty() {
@@ -967,6 +989,18 @@ impl Controller {
         let ids: Vec<String> = self.main.selection.clone();
         let active = self.main.active.clone();
         match id {
+            "details-close" | "details-open" => {
+                let hide = id == "details-close";
+                self.main.hide_details = hide;
+                if let Some(path) = wdm_tray::prefs::path() {
+                    let mut p = wdm_tray::prefs::load_from(&path);
+                    p.hide_details = hide;
+                    if let Err(err) = wdm_tray::prefs::save_to(&path, &p) {
+                        eprintln!("wdm-prompt: desktop.json: {err}");
+                    }
+                }
+                self.render_main();
+            }
             "add" => {
                 self.main.next_local += 1;
                 let offer = MediaOffer {

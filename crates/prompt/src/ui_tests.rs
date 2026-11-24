@@ -106,6 +106,17 @@ impl Harness {
         w.set_size(PhysicalSize::new(MW, MH));
     }
 
+    /// Draws the main window at another size, once the window's poll has
+    /// seen it (whether the details fit beside the list follows the width).
+    fn main_shot_at(&self, name: &str, width: u32, height: u32) {
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        w.set_size(PhysicalSize::new(width, height));
+        self.wait(Duration::from_millis(400));
+        self.draw(&w, width, height, name);
+        w.set_size(PhysicalSize::new(MW, MH));
+        self.wait(Duration::from_millis(400));
+    }
+
     fn draw(&self, window: &Rc<MinimalSoftwareWindow>, w: u32, h: u32, name: &str) {
         let mut buffer = vec![Rgb8Pixel::default(); (w * h) as usize];
         window.request_redraw();
@@ -462,6 +473,17 @@ fn the_prompt_window_from_start_to_end() {
     main.invoke_row_pressed(3, false, true, false);
     assert_eq!(main.get_rows().iter().filter(|r| r.selected).count(), 4);
     h.main_shot("main-selected");
+    // Wide enough: the details beside every column. Narrower (the default
+    // 1120): over the list, which keeps all its columns either way.
+    h.main_shot_at("main-selected-wide", 1366, 760);
+    h.main_shot_at("main-selected-narrow", 900, 600);
+    // Closed (as its x does; not called here, which would write desktop.json):
+    // the toolbar offers Details again.
+    main.set_details_open(false);
+    h.main_shot("main-details-closed");
+    main.set_details_open(true);
+    // Short: the library scrolls instead of cutting off its last entries.
+    h.main_shot_at("main-short", 1120, 420);
     main.invoke_action("pause".into());
     let calls = h.calls();
     assert_eq!(calls[0].0, method::DOWNLOAD_PAUSE);
