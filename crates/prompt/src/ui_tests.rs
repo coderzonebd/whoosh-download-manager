@@ -981,3 +981,75 @@ fn the_main_window_by_hand() {
     h.resize(1366, 768);
     h.snap("hand-15-ar-wide");
 }
+
+/// The layout limits of the main window, as the window manager is told
+/// them: (min, max, preferred) width, then height.
+fn limits(main: &crate::MainWindow) -> [(f32, f32, f32); 2] {
+    use i_slint_core::item_tree::ItemTreeRc;
+    use i_slint_core::layout::Orientation;
+    let inner = i_slint_core::window::WindowInner::from_pub(main.window());
+    let tree = inner.component();
+    let tree = ItemTreeRc::borrow_pin(&tree);
+    [Orientation::Horizontal, Orientation::Vertical].map(|o| {
+        let i = tree.as_ref().layout_info(o);
+        (i.min, i.max, i.preferred)
+    })
+}
+
+/// A real window manager is told the layout's limits, and Slint keeps the
+/// window inside them when it shows it. A fixed-width icon in the empty
+/// list's column once capped the width at its minimum: the window opened
+/// as small as it goes (760 px, seen on Linux), whatever size was asked
+/// for. In every state the window must be free to grow, and fit in its
+/// minimum.
+#[test]
+fn the_main_window_can_be_any_size() {
+    let h = setup();
+    h.settings("en", "light");
+    ui::with(ui::Controller::show_main);
+    let main = ui::with_ret(|c| c.main_window())
+        .flatten()
+        .expect("the main window");
+    let check = |state: &str| {
+        for (w, ht) in [(1240, 780), (900, 600), (760, 440)] {
+            h.resize(w, ht);
+            let [(min_w, max_w, _), (min_h, max_h, _)] = limits(&main);
+            assert!(
+                max_w > 100_000.0,
+                "{state} at {w}x{ht}: no wider than {max_w}"
+            );
+            assert!(
+                max_h > 100_000.0,
+                "{state} at {w}x{ht}: no taller than {max_h}"
+            );
+            assert_eq!((min_w, min_h), (760.0, 440.0), "{state} at {w}x{ht}");
+        }
+    };
+    check("the empty list");
+    let item = |id: &str| {
+        summary(json!({
+            "id": id, "url": "https://e.org/a.zip", "filename": "a.zip",
+            "directory": "/d", "state": "completed", "totalBytes": 5, "downloadedBytes": 5,
+            "speedBps": 0, "etaSecs": 0, "connections": 0, "resumable": true, "addedAt": 1,
+            "activeMs": 1,
+        }))
+    };
+    h.msg(Msg::List(vec![item("a"), item("b")]));
+    assert_eq!(main.get_rows().row_count(), 2);
+    check("the list");
+    main.invoke_row_pressed(0, false, false, false);
+    assert!(main.get_detail() && main.get_details_open());
+    check("the details open");
+    main.invoke_action("remove".into());
+    check("the remove question");
+    main.invoke_remove_confirmed(false);
+    for (id, page) in [
+        ("page:settings", 1),
+        ("page:history", 2),
+        ("page:browsers", 3),
+    ] {
+        main.invoke_nav_picked(id.into());
+        assert_eq!(main.get_page(), page);
+        check(id);
+    }
+}

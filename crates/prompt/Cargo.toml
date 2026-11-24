@@ -50,6 +50,9 @@ png = "0.18"
 # Finds elements by their accessible name, so a test can click what a
 # person clicks (the same version as slint).
 i-slint-backend-testing = "=1.19.0"
+# The window's layout limits (the ones a real window manager is told), which
+# the software test window does not apply.
+i-slint-core = "=1.19.0"
 
 [build-dependencies]
 slint-build = "1.19"

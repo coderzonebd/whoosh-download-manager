@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The main window's size when it opens. Slint opens a window at the
-//! preferred width of what is in it, whatever `preferred-width` the window
-//! itself names: ~944 px once, and the minimum, 760 px, after the toolbar
-//! learned to shrink (seen in the real window on Linux: icons only, no
-//! Speed or Time left, names cut short). So the size is set here, to the
-//! one wanted (the default, or the one the window had when it was closed).
+//! The main window's size when it opens: the default, or the one it had
+//! when it was closed. (When it shows a window, Slint also keeps it inside
+//! the layout's own limits; a layout that named a maximum width by mistake
+//! once made it open as small as it goes, 760 px. `ui_tests` checks that
+//! no state of the window has one.)
 //!
 //! That is more than many screens have once the taskbar is counted:
 //! 1024×768, or a 1366×768 laptop at 125 % (~1093×614 to work with), and
