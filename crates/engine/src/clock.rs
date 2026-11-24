@@ -108,7 +108,7 @@ impl Clock for SystemClock {
     }
 
     fn local(&self) -> LocalTime {
-        let z = jiff::Zoned::now();
+        let z = jiff::ZonedDateTime::now();
         LocalTime::from_civil(
             i32::from(z.year()),
             z.month() as u32,

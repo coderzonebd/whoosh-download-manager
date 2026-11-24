@@ -40,7 +40,7 @@ pub fn date(ms: i64, now_ms: i64) -> String {
     let at = |ms: i64| {
         jiff::Timestamp::from_millisecond(ms)
             .ok()
-            .map(|t| t.to_zoned(tz.clone()))
+            .map(|t| t.to_zoned_datetime(tz.clone()))
     };
     match (at(ms), at(now_ms)) {
         (Some(a), Some(b)) if a.date() == b.date() => a.strftime("%H:%M").to_string(),
