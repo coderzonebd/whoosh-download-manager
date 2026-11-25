@@ -1,6 +1,6 @@
 # WDM usage numbers
 
-Updated 2026-11-24 by `.github/workflows/usage-stats.yml`. Nothing here identifies a person: downloads are GitHub's counters, and active copies are counted from update checks without IP addresses or IDs (docs/privacy.md).
+Updated 2026-11-25 by `.github/workflows/usage-stats.yml`. Nothing here identifies a person: downloads are GitHub's counters, and active copies are counted from update checks without IP addresses or IDs (docs/privacy.md).
 
 ## Downloads (all releases)
 
@@ -20,7 +20,8 @@ The desktop app checks for updates once a day, so update checks per day are clos
 
 | Day (UTC) | Update checks |
 |---|---:|
-| 2026-11-24 | 1 |
+| 2026-11-25 | 1 |
+| 2026-11-24 | 2 |
 | 2026-11-23 | 2 |
 | 2026-11-22 | 2 |
 | 2026-11-21 | 8 |
