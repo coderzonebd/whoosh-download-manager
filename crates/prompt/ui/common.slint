@@ -26,6 +26,8 @@ export global Theme {
     out property <color> sunken: dark ? #081028 : #f4f7ff;
     out property <color> selected: dark ? #1a2858 : #e4ecff;
     out property <color> accent-text: dark ? #8fb5ff : #1746b3;
+    // Text and marks on an accent fill (--vy-color-text-on-accent).
+    out property <color> on-accent: dark ? #071026 : #ffffff;
     out property <color> focus: dark ? #8fb5ff : #2563eb;
     out property <color> success: dark ? #5bd99b : #126b39;
     out property <color> warning: dark ? #f5b764 : #874900;
@@ -87,6 +89,8 @@ export struct Fact {
     value: string,
     label2: string,
     value2: string,
+    // A path or an address: no spaces to break at, so it breaks anywhere.
+    anywhere: bool,
 }
 
 export struct Sub {
@@ -108,26 +112,20 @@ export component Icon inherits Path {
     accessible-role: none;
 }
 
-// The category tile of the file (`FileIcon.svelte`).
-export component Tile inherits Rectangle {
-    in property <string> category;
-    in property <length> size: 42px;
-    property <color> tint: category == "video" ? Theme.info
-        : category == "music" ? Theme.danger
-        : category == "documents" ? Theme.accent
-        : category == "compressed" ? Theme.warning-tint
-        : category == "programs" ? Theme.bar
-        : category == "images" ? Theme.bar.mix(Theme.accent, 55%)
-        : Theme.neutral;
-    width: root.size;
-    height: root.size;
-    border-radius: root.size > 30px ? 10px : 6px;
-    background: tint.with-alpha(0.13);
-    Icon {
-        width: root.size * 0.52;
-        height: root.size * 0.52;
-        tint: root.tint;
-        name: category == "video" ? Icons.video
+// A category's colour (--vy-cat-*) and icon, as the list's tiles and the
+// library's categories show them.
+export global Category {
+    public pure function tint(category: string) -> color {
+        return category == "video" ? Theme.info
+            : category == "music" ? Theme.danger
+            : category == "documents" ? Theme.accent
+            : category == "compressed" ? Theme.warning-tint
+            : category == "programs" ? Theme.bar
+            : category == "images" ? Theme.bar.mix(Theme.accent, 55%)
+            : Theme.neutral;
+    }
+    public pure function icon(category: string) -> string {
+        return category == "video" ? Icons.video
             : category == "music" ? Icons.music
             : category == "documents" ? Icons.document
             : category == "compressed" ? Icons.archive
@@ -137,28 +135,58 @@ export component Tile inherits Rectangle {
     }
 }
 
-// A button in the app's style (`.vy-btn`): the main action yellow, the rest
-// outlined; `checkable` ones make a two-way choice ("Video" / "Audio only").
+// The category tile of the file (`FileIcon.svelte`).
+export component Tile inherits Rectangle {
+    in property <string> category;
+    in property <length> size: 42px;
+    property <color> tint: Category.tint(category);
+    width: root.size;
+    height: root.size;
+    border-radius: root.size > 30px ? 10px : 6px;
+    background: tint.with-alpha(0.13);
+    Icon {
+        width: root.size * 0.52;
+        height: root.size * 0.52;
+        tint: root.tint;
+        name: Category.icon(category);
+    }
+}
+
+// A button in the app's style (`.vy-btn`): the main action a yellow pill
+// with a hard edge (`.vy-btn--primary`), the rest outlined, `ghost` ones
+// without a border (a panel's x); `checkable` ones make a choice ("Video" /
+// "Audio only", a weekday) and are filled when chosen. Icon-only buttons
+// are square.
 export component Button inherits Rectangle {
     in property <string> text;
     in property <string> icon;
     in property <bool> primary;
+    in property <bool> ghost;
     in property <bool> enabled: true;
     in property <bool> checkable;
     in property <bool> checked;
     // What a screen reader says (an icon-only button has no text).
     in property <string> a11y-label: root.text;
     callback clicked();
-    min-width: max(root.text == "" ? 34px : 64px, label.preferred-width + (root.icon == "" ? 28px : 50px));
+    property <bool> icon-only: root.text == "";
+    property <length> pad: root.icon-only ? 0px : root.primary ? 16px : 12px;
+    min-width: root.icon-only ? 34px
+        : max(64px, label.preferred-width + 2 * root.pad + (root.icon == "" ? 0px : 21px) + (root.primary ? 4px : 2px));
     min-height: 34px;
-    border-radius: 8px;
-    background: !root.enabled ? (root.primary ? Theme.primary.with-alpha(0.45) : Theme.surface)
-        : root.primary ? (touch.pressed ? Theme.primary-hover.darker(8%) : touch.has-hover ? Theme.primary-hover : Theme.primary)
-        : root.checked ? Theme.accent-subtle
-        : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.surface;
-    border-width: 1px;
+    border-radius: root.primary ? self.height / 2 : 8px;
+    background: root.primary ? (!root.enabled ? Theme.primary : touch.pressed ? Theme.primary : touch.has-hover ? Theme.primary-hover : Theme.primary)
+        : root.checked ? Theme.accent
+        : !root.enabled ? (root.ghost ? transparent : Theme.surface)
+        : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover
+        : root.ghost ? transparent : Theme.surface;
+    border-width: root.primary ? 2px : root.ghost && !root.checked ? 0px : 1px;
     border-color: root.primary ? Theme.primary-edge : root.checked ? Theme.accent : Theme.border-strong;
-    opacity: root.enabled ? 1 : 0.55;
+    // The pill's hard edge under it; pressed, it sinks onto it. None when
+    // it cannot be used: the faded pill let it show through as a dark smear.
+    drop-shadow-offset-y: touch.pressed ? 1px : 3px;
+    drop-shadow-color: root.primary && root.enabled ? Theme.primary-edge : transparent;
+    // One fade when it cannot be used, like the web's `opacity: .45`.
+    opacity: root.enabled ? 1 : 0.45;
     accessible-role: button;
     accessible-label: root.a11y-label;
     accessible-enabled: root.enabled;
@@ -186,9 +214,9 @@ export component Button inherits Rectangle {
     }
     HorizontalLayout {
         alignment: center;
-        spacing: 6px;
-        padding-left: 12px;
-        padding-right: 12px;
+        spacing: root.icon == "" || root.icon-only ? 0px : 6px;
+        padding-left: root.pad;
+        padding-right: root.pad;
         if root.icon != "": Icon {
             name: root.icon;
             tint: label.color;
@@ -198,9 +226,9 @@ export component Button inherits Rectangle {
         }
         label := Text {
             text: root.text;
-            color: root.primary ? Theme.primary-text : root.checked ? Theme.accent : Theme.text;
-            font-size: 13px;
-            font-weight: root.primary ? 600 : 500;
+            color: root.primary ? Theme.primary-text : root.checked ? Theme.on-accent : Theme.text;
+            font-size: root.primary ? 14px : 13px;
+            font-weight: root.primary ? 700 : root.checked ? 600 : 500;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -210,9 +238,93 @@ export component Button inherits Rectangle {
         y: -3px;
         width: parent.width + 6px;
         height: parent.height + 6px;
-        border-radius: 11px;
+        border-radius: root.primary ? self.height / 2 : 11px;
         border-width: 2px;
         border-color: Theme.focus;
+    }
+}
+
+// A check box drawn in the app's colours (`.vy-pick`): an accent box with a
+// check when on, the text beside it (at the start side) in the theme's
+// text colour. The same `checked` / `toggled` as the std CheckBox.
+export component Check inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled();
+    // Where the text starts (a Toggle's hint lines up under it).
+    out property <length> indent: 28px;
+    min-height: max(20px, row.min-height);
+    accessible-role: checkbox;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.flip(); }
+    opacity: root.enabled ? 1 : 0.45;
+    function flip() {
+        if root.enabled {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+    forward-focus: focus;
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Space {
+                root.flip();
+                return accept;
+            }
+            reject
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            focus.focus();
+            root.flip();
+        }
+    }
+    row := HorizontalLayout {
+        spacing: 10px;
+        alignment: Theme.rtl ? end : start;
+        if Theme.rtl: Text {
+            text: root.text;
+            color: Theme.text;
+            wrap: word-wrap;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+            box := Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border-width: root.checked ? 0px : 1.5px;
+                border-color: touch.has-hover ? Theme.accent : Theme.border-strong;
+                background: root.checked ? Theme.accent : Theme.surface;
+                if root.checked: Icon { name: Icons.check; tint: Theme.on-accent; width: 14px; height: 14px; stroke-width: 2.25px; }
+                if focus.has-focus: Rectangle {
+                    x: -3px;
+                    y: -3px;
+                    width: parent.width + 6px;
+                    height: parent.height + 6px;
+                    border-radius: 7px;
+                    border-width: 2px;
+                    border-color: Theme.focus;
+                }
+            }
+        }
+        if !Theme.rtl: Text {
+            text: root.text;
+            color: Theme.text;
+            wrap: word-wrap;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+        }
     }
 }
 

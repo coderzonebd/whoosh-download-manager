@@ -6,8 +6,8 @@
 // and fills in every text, already translated and ordered for the
 // language's direction.
 
-import { CheckBox, ComboBox, LineEdit, Palette, ScrollView, Spinner } from "std-widgets.slint";
-import { Theme, Icons, Btn, Fact, Sub, Icon, Tile, Button, Label, Hint, Status } from "common.slint";
+import { ComboBox, LineEdit, Palette, ScrollView, Spinner } from "std-widgets.slint";
+import { Theme, Icons, Btn, Fact, Sub, Check, Icon, Tile, Button, Label, Hint, Status } from "common.slint";
 export { Theme, Btn, Fact, Sub }
 
 // The file at a glance: tile, size, resumability, where it comes from.
@@ -178,12 +178,16 @@ export component PromptWindow inherits Window {
             reject
         }
 
+        // The heading and the buttons keep 20 px from the edges; the body
+        // scrolls edge to edge with the same 20 px inside, so its scroll bar
+        // sits in that margin, clear of the cards, and both sides match.
         VerticalLayout {
-            padding: 20px;
-            padding-bottom: 16px;
-            spacing: 12px;
+            padding-top: 20px;
 
             if root.screen != 0: VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-bottom: 12px;
                 spacing: 4px;
                 Text {
                     text: root.heading;
@@ -199,6 +203,7 @@ export component PromptWindow inherits Window {
             if root.screen == 0: VerticalLayout {
                 alignment: center;
                 spacing: 12px;
+                padding: 20px;
                 vertical-stretch: 1;
                 Text {
                     text: root.empty-text;
@@ -218,8 +223,9 @@ export component PromptWindow inherits Window {
                 vertical-stretch: 1;
                 VerticalLayout {
                     spacing: 14px;
-                    padding-right: Theme.rtl ? 0px : 6px;
-                    padding-left: Theme.rtl ? 6px : 0px;
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-bottom: 14px;
                     alignment: start;
 
                     // ---------------------------------------------------- add: the address
@@ -337,7 +343,7 @@ export component PromptWindow inherits Window {
                             if root.subs.length > 0: VerticalLayout {
                                 spacing: 4px;
                                 Label { text: root.subs-label; }
-                                for s[i] in root.subs: CheckBox {
+                                for s[i] in root.subs: Check {
                                     text: s.label;
                                     checked: s.checked;
                                     toggled => { root.sub-toggled(i, self.checked); }
@@ -492,12 +498,16 @@ export component PromptWindow inherits Window {
                             Status { icon: Icons.alert; tint: Theme.danger; text: root.note; }
                         }
                     }
+                    // Two columns of the same width, so the second lines up
+                    // from row to row ("Time left" under "Size"): no minimum
+                    // of their own (a longer value widened its column).
                     if root.screen == 3: VerticalLayout {
                         spacing: 10px;
                         for f in root.facts: HorizontalLayout {
                             spacing: 16px;
                             VerticalLayout {
                                 horizontal-stretch: 1;
+                                min-width: 0px;
                                 preferred-width: 0px;
                                 spacing: 2px;
                                 Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
@@ -505,6 +515,7 @@ export component PromptWindow inherits Window {
                             }
                             VerticalLayout {
                                 horizontal-stretch: f.label2 != "" ? 1 : 0;
+                                min-width: 0px;
                                 preferred-width: 0px;
                                 visible: f.label2 != "";
                                 spacing: 2px;
@@ -524,9 +535,15 @@ export component PromptWindow inherits Window {
             }
 
             // ---------------------------------------------------- the buttons
+            // Under a line, so what scrolls under them is seen to go on.
+            if root.screen != 0: Rectangle { height: 1px; background: Theme.border; }
             if root.screen != 0: HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 12px;
+                padding-bottom: 16px;
                 spacing: 8px;
-                if root.screen == 2 && !Theme.rtl: CheckBox {
+                if root.screen == 2 && !Theme.rtl: Check {
                     text: root.start-now-text;
                     checked <=> root.start-now;
                     toggled => { root.start-now-toggled(self.checked); }
@@ -558,7 +575,7 @@ export component PromptWindow inherits Window {
                     enabled: b.enabled;
                     clicked => { root.button(b.id); }
                 }
-                if root.screen == 2 && Theme.rtl: CheckBox {
+                if root.screen == 2 && Theme.rtl: Check {
                     text: root.start-now-text;
                     checked <=> root.start-now;
                     toggled => { root.start-now-toggled(self.checked); }
@@ -567,7 +584,7 @@ export component PromptWindow inherits Window {
         }
     }
 
-    // The std widgets (text fields, lists, check boxes) follow the light or dark scheme.
+    // The std widgets (text fields, lists) follow the light or dark scheme.
     // The system's scheme, before the app's replaces it ("theme: system" follows it).
     out property <bool> system-dark;
     init => {

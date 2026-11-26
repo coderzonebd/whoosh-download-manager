@@ -68,6 +68,15 @@ fn in_group(group: &str, state: DownloadState) -> bool {
     }
 }
 
+/// Whether `text` has a stretch longer than a line of the details holds,
+/// with nowhere to break between words (a path, an address, a name with no
+/// spaces): such text breaks anywhere; the rest breaks between words (a
+/// name cut mid-word, "nigh / t.mp4", read badly).
+fn breaks_anywhere(text: &str) -> bool {
+    text.split(|c: char| c.is_whitespace() || c == '-')
+        .any(|word| word.chars().count() > 24)
+}
+
 /// What needs you first, then what moves, then what is done (`STATUS_RANK`).
 fn status_rank(state: DownloadState) -> u8 {
     use DownloadState as S;
@@ -541,6 +550,7 @@ impl Controller {
             label: s(label),
             count: s(count(n)),
             icon: s(icon),
+            category: s(""),
             header: false,
         };
         let header = |label: String| NavItem {
@@ -548,6 +558,7 @@ impl Controller {
             label: s(label),
             count: s(""),
             icon: s(""),
+            category: s(""),
             active: false,
             header: true,
         };
@@ -575,12 +586,11 @@ impl Controller {
                 .iter()
                 .filter(|d| tile_category(d.category.as_deref(), &d.filename) == c)
                 .count();
-            nav.push(item(
-                format!("cat:{c}"),
-                lang.t(&format!("category.{c}")),
-                n,
-                "",
-            ));
+            // Its icon in its colour, as the list's tiles (Slint's Category).
+            nav.push(NavItem {
+                category: s(c),
+                ..item(format!("cat:{c}"), lang.t(&format!("category.{c}")), n, "")
+            });
         }
         let names = self.model.queue_names();
         if !names.is_empty() {
@@ -595,7 +605,12 @@ impl Controller {
                 } else {
                     q.clone()
                 };
-                nav.push(item(format!("queue:{q}"), label, n, ""));
+                nav.push(item(
+                    format!("queue:{q}"),
+                    label,
+                    n,
+                    "M12 3.5 3.5 8 12 12.5 20.5 8zM3.5 12.5 12 17l8.5-4.5M3.5 16.5 12 21l8.5-4.5",
+                ));
             }
         }
         let more = vec![
@@ -831,6 +846,7 @@ impl Controller {
         let lang = &self.lang;
         let t = |k: &str| lang.t(k);
         w.set_d_name(s(&d.filename));
+        w.set_d_name_anywhere(breaks_anywhere(&d.filename));
         w.set_d_category(s(tile_category(d.category.as_deref(), &d.filename)));
         w.set_d_state(s(t(&format!("state.{}", state_name(d.state)))));
         w.set_d_tone(tone(d.state));
@@ -848,6 +864,7 @@ impl Controller {
         let moving = d.state == DownloadState::Downloading && d.connections > 0;
         let fact = |label: &str, value: String| Fact {
             label: s(t(label)),
+            anywhere: breaks_anywhere(&value),
             value: s(value),
             label2: s(""),
             value2: s(""),
@@ -867,12 +884,7 @@ impl Controller {
             .as_ref()
             .filter(|_| d.state == DownloadState::Failed)
         {
-            facts.push(Fact {
-                label: s(t("state.failed")),
-                value: s(&e.message),
-                label2: s(""),
-                value2: s(""),
-            });
+            facts.push(fact("state.failed", e.message.clone()));
         }
         if d.state == DownloadState::Completed
             && let Some(ms) = d.active_ms

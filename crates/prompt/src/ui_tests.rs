@@ -777,11 +777,11 @@ fn the_prompt_window_from_start_to_end() {
         "Not found on this computer: Brave and Vivaldi."
     );
     bd.invoke_action("connect".into(), "firefox".into());
-    assert_eq!(
-        bd.get_status_text(),
-        "Could not link Firefox: no permission"
-    );
-    assert!(bd.get_status_error() && !bd.get_busy());
+    // On Firefox's own card, and on no other.
+    let items: Vec<_> = bd.get_items().iter().collect();
+    assert_eq!(items[1].status, "Could not link Firefox: no permission");
+    assert!(items[1].status_error && !bd.get_busy());
+    assert!(items[0].status.is_empty() && items[2].status.is_empty());
     h.main_shot("browsers");
     h.settings("bn", "dark");
     h.main_shot("browsers-bn-dark");
@@ -1049,5 +1049,13 @@ fn the_main_window_can_be_any_size() {
         main.invoke_nav_picked(id.into());
         assert_eq!(main.get_page(), page);
         check(id);
+        if page == 2 {
+            // "Clear history?", over the whole window.
+            let hd = main.global::<crate::HistoryData>();
+            hd.invoke_action("clear".into(), "".into());
+            assert!(hd.get_clearing());
+            check("the clear question");
+            hd.invoke_action("clear-no".into(), "".into());
+        }
     }
 }
