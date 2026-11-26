@@ -64,8 +64,9 @@ pub fn store_of(browser: Browser) -> Listing {
     match browser {
         Browser::Edge if ids.edge.id.is_some() => Listing::EdgeAddOns,
         Browser::Firefox if ids.firefox.amo_slug.is_some() => Listing::Amo,
+        // Only once the listing is live; until then its page does not open.
         Browser::Chrome | Browser::Chromium | Browser::Brave | Browser::Vivaldi | Browser::Edge
-            if ids.chrome_web_store.id.is_some() =>
+            if ids.chrome_web_store.id.is_some() && ids.chrome_web_store.external_install =>
         {
             Listing::ChromeWebStore
         }
