@@ -15,7 +15,7 @@ futures.workspace = true
 hex = "0.4"
 # Local time and the system time zone (IANA rules, DST; on Windows it maps
 # the Windows zone and bundles the database). Already in the lock file.
-jiff = "0.2"
+jiff = "1.0"
 md-5 = "0.11"
 percent-encoding = "2"
 serde_json.workspace = true
@@ -34,7 +34,7 @@ tracing-subscriber.workspace = true
 wdm-core = { workspace = true, features = ["testing"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31", features = ["resource"] }
+nix = { version = "0.32", features = ["resource"] }
 
 [lints]
 workspace = true

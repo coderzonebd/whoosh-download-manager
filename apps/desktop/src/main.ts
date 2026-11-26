@@ -7,9 +7,8 @@
 // It also gets the shell's extras (`host.ts`: folder picker, desktop
 // settings, launch at login) and `whoosh://add?url=…` links (`deeplinks.ts`).
 //
-// `?view=prompt` (the shell's prompt window, `prompt.rs`) mounts only the
-// prompt: the browser downloads that wait for confirmation and the video pages
-// the extension offered, one at a time; it closes itself when done.
+// What the browser hands over is asked about in `wdm-prompt`, a native
+// window of its own (crates/prompt), not here.
 //
 // In a plain browser (the vite dev server) there is no shell, so the UI runs
 // on the mock daemon. Dev-only query parameters for that case:
@@ -21,15 +20,14 @@ import "@wdm/ui/styles.css";
 import type { WdmClient } from "@wdm/api-client";
 import { createMockClient } from "@wdm/api-client/mock";
 import { connectWs } from "@wdm/api-client/ws";
-import { App, PromptApp, type AppState } from "@wdm/ui";
+import { App, type AppState } from "@wdm/ui";
 import { mount } from "svelte";
 import { startCrashReports } from "./crash.ts";
 import { startDeepLinks } from "./deeplinks.ts";
 import { desktopHost } from "./host.ts";
 import { startUpdateNotices } from "./updates.ts";
 import { startShellLanguage } from "./shell-language.svelte.ts";
-import { startNotifications } from "./notify.ts";
-import { startTrayUpdates } from "./tray.ts";
+import { startLoginNotice } from "./notify.ts";
 
 declare const __APP_VERSION__: string;
 
@@ -75,32 +73,39 @@ const client = live ? liveClient() : mockClient();
 const target = document.getElementById("app");
 if (!target) throw new Error("#app is missing from index.html");
 
-/** The shell's prompt window (`prompt.rs`): the query, or the flag its init script sets. */
-const promptView =
-  new URLSearchParams(location.search).get("view") === "prompt" || (window as { __WDM_VIEW__?: string }).__WDM_VIEW__ === "prompt";
-
-if (promptView) {
-  mount(PromptApp, {
-    target,
-    props: { client, mode: live ? "live" : "mock", ...(live ? { host: desktopHost() } : {}) },
-  });
-} else {
-  mount(App, {
-    target,
-    props: {
-      client,
-      mode: live ? "live" : "mock",
-      // The folder picker, tray and login settings exist only in the app.
-      ...(live ? { host: desktopHost() } : {}),
-      onready: (app: AppState) => {
-        startTrayUpdates(client, (bps, active) => app.i18n.t("tray.tooltip", { speed: app.i18n.speed(bps), active: app.i18n.t("status.active", { count: active }) }));
-        if (live) {
-          startNotifications(client, app);
-          startShellLanguage(app);
-          void startDeepLinks(app);
-          void startUpdateNotices(app);
-        }
-      },
+mount(App, {
+  target,
+  props: {
+    client,
+    mode: live ? "live" : "mock",
+    // The folder picker, tray and login settings exist only in the app.
+    ...(live ? { host: desktopHost() } : {}),
+    onready: (app: AppState) => {
+      // The tray tooltip and the system notifications come from the shell (`watch.rs`).
+      if (live) {
+        startViews(app);
+        startLoginNotice(app);
+        startShellLanguage(app);
+        void startDeepLinks(app);
+        void startUpdateNotices(app);
+      }
     },
-  });
+  },
+});
+
+/**
+ * The native main window opens Settings, History and "Connect your browser" here
+ * (`wdm-desktop --view <page>`, `initial_view`); a second such start while this window
+ * is open comes as the `wdm-view` event.
+ */
+function startViews(app: AppState): void {
+  const pages = new Set(["downloads", "settings", "history", "browsers"]);
+  const open = (view: unknown) => {
+    if (typeof view === "string" && pages.has(view)) app.view = view as AppState["view"];
+  };
+  void (async () => {
+    const [{ invoke }, { listen }] = await Promise.all([import("@tauri-apps/api/core"), import("@tauri-apps/api/event")]);
+    open(await invoke<string | null>("initial_view"));
+    await listen<string>("wdm-view", (e) => open(e.payload));
+  })().catch(() => undefined);
 }

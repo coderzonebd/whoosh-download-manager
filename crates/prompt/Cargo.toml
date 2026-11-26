@@ -1,0 +1,61 @@
+[package]
+name = "wdm-prompt"
+description = "The prompt window of the WDM desktop app: a small native window with no web view"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "wdm-prompt"
+path = "src/main.rs"
+
+[features]
+# Heap profile of a run, written to dhat-heap.json when the window closes
+# (`cargo run -p wdm-prompt --features dhat-heap -- --main`); for finding memory.
+dhat-heap = ["dep:dhat"]
+
+[dependencies]
+dhat = { version = "0.3", optional = true }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+wdm-client.workspace = true
+wdm-crash.workspace = true
+wdm-proto.workspace = true
+wdm-tray = { path = "../tray", default-features = false }
+# Software rendering (no GPU context to keep in memory) through winit; the
+# std widgets' text fields and lists, and AccessKit for screen readers.
+slint = { version = "1.19", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "software-renderer-systemfonts", "software-renderer-path", "accessibility"] }
+# The folder picker, as the desktop app's dialog plugin uses it (portal on Linux).
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland", "common-controls-v6"] }
+
+# Launch at login, as the app's tauri-plugin-autostart writes it.
+auto-launch = "0.6"
+# History's dates in local time (the system's time zone).
+jiff = "1.0"
+# "Connect your browser": finding the browsers and linking the host to them.
+wdm-nmhost = { path = "../nmhost" }
+# Copy address (as the desktop app's clipboard plugin uses it).
+arboard = { version = "3", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+# The work area and DPI, to fit the main window to the screen (src/fit.rs).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
+
+[dev-dependencies]
+# The UI tests render each screen to PNG (WDM_PROMPT_SHOTS=<dir>).
+png = "0.18"
+# Finds elements by their accessible name, so a test can click what a
+# person clicks (the same version as slint).
+i-slint-backend-testing = "=1.19.0"
+# The window's layout limits (the ones a real window manager is told), which
+# the software test window does not apply.
+i-slint-core = "=1.19.0"
+
+[build-dependencies]
+slint-build = "1.19"
+
+[lints]
+workspace = true

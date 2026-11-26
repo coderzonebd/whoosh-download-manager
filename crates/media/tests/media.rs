@@ -65,6 +65,12 @@ fn main() {
         ("install_checks_the_upstream_checksum", || {
             Box::pin(install_checks_the_upstream_checksum())
         }),
+        ("a_found_update_installs_without_waiting_a_day", || {
+            Box::pin(a_found_update_installs_without_waiting_a_day())
+        }),
+        ("a_program_put_in_bin_by_hand_is_not_updated", || {
+            Box::pin(a_program_put_in_bin_by_hand_is_not_updated())
+        }),
         ("prefetch_fetches_what_is_missing_and_says_so", || {
             Box::pin(prefetch_fetches_what_is_missing_and_says_so())
         }),
@@ -800,18 +806,23 @@ impl Fetcher for FakeUpstream {
 }
 
 fn upstream(published_sha: Option<&str>) -> (Arc<FakeUpstream>, Vec<u8>) {
+    upstream_at("2026.10.26", published_sha)
+}
+
+/// yt-dlp's release `version` upstream.
+fn upstream_at(version: &str, published_sha: Option<&str>) -> (Arc<FakeUpstream>, Vec<u8>) {
     let asset = wdm_media::upstream::yt_dlp_asset_name().expect("platform has a build");
     let base = "https://up.example.test/yt-dlp/releases";
-    let body = b"#!/bin/sh\necho fake yt-dlp\n".to_vec();
+    let body = format!("#!/bin/sh\necho fake yt-dlp {version}\n").into_bytes();
     let sha = published_sha.map_or_else(|| sha256_hex(&body), str::to_owned);
     let mut files = BTreeMap::new();
     files.insert(
-        format!("{base}/download/2026.10.26/SHA2-256SUMS"),
+        format!("{base}/download/{version}/SHA2-256SUMS"),
         format!("{}  other\n{sha}  {asset}\n", "0".repeat(64)).into_bytes(),
     );
-    files.insert(format!("{base}/download/2026.10.26/{asset}"), body.clone());
+    files.insert(format!("{base}/download/{version}/{asset}"), body.clone());
     let mut resolved = BTreeMap::new();
-    resolved.insert(format!("{base}/latest"), format!("{base}/tag/2026.10.26"));
+    resolved.insert(format!("{base}/latest"), format!("{base}/tag/{version}"));
     (
         Arc::new(FakeUpstream {
             files,
@@ -840,6 +851,55 @@ fn tools_config(dir: &Path) -> ToolsConfig {
         deno: None,
         bundled: None,
     }
+}
+
+/// A newer yt-dlp found by a check (as the Settings button did) is
+/// installed by the next automatic run, not left "available" until the
+/// daily check is due again (seen on a real install: 2026.11.23 waited).
+async fn a_found_update_installs_without_waiting_a_day() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (old, _) = upstream_at("2026.10.26", None);
+    let tools = Tools::open(tools_config(tmp.path()), old).await;
+    tools.ensure(Kind::YtDlp).await.unwrap();
+    drop(tools);
+    // A day later upstream has a new release; a check finds it.
+    let (new, body) = upstream_at("2026.11.23", None);
+    let tools = Tools::open(tools_config(tmp.path()), new).await;
+    let _ = tools.check_updates().await;
+    let yt = tools.status().tools[0].clone();
+    assert_eq!(yt.version.as_deref(), Some("2026.10.26"));
+    assert!(yt.update_available, "{yt:?}");
+    // The hourly run installs it although the last check was just now.
+    tools.auto_update_if_due().await;
+    let yt = tools.status().tools[0].clone();
+    assert_eq!(yt.version.as_deref(), Some("2026.11.23"), "{yt:?}");
+    assert!(!yt.update_available);
+    let program = tools.get(Kind::YtDlp).unwrap().program;
+    assert_eq!(std::fs::read(program).unwrap(), body);
+}
+
+/// yt-dlp someone put in `bin` by hand (as the desktop e2e puts its fake)
+/// is not WDM's to replace, newer upstream or not.
+async fn a_program_put_in_bin_by_hand_is_not_updated() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join(Kind::YtDlp.program());
+    std::fs::write(&program, b"#!/bin/sh\necho 2020.01.01\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let (new, _) = upstream_at("2026.11.23", None);
+    let tools = Tools::open(tools_config(tmp.path()), new.clone()).await;
+    tools.auto_update_if_due().await;
+    assert_eq!(
+        std::fs::read(&program).unwrap(),
+        b"#!/bin/sh\necho 2020.01.01\n",
+        "replaced: {:?}",
+        new.fetched.lock().unwrap()
+    );
 }
 
 /// The background fetch gets what upstream has and reports a failure for what it has not,

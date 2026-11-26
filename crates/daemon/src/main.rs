@@ -65,6 +65,26 @@ struct Args {
     #[arg(long, env = "WDM_MEDIA_TOOLS_DIR", value_name = "DIR")]
     media_tools_dir: Option<PathBuf>,
 
+    /// Offer HTTP/2 to HTTPS servers. Off by default: a download opens one
+    /// request per connection, so HTTP/2 multiplexes nothing, and it keeps
+    /// in the daemon (up to its flow-control window) what HTTP/1.1 leaves
+    /// in the kernel's socket buffer while the disk is behind the network,
+    /// for about twice the CPU (crates/net/README.md). Eight downloads from
+    /// cdn.kernel.org (HTTP/2 and HTTP/3 on offer) on GitHub's Windows
+    /// runner held ~16 MB in the daemon where IDM (HTTP/1.1) held 10-16 MB
+    /// for its whole app.
+    #[arg(long, env = "WDM_HTTP2", action = ArgAction::SetTrue,
+          value_parser = BoolishValueParser::new())]
+    http2: bool,
+
+    /// Use HTTP/3 (QUIC) with servers that advertise it. Off by default:
+    /// 4-5 CPU seconds per GB against HTTP/1.1's 0.4-1.5 (quinn decrypts
+    /// one ~1.4 KiB packet per read; crates/net/README.md), and every new
+    /// connection raced a QUIC handshake against TCP.
+    #[arg(long, env = "WDM_HTTP3", action = ArgAction::SetTrue,
+          value_parser = BoolishValueParser::new())]
+    http3: bool,
+
     /// Started in the background by `wdm`: no logging to stderr, and SIGHUP
     /// is ignored.
     #[arg(long, hide = true)]
@@ -89,7 +109,13 @@ struct Startup {
     serve: f64,
 }
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() -> ExitCode {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
     let started = Instant::now();
     let mut startup = Startup::default();
     let args = Args::parse();
@@ -168,7 +194,11 @@ async fn run(args: Args, data_dir: PathBuf, started: Instant, mut startup: Start
     } else {
         let media = (!args.no_media).then(|| args.media_tools_dir.clone());
         let download_dir = engine::default_download_dir(&data_dir);
-        let net = wdm_net::NetConfig::default();
+        let net = wdm_net::NetConfig {
+            http2: args.http2,
+            http3: args.http3,
+            ..wdm_net::NetConfig::default()
+        };
         match engine::start(&data_dir, net, download_dir, &mut startup.store, media).await {
             Ok(engine) => engine,
             Err(e) => {

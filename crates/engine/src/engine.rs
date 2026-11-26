@@ -139,6 +139,58 @@ struct St {
     next_action: u64,
 }
 
+/// Connections all running downloads share. Each gets the setting
+/// (`max_connections_per_download`) until that would pass this, then an
+/// equal share (eight downloads: eight each, as IDM opens): beyond it more
+/// connections add memory and server load, not speed, since they share
+/// one link.
+pub(crate) const TOTAL_CONNECTIONS: usize = 64;
+/// Connections the running downloads from one server share, at most:
+/// they share that server's link, so more add load (and risk its limit on
+/// connections per address), not speed. Eight downloads from one server on
+/// loopback took the same time with 32 as with 64, with less CPU and ~3 MB
+/// less memory; downloads from different servers are not affected.
+pub(crate) const HOST_CONNECTIONS: usize = 32;
+/// No running download gets fewer.
+const MIN_SHARE: u16 = 2;
+
+/// The connections one of `running` downloads may use, `setting` at most.
+pub(crate) fn connection_share(setting: u16, running: usize) -> u16 {
+    let share = TOTAL_CONNECTIONS / running.max(1);
+    let share = u16::try_from(share).unwrap_or(u16::MAX).max(MIN_SHARE);
+    setting.min(share).max(1)
+}
+
+/// `connection_share`, and no more than an equal share of
+/// `HOST_CONNECTIONS` among the `same_host` downloads (this one included)
+/// running from its server.
+pub(crate) fn host_share(setting: u16, running: usize, same_host: usize) -> u16 {
+    let host = HOST_CONNECTIONS / same_host.max(1);
+    let host = u16::try_from(host).unwrap_or(u16::MAX).max(MIN_SHARE);
+    connection_share(setting, running).min(host).max(1)
+}
+
+/// A running download counted among its server's downloads (`Inner::hosts`)
+/// until it is dropped.
+pub(crate) struct HostSlot {
+    inner: Weak<Inner>,
+    host: String,
+}
+
+impl Drop for HostSlot {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.upgrade() {
+            let mut hosts = lock(&inner.hosts);
+            if let Some(n) = hosts.get_mut(&self.host) {
+                *n = n.saturating_sub(1);
+                if *n == 0 {
+                    hosts.remove(&self.host);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) struct Inner {
     pub(crate) deps: EngineDeps,
     pub(crate) config: EngineConfig,
@@ -152,6 +204,16 @@ pub(crate) struct Inner {
     /// yet: it will save whatever is newest, so another is not needed.
     queued_saves: Mutex<HashSet<DownloadId>>,
     max_conns: AtomicU32,
+    /// Connections working right now, across every download: their write
+    /// buffers share one budget (`run::coalesce_for`).
+    pub(crate) live_workers: Arc<std::sync::atomic::AtomicUsize>,
+    /// Downloads running right now: they share `TOTAL_CONNECTIONS`.
+    pub(crate) running: Arc<std::sync::atomic::AtomicUsize>,
+    /// Downloads started since the engine began (runs, not records).
+    pub(crate) started: AtomicU64,
+    /// Running downloads per server (`host_key`): they share
+    /// `HOST_CONNECTIONS`.
+    hosts: Mutex<HashMap<String, usize>>,
     shutting_down: AtomicBool,
     closed: AtomicBool,
 }
@@ -248,6 +310,10 @@ impl Engine {
         let inner = Arc::new(Inner {
             limiter: Arc::new(RateLimiter::new(speed_limit)),
             max_conns: AtomicU32::new(settings.max_connections_per_download),
+            live_workers: Arc::default(),
+            running: Arc::default(),
+            started: AtomicU64::new(0),
+            hosts: Mutex::default(),
             st: Mutex::new(St {
                 settings,
                 downloads,
@@ -282,6 +348,27 @@ impl Engine {
     pub fn record(&self, id: &str) -> Option<DownloadRecord> {
         self.inner.record(id)
     }
+
+    /// Connections fetching right now, across every download (0: the
+    /// network is quiet, a moment for the daemon to give memory back).
+    pub fn working_connections(&self) -> usize {
+        self.inner
+            .live_workers
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Downloads at work, finishing included (writing the last bytes,
+    /// flushing them to disk), plus connections fetching: 0 means nothing
+    /// is left that will touch the buffers.
+    pub fn busy(&self) -> usize {
+        self.inner.running.load(Ordering::Relaxed) + self.working_connections()
+    }
+
+    /// Downloads started so far: a change since the last look means work
+    /// happened in between, even if it was all over before the look.
+    pub fn runs_started(&self) -> u64 {
+        self.inner.started.load(Ordering::Relaxed)
+    }
 }
 
 impl Inner {
@@ -298,6 +385,28 @@ impl Inner {
         self.max_conns
             .load(Ordering::Relaxed)
             .clamp(1, u32::from(u16::MAX)) as u16
+    }
+
+    /// A running download's share of connections: the setting, or less
+    /// while many downloads run at once (`connection_share`).
+    pub(crate) fn connections_now(&self, host: Option<&str>) -> u16 {
+        let running = self.running.load(Ordering::Relaxed);
+        match host {
+            Some(h) => {
+                let same = lock(&self.hosts).get(h).copied().unwrap_or(1);
+                host_share(self.max_connections(), running, same)
+            }
+            None => connection_share(self.max_connections(), running),
+        }
+    }
+
+    /// Counts a running download among its server's until the slot drops.
+    pub(crate) fn host_slot(self: &Arc<Self>, host: &str) -> HostSlot {
+        *lock(&self.hosts).entry(host.to_owned()).or_insert(0) += 1;
+        HostSlot {
+            inner: Arc::downgrade(self),
+            host: host.to_owned(),
+        }
     }
 
     /// Reserve a unique name for a running download (a probe improved
@@ -1703,5 +1812,33 @@ mod tests {
         assert_eq!(eta(95, Some(100), 10), Some(1));
         assert_eq!(eta(0, None, 10), None);
         assert_eq!(eta(0, Some(100), 0), None);
+    }
+}
+
+#[cfg(test)]
+mod share_tests {
+    use super::connection_share;
+
+    #[test]
+    fn running_downloads_share_the_connections() {
+        assert_eq!(connection_share(16, 1), 16);
+        assert_eq!(connection_share(16, 4), 16);
+        assert_eq!(connection_share(16, 8), 8);
+        assert_eq!(connection_share(16, 40), 2);
+        assert_eq!(connection_share(4, 2), 4);
+        assert_eq!(connection_share(1, 100), 1);
+    }
+
+    #[test]
+    fn downloads_from_one_server_share_fewer() {
+        use super::host_share;
+        // Eight from one server: four each; from eight servers: eight each.
+        assert_eq!(host_share(16, 8, 8), 4);
+        assert_eq!(host_share(16, 8, 1), 8);
+        // Three (the default) from one server: ten each, not sixteen.
+        assert_eq!(host_share(16, 3, 3), 10);
+        assert_eq!(host_share(16, 1, 1), 16);
+        assert_eq!(host_share(16, 40, 40), 2);
+        assert_eq!(host_share(1, 1, 1), 1);
     }
 }

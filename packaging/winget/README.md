@@ -5,7 +5,7 @@ NSIS installer (per-user) and the MSI (per-machine) that `release.yml` builds.
 
 ## Per release
 
-Each release carries `wdm-<version>-package-manifests.tar.gz`, whose
+The release run keeps `wdm-<version>-package-manifests.tar.gz` (Actions → *Release* → the run for the tag → artifact `release-internal`; not on the release page), whose
 `winget/` folder holds these three files filled in (version, URLs,
 `ReleaseDate`, `InstallerSha256`). Copy them into
 `manifests/c/CoderZoneBD/WDM/<version>/` of a winget-pkgs fork, validate

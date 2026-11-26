@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # the release run's internal files, where latest.json is
 
 concurrency:
   group: updater-feed
@@ -29,6 +30,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write # push to the updater branch
+      actions: read # latest.json is in the release run's internal files
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
       GH_TOKEN: ${{ github.token }}
@@ -47,11 +49,16 @@ jobs:
             echo "::error::$TAG is still a draft; publish it first"; exit 1
           fi
           echo "prerelease=$(jq -r .isPrerelease <<<"$info")" >> "$GITHUB_OUTPUT"
-          if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$RUNNER_TEMP"; then
+          # latest.json is not on the release page: it is in the release run's
+          # internal files (older releases attached it; the script takes it from there).
+          status=0
+          src/.github/scripts/release-internal.sh "$TAG" "$RUNNER_TEMP" latest.json || status=$?
+          if [ "$status" = 3 ]; then
             echo "::notice::$TAG has no latest.json (no updater key at build time); the feed is unchanged"
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          [ "$status" = 0 ] || exit "$status"
           echo "found=true" >> "$GITHUB_OUTPUT"
       - name: Update and push the feed
         if: steps.manifest.outputs.found == 'true'

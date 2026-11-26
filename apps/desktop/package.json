@@ -1,6 +1,6 @@
 {
   "name": "@wdm/desktop",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.4",
   "private": true,
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -9,7 +9,7 @@
     "build": "node ../../packaging/browsers/generate.mjs --check && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --test ../../packaging/browsers/generate.test.mjs ../../.github/scripts/package-manifests.test.mjs ../../.github/scripts/updater-feed.test.mjs",
+    "test": "node --test ../../packaging/browsers/generate.test.mjs ../../.github/scripts/package-manifests.test.mjs ../../.github/scripts/updater-feed.test.mjs ../../.github/scripts/edge-submit.test.mjs",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
   },
   "dependencies": {
@@ -20,7 +20,6 @@
     "@tauri-apps/plugin-autostart": "^2.7.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.5.0",
     "@tauri-apps/plugin-dialog": "^2.8.4",
-    "@tauri-apps/plugin-notification": "^2.8.1",
     "@wdm/api-client": "workspace:*",
     "@wdm/design-tokens": "workspace:*",
     "@wdm/ui": "workspace:*",
@@ -31,6 +30,6 @@
     "@tauri-apps/cli": "^2.12.4",
     "svelte-check": "^4.7.8",
     "typescript": "^6.0.3",
-    "vite": "^8.3.6"
+    "vite": "^8.3.8"
   }
 }

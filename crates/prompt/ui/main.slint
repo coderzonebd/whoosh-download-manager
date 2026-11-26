@@ -1,0 +1,1408 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The main window, drawn natively: the library on one side (downloads by
+// state, by category, by queue), the toolbar, the download list, the
+// details of the selected download and the status bar, like the web UI's
+// App.svelte. Rust (src/main_window.rs) fills in every text, already
+// translated, and every list in reading order for the language.
+
+import { CheckBox, ComboBox, LineEdit, ListView, Palette, ScrollView, Spinner } from "std-widgets.slint";
+import { Theme, Icons, Btn, Fact, Icon, Tile, Button, Hint, Label, Status } from "common.slint";
+
+// An entry of the library: a section title (`header`), or a view with its count.
+export struct NavItem {
+    id: string,
+    label: string,
+    count: string,
+    icon: string,
+    active: bool,
+    header: bool,
+}
+
+// A download in the list.
+export struct Row {
+    id: string,
+    name: string,
+    category: string,
+    size: string,
+    progress: float,
+    known: bool,
+    percent: string,
+    status: string,
+    // 0 neutral, 1 moving, 2 done, 3 needs attention.
+    tone: int,
+    speed: string,
+    eta: string,
+    selected: bool,
+}
+
+// A column header; `arrow` shows how the list is sorted by it.
+export struct Column {
+    key: string,
+    label: string,
+    arrow: string,
+}
+
+component NavEntry inherits Rectangle {
+    in property <NavItem> item;
+    callback picked();
+    height: item.header ? 24px : 30px;
+    border-radius: 8px;
+    background: item.active ? Theme.selected : touch.has-hover && !item.header ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: item.label;
+    accessible-checked: item.active;
+    accessible-action-default => { if !item.header { root.picked(); } }
+    touch := TouchArea {
+        enabled: !item.header;
+        mouse-cursor: item.header ? default : pointer;
+        clicked => { root.picked(); }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        if item.icon != "" && !Theme.rtl: Icon {
+            name: item.icon;
+            tint: item.active ? Theme.accent-text : Theme.muted;
+            y: (parent.height - self.height) / 2;
+        }
+        if Theme.rtl: Text {
+            text: item.count;
+            color: Theme.muted;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: item.label;
+            color: item.header ? Theme.subtle : item.active ? Theme.accent-text : Theme.text;
+            font-size: item.header ? 11px : 13px;
+            font-weight: item.header || item.active ? 600 : 400;
+            vertical-alignment: item.header ? bottom : center;
+            horizontal-alignment: Theme.start;
+            overflow: elide;
+        }
+        if !Theme.rtl: Text {
+            text: item.count;
+            color: Theme.muted;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        if item.icon != "" && Theme.rtl: Icon {
+            name: item.icon;
+            tint: item.active ? Theme.accent-text : Theme.muted;
+            y: (parent.height - self.height) / 2;
+        }
+    }
+}
+
+// The columns' widths (the name takes the rest).
+// How much room the main window has, set from its size (computing it from
+// a window's width inside the layout made a layout loop): 2 from 1200 px,
+// where the details sit beside every column and toolbars have words; 1
+// from 900 px: the details open over the list and the toolbars' other
+// buttons are icons; 0 below: the list also leaves out Speed and Time left.
+export global Room {
+    in-out property <int> size-class: 2;
+    // The toolbars' buttons have room for their words (measured: ~960 px
+    // for the downloads' four).
+    in-out property <bool> words: true;
+    out property <bool> wide: Room.size-class >= 2;
+}
+
+global Cols {
+    out property <length> size: 84px;
+    out property <length> progress: 170px;
+    out property <length> speed: 92px;
+    out property <length> eta: 82px;
+}
+
+component Cell inherits Text {
+    color: Theme.text;
+    font-size: 13px;
+    vertical-alignment: center;
+    horizontal-alignment: Theme.rtl ? left : right;
+    overflow: elide;
+}
+
+component ProgressCell inherits VerticalLayout {
+    in property <Row> item;
+    alignment: center;
+    spacing: 3px;
+    Rectangle {
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.track;
+        clip: true;
+        Rectangle {
+            width: item.known ? parent.width * clamp(item.progress, 0, 1) : (item.tone == 1 ? parent.width * 0.3 : 0px);
+            x: Theme.rtl ? parent.width - self.width : 0px;
+            height: parent.height;
+            border-radius: 3px;
+            background: item.tone == 3 ? Theme.danger : item.tone == 2 ? Theme.bar : item.tone == 1 ? Theme.bar : Theme.neutral;
+        }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        Text {
+            text: Theme.rtl ? item.percent : item.status;
+            color: Theme.rtl ? Theme.muted : (item.tone == 3 ? Theme.danger : item.tone == 1 ? Theme.accent-text : item.tone == 2 ? Theme.success : Theme.muted);
+            font-size: 11px;
+            horizontal-stretch: 1;
+            horizontal-alignment: Theme.start;
+            overflow: elide;
+        }
+        Text {
+            text: Theme.rtl ? item.status : item.percent;
+            color: Theme.rtl ? (item.tone == 3 ? Theme.danger : item.tone == 1 ? Theme.accent-text : item.tone == 2 ? Theme.success : Theme.muted) : Theme.muted;
+            font-size: 11px;
+        }
+    }
+}
+
+component NameCell inherits HorizontalLayout {
+    in property <Row> item;
+    spacing: 10px;
+    if !Theme.rtl: Tile { category: item.category; size: 26px; y: (parent.height - self.height) / 2; }
+    Text {
+        horizontal-stretch: 1;
+        text: item.name;
+        color: Theme.text;
+        font-size: 13px;
+        vertical-alignment: center;
+        horizontal-alignment: Theme.start;
+        overflow: elide;
+    }
+    if Theme.rtl: Tile { category: item.category; size: 26px; y: (parent.height - self.height) / 2; }
+}
+
+component RowView inherits Rectangle {
+    in property <Row> item;
+    // Speed and time left go while the details are open (they show there).
+    in property <bool> compact;
+    in property <bool> odd;
+    callback pressed(bool /* ctrl */, bool /* shift */, bool /* right */);
+    callback activated();
+    height: 46px;
+    background: item.selected ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: list-item;
+    accessible-label: item.name + ", " + item.status + ", " + item.percent;
+    accessible-action-default => { root.activated(); }
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.pressed(e.modifiers.control || e.modifiers.meta, e.modifiers.shift, e.button == PointerEventButton.right);
+            }
+        }
+        double-clicked => { root.activated(); }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 14px;
+        if !Theme.rtl: NameCell { item: root.item; horizontal-stretch: 1; }
+        if Theme.rtl && !compact: Cell { text: item.eta; width: Cols.eta; }
+        if Theme.rtl && !compact: Cell { text: item.speed; width: Cols.speed; }
+        if Theme.rtl: ProgressCell { item: root.item; width: Cols.progress; }
+        Cell { text: item.size; width: Cols.size; }
+        if !Theme.rtl: ProgressCell { item: root.item; width: Cols.progress; }
+        if !Theme.rtl && !compact: Cell { text: item.speed; width: Cols.speed; }
+        if !Theme.rtl && !compact: Cell { text: item.eta; width: Cols.eta; }
+        if Theme.rtl: NameCell { item: root.item; horizontal-stretch: 1; }
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+component HeaderCell inherits Rectangle {
+    in property <Column> column;
+    in property <TextHorizontalAlignment> align;
+    callback sort(string);
+    accessible-role: button;
+    accessible-label: column.label;
+    accessible-action-default => { root.sort(column.key); }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.sort(column.key); }
+    }
+    Text {
+        width: 100%;
+        text: Theme.rtl ? column.arrow + " " + column.label : column.label + " " + column.arrow;
+        color: touch.has-hover ? Theme.text : Theme.muted;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-alignment: center;
+        horizontal-alignment: root.align;
+        overflow: elide;
+    }
+}
+
+// The library: downloads by state, by category, then the pages. It scrolls
+// when the window is too short for all of it (the pages at the bottom were
+// cut off), and keeps the pages at the bottom when there is room.
+component SideNav inherits Rectangle {
+    in property <[NavItem]> nav;
+    in property <[NavItem]> nav-more;
+    callback picked(string);
+    width: 224px;
+    background: Theme.sunken;
+    sv := ScrollView {
+        // All of it, or the visible height when that is more (so the
+        // pages keep to the bottom); scrolls when the window is shorter.
+        content-height: max(nav-list.min-height, self.visible-height);
+        nav-list := VerticalLayout {
+            width: sv.visible-width;
+            height: sv.content-height;
+            padding: 12px;
+            spacing: 2px;
+            HorizontalLayout {
+                padding-left: Theme.rtl ? 0px : 10px;
+                padding-right: Theme.rtl ? 10px : 0px;
+                padding-bottom: 10px;
+                spacing: 8px;
+                alignment: Theme.rtl ? end : start;
+                if !Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
+                Text { text: "Whoosh"; color: Theme.text; font-size: 17px; font-weight: 700; vertical-alignment: center; }
+                if Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
+            }
+            for n in root.nav: NavEntry { item: n; picked => { root.picked(n.id); } }
+            Rectangle { vertical-stretch: 1; min-height: 12px; }
+            for n in root.nav-more: NavEntry { item: n; picked => { root.picked(n.id); } }
+        }
+    }
+}
+
+// The details of the selected download, beside the list (or over it, in
+// a window too narrow for both).
+component DetailPanel inherits Rectangle {
+    in property <string> label;
+    in property <string> name;
+    in property <string> category;
+    in property <string> state;
+    in property <int> tone;
+    in property <float> progress;
+    in property <bool> known;
+    in property <string> progress-text;
+    in property <[Fact]> facts;
+    in property <[Btn]> actions;
+    // The close button's name for screen readers.
+    in property <string> close-label;
+    // Over the list instead of beside it: a shadow sets it apart.
+    in property <bool> floating;
+    callback action(string);
+    callback close();
+    width: 300px;
+    background: Theme.surface;
+    drop-shadow-blur: root.floating ? 16px : 0px;
+    drop-shadow-color: root.floating ? #00000030 : transparent;
+    accessible-role: groupbox;
+    accessible-label: root.label;
+    Rectangle { x: Theme.rtl ? parent.width - 1px : 0; width: 1px; background: Theme.border; }
+    Button {
+        x: Theme.rtl ? 8px : parent.width - self.width - 8px;
+        y: 8px;
+        width: 34px;
+        height: 34px;
+        icon: Icons.x;
+        a11y-label: root.close-label;
+        clicked => { root.close(); }
+    }
+    panel-scroll := ScrollView {
+        y: 46px;
+        height: parent.height - 46px;
+    VerticalLayout {
+        width: panel-scroll.visible-width;
+        padding: 18px;
+        padding-top: 0px;
+        spacing: 14px;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 12px;
+            if !Theme.rtl: Tile { category: root.category; }
+            VerticalLayout {
+                spacing: 4px;
+                alignment: center;
+                Text {
+                    text: root.name;
+                    color: Theme.text;
+                    font-weight: 600;
+                    // File names often have no spaces to break at.
+                    wrap: char-wrap;
+                    max-height: 3.9rem;
+                    overflow: elide;
+                    horizontal-alignment: Theme.start;
+                }
+                Text {
+                    text: root.state;
+                    color: root.tone == 3 ? Theme.danger : root.tone == 1 ? Theme.accent-text : root.tone == 2 ? Theme.success : Theme.muted;
+                    font-size: 12px;
+                    font-weight: 600;
+                    horizontal-alignment: Theme.start;
+                }
+            }
+            if Theme.rtl: Tile { category: root.category; }
+        }
+        VerticalLayout {
+            spacing: 6px;
+            Rectangle {
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.track;
+                clip: true;
+                accessible-role: progress-indicator;
+                accessible-value: root.progress-text;
+                Rectangle {
+                    width: root.known ? parent.width * clamp(root.progress, 0, 1) : (root.tone == 1 ? parent.width * 0.3 : 0px);
+                    x: Theme.rtl ? parent.width - self.width : 0px;
+                    height: parent.height;
+                    border-radius: 4px;
+                    background: root.tone == 3 ? Theme.danger : Theme.bar;
+                }
+            }
+            Text { text: root.progress-text; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+        }
+        if root.actions.length > 0: HorizontalLayout {
+            spacing: 6px;
+            alignment: Theme.rtl ? end : start;
+            for b in root.actions: Button { text: b.label; primary: b.primary; enabled: b.enabled; clicked => { root.action(b.id); } }
+        }
+        for f in root.facts: VerticalLayout {
+            spacing: 2px;
+            Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+            // Paths and addresses have no spaces to break at.
+            Text { text: f.value; color: Theme.text; font-size: 13px; wrap: char-wrap; horizontal-alignment: Theme.start; }
+        }
+    }
+    }
+}
+
+// A titled group of settings.
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: 10px;
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: 15px;
+        font-weight: 600;
+        horizontal-alignment: Theme.start;
+    }
+    Rectangle {
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.surface;
+        VerticalLayout {
+            padding: 16px;
+            spacing: 14px;
+            @children
+        }
+    }
+}
+
+// A check box with its explanation under it.
+component Toggle inherits VerticalLayout {
+    in property <string> text;
+    in property <string> hint;
+    in-out property <bool> checked;
+    callback toggled(bool);
+    spacing: 2px;
+    CheckBox {
+        text: root.text;
+        checked <=> root.checked;
+        toggled => { root.toggled(self.checked); }
+    }
+    if root.hint != "": Hint { text: root.hint; }
+}
+
+// A labelled text field with a hint, or an error in its place.
+component Field inherits VerticalLayout {
+    in property <string> label;
+    in property <string> hint;
+    in property <string> error;
+    in-out property <string> text;
+    in property <InputType> input-type: InputType.text;
+    callback edited(string);
+    spacing: 6px;
+    Label { text: root.label; }
+    LineEdit {
+        text <=> root.text;
+        input-type: root.input-type;
+        horizontal-alignment: Theme.rtl && root.input-type == InputType.text ? right : left;
+        edited(t) => { root.edited(t); }
+    }
+    if root.error != "": Text { text: root.error; color: Theme.danger; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+    if root.error == "" && root.hint != "": Hint { text: root.hint; }
+}
+
+// A time window of the speed schedule (src/ui/settings.rs).
+export struct SpeedWin {
+    from: string,
+    to: string,
+    limit: string,
+    unit-index: int,
+    days: [bool],
+    label: string,
+    remove-label: string,
+    time-error: string,
+    limit-error: string,
+    days-hint: string,
+}
+
+// A media tool (src/ui/tools.rs).
+export struct MediaToolRow {
+    name: string,
+    state: string,
+    ready: bool,
+    busy: bool,
+    facts: string,
+    update: string,
+    upstream: string,
+    error: string,
+    action: string,
+}
+
+// What the Settings page shows and what it reports (src/ui/settings.rs).
+export global SettingsData {
+    in-out property <string> title;
+    in-out property <string> unsaved-text;
+    in-out property <bool> dirty;
+    in-out property <bool> valid;
+    in-out property <string> save-text;
+    in-out property <string> revert-text;
+    in-out property <string> status-text;
+    in-out property <bool> status-error;
+
+    in-out property <string> appearance-title;
+    in-out property <string> language-label;
+    in-out property <[string]> languages;
+    in-out property <int> language-index;
+    in-out property <string> language-note;
+    in-out property <string> theme-label;
+    in-out property <[string]> themes;
+    in-out property <int> theme-index;
+
+    in-out property <string> downloads-title;
+    in-out property <string> folder-label;
+    in-out property <string> folder;
+    in-out property <string> folder-error;
+    in-out property <string> browse-text;
+    in-out property <string> organize-text;
+    in-out property <string> organize-hint;
+    in-out property <bool> organize;
+    in-out property <string> active-label;
+    in-out property <string> active-hint;
+    in-out property <string> active;
+    in-out property <string> active-error;
+    in-out property <string> connections-label;
+    in-out property <string> connections-hint;
+    in-out property <string> connections;
+    in-out property <string> connections-error;
+
+    in-out property <string> speed-title;
+    in-out property <string> limit-text;
+    in-out property <bool> limit-on;
+    in-out property <string> limit-label;
+    in-out property <string> limit;
+    in-out property <string> limit-error;
+    in-out property <[string]> units;
+    in-out property <int> unit-index;
+    in-out property <string> schedule-title;
+    in-out property <string> schedule-hint;
+    in-out property <[SpeedWin]> windows;
+    in-out property <[string]> weekdays;
+    in-out property <string> win-from-label;
+    in-out property <string> win-to-label;
+    in-out property <string> win-limit-label;
+    in-out property <string> win-days-label;
+    in-out property <string> win-add-text;
+
+    in-out property <string> computer-title;
+    in-out property <string> computer-hint;
+    in-out property <bool> has-login;
+    in-out property <string> login-text;
+    in-out property <string> login-hint;
+    in-out property <bool> login;
+    in-out property <string> tray-text;
+    in-out property <string> tray-hint;
+    in-out property <bool> tray;
+
+    in-out property <string> browsers-title;
+    in-out property <bool> has-confirm;
+    in-out property <string> confirm-text;
+    in-out property <string> confirm-hint;
+    in-out property <bool> confirm;
+    in-out property <string> browsers-hint;
+    in-out property <string> browsers-open;
+
+    in-out property <string> updates-title;
+    in-out property <string> auto-update-text;
+    in-out property <string> auto-update-hint;
+    in-out property <bool> auto-update;
+    in-out property <string> check-now-text;
+    in-out property <bool> update-busy;
+    in-out property <bool> can-install;
+    in-out property <string> install-text;
+    in-out property <string> update-text;
+    in-out property <bool> update-error;
+
+    in-out property <bool> has-crash;
+    in-out property <string> privacy-title;
+    in-out property <string> crash-text;
+    in-out property <string> crash-hint;
+    in-out property <bool> crash;
+
+    in-out property <string> media-title;
+    in-out property <string> media-hint;
+    in-out property <bool> has-media-tools;
+    in-out property <[MediaToolRow]> media-tools;
+    in-out property <string> media-check-text;
+    in-out property <bool> media-checking;
+    in-out property <string> media-last-check;
+    in-out property <string> media-error;
+    in-out property <bool> media-auto;
+    in-out property <string> media-auto-text;
+    in-out property <string> media-auto-hint;
+
+    callback changed();
+    callback browse();
+    callback save();
+    callback revert();
+    callback desktop(string, bool);
+    callback web(string);
+    // A time window: (its place, "from" | "to" | "limit" | "unit" | "day" | "add" | "remove", the value).
+    callback window(int, string, string);
+    // "Check for a new version" (false) or "Install and restart" (true).
+    callback update-now(bool);
+    // A media tool: ("check" | "update" | "auto-on" | "auto-off", its name).
+    callback media(string, string);
+
+}
+
+
+// One time window: from, until, the limit, the days.
+component WindowEditor inherits Rectangle {
+    in property <SpeedWin> item;
+    in property <int> index;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.sunken;
+    height: col.preferred-height;
+    accessible-role: groupbox;
+    accessible-label: item.label;
+    col := VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 10px;
+            if Theme.rtl: VerticalLayout { alignment: end; horizontal-stretch: 0; Button { icon: Icons.trash; a11y-label: item.remove-label; clicked => { SettingsData.window(index, "remove", ""); } } }
+            VerticalLayout {
+                spacing: 4px;
+                Label { text: SettingsData.win-from-label; }
+                LineEdit { text: item.from; width: 90px; placeholder-text: "09:00"; edited(v) => { SettingsData.window(index, "from", v); } }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                Label { text: SettingsData.win-to-label; }
+                LineEdit { text: item.to; width: 90px; placeholder-text: "18:00"; edited(v) => { SettingsData.window(index, "to", v); } }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                horizontal-stretch: 1;
+                Label { text: SettingsData.win-limit-label; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    LineEdit { text: item.limit; input-type: decimal; horizontal-stretch: 1; edited(v) => { SettingsData.window(index, "limit", v); } }
+                    ComboBox { model: SettingsData.units; current-index: item.unit-index; width: 100px; selected => { SettingsData.window(index, "unit", self.current-index == 1 ? "1" : "0"); } }
+                }
+            }
+            if !Theme.rtl: VerticalLayout { alignment: end; horizontal-stretch: 0; Button { icon: Icons.trash; a11y-label: item.remove-label; clicked => { SettingsData.window(index, "remove", ""); } } }
+        }
+        if item.time-error != "": Text { text: item.time-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+        if item.limit-error != "": Text { text: item.limit-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+        Label { text: SettingsData.win-days-label; font-weight: 500; }
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: Theme.rtl ? end : start;
+            for name[j] in SettingsData.weekdays: Button {
+                text: name;
+                checkable: true;
+                checked: item.days[j];
+                clicked => { SettingsData.window(index, "day", "\{j}"); }
+            }
+        }
+        Hint { text: item.days-hint; }
+    }
+}
+
+// Settings (the web UI's SettingsView): what the daemon keeps is saved
+// with Save; what belongs to this computer applies at once.
+component SettingsPage inherits Rectangle {
+    background: Theme.sunken;
+    VerticalLayout {
+        // The header with Save and Revert.
+        Rectangle {
+            height: 58px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 10px;
+                if !Theme.rtl: Text { text: SettingsData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+                if !Theme.rtl && SettingsData.dirty: Text { text: "● " + SettingsData.unsaved-text; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
+                if !Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
+                if Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
+                Rectangle { horizontal-stretch: 1; }
+                if !Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
+                if !Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
+                if Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl && SettingsData.dirty: Text { text: SettingsData.unsaved-text + " ●"; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Text { text: SettingsData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    width: min(680px, root.width - 48px);
+                    padding-top: 20px;
+                    padding-bottom: 28px;
+                    spacing: 22px;
+
+                    Section {
+                        title: SettingsData.appearance-title;
+                        VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.language-label; }
+                            ComboBox { model: SettingsData.languages; current-index <=> SettingsData.language-index; selected => { SettingsData.changed(); } }
+                            if SettingsData.language-note != "": Hint { text: SettingsData.language-note; }
+                        }
+                        VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.theme-label; }
+                            ComboBox { model: SettingsData.themes; current-index <=> SettingsData.theme-index; selected => { SettingsData.changed(); } }
+                        }
+                    }
+
+                    Section {
+                        title: SettingsData.downloads-title;
+                        VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.folder-label; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                if Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
+                                LineEdit { text <=> SettingsData.folder; edited => { SettingsData.changed(); } }
+                                if !Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
+                            }
+                            if SettingsData.folder-error != "": Text { text: SettingsData.folder-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+                        }
+                        Toggle { text: SettingsData.organize-text; hint: SettingsData.organize-hint; checked <=> SettingsData.organize; toggled => { SettingsData.changed(); } }
+                        Field { label: SettingsData.active-label; hint: SettingsData.active-hint; error: SettingsData.active-error; text <=> SettingsData.active; input-type: number; edited => { SettingsData.changed(); } }
+                        Field { label: SettingsData.connections-label; hint: SettingsData.connections-hint; error: SettingsData.connections-error; text <=> SettingsData.connections; input-type: number; edited => { SettingsData.changed(); } }
+                    }
+
+                    Section {
+                        title: SettingsData.speed-title;
+                        Toggle { text: SettingsData.limit-text; checked <=> SettingsData.limit-on; toggled => { SettingsData.changed(); } }
+                        if SettingsData.limit-on: VerticalLayout {
+                            spacing: 6px;
+                            Label { text: SettingsData.limit-label; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                LineEdit { text <=> SettingsData.limit; input-type: decimal; horizontal-stretch: 1; edited => { SettingsData.changed(); } }
+                                ComboBox { model: SettingsData.units; current-index <=> SettingsData.unit-index; width: 110px; selected => { SettingsData.changed(); } }
+                            }
+                            if SettingsData.limit-error != "": Text { text: SettingsData.limit-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+                        }
+                        Label { text: SettingsData.schedule-title; }
+                        Hint { text: SettingsData.schedule-hint; }
+                        for w[i] in SettingsData.windows: WindowEditor { item: w; index: i; }
+                        HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: SettingsData.win-add-text; icon: Icons.plus; clicked => { SettingsData.window(0, "add", ""); } }
+                        }
+                    }
+
+                    Section {
+                        title: SettingsData.computer-title;
+                        if SettingsData.has-login: Toggle { text: SettingsData.login-text; hint: SettingsData.login-hint; checked <=> SettingsData.login; toggled(on) => { SettingsData.desktop("login", on); } }
+                        Toggle { text: SettingsData.tray-text; hint: SettingsData.tray-hint; checked <=> SettingsData.tray; toggled(on) => { SettingsData.desktop("tray", on); } }
+                        Hint { text: SettingsData.computer-hint; }
+                    }
+
+                    Section {
+                        title: SettingsData.browsers-title;
+                        if SettingsData.has-confirm: Toggle { text: SettingsData.confirm-text; hint: SettingsData.confirm-hint; checked <=> SettingsData.confirm; toggled => { SettingsData.changed(); } }
+                        Hint { text: SettingsData.browsers-hint; }
+                        HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: SettingsData.browsers-open; clicked => { SettingsData.web("browsers"); } }
+                        }
+                    }
+
+                    Section {
+                        title: SettingsData.updates-title;
+                        Toggle { text: SettingsData.auto-update-text; hint: SettingsData.auto-update-hint; checked <=> SettingsData.auto-update; toggled(on) => { SettingsData.desktop("updates", on); } }
+                        HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            spacing: 8px;
+                            if Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
+                            Button { text: SettingsData.check-now-text; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(false); } }
+                            if !Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
+                        }
+                        if SettingsData.update-busy: Status { busy: true; text: ""; tint: Theme.muted; }
+                        if SettingsData.update-text != "": Text { text: SettingsData.update-text; color: SettingsData.update-error ? Theme.danger : Theme.muted; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                    }
+
+                    if SettingsData.has-crash: Section {
+                        title: SettingsData.privacy-title;
+                        Toggle { text: SettingsData.crash-text; hint: SettingsData.crash-hint; checked <=> SettingsData.crash; toggled(on) => { SettingsData.desktop("crash", on); } }
+                    }
+
+                    // yt-dlp, ffmpeg and the rest look after themselves (wdm-media's
+                    // tools: fetched, checked and updated in the background); nothing
+                    // about them needs a setting.
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ History
+
+// A finished or failed download (src/ui/history.rs).
+export struct HistoryRow {
+    id: string,
+    name: string,
+    category: string,
+    failed: bool,
+    state: string,
+    size: string,
+    date: string,
+    folder: string,
+    error: string,
+    remove-label: string,
+}
+
+export global HistoryData {
+    in-out property <string> title;
+    in-out property <string> search-label;
+    in-out property <string> search-placeholder;
+    in-out property <string> query;
+    in-out property <string> filter-label;
+    // In reading order; `filter` is the shown one's place.
+    in-out property <[string]> filters;
+    in-out property <int> filter;
+    in-out property <string> clear-text;
+    in-out property <bool> can-clear;
+    in-out property <string> count-text;
+    in-out property <string> status-text;
+    in-out property <string> retry-text;
+    in-out property <string> show-text;
+    // 0: the entries, 1: nothing finished yet, 2: nothing matches.
+    in-out property <int> empty;
+    in-out property <string> empty-title;
+    in-out property <string> empty-body;
+    in-out property <[HistoryRow]> rows;
+    in-out property <bool> clearing;
+    in-out property <string> clear-title;
+    in-out property <string> clear-body;
+    in-out property <string> clear-confirm;
+    in-out property <string> cancel-text;
+    callback action(string, string);
+    callback search(string);
+    callback pick-filter(int);
+}
+
+component HistoryEntry inherits Rectangle {
+    in property <HistoryRow> item;
+    callback action(string);
+    height: item.error != "" ? 72px : 58px;
+    accessible-role: list-item;
+    accessible-label: item.name + ", " + item.state + ", " + item.date;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
+        if !Theme.rtl: Tile { category: item.category; size: 32px; y: (parent.height - self.height) / 2; }
+        if Theme.rtl: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            HorizontalLayout {
+            spacing: 6px;
+            Button { icon: Icons.x; a11y-label: item.remove-label; clicked => { root.action("remove"); } }
+            Button { text: HistoryData.show-text; clicked => { root.action("show"); } }
+            if item.failed: Button { text: HistoryData.retry-text; icon: Icons.refresh; clicked => { root.action("retry"); } }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            Text { text: item.name; color: Theme.text; font-size: 13px; font-weight: 500; overflow: elide; horizontal-alignment: Theme.start; }
+            HorizontalLayout {
+                spacing: 12px;
+                if Theme.rtl: Text { text: item.folder; color: Theme.subtle; font-size: 12px; overflow: elide; horizontal-stretch: 1; horizontal-alignment: right; }
+                if Theme.rtl: Text { text: item.date; color: Theme.muted; font-size: 12px; }
+                if Theme.rtl && item.size != "": Text { text: item.size; color: Theme.muted; font-size: 12px; }
+                Text { text: item.state; color: item.failed ? Theme.danger : Theme.success; font-size: 12px; font-weight: 600; }
+                if !Theme.rtl && item.size != "": Text { text: item.size; color: Theme.muted; font-size: 12px; }
+                if !Theme.rtl: Text { text: item.date; color: Theme.muted; font-size: 12px; }
+                if !Theme.rtl: Text { text: item.folder; color: Theme.subtle; font-size: 12px; overflow: elide; horizontal-stretch: 1; }
+            }
+            if item.error != "": Text { text: item.error; color: Theme.danger; font-size: 12px; overflow: elide; horizontal-alignment: Theme.start; }
+        }
+        if !Theme.rtl: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            HorizontalLayout {
+            spacing: 6px;
+            if item.failed: Button { text: HistoryData.retry-text; icon: Icons.refresh; clicked => { root.action("retry"); } }
+            Button { text: HistoryData.show-text; clicked => { root.action("show"); } }
+            Button { icon: Icons.x; a11y-label: item.remove-label; clicked => { root.action("remove"); } }
+            }
+        }
+        if Theme.rtl: Tile { category: item.category; size: 32px; y: (parent.height - self.height) / 2; }
+    }
+    Rectangle { y: parent.height - 1px; x: 18px; width: parent.width - 36px; height: 1px; background: Theme.border; }
+}
+
+// History (the web UI's HistoryView).
+component HistoryPage inherits Rectangle {
+    background: Theme.surface;
+    VerticalLayout {
+        Rectangle {
+            height: 58px;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 10px;
+                if !Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+                if !Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if Theme.rtl: HorizontalLayout {
+                    spacing: 4px;
+                    accessible-role: tab-list;
+                    accessible-label: HistoryData.filter-label;
+                    for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                LineEdit {
+                    min-width: 120px;
+                    preferred-width: 220px;
+                    horizontal-stretch: 0;
+                    text <=> HistoryData.query;
+                    placeholder-text: HistoryData.search-placeholder;
+                    accessible-label: HistoryData.search-label;
+                    horizontal-alignment: Theme.rtl ? right : left;
+                    edited(t) => { HistoryData.search(t); }
+                }
+                if !Theme.rtl: HorizontalLayout {
+                    spacing: 4px;
+                    accessible-role: tab-list;
+                    accessible-label: HistoryData.filter-label;
+                    for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
+                }
+                if !Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
+                if Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        if HistoryData.empty == 0: ListView {
+            vertical-stretch: 1;
+            accessible-role: list;
+            accessible-label: HistoryData.title + ", " + HistoryData.count-text;
+            for r in HistoryData.rows: HistoryEntry {
+                item: r;
+                action(a) => { HistoryData.action(a, r.id); }
+            }
+        }
+        if HistoryData.empty != 0: VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: 8px;
+            HorizontalLayout {
+                alignment: center;
+                Icon { name: HistoryData.empty == 1 ? Icons.history : Icons.search; tint: Theme.subtle; width: 36px; height: 36px; }
+            }
+            Text { text: HistoryData.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
+            if HistoryData.empty-body != "": Text { text: HistoryData.empty-body; color: Theme.muted; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
+        }
+    }
+    // "Clear N entries from history?"
+    if HistoryData.clearing: Rectangle {
+        background: #000000.with-alpha(0.35);
+        TouchArea {}
+        Rectangle {
+            width: min(420px, parent.width - 40px);
+            height: clear-card.preferred-height;
+            border-radius: 14px;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border;
+            accessible-role: groupbox;
+            accessible-label: HistoryData.clear-title;
+            clear-card := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                Text { text: HistoryData.clear-title; color: Theme.text; font-size: 17px; font-weight: 600; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                Hint { text: HistoryData.clear-body; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: Theme.rtl ? start : end;
+                    if Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
+                    Button { text: HistoryData.cancel-text; clicked => { HistoryData.action("clear-no", ""); } }
+                    if !Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------- Connect your browser
+
+// A browser this user has (src/ui/browsers.rs).
+export struct BrowserItem {
+    id: string,
+    name: string,
+    ready: bool,
+    linked: bool,
+    state: string,
+    hint: string,
+    // "connect", "store" or "" (nothing left to do).
+    action: string,
+    action-text: string,
+    busy: bool,
+}
+
+export global BrowsersData {
+    in-out property <string> title;
+    in-out property <string> intro;
+    in-out property <bool> loading;
+    in-out property <string> loading-text;
+    in-out property <string> none-text;
+    in-out property <string> not-found-text;
+    in-out property <[BrowserItem]> items;
+    in-out property <bool> busy;
+    in-out property <string> status-text;
+    in-out property <bool> status-error;
+    in-out property <string> recheck-text;
+    in-out property <string> done-text;
+    in-out property <string> later-text;
+    callback action(string, string);
+}
+
+component BrowserCard inherits Rectangle {
+    in property <BrowserItem> item;
+    callback action();
+    height: row.preferred-height;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+    accessible-role: list-item;
+    accessible-label: item.name + ", " + item.state;
+    row := HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 12px;
+        if Theme.rtl && item.action != "": VerticalLayout { alignment: center; Button { text: item.action-text; enabled: !BrowsersData.busy; clicked => { root.action(); } } }
+        if Theme.rtl && item.busy: Spinner { width: 16px; height: 16px; indeterminate: true; y: (parent.height - self.height) / 2; }
+        if !Theme.rtl: Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: item.ready ? Theme.success.with-alpha(0.15) : Theme.sunken;
+            Icon { name: item.ready ? Icons.check : item.linked ? Icons.download : Icons.link; tint: item.ready ? Theme.success : Theme.muted; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 3px;
+            alignment: center;
+            Text { text: item.name; color: Theme.text; font-size: 14px; font-weight: 600; horizontal-alignment: Theme.start; }
+            Text { text: item.state; color: Theme.muted; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+            if item.hint != "": Hint { text: item.hint; }
+        }
+        if !Theme.rtl && item.busy: Spinner { width: 16px; height: 16px; indeterminate: true; y: (parent.height - self.height) / 2; }
+        if !Theme.rtl && item.action != "": VerticalLayout { alignment: center; Button { text: item.action-text; enabled: !BrowsersData.busy; clicked => { root.action(); } } }
+        if Theme.rtl: Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: item.ready ? Theme.success.with-alpha(0.15) : Theme.sunken;
+            Icon { name: item.ready ? Icons.check : item.linked ? Icons.download : Icons.link; tint: item.ready ? Theme.success : Theme.muted; }
+        }
+    }
+}
+
+// "Connect your browser" (the web UI's BrowsersView).
+component BrowsersPage inherits Rectangle {
+    background: Theme.sunken;
+    ScrollView {
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                width: min(720px, root.width - 48px);
+                alignment: start;
+                padding-top: 24px;
+                padding-bottom: 28px;
+                spacing: 14px;
+                Text { text: BrowsersData.title; color: Theme.text; font-size: 20px; font-weight: 600; horizontal-alignment: Theme.start; }
+                Text { text: BrowsersData.intro; color: Theme.muted; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                if BrowsersData.loading: Status { busy: true; text: BrowsersData.loading-text; tint: Theme.muted; }
+                if BrowsersData.none-text != "": Text { text: BrowsersData.none-text; color: Theme.muted; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                VerticalLayout {
+                    spacing: 8px;
+                    accessible-role: list;
+                    accessible-label: BrowsersData.title;
+                    for b in BrowsersData.items: BrowserCard {
+                        item: b;
+                        action => { BrowsersData.action(b.action, b.id); }
+                    }
+                }
+                if BrowsersData.not-found-text != "": Hint { text: BrowsersData.not-found-text; }
+                if BrowsersData.status-text != "": Text { text: BrowsersData.status-text; color: BrowsersData.status-error ? Theme.danger : Theme.success; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: Theme.rtl ? start : end;
+                    if Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
+                    Button { text: BrowsersData.recheck-text; icon: Icons.refresh; enabled: !BrowsersData.loading; clicked => { BrowsersData.action("recheck", ""); } }
+                    if !Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
+                }
+                Hint { text: BrowsersData.later-text; }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Whoosh Download Manager";
+    icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
+    // The size it opens at the first time; later, the one it was closed
+    // at (set from Rust, src/fit.rs).
+    preferred-width: 1240px;
+    preferred-height: 780px;
+    min-width: 760px;
+    min-height: 440px;
+    background: Theme.surface;
+    default-font-size: 14px;
+
+    in property <[NavItem]> nav;
+    in property <[NavItem]> nav-more;
+    // 0: the downloads, 1: Settings, 2: History, 3: Connect your browser.
+    in property <int> page;
+    in property <string> view-title;
+    in property <[Column]> columns;
+    in property <[Row]> rows;
+    in property <string> empty-title;
+    in property <string> empty-body;
+    in property <string> empty-action;
+
+    in property <string> add-text;
+    in property <string> resume-text;
+    in property <string> pause-text;
+    in property <string> remove-text;
+    in property <bool> can-resume;
+    in property <bool> can-pause;
+    in property <bool> can-remove;
+    in property <bool> can-open;
+    in property <string> search-placeholder;
+    in-out property <string> query;
+    in property <string> selected-text;
+
+    // The selected download.
+    in property <bool> detail;
+    // The selected download's details are shown: a click on a download
+    // shows its details, a click on another one switches them to it; their
+    // x closes them until the next click on a download.
+    in property <bool> details-open: false;
+    // See Room.
+    out property <bool> wide: Room.wide;
+    in property <string> d-name;
+    in property <string> d-category;
+    in property <string> d-state;
+    in property <int> d-tone;
+    in property <float> d-progress;
+    in property <bool> d-known;
+    in property <string> d-progress-text;
+    in property <[Fact]> d-facts;
+    in property <[Btn]> d-actions;
+    in property <string> open-text;
+    in property <string> open-folder-text;
+    in property <string> copy-text;
+    in property <string> details-label;
+    in property <string> close-details;
+
+    // The status bar.
+    in property <string> speed-text;
+    in property <string> counts-text;
+    in property <string> connection-text;
+    in property <bool> connected;
+    in property <string> version-text;
+
+    // "Remove …?"
+    in property <bool> removing;
+    in property <string> remove-title;
+    in property <string> remove-body;
+    in property <string> delete-files-text;
+    in-out property <bool> delete-files;
+    in property <string> cancel-text;
+    in property <string> confirm-remove-text;
+
+    // The address to put on the clipboard (Copy address).
+    in property <string> clipboard;
+
+    callback nav-picked(string);
+    callback sort(string);
+    callback row-pressed(int, bool, bool, bool);
+    callback row-activated(int);
+    callback action(string);
+    callback search(string);
+    callback key(string, bool, bool);
+    callback remove-confirmed(bool);
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            root.key(event.text, event.modifiers.control || event.modifiers.meta, event.modifiers.shift);
+            if event.text == Key.Delete || event.text == Key.Escape || event.text == Key.Return
+                || ((event.modifiers.control || event.modifiers.meta) && (event.text == "a" || event.text == "n")) {
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            HorizontalLayout {
+                vertical-stretch: 1;
+                if !Theme.rtl: SideNav { nav: root.nav; nav-more: root.nav-more; picked(id) => { root.nav-picked(id); } }
+
+                if root.page == 1: SettingsPage { horizontal-stretch: 1; }
+                if root.page == 2: HistoryPage { horizontal-stretch: 1; }
+                if root.page == 3: BrowsersPage { horizontal-stretch: 1; }
+                if root.page == 0: VerticalLayout {
+                    horizontal-stretch: 1;
+                    // ---------------------------------------------------- toolbar
+                    Rectangle {
+                        height: 58px;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            padding-top: 12px;
+                            padding-bottom: 12px;
+                            spacing: 8px;
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if !Theme.rtl: Rectangle { horizontal-stretch: 1; }
+                            search-box := LineEdit { min-width: 120px; preferred-width: 240px; horizontal-stretch: 0; text <=> root.query; placeholder-text: root.search-placeholder; horizontal-alignment: Theme.rtl ? right : left; edited(t) => { root.search(t); } }
+                            if Theme.rtl: Rectangle { horizontal-stretch: 1; }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                        }
+                        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                    }
+
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        if Theme.rtl && root.detail && root.details-open && root.wide: DetailPanel {
+                            label: root.details-label;
+                            name: root.d-name;
+                            category: root.d-category;
+                            state: root.d-state;
+                            tone: root.d-tone;
+                            progress: root.d-progress;
+                            known: root.d-known;
+                            progress-text: root.d-progress-text;
+                            facts: root.d-facts;
+                            actions: root.d-actions;
+                            close-label: root.close-details;
+                            action(id) => { root.action(id); }
+                            close => { root.action("details-close"); }
+                        }
+                        // ------------------------------------------------ the list
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        VerticalLayout {
+                            width: 100%;
+                            height: 100%;
+                            Rectangle {
+                                height: 34px;
+                                background: Theme.surface;
+                                HorizontalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    spacing: 14px;
+                                    if !Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
+                                    HeaderCell { column: root.columns[1]; width: Cols.size; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
+                                }
+                                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                            }
+                            if root.rows.length > 0: ContextMenuArea {
+                                vertical-stretch: 1;
+                                Menu {
+                                    MenuItem { title: root.open-text; enabled: root.can-open; activated => { root.action("open"); } }
+                                    MenuItem { title: root.open-folder-text; enabled: root.can-open; activated => { root.action("reveal"); } }
+                                    MenuSeparator {}
+                                    MenuItem { title: root.resume-text; enabled: root.can-resume; activated => { root.action("resume"); } }
+                                    MenuItem { title: root.pause-text; enabled: root.can-pause; activated => { root.action("pause"); } }
+                                    MenuItem { title: root.copy-text; activated => { root.action("copy"); } }
+                                    MenuSeparator {}
+                                    MenuItem { title: root.remove-text; enabled: root.can-remove; activated => { root.action("remove"); } }
+                                }
+                                ListView {
+                                width: 100%;
+                                height: 100%;
+                                accessible-role: list;
+                                accessible-label: root.view-title;
+                                for r[i] in root.rows: RowView {
+                                    item: r;
+                                    compact: Room.size-class == 0;
+                                    pressed(ctrl, shift, right) => { keys.focus(); root.row-pressed(i, ctrl, shift, right); }
+                                    activated => { root.row-activated(i); }
+                                }
+                                }
+                            }
+                            if root.rows.length == 0: VerticalLayout {
+                                vertical-stretch: 1;
+                                alignment: center;
+                                spacing: 8px;
+                                // In a centred row of its own: as a fixed-width cell of this
+                                // column it capped the whole window's width at its minimum
+                                // (the window opened as small as it goes).
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Icon { name: Icons.inbox; tint: Theme.subtle; width: 40px; height: 40px; }
+                                }
+                                Text { text: root.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
+                                Text { text: root.empty-body; color: Theme.muted; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
+                                if root.empty-action != "": HorizontalLayout {
+                                    alignment: center;
+                                    Button { text: root.empty-action; clicked => { root.action(root.empty-action-id); } }
+                                }
+                            }
+                        }
+                        // Too narrow for both: the details open over the list.
+                        if root.detail && root.details-open && !root.wide: DetailPanel {
+                            width: min(300px, parent.width - 24px);
+                            x: Theme.rtl ? 0px : parent.width - self.width;
+                            height: parent.height;
+                            floating: true;
+                            label: root.details-label;
+                            name: root.d-name;
+                            category: root.d-category;
+                            state: root.d-state;
+                            tone: root.d-tone;
+                            progress: root.d-progress;
+                            known: root.d-known;
+                            progress-text: root.d-progress-text;
+                            facts: root.d-facts;
+                            actions: root.d-actions;
+                            close-label: root.close-details;
+                            action(id) => { root.action(id); }
+                            close => { root.action("details-close"); }
+                        }
+                        }
+                        if !Theme.rtl && root.detail && root.details-open && root.wide: DetailPanel {
+                            label: root.details-label;
+                            name: root.d-name;
+                            category: root.d-category;
+                            state: root.d-state;
+                            tone: root.d-tone;
+                            progress: root.d-progress;
+                            known: root.d-known;
+                            progress-text: root.d-progress-text;
+                            facts: root.d-facts;
+                            actions: root.d-actions;
+                            close-label: root.close-details;
+                            action(id) => { root.action(id); }
+                            close => { root.action("details-close"); }
+                        }
+                    }
+                }
+
+                if Theme.rtl: SideNav { nav: root.nav; nav-more: root.nav-more; picked(id) => { root.nav-picked(id); } }
+            }
+
+            // ---------------------------------------------------- status bar
+            Rectangle {
+                height: 30px;
+                background: Theme.sunken;
+                Rectangle { height: 1px; y: 0; background: Theme.border; }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 16px;
+                    Text { text: Theme.rtl ? root.version-text : root.speed-text; color: Theme.rtl ? Theme.subtle : Theme.text; font-size: 12px; font-weight: Theme.rtl ? 400 : 600; vertical-alignment: center; }
+                    Text { text: Theme.rtl ? root.connection-text : root.counts-text; color: Theme.rtl ? (root.connected ? Theme.success : Theme.warning) : Theme.muted; font-size: 12px; vertical-alignment: center; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: Theme.rtl ? root.counts-text : root.connection-text; color: Theme.rtl ? Theme.muted : (root.connected ? Theme.success : Theme.warning); font-size: 12px; vertical-alignment: center; }
+                    Text { text: Theme.rtl ? root.speed-text : root.version-text; color: Theme.rtl ? Theme.text : Theme.subtle; font-size: 12px; font-weight: Theme.rtl ? 600 : 400; vertical-alignment: center; }
+                }
+            }
+        }
+
+        // ---------------------------------------------------- "Remove …?"
+        if root.removing: Rectangle {
+            background: #000000.with-alpha(0.35);
+            TouchArea {}
+            Rectangle {
+                width: min(440px, parent.width - 40px);
+                height: card.preferred-height;
+                border-radius: 14px;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+                accessible-role: groupbox;
+                accessible-label: root.remove-title;
+                card := VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+                    Text { text: root.remove-title; color: Theme.text; font-size: 17px; font-weight: 600; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                    Hint { text: root.remove-body; font-size: 13px; }
+                    CheckBox { text: root.delete-files-text; checked <=> root.delete-files; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: Theme.rtl ? start : end;
+                        if Theme.rtl: Button { text: root.confirm-remove-text; primary: true; clicked => { root.remove-confirmed(true); } }
+                        Button { text: root.cancel-text; clicked => { root.remove-confirmed(false); } }
+                        if !Theme.rtl: Button { text: root.confirm-remove-text; primary: true; clicked => { root.remove-confirmed(true); } }
+                    }
+                }
+            }
+        }
+    }
+
+    in property <string> empty-action-id;
+
+    init => {
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    property <bool> dark: Theme.dark;
+    changed dark => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+}

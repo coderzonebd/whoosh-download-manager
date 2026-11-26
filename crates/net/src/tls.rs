@@ -11,11 +11,13 @@ use wdm_core::SourceError;
 
 use crate::NetConfig;
 
-/// Flow-control windows for one QUIC stream / connection. Large enough for
-/// ~1 Gbit/s at 100 ms RTT per connection; the window is also the most a
-/// slow reader can leave buffered in memory.
-const QUIC_STREAM_WINDOW: u32 = 16 << 20;
-const QUIC_CONN_WINDOW: u32 = 32 << 20;
+/// Flow-control windows for one QUIC stream / connection: ~160 Mbit/s at
+/// 100 ms RTT per connection, and a download uses several. The window is
+/// also the most a reader behind the network leaves buffered in memory (it
+/// was 16 / 32 MiB, as HTTP/2's was; see `client.rs`), and quinn has no
+/// adaptive window.
+const QUIC_STREAM_WINDOW: u32 = 2 << 20;
+const QUIC_CONN_WINDOW: u32 = 4 << 20;
 
 pub(crate) struct Tls {
     http2: bool,

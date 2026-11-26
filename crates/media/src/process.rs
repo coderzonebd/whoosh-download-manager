@@ -45,6 +45,13 @@ impl Tool {
         c.stdin(Stdio::null()).kill_on_drop(true);
         #[cfg(windows)]
         {
+            // yt-dlp is Python: on Windows it writes in the system's code
+            // page (cp1252 and the like) unless told otherwise, and what it
+            // prints is read as UTF-8 here, so titles and file names outside
+            // that page, and even a curly apostrophe in an error ("you're"),
+            // came out as U+FFFD (docs/bench/windows-handcheck.ps1). Other
+            // tools ignore these.
+            c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
             /// The daemon has no console; do not flash one per run.
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             c.creation_flags(CREATE_NO_WINDOW);

@@ -1,6 +1,6 @@
 {
   "name": "@wdm/extension",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.4",
   "private": true,
   "description": "wdm browser extension (Pro mode: hands browser downloads to the wdm daemon)",
   "license": "GPL-3.0-or-later",
@@ -20,8 +20,8 @@
   "devDependencies": {
     "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.6",
-    "playwright-core": "^1.65.0",
-    "rolldown": "^1.3.0",
+    "playwright-core": "^1.65.1",
+    "rolldown": "^1.3.2",
     "vitest": "^5.1.0"
   }
 }

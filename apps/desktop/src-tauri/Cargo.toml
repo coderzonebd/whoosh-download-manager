@@ -20,7 +20,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-autostart = "2"
 # The add dialog fills in a download link from the clipboard.
 tauri-plugin-clipboard-manager = "2"
@@ -45,6 +45,8 @@ wdm-nmhost = { path = "../../../crates/nmhost" }
 # Crash reports (on by default, can be turned off; inert without WDM_CRASH_DSN).
 wdm-crash.workspace = true
 wdm-proto.workspace = true
+# What the app shares with its tray process: strings, prefs, locks, launching.
+wdm-tray = { path = "../../../crates/tray", default-features = false }
 
 [lints]
 workspace = true

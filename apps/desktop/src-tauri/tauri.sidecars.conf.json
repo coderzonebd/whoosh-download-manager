@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": ["binaries/wdm-daemon", "binaries/wdm-nmhost"]
+    "externalBin": ["binaries/wdm-daemon", "binaries/wdm-nmhost", "binaries/wdm-tray", "binaries/wdm-prompt"]
   }
 }

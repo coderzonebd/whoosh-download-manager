@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Settings that belong to this app, not to the daemon (whose settings every
-//! client shares): what closing the window does, and the update check.
+//! client shares): what closing the window does, and the update check. The
+//! fields are in `wdm_tray::prefs`: the tray process reads them too.
 //! (Quit always closes WDM completely; the `stopDaemonOnQuit` key of
 //! earlier versions is ignored.) Kept in
 //! `<app config dir>/desktop.json`; a missing or unreadable file means the
@@ -9,45 +10,9 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State};
-
-const FILE: &str = "desktop.json";
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Prefs {
-    /// Closing the window hides it to the tray; downloads go on.
-    pub close_to_tray: bool,
-    /// The "still running in the tray" notice has been shown once.
-    pub tray_notice_shown: bool,
-    /// The UI's language when it last ran, so the tray starts in it
-    /// (`shell_i18n`). Empty: English.
-    pub language: String,
-    /// Look for a new version once a day (`updates`). Never installs alone.
-    pub auto_update_check: bool,
-    /// When the app last looked for an update (Unix seconds; 0 = never).
-    pub last_update_check: u64,
-    /// The "Connect your browser" page has been shown once (first run).
-    pub browser_setup_shown: bool,
-    /// Launch at login was turned on at the first start (`login_item`);
-    /// never again, so turning it off in Settings sticks.
-    pub login_item_set: bool,
-}
-
-impl Default for Prefs {
-    fn default() -> Self {
-        Self {
-            close_to_tray: true,
-            tray_notice_shown: false,
-            language: String::new(),
-            auto_update_check: true,
-            last_update_check: 0,
-            browser_setup_shown: false,
-            login_item_set: false,
-        }
-    }
-}
+use wdm_tray::prefs::FILE;
+pub use wdm_tray::prefs::Prefs;
 
 /// The app's copy, managed by Tauri.
 #[derive(Debug, Default)]
@@ -65,21 +30,14 @@ fn path<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
 
 pub fn load<R: Runtime>(app: &AppHandle<R>) -> Prefs {
     path(app)
-        .and_then(|p| std::fs::read(p).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .map(|p| wdm_tray::prefs::load_from(&p))
         .unwrap_or_default()
 }
 
 pub fn save<R: Runtime>(app: &AppHandle<R>, prefs: &Prefs) -> Result<(), String> {
     let path = path(app).ok_or("no app config directory")?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_vec_pretty(prefs).map_err(|e| e.to_string())?;
-    // Write a sibling and rename, so a crash never leaves half a file.
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    // Through a sibling file and a rename: never half a file (the tray reads it).
+    wdm_tray::prefs::save_to(&path, prefs).map_err(|e| e.to_string())
 }
 
 /// Changes the prefs and saves them.
@@ -101,24 +59,82 @@ pub fn set_desktop_prefs<R: Runtime>(app: AppHandle<R>, prefs: Prefs) -> Result<
     update(&app, |p| *p = prefs)
 }
 
+/// Small answers the UI keeps while WDM runs (`host.thisRun`), across the
+/// main window being closed to the tray (which ends this process): a file
+/// in the data directory ([`wdm_tray::THIS_RUN_FILE`]) that the tray
+/// removes when it starts. At most a few short keys.
+#[derive(Debug)]
+pub struct ThisRun(PathBuf);
+
+impl ThisRun {
+    const MAX_KEYS: usize = 64;
+    const MAX_KEY_LEN: usize = 64;
+
+    pub fn new(data_dir: &std::path::Path) -> Self {
+        Self(data_dir.join(wdm_tray::THIS_RUN_FILE))
+    }
+
+    fn keys(&self) -> Vec<String> {
+        std::fs::read(&self.0)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
+    }
+
+    fn get(&self, key: &str) -> bool {
+        self.keys().iter().any(|k| k == key)
+    }
+
+    fn set(&self, key: String) -> Result<(), String> {
+        if key.is_empty() || key.len() > Self::MAX_KEY_LEN {
+            return Err("bad key".into());
+        }
+        let mut keys = self.keys();
+        if keys.contains(&key) {
+            return Ok(());
+        }
+        if keys.len() >= Self::MAX_KEYS {
+            return Err("too many keys".into());
+        }
+        keys.push(key);
+        let json = serde_json::to_vec(&keys).map_err(|e| e.to_string())?;
+        if let Some(dir) = self.0.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&self.0, json).map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub fn this_run(state: State<'_, ThisRun>, key: String) -> bool {
+    state.get(&key)
+}
+
+#[tauri::command]
+pub fn set_this_run(state: State<'_, ThisRun>, key: String) -> Result<(), String> {
+    state.set(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn defaults() {
-        let p = Prefs::default();
-        assert!(p.close_to_tray);
-        assert!(p.auto_update_check);
-        assert!(!p.browser_setup_shown);
-        // Not set yet: the first start of an installed build turns launch at login on.
-        assert!(!p.login_item_set);
-    }
-
-    #[test]
-    fn missing_fields_take_defaults() {
-        let p: Prefs = serde_json::from_str(r#"{"closeToTray": false}"#).unwrap();
-        assert!(!p.close_to_tray);
-        assert!(!p.tray_notice_shown);
+    fn this_run_keeps_a_few_short_keys() {
+        let dir = std::env::temp_dir().join(format!("wdm-this-run-{}", std::process::id()));
+        let run = ThisRun::new(&dir);
+        assert!(!run.get("organizeDismissed"));
+        run.set("organizeDismissed".into()).unwrap();
+        assert!(run.get("organizeDismissed"));
+        assert!(run.set(String::new()).is_err());
+        assert!(run.set("x".repeat(65)).is_err());
+        for i in 0..63 {
+            run.set(format!("k{i}")).unwrap();
+        }
+        assert!(run.set("one-too-many".into()).is_err());
+        run.set("k1".into()).unwrap();
+        // Another process (the window made again) sees them.
+        assert!(ThisRun::new(&dir).get("k5"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

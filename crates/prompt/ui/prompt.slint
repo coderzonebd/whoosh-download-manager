@@ -1,0 +1,579 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The prompt window, drawn natively: the confirmation dialog for a browser
+// download, the add dialog for a page the extension offered (with the
+// video format picker), and the progress / "Download complete" dialog for
+// a download started here. One at a time; Rust (src/ui.rs) decides which
+// and fills in every text, already translated and ordered for the
+// language's direction.
+
+import { CheckBox, ComboBox, LineEdit, Palette, ScrollView, Spinner } from "std-widgets.slint";
+import { Theme, Icons, Btn, Fact, Sub, Icon, Tile, Button, Label, Hint, Status } from "common.slint";
+export { Theme, Btn, Fact, Sub }
+
+// The file at a glance: tile, size, resumability, where it comes from.
+component Preview inherits Rectangle {
+    in property <string> category;
+    in property <string> size;
+    in property <bool> resumable;
+    in property <string> resumable-text;
+    in property <string> note;
+    border-radius: 10px;
+    background: Theme.bg;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding: 12px;
+        spacing: 12px;
+        if !Theme.rtl: Tile { category: root.category; }
+        VerticalLayout {
+            spacing: 2px;
+            alignment: center;
+            Text {
+                text: root.size;
+                color: Theme.text;
+                font-size: 16px;
+                font-weight: 600;
+                horizontal-alignment: Theme.start;
+            }
+            Status {
+                icon: root.resumable ? Icons.check : Icons.alert;
+                tint: root.resumable ? Theme.success : Theme.warning;
+                text: root.resumable-text;
+            }
+            if root.note != "": Text {
+                text: root.note;
+                color: Theme.muted;
+                font-size: 12px;
+                overflow: elide;
+                horizontal-alignment: Theme.start;
+            }
+        }
+        if Theme.rtl: Tile { category: root.category; }
+    }
+}
+
+export component PromptWindow inherits Window {
+    title: "Whoosh Download Manager";
+    icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
+    width: 520px;
+    height: 460px;
+    background: Theme.surface;
+    default-font-size: 14px;
+    always-on-top: true;
+
+    // 0: nothing (or not loaded yet), 1: confirm, 2: add, 3: follow.
+    in property <int> screen;
+    in property <string> heading;
+    in property <string> description;
+    in property <string> empty-text;
+    in property <string> close-text;
+    in property <string> error-text;
+
+    // The file's fields (confirm and add).
+    in property <string> name-label;
+    in-out property <string> name;
+    in property <string> folder-label;
+    in-out property <string> folder;
+    in property <string> browse-text;
+    in property <bool> can-browse: true;
+    in property <string> sorted-hint;
+    in property <string> category-label;
+    in property <[string]> categories;
+    in-out property <int> category-index;
+    in property <string> queue-label;
+    in property <[string]> queues;
+    in-out property <int> queue-index;
+
+    // The file at a glance.
+    in property <string> category;
+    in property <string> size;
+    in property <bool> resumable;
+    in property <string> resumable-text;
+    in property <string> note;
+    in property <bool> has-preview;
+
+    // The add dialog.
+    in property <string> url-label;
+    in-out property <string> url;
+    in property <string> url-placeholder;
+    // 0: nothing, 1: checking, 2: a problem (with "Check again"), 3: "Download the page itself instead" / back, 4: a note.
+    in property <int> url-status;
+    in property <string> url-status-text;
+    in property <string> url-action-text;
+    in property <bool> picking;
+    in property <string> media-title;
+    in property <string> media-sub;
+    in property <bool> has-playlist;
+    in property <string> scope-label;
+    in property <string> this-video-text;
+    in property <string> playlist-text;
+    in property <bool> scope-playlist;
+    in property <bool> can-this-video;
+    in property <string> kind-label;
+    in property <string> video-text;
+    in property <string> audio-text;
+    in property <bool> audio-ok;
+    in property <bool> mode-audio;
+    in property <string> quality-label;
+    in property <[string]> qualities;
+    in-out property <int> quality-index;
+    in property <string> audio-format-label;
+    in property <[string]> audio-formats;
+    in-out property <int> audio-format-index;
+    in property <string> subs-label;
+    in property <[Sub]> subs;
+    in property <string> subs-hint;
+    in property <string> estimate-text;
+    in property <string> via-text;
+    in property <bool> via-direct;
+    in property <bool> show-stem;
+    in-out property <string> stem;
+    in property <string> stem-hint;
+    in property <string> start-now-text;
+    in-out property <bool> start-now: true;
+
+    // The download followed here.
+    in property <string> f-name;
+    in property <string> f-state;
+    in property <bool> f-running;
+    in property <bool> f-failed;
+    in property <float> f-progress;
+    in property <bool> f-known-size;
+    in property <string> f-progress-text;
+    in property <[Fact]> facts;
+    in property <string> f-hint;
+    in property <bool> f-waiting;
+
+    // The buttons along the bottom, in reading order for the language.
+    in property <[Btn]> lead;
+    in property <[Btn]> trail;
+    in property <string> position-text;
+    in property <bool> busy;
+
+    callback button(string);
+    callback escape();
+    callback submit();
+    callback name-edited(string);
+    callback folder-edited(string);
+    callback category-picked(int);
+    callback queue-picked(int);
+    callback browse();
+    callback url-edited(string);
+    callback url-action();
+    callback scope-picked(bool);
+    callback mode-picked(bool);
+    callback quality-picked(int);
+    callback audio-format-picked(int);
+    callback sub-toggled(int, bool);
+    callback stem-edited(string);
+    callback start-now-toggled(bool);
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.escape();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 20px;
+            padding-bottom: 16px;
+            spacing: 12px;
+
+            if root.screen != 0: VerticalLayout {
+                spacing: 4px;
+                Text {
+                    text: root.heading;
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 600;
+                    horizontal-alignment: Theme.start;
+                    accessible-role: text;
+                }
+                if root.description != "": Hint { text: root.description; font-size: 13px; }
+            }
+
+            if root.screen == 0: VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+                vertical-stretch: 1;
+                Text {
+                    text: root.empty-text;
+                    color: Theme.muted;
+                    horizontal-alignment: center;
+                }
+                if root.empty-text != "": HorizontalLayout {
+                    alignment: center;
+                    Button {
+                        text: root.close-text;
+                        clicked => { root.button("close"); }
+                    }
+                }
+            }
+
+            if root.screen != 0: ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 14px;
+                    padding-right: Theme.rtl ? 0px : 6px;
+                    padding-left: Theme.rtl ? 6px : 0px;
+                    alignment: start;
+
+                    // ---------------------------------------------------- add: the address
+                    if root.screen == 2: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.url-label; }
+                        LineEdit {
+                            text <=> root.url;
+                            placeholder-text: root.url-placeholder;
+                            input-type: text;
+                            horizontal-alignment: left;
+                            edited(t) => { root.url-edited(t); }
+                            accepted => { root.submit(); }
+                        }
+                        if root.url-status == 1: Status { busy: true; tint: Theme.muted; text: root.url-status-text; }
+                        if root.url-status == 2: HorizontalLayout {
+                            spacing: 8px;
+                            Status { icon: Icons.alert; tint: Theme.danger; text: root.url-status-text; horizontal-stretch: 1; }
+                            Button { text: root.url-action-text; clicked => { root.url-action(); } }
+                        }
+                        if root.url-status == 3: HorizontalLayout {
+                            alignment: Theme.rtl ? end : start;
+                            Button { text: root.url-action-text; clicked => { root.url-action(); } }
+                        }
+                        if root.url-status == 4: Hint { text: root.url-status-text; }
+                    }
+
+                    // ---------------------------------------------------- add: the video on the page
+                    if root.screen == 2 && root.picking: Rectangle {
+                        border-radius: 10px;
+                        background: Theme.bg;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 10px;
+                            HorizontalLayout {
+                                spacing: 10px;
+                                if !Theme.rtl: Icon { name: Icons.video; tint: Theme.accent; width: 18px; height: 18px; }
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    Text {
+                                        text: root.media-title;
+                                        color: Theme.text;
+                                        font-weight: 600;
+                                        overflow: elide;
+                                        horizontal-alignment: Theme.start;
+                                    }
+                                    if root.media-sub != "": Hint { text: root.media-sub; }
+                                }
+                                if Theme.rtl: Icon { name: Icons.video; tint: Theme.accent; width: 18px; height: 18px; }
+                            }
+                            if root.has-playlist: VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.scope-label; }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: Theme.rtl ? end : start;
+                                    Button {
+                                        text: Theme.rtl ? root.playlist-text : root.this-video-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? root.scope-playlist : !root.scope-playlist;
+                                        enabled: Theme.rtl || root.can-this-video;
+                                        clicked => { root.scope-picked(Theme.rtl); }
+                                    }
+                                    Button {
+                                        text: Theme.rtl ? root.this-video-text : root.playlist-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? !root.scope-playlist : root.scope-playlist;
+                                        enabled: !Theme.rtl || root.can-this-video;
+                                        clicked => { root.scope-picked(!Theme.rtl); }
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.kind-label; }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: Theme.rtl ? end : start;
+                                    Button {
+                                        text: Theme.rtl ? root.audio-text : root.video-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? root.mode-audio : !root.mode-audio;
+                                        enabled: !Theme.rtl || root.audio-ok;
+                                        clicked => { root.mode-picked(Theme.rtl); }
+                                    }
+                                    Button {
+                                        text: Theme.rtl ? root.video-text : root.audio-text;
+                                        checkable: true;
+                                        checked: Theme.rtl ? !root.mode-audio : root.mode-audio;
+                                        enabled: Theme.rtl || root.audio-ok;
+                                        clicked => { root.mode-picked(!Theme.rtl); }
+                                    }
+                                }
+                            }
+                            if !root.mode-audio: VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.quality-label; }
+                                ComboBox {
+                                    model: root.qualities;
+                                    current-index <=> root.quality-index;
+                                    selected => { root.quality-picked(self.current-index); }
+                                }
+                            }
+                            if root.mode-audio: VerticalLayout {
+                                spacing: 6px;
+                                Label { text: root.audio-format-label; }
+                                ComboBox {
+                                    model: root.audio-formats;
+                                    current-index <=> root.audio-format-index;
+                                    selected => { root.audio-format-picked(self.current-index); }
+                                }
+                            }
+                            if root.subs.length > 0: VerticalLayout {
+                                spacing: 4px;
+                                Label { text: root.subs-label; }
+                                for s[i] in root.subs: CheckBox {
+                                    text: s.label;
+                                    checked: s.checked;
+                                    toggled => { root.sub-toggled(i, self.checked); }
+                                }
+                                Hint { text: root.subs-hint; }
+                            }
+                            VerticalLayout {
+                                spacing: 2px;
+                                Text {
+                                    text: root.estimate-text;
+                                    color: Theme.text;
+                                    font-weight: 600;
+                                    horizontal-alignment: Theme.start;
+                                    wrap: word-wrap;
+                                }
+                                if root.via-text != "": Status {
+                                    icon: root.via-direct ? Icons.check : Icons.alert;
+                                    tint: root.via-direct ? Theme.success : Theme.warning;
+                                    text: root.via-text;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.screen == 2 && root.picking && root.show-stem: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.name-label; }
+                        LineEdit {
+                            text <=> root.stem;
+                            horizontal-alignment: Theme.rtl ? right : left;
+                            edited(t) => { root.stem-edited(t); }
+                            accepted => { root.submit(); }
+                        }
+                        Hint { text: root.stem-hint; }
+                    }
+
+                    // ---------------------------------------------------- confirm / add: the file
+                    if (root.screen == 1 || (root.screen == 2 && !root.picking)) && root.has-preview: Preview {
+                        category: root.category;
+                        size: root.size;
+                        resumable: root.resumable;
+                        resumable-text: root.resumable-text;
+                        note: root.note;
+                    }
+                    if (root.screen == 1 || (root.screen == 2 && !root.picking)) && root.has-preview: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.name-label; }
+                        LineEdit {
+                            text <=> root.name;
+                            horizontal-alignment: Theme.rtl ? right : left;
+                            edited(t) => { root.name-edited(t); }
+                            accepted => { root.submit(); }
+                        }
+                    }
+                    if (root.screen == 1 || root.screen == 2) && (root.has-preview || root.picking): VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.folder-label; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            if Theme.rtl && root.can-browse: Button { text: root.browse-text; clicked => { root.browse(); } }
+                            LineEdit {
+                                text <=> root.folder;
+                                horizontal-alignment: left;
+                                edited(t) => { root.folder-edited(t); }
+                                accepted => { root.submit(); }
+                            }
+                            if !Theme.rtl && root.can-browse: Button { text: root.browse-text; clicked => { root.browse(); } }
+                        }
+                        if root.sorted-hint != "": Hint { text: root.sorted-hint; }
+                    }
+                    if (root.screen == 1 || (root.screen == 2 && !root.picking)) && root.has-preview: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.category-label; }
+                        ComboBox {
+                            model: root.categories;
+                            current-index <=> root.category-index;
+                            selected => { root.category-picked(self.current-index); }
+                        }
+                    }
+                    if (root.screen == 1 || root.screen == 2) && (root.has-preview || root.picking) && root.queues.length > 1: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: root.queue-label; }
+                        ComboBox {
+                            model: root.queues;
+                            current-index <=> root.queue-index;
+                            selected => { root.queue-picked(self.current-index); }
+                        }
+                    }
+
+                    // ---------------------------------------------------- follow
+                    if root.screen == 3: Rectangle {
+                        border-radius: 10px;
+                        background: Theme.bg;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        HorizontalLayout {
+                            padding: 12px;
+                            spacing: 12px;
+                            if !Theme.rtl: Tile { category: root.category; }
+                            VerticalLayout {
+                                spacing: 4px;
+                                alignment: center;
+                                Text {
+                                    text: root.f-name;
+                                    color: Theme.text;
+                                    font-weight: 600;
+                                    wrap: word-wrap;
+                                    overflow: elide;
+                                    max-height: 2.6rem;
+                                    horizontal-alignment: Theme.start;
+                                }
+                                Text {
+                                    text: root.f-state;
+                                    color: root.f-failed ? Theme.danger : root.f-running ? Theme.accent : Theme.success;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    horizontal-alignment: Theme.start;
+                                }
+                            }
+                            if Theme.rtl: Tile { category: root.category; }
+                        }
+                    }
+                    if root.screen == 3 && root.f-running: VerticalLayout {
+                        spacing: 6px;
+                        Rectangle {
+                            height: 8px;
+                            border-radius: 4px;
+                            background: Theme.track;
+                            clip: true;
+                            accessible-role: progress-indicator;
+                            accessible-value: root.f-progress-text;
+                            Rectangle {
+                                width: root.f-known-size ? parent.width * clamp(root.f-progress, 0, 1) : parent.width * 0.3;
+                                x: Theme.rtl ? parent.width - self.width : 0px;
+                                height: parent.height;
+                                border-radius: 4px;
+                                background: Theme.bar;
+                            }
+                        }
+                        Text {
+                            text: root.f-progress-text;
+                            color: Theme.muted;
+                            font-size: 12px;
+                            horizontal-alignment: Theme.start;
+                        }
+                    }
+                    if root.screen == 3 && root.f-failed: Rectangle {
+                        border-radius: 10px;
+                        background: Theme.danger-subtle;
+                        HorizontalLayout {
+                            padding: 12px;
+                            Status { icon: Icons.alert; tint: Theme.danger; text: root.note; }
+                        }
+                    }
+                    if root.screen == 3: VerticalLayout {
+                        spacing: 10px;
+                        for f in root.facts: HorizontalLayout {
+                            spacing: 16px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                preferred-width: 0px;
+                                spacing: 2px;
+                                Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+                                Text { text: f.value; color: Theme.text; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: f.label2 != "" ? 1 : 0;
+                                preferred-width: 0px;
+                                visible: f.label2 != "";
+                                spacing: 2px;
+                                Text { text: f.label2; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+                                Text { text: f.value2; color: Theme.text; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                            }
+                        }
+                    }
+                    if root.screen == 3 && root.f-hint != "": Status {
+                        busy: root.f-waiting;
+                        tint: root.f-waiting ? Theme.warning : Theme.muted;
+                        text: root.f-hint;
+                    }
+
+                    if root.error-text != "": Status { icon: Icons.alert; tint: Theme.danger; text: root.error-text; }
+                }
+            }
+
+            // ---------------------------------------------------- the buttons
+            if root.screen != 0: HorizontalLayout {
+                spacing: 8px;
+                if root.screen == 2 && !Theme.rtl: CheckBox {
+                    text: root.start-now-text;
+                    checked <=> root.start-now;
+                    toggled => { root.start-now-toggled(self.checked); }
+                }
+                for b in root.lead: Button {
+                    text: b.label;
+                    primary: b.primary;
+                    enabled: b.enabled;
+                    clicked => { root.button(b.id); }
+                }
+                if root.busy && Theme.rtl: Spinner { width: 18px; height: 18px; indeterminate: true; y: (parent.height - self.height) / 2; }
+                if root.position-text != "" && !Theme.rtl: Text {
+                    text: root.position-text;
+                    color: Theme.muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if root.position-text != "" && Theme.rtl: Text {
+                    text: root.position-text;
+                    color: Theme.muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                if root.busy && !Theme.rtl: Spinner { width: 18px; height: 18px; indeterminate: true; y: (parent.height - self.height) / 2; }
+                for b in root.trail: Button {
+                    text: b.label;
+                    primary: b.primary;
+                    enabled: b.enabled;
+                    clicked => { root.button(b.id); }
+                }
+                if root.screen == 2 && Theme.rtl: CheckBox {
+                    text: root.start-now-text;
+                    checked <=> root.start-now;
+                    toggled => { root.start-now-toggled(self.checked); }
+                }
+            }
+        }
+    }
+
+    // The std widgets (text fields, lists, check boxes) follow the light or dark scheme.
+    // The system's scheme, before the app's replaces it ("theme: system" follows it).
+    out property <bool> system-dark;
+    init => {
+        system-dark = Palette.color-scheme == ColorScheme.dark;
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    property <bool> dark: Theme.dark;
+    changed dark => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+}

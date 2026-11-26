@@ -42,6 +42,11 @@ declare const __APP_VERSION__: string;
 
 export function desktopHost(): Host {
   return {
+    // Kept by the shell, which outlives the window closed to the tray.
+    thisRun: {
+      get: (key) => invoke<boolean>("this_run", { key }),
+      set: (key) => invoke<void>("set_this_run", { key }),
+    },
     appVersion: __APP_VERSION__,
     async pickFolder({ title, defaultPath }) {
       const { open } = await import("@tauri-apps/plugin-dialog");
@@ -108,20 +113,13 @@ export function desktopHost(): Host {
     async showWindow() {
       await invoke("show_window");
     },
-    // The one prompt window, opened (or brought to the front) by whichever UI hears first.
+    // The prompt window is `wdm-prompt`, a native window the shell starts (one at a time).
     async openPrompt() {
       await invoke("open_prompt");
-    },
-    async closePrompt() {
-      await invoke("close_prompt");
     },
     // The shell looks the file up with the daemon; only a completed download's.
     async openDownload(id, reveal) {
       await invoke("open_download", { id, reveal });
-    },
-    // The shell's own watch (`watch.rs`) brings the prompt window back when one of these ends.
-    async setFollowed(ids) {
-      await invoke("set_followed", { ids });
     },
     // Flatpak, Scoop or an AUR build: that package manager updates this copy (`updates.rs`).
     async updatesFrom() {

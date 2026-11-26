@@ -1,7 +1,9 @@
 //! Write gathering: one `write_at` per `Tuning::write_coalesce` (256 KiB)
 //! per connection instead of one per network chunk, without changing what
 //! counts as written, and never holding gathered bytes longer than
-//! `write_coalesce_delay`, even when the source goes quiet.
+//! `write_coalesce_delay`, even when the source goes quiet. Only small
+//! chunks (slow links, TLS records) are gathered: full 32 KiB reads of a
+//! fast link are written as they are, without a second buffer.
 
 mod common;
 
@@ -112,7 +114,7 @@ async fn rig(tuning: Tuning) -> Rig {
 
 fn small_chunks(data: Bytes, bps: u64) -> Arc<FaultSource> {
     Arc::new(FaultSource::new(data).cfg(|c| {
-        c.chunk = 16 * KIB as usize;
+        c.chunk = 8 * KIB as usize;
         c.per_conn_bps = Some(bps);
     }))
 }
@@ -137,14 +139,43 @@ async fn network_chunks_are_gathered_into_few_writes() {
         &data,
     );
     let writes = r.storage.counts.writes.load(Ordering::Relaxed);
-    let chunks = size / (16 * KIB);
+    let chunks = size / (8 * KIB);
     let gather = Tuning::default().write_coalesce as u64;
     // Full gathers, plus one partial write per range end.
     assert!(
         writes <= size / gather + 16,
         "{writes} writes for {chunks} chunks"
     );
-    assert!(r.storage.counts.largest.load(Ordering::Relaxed) <= gather + 16 * KIB);
+    assert!(r.storage.counts.largest.load(Ordering::Relaxed) <= gather + 8 * KIB);
+}
+
+#[tokio::test(start_paused = true)]
+async fn full_reads_are_written_as_they_are() {
+    let r = rig(Tuning {
+        fixed_connections: Some(4),
+        ..Tuning::default()
+    })
+    .await;
+    let size = 8 * MIB;
+    let data = content(size, 6);
+    r.sources.insert(
+        URL,
+        Arc::new(FaultSource::new(data.clone()).cfg(|c| {
+            c.chunk = 32 * KIB as usize;
+            c.per_conn_bps = Some(8 * MIB);
+        })),
+    );
+    let id = r.engine.add(add_params(URL)).await.unwrap().id;
+    finish(&r.engine, &id, LONG).await;
+    assert_same(
+        &r.storage
+            .inner
+            .finished(&Path::new(DIR).join("data.bin"))
+            .unwrap(),
+        &data,
+    );
+    // No gather buffer: no write is larger than one read.
+    assert!(r.storage.counts.largest.load(Ordering::Relaxed) <= 32 * KIB);
 }
 
 #[tokio::test(start_paused = true)]
@@ -162,7 +193,7 @@ async fn gathering_can_be_turned_off() {
     finish(&r.engine, &id, LONG).await;
     assert_eq!(
         r.storage.counts.writes.load(Ordering::Relaxed),
-        size / (16 * KIB),
+        size / (8 * KIB),
         "one write per chunk"
     );
 }
@@ -174,7 +205,7 @@ async fn a_slow_connection_still_writes_within_the_delay() {
         ..Tuning::default()
     })
     .await;
-    // 64 KiB/s in 16 KiB chunks: a chunk every 250 ms, far below one gather
+    // 64 KiB/s in 8 KiB chunks: a chunk every 125 ms, far below one gather
     // (256 KiB) per write; the 200 ms delay must still write them promptly.
     let size = MIB;
     let data = content(size, 3);
@@ -211,7 +242,7 @@ async fn gathered_bytes_survive_a_hedge_takeover_and_a_pause() {
         Arc::new(
             FaultSource::new(data.clone())
                 .cfg(|c| {
-                    c.chunk = 16 * KIB as usize;
+                    c.chunk = 8 * KIB as usize;
                     c.per_conn_bps = Some(4 * MIB);
                 })
                 .script(|n, _| ReqPlan {
@@ -253,7 +284,7 @@ async fn gathered_bytes_are_written_when_the_source_goes_quiet() {
     let src = Arc::new(
         FaultSource::new(data.clone())
             .cfg(|c| {
-                c.chunk = 16 * KIB as usize;
+                c.chunk = 8 * KIB as usize;
                 c.per_conn_bps = Some(8 * MIB);
             })
             // 64 KiB (well under one gather), then a minute of silence.
