@@ -45,9 +45,14 @@ pub struct Edge {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChromeWebStore {
+    /// Allowed by the host as soon as it is known: the store assigns it at
+    /// the first upload, before review, and the reviewers' copy has to
+    /// reach the app.
     pub id: Option<String>,
-    /// Offer the extension to Chrome, Brave and Vivaldi from the installers
-    /// (external extensions). Only with an `id`.
+    /// The listing is live (public or unlisted): offer the extension to
+    /// Chrome, Brave and Vivaldi from the installers (external extensions),
+    /// and send them to its store page from "Connect your browser"
+    /// (before, that page does not open). Only with an `id`.
     pub external_install: bool,
 }
 

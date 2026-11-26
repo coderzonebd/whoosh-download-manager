@@ -13,8 +13,8 @@ Two things are needed in each browser:
 | `firefox.id` | `browser_specific_settings.gecko.id`, fixed by us | `whoosh@coderzonebd.com` |
 | `firefox.amoSlug` | the listing's slug on addons.mozilla.org | `whoosh-download-manager` |
 | `edge.id` | the ID Microsoft Edge Add-ons assigns (its "CRX ID"; Store ID `0RDCKBR1RKRT`) | `lbcnfampnnfcbfacehkdjlggmbigpbdh` |
-| `chromeWebStore.id` | the ID the Chrome Web Store assigns | `null` (the US$5 account waits for the owner) |
-| `chromeWebStore.externalInstall` | **the switch**: offer the extension to Chrome, Chromium, Brave and Vivaldi from the installers. Refused while `id` is `null` | `false` |
+| `chromeWebStore.id` | the ID the Chrome Web Store assigns (at the first upload, before review); every host manifest allows it at once, so the reviewers' copy reaches the app | `mpcllangiikiaedbgpmadpomfdnnlejj` |
+| `chromeWebStore.externalInstall` | **the switch**, for once the listing is live: offer the extension to Chrome, Chromium, Brave and Vivaldi from the installers, and link to its store page from *Connect your browser* (until then that page does not open, so it links to GitHub Releases). Refused while `id` is `null` | `false` (in review) |
 | `github.chromiumId` | the ID of the Chromium zip on GitHub Releases (and of development builds), fixed by the public `key` in the extension's manifest | `clhjgofaikdmabdnebgcmdffdjenagfl` |
 
 It is read by:
