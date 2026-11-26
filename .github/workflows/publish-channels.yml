@@ -10,7 +10,8 @@
 # are kept off the release page, in the release run's `release-internal` artifact
 # (.github/scripts/release-internal.sh).
 #
-# The browser extension goes to Firefox Add-ons (AMO) and Microsoft Edge Add-ons with every full
+# The browser extension goes to Firefox Add-ons (AMO), Microsoft Edge Add-ons and the Chrome Web
+# Store with every full
 # release, and with the betas of 1.0.0 (the stores have carried those since before 1.0.0). Other
 # pre-releases stay off the stores: a store shows only the numeric extension version, which for
 # X.Y.Z-beta.N is a number just below X.Y.Z (1.1.0-beta.1 would be listed as 1.0.65535.1).
@@ -58,6 +59,7 @@ jobs:
       aur: ${{ steps.s.outputs.aur }}
       amo: ${{ steps.s.outputs.amo }}
       edge: ${{ steps.s.outputs.edge }}
+      cws: ${{ steps.s.outputs.cws }}
       stores: ${{ steps.r.outputs.stores }}
     steps:
       - id: r
@@ -88,6 +90,8 @@ jobs:
           EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
           EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
           EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
         run: |
           {
             echo "linux-repo=${CLOUDSMITH_API_KEY:+true}"
@@ -96,6 +100,7 @@ jobs:
             echo "aur=${AUR_SSH_PRIVATE_KEY:+true}"
             [ -n "$AMO_JWT_ISSUER" ] && [ -n "$AMO_JWT_SECRET" ] && echo "amo=true"
             [ -n "$EDGE_API_KEY" ] && [ -n "$EDGE_CLIENT_ID" ] && [ -n "$EDGE_PRODUCT_ID" ] && echo "edge=true"
+            [ -n "$CWS_SERVICE_ACCOUNT_JSON" ] && [ -n "$CWS_PUBLISHER_ID" ] && echo "cws=true"
             true
           } >> "$GITHUB_OUTPUT"
 
@@ -313,3 +318,35 @@ jobs:
         run: |
           node .github/scripts/edge-submit.mjs "edge/wdm-chromium-$VERSION-store.zip" \
             "Whoosh Download Manager $VERSION: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
+
+  cws:
+    name: Chrome Web Store
+    needs: meta
+    if: needs.meta.outputs.cws == 'true' && needs.meta.outputs.stores == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: The release's Chromium store package
+        run: |
+          set -euo pipefail
+          .github/scripts/release-internal.sh "$TAG" cws "wdm-$VERSION-store-uploads.zip"
+          cd cws
+          unzip -q "wdm-$VERSION-store-uploads.zip" "wdm-chromium-$VERSION-store.zip"
+      - name: Upload and submit for review
+        env:
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+        run: |
+          set -euo pipefail
+          CWS_ITEM_ID=$(jq -er '.chromeWebStore.id' packaging/browsers/extension-ids.json)
+          export CWS_ITEM_ID
+          node .github/scripts/cws-submit.mjs "cws/wdm-chromium-$VERSION-store.zip"

@@ -33,7 +33,7 @@ attestation. `publish-channels.yml` and `updater-feed.yml` fetch it with
 | Internal file | Used by |
 |---|---|
 | `latest.json` (Tauri updater; carries each update's signature, so the `.sig` files are not kept) | `updater-feed.yml`, which copies it to the update feed the app reads; updater key (below) |
-| `wdm-<v>-store-uploads.zip`: `wdm-chromium-<v>-store.zip`, `wdm-firefox-<v>-store.zip` and the Android `.aab` | the AMO and Edge Add-ons jobs; the Chrome Web Store and Google Play by hand |
+| `wdm-<v>-store-uploads.zip`: `wdm-chromium-<v>-store.zip`, `wdm-firefox-<v>-store.zip` and the Android `.aab` | the AMO, Edge Add-ons and Chrome Web Store jobs; Google Play by hand |
 | `wdm-<v>-package-manifests.tar.gz` (winget, Scoop, Homebrew cask, Flathub, AUR, filled in with this release's URLs and hashes) | the Homebrew and AUR jobs; winget, Scoop and Flathub by hand |
 | `wdm-<v>-sbom.zip`: `*.cargo.cdx.json` (one per crate), `wdm-desktop-<v>.npm.cdx.json`, `wdm-extension-<v>.npm.cdx.json` | anyone auditing the dependencies |
 
@@ -109,7 +109,7 @@ without the development `key` (the job fails if a key is left in).
    **Publish**. Mark it "latest" only for stable versions.
 6. Publishing starts `publish-channels.yml` (AMO, Edge Add-ons, the apt/rpm repository, winget,
    Homebrew, the AUR, each where its secret is set) and `updater-feed.yml`. What stays by hand
-   (the Chrome Web Store, Google Play, Scoop, Flathub, a first winget submission) comes from the
+   (Google Play, Scoop, Flathub, a first winget submission) comes from the
    release run's `release-internal` artifact: `wdm-<v>-store-uploads.zip` and
    `wdm-<v>-package-manifests.tar.gz` (the *Package manifests* job filled in the version, URLs
    and SHA-256s with `.github/scripts/package-manifests.mjs`; `packaging/*/README.md` says how to
@@ -353,9 +353,10 @@ only when its secret exists in the `release` environment:
 | `AUR_SSH_PRIVATE_KEY` (secret) | AUR | an AUR account with that SSH key; the first push creates the `wdm` package |
 | `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` (secrets) | Firefox Add-ons | AMO → *Developer Hub* → *Manage API Keys* (<https://addons.mozilla.org/developers/addon/api/key/>): *Generate new credentials*; the JWT issuer and JWT secret. The job submits the release's `wdm-firefox-<v>-store.zip` as a new listed version with `web-ext sign`, the source archive and notes for the reviewers attached; AMO reviews and signs it, then Firefox updates users |
 | `EDGE_CLIENT_ID`, `EDGE_API_KEY`, `EDGE_PRODUCT_ID` (secrets) | Microsoft Edge Add-ons | Partner Center → Microsoft Edge → *Publish API* (<https://partner.microsoft.com/dashboard/microsoftedge/publishapi>): *Create API credentials* gives the client ID and the API key (it expires: renew it there and update the secret); the Product ID is on the extension's *Overview* page (a GUID, not the store's extension ID). The job uploads `wdm-chromium-<v>-store.zip` and submits it for certification (`.github/scripts/edge-submit.mjs`) |
+| `CWS_SERVICE_ACCOUNT_JSON` (secret), `CWS_PUBLISHER_ID` (variable) | Chrome Web Store | In Google Cloud console: a project with the *Chrome Web Store API* enabled, and a service account in it (no roles needed) with a JSON key; the whole key file is the secret. In the Developer Dashboard, *Settings → Service account*: add the service account's email (one per publisher). The publisher ID is on the same page (`3557d326-4311-47b6-a3dc-e956521e0bd2`). The item ID comes from `packaging/browsers/extension-ids.json`. The job uploads `wdm-chromium-<v>-store.zip` and submits it for review (`.github/scripts/cws-submit.mjs`, API v2); a version of ours still in review is withdrawn first, so the newest one is reviewed. The API cannot create the item: the first version was submitted by hand |
 
 Pre-releases go only to `CLOUDSMITH_BETA_REPO` (when set); winget, Homebrew and the AUR take full
-releases. The extension goes to AMO and Edge Add-ons with every full release, and with the betas of 1.0.0
+releases. The extension goes to AMO, Edge Add-ons and the Chrome Web Store with every full release, and with the betas of 1.0.0
 (`1.0.0-beta.N`, listed as `0.65535.65535.N`, which stays below `1.0.0`). Later pre-releases stay
 off the stores: a store shows only the numeric extension version, and `1.1.0-beta.1` would be
 listed as `1.0.65535.1`. Neither job waits for the store's review. The jobs run from the workflow
@@ -426,7 +427,7 @@ Phase 4).
 
 ## Not automated yet
 
-- Store uploads to the Chrome Web Store and the Microsoft Store (AMO and Edge Add-ons are
+- Store uploads to the Microsoft Store (AMO, Edge Add-ons and the Chrome Web Store are
   submitted by `publish-channels.yml`), and
   package-manager submissions (winget, Homebrew, Scoop, Flathub, AUR, Snap,
   Nix, Chocolatey). The manifests are filled in per release
