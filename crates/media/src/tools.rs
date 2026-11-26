@@ -8,8 +8,12 @@
 //! managed copies. A managed copy wins over a system one;
 //! Linux (both tools) and macOS (ffmpeg) also use the system's program when
 //! there is no managed copy, so a distribution's package needs no download.
-//! Nothing is checked or fetched in the background unless the user turned
-//! on daily updates.
+//! The tools look after themselves: missing ones are fetched in the
+//! background soon after the start, upstream is asked once a day for newer
+//! versions, and a newer version of a managed copy is installed as soon as
+//! it is known (yt-dlp has to keep up with the sites). Nobody has to think
+//! about them; a tool the user pointed at, or the system's own, is left
+//! alone.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -510,22 +514,29 @@ impl Tools {
         }
     }
 
-    /// Daily auto-update: check when due, install what is newer.
+    /// Asks upstream when a day has passed since the last check, then
+    /// installs every newer version known, including one an earlier check
+    /// found (before, an update found by a check made in Settings waited a
+    /// day as "available"). Runs at the start and every hour.
     pub async fn auto_update_if_due(&self) {
-        let due = {
-            let s = lock(&self.saved);
-            s.auto_update
-                && s.last_check_at
-                    .is_none_or(|t| now_ms() - t >= UPDATE_INTERVAL_MS)
-        };
-        if !due {
+        let due = lock(&self.saved)
+            .last_check_at
+            .is_none_or(|t| now_ms() - t >= UPDATE_INTERVAL_MS);
+        if due && self.check_updates().await.is_err() {
             return;
         }
-        if self.check_updates().await.is_err() {
-            return;
-        }
+        self.install_updates().await;
+    }
+
+    /// Installs the newer version of every tool WDM installed itself
+    /// (recorded in `tools.json`) that has one. A program someone put in
+    /// `bin` by hand is not WDM's to replace (the desktop e2e's fake
+    /// yt-dlp was, by the real one).
+    async fn install_updates(&self) {
         for tool in self.status().tools {
-            if tool.update_available
+            let ours = lock(&self.saved).managed.contains_key(&tool.name);
+            if ours
+                && tool.update_available
                 && tool.source == Some(MediaToolSource::Managed)
                 && let Some(kind) = Kind::from_name(&tool.name)
                 && let Err(e) = self.install(kind, true).await

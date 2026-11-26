@@ -567,7 +567,7 @@ impl Controller {
     /// The switches that belong to this computer, as they are now.
     fn push_desktop(&self, w: &MainWindow) {
         let g = w.global::<SettingsData>();
-        let prefs = wdm_tray::prefs::load();
+        let prefs = super::load_prefs();
         let login = crate::login::enabled();
         g.set_has_login(login.is_some());
         g.set_login(login == Some(true));
@@ -640,7 +640,7 @@ impl Controller {
 
     /// A switch for this computer: applies at once.
     pub(super) fn settings_desktop(&mut self, which: &str, on: bool) {
-        let path = wdm_tray::prefs::path();
+        let path = super::prefs_path();
         let save = |f: &dyn Fn(&mut wdm_tray::prefs::Prefs)| {
             if let Some(path) = &path {
                 let mut p = wdm_tray::prefs::load_from(path);

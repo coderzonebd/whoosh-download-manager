@@ -29,6 +29,22 @@ pub const SHOW_MAIN_FILE: &str = "show-main";
 /// After the windows open or close, or the downloads end: when the memory
 /// that took is given back (`wdm_tray::trim`), as the tray does.
 const SETTLE_AFTER: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(9)];
+/// The main window's size the first time (the web UI's window opened at
+/// the same): wide enough for the details beside every column and for the
+/// toolbar's words. Later it opens at the size it was closed at.
+const DEFAULT_SIZE: (f32, f32) = (1240.0, 780.0);
+/// The least the layout fits in (MainWindow's min-width and min-height in
+/// ui/main.slint).
+const MIN_SIZE: (f32, f32) = (760.0, 440.0);
+/// From this width (logical pixels) the details fit beside every column
+/// of the list and the toolbar has room for words; below it the details
+/// open over the list and the toolbar's other buttons are icons.
+const WIDE: f32 = 1200.0;
+/// Below this width the list also leaves out Speed and Time left.
+const NARROW: f32 = 900.0;
+/// From this width the toolbar's four buttons have their words (measured
+/// with the sidebar and the smallest search box); below, icons.
+const WORDS: f32 = 1000.0;
 
 const GROUPS: [&str; 6] = [
     "all",
@@ -134,6 +150,13 @@ pub struct Main {
     page: Page,
     poll: Timer,
     next_local: u32,
+    /// The selected download's details are shown. A click on a download
+    /// shows them (and a click on another switches them to it); their x
+    /// hides them until the next click on a download.
+    details_shown: bool,
+    /// The window's size (logical pixels): the one asked for until the
+    /// window is on the screen, then the one it has.
+    size: (f32, f32),
     /// Gives memory back once things settle (`SETTLE_AFTER`).
     settle: Rc<Timer>,
     /// Something was downloading at the last poll.
@@ -159,6 +182,8 @@ impl Default for Main {
             page: Page::Downloads,
             poll: Timer::default(),
             next_local: 0,
+            details_shown: false,
+            size: DEFAULT_SIZE,
             settle: Rc::new(Timer::default()),
             was_busy: false,
         }
@@ -261,6 +286,7 @@ impl Controller {
         self.main.poll.start(TimerMode::Repeated, POLL, || {
             super::with(|c| {
                 c.poll_update();
+                c.check_width();
                 let busy = c.model.downloads.values().any(|d| model::pausable(d.state));
                 if std::mem::replace(&mut c.main.was_busy, busy) && !busy {
                     c.settle_soon();
@@ -299,9 +325,15 @@ impl Controller {
             super::history::wire_history(&window);
             super::browsers::wire_browsers(&window);
             window.set_rows(ModelRc::from(self.main.rows.clone()));
-            // Its size and place on the screen, before it first shows (the
-            // preferred and minimum sizes of MainWindow in ui/main.slint).
-            crate::fit::fit(window.window(), (1120.0, 700.0), (760.0, 440.0));
+            // Its size and place on the screen, before it first shows: the
+            // one it was closed at, or the default.
+            let prefs = super::load_prefs();
+            self.main.size = if prefs.main_width >= MIN_SIZE.0 && prefs.main_height >= MIN_SIZE.1 {
+                (prefs.main_width, prefs.main_height)
+            } else {
+                DEFAULT_SIZE
+            };
+            crate::fit::fit(window.window(), self.main.size, MIN_SIZE);
             self.main.window = Some(window);
             self.main.dirty = true;
             self.apply_look();
@@ -311,6 +343,52 @@ impl Controller {
             let _ = w.show();
         }
         self.settle_soon();
+    }
+
+    /// How much room the window has, from its size now (the poll: a
+    /// resize has no event of its own here).
+    fn check_width(&mut self) {
+        if let Some(w) = &self.main.window {
+            let win = w.window();
+            let now = win.size().to_logical(win.scale_factor());
+            // Not on the screen yet: the size asked for.
+            if now.width >= MIN_SIZE.0 && now.height >= MIN_SIZE.1 {
+                self.main.size = (now.width, now.height);
+            }
+            let width = self.main.size.0;
+            let class = if width >= WIDE {
+                2
+            } else if width >= NARROW {
+                1
+            } else {
+                0
+            };
+            let room = w.global::<crate::Room>();
+            if room.get_size_class() != class {
+                room.set_size_class(class);
+            }
+            let words = width >= WORDS;
+            if room.get_words() != words {
+                room.set_words(words);
+            }
+        }
+    }
+
+    /// Keeps the window's size for the next time it opens.
+    pub(super) fn save_size(&self) {
+        if self.main.window.is_none() {
+            return;
+        }
+        let Some(path) = super::prefs_path() else {
+            return;
+        };
+        let mut p = wdm_tray::prefs::load_from(&path);
+        if (p.main_width, p.main_height) != self.main.size {
+            (p.main_width, p.main_height) = self.main.size;
+            if let Err(err) = wdm_tray::prefs::save_to(&path, &p) {
+                eprintln!("wdm-prompt: desktop.json: {err}");
+            }
+        }
     }
 
     /// Opening a window, a burst of progress, a notification: the memory
@@ -324,10 +402,11 @@ impl Controller {
     /// The main window's close button: it goes (and its memory with it);
     /// the process ends unless the prompt window has something to show.
     fn close_main(&mut self) {
+        self.save_size();
         self.main.hide();
         self.main.removing = None;
         self.settle_soon();
-        let prefs = wdm_tray::prefs::load();
+        let prefs = super::load_prefs();
         let tray = wdm_tray::locks::held(&self.dir, wdm_tray::locks::TRAY);
         if !prefs.close_to_tray && tray {
             // Not kept in the tray: closing quits WDM (as the tray's Quit).
@@ -563,6 +642,7 @@ impl Controller {
         let Some(w) = self.main.window.as_ref().map(ComponentHandle::clone_strong) else {
             return;
         };
+        self.check_width();
         // Downloads that went away leave the selection.
         let downloads = &self.model.downloads;
         self.main.selection.retain(|id| downloads.contains_key(id));
@@ -658,6 +738,8 @@ impl Controller {
         w.set_open_folder_text(t("follow.openFolder"));
         w.set_copy_text(t("action.copyLink"));
         w.set_details_label(t("detail.label"));
+        w.set_close_details(t("detail.close"));
+        w.set_details_open(self.main.details_shown);
 
         // The empty list.
         if order.is_empty() {
@@ -943,6 +1025,11 @@ impl Controller {
             m.anchor = Some(id.clone());
         }
         m.active = Some(id);
+        // A left click shows the download's details (a right click is for
+        // the menu, and leaves them as they are).
+        if !right {
+            m.details_shown = true;
+        }
         self.render_main();
     }
 
@@ -967,6 +1054,10 @@ impl Controller {
         let ids: Vec<String> = self.main.selection.clone();
         let active = self.main.active.clone();
         match id {
+            "details-close" => {
+                self.main.details_shown = false;
+                self.render_main();
+            }
             "add" => {
                 self.main.next_local += 1;
                 let offer = MediaOffer {

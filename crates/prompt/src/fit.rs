@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Fitting the main window to the screen. Its preferred size (1120×700) is
-//! more than many screens have once the taskbar is counted: 1024×768, or a
-//! 1366×768 laptop at 125 % (~1093×614 to work with). Windows put it where
-//! it puts new windows, so its right side and status bar went off the
-//! screen (seen on GitHub's 1024×768 Windows runner,
-//! docs/bench/windows-handcheck.ps1). On Windows it now takes the size it
-//! wants or what the work area leaves, never less than its minimum, and
-//! opens in the middle of the work area. Elsewhere the window manager
-//! places windows itself.
+//! The main window's size when it opens: the default, or the one it had
+//! when it was closed. (When it shows a window, Slint also keeps it inside
+//! the layout's own limits; a layout that named a maximum width by mistake
+//! once made it open as small as it goes, 760 px. `ui_tests` checks that
+//! no state of the window has one.)
+//!
+//! That is more than many screens have once the taskbar is counted:
+//! 1024×768, or a 1366×768 laptop at 125 % (~1093×614 to work with), and
+//! Windows put the window where it puts new windows, its right side and
+//! status bar off the screen (GitHub's 1024×768 Windows runner,
+//! docs/bench/windows-handcheck.ps1). On Windows it takes what the work
+//! area leaves, never less than its minimum, and opens in the middle of
+//! the work area. Elsewhere the window manager places and bounds windows.
 
 /// Room left around the window inside the work area, in logical pixels.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -61,7 +65,12 @@ pub fn fit(window: &slint::Window, want: (f32, f32), min: (f32, f32)) {
 }
 
 #[cfg(not(windows))]
-pub fn fit(_window: &slint::Window, _want: (f32, f32), _min: (f32, f32)) {}
+pub fn fit(window: &slint::Window, want: (f32, f32), min: (f32, f32)) {
+    window.set_size(slint::LogicalSize::new(
+        want.0.max(min.0),
+        want.1.max(min.1),
+    ));
+}
 
 #[cfg(test)]
 mod tests {

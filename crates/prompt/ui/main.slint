@@ -45,7 +45,7 @@ export struct Column {
 component NavEntry inherits Rectangle {
     in property <NavItem> item;
     callback picked();
-    height: item.header ? 30px : 34px;
+    height: item.header ? 24px : 30px;
     border-radius: 8px;
     background: item.active ? Theme.selected : touch.has-hover && !item.header ? Theme.hover : transparent;
     accessible-role: button;
@@ -97,6 +97,19 @@ component NavEntry inherits Rectangle {
 }
 
 // The columns' widths (the name takes the rest).
+// How much room the main window has, set from its size (computing it from
+// a window's width inside the layout made a layout loop): 2 from 1200 px,
+// where the details sit beside every column and toolbars have words; 1
+// from 900 px: the details open over the list and the toolbars' other
+// buttons are icons; 0 below: the list also leaves out Speed and Time left.
+export global Room {
+    in-out property <int> size-class: 2;
+    // The toolbars' buttons have room for their words (measured: ~960 px
+    // for the downloads' four).
+    in-out property <bool> words: true;
+    out property <bool> wide: Room.size-class >= 2;
+}
+
 global Cols {
     out property <length> size: 84px;
     out property <length> progress: 170px;
@@ -227,7 +240,43 @@ component HeaderCell inherits Rectangle {
     }
 }
 
-// The details of the selected download, beside the list.
+// The library: downloads by state, by category, then the pages. It scrolls
+// when the window is too short for all of it (the pages at the bottom were
+// cut off), and keeps the pages at the bottom when there is room.
+component SideNav inherits Rectangle {
+    in property <[NavItem]> nav;
+    in property <[NavItem]> nav-more;
+    callback picked(string);
+    width: 224px;
+    background: Theme.sunken;
+    sv := ScrollView {
+        // All of it, or the visible height when that is more (so the
+        // pages keep to the bottom); scrolls when the window is shorter.
+        content-height: max(nav-list.min-height, self.visible-height);
+        nav-list := VerticalLayout {
+            width: sv.visible-width;
+            height: sv.content-height;
+            padding: 12px;
+            spacing: 2px;
+            HorizontalLayout {
+                padding-left: Theme.rtl ? 0px : 10px;
+                padding-right: Theme.rtl ? 10px : 0px;
+                padding-bottom: 10px;
+                spacing: 8px;
+                alignment: Theme.rtl ? end : start;
+                if !Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
+                Text { text: "Whoosh"; color: Theme.text; font-size: 17px; font-weight: 700; vertical-alignment: center; }
+                if Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
+            }
+            for n in root.nav: NavEntry { item: n; picked => { root.picked(n.id); } }
+            Rectangle { vertical-stretch: 1; min-height: 12px; }
+            for n in root.nav-more: NavEntry { item: n; picked => { root.picked(n.id); } }
+        }
+    }
+}
+
+// The details of the selected download, beside the list (or over it, in
+// a window too narrow for both).
 component DetailPanel inherits Rectangle {
     in property <string> label;
     in property <string> name;
@@ -239,14 +288,35 @@ component DetailPanel inherits Rectangle {
     in property <string> progress-text;
     in property <[Fact]> facts;
     in property <[Btn]> actions;
+    // The close button's name for screen readers.
+    in property <string> close-label;
+    // Over the list instead of beside it: a shadow sets it apart.
+    in property <bool> floating;
     callback action(string);
+    callback close();
     width: 300px;
     background: Theme.surface;
+    drop-shadow-blur: root.floating ? 16px : 0px;
+    drop-shadow-color: root.floating ? #00000030 : transparent;
     accessible-role: groupbox;
     accessible-label: root.label;
     Rectangle { x: Theme.rtl ? parent.width - 1px : 0; width: 1px; background: Theme.border; }
+    Button {
+        x: Theme.rtl ? 8px : parent.width - self.width - 8px;
+        y: 8px;
+        width: 34px;
+        height: 34px;
+        icon: Icons.x;
+        a11y-label: root.close-label;
+        clicked => { root.close(); }
+    }
+    panel-scroll := ScrollView {
+        y: 46px;
+        height: parent.height - 46px;
     VerticalLayout {
+        width: panel-scroll.visible-width;
         padding: 18px;
+        padding-top: 0px;
         spacing: 14px;
         alignment: start;
         HorizontalLayout {
@@ -259,7 +329,8 @@ component DetailPanel inherits Rectangle {
                     text: root.name;
                     color: Theme.text;
                     font-weight: 600;
-                    wrap: word-wrap;
+                    // File names often have no spaces to break at.
+                    wrap: char-wrap;
                     max-height: 3.9rem;
                     overflow: elide;
                     horizontal-alignment: Theme.start;
@@ -301,8 +372,10 @@ component DetailPanel inherits Rectangle {
         for f in root.facts: VerticalLayout {
             spacing: 2px;
             Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
-            Text { text: f.value; color: Theme.text; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+            // Paths and addresses have no spaces to break at.
+            Text { text: f.value; color: Theme.text; font-size: 13px; wrap: char-wrap; horizontal-alignment: Theme.start; }
         }
+    }
     }
 }
 
@@ -566,34 +639,6 @@ component WindowEditor inherits Rectangle {
     }
 }
 
-// A media tool: its state, version, where it comes from, and the next step.
-component MediaToolCard inherits Rectangle {
-    in property <MediaToolRow> item;
-    border-radius: 10px;
-    border-width: 1px;
-    border-color: Theme.border;
-    background: Theme.sunken;
-    height: row.preferred-height;
-    accessible-role: groupbox;
-    accessible-label: item.name;
-    row := HorizontalLayout {
-        padding: 12px;
-        spacing: 10px;
-        if Theme.rtl && item.action != "": VerticalLayout { alignment: center; horizontal-stretch: 0; Button { text: item.action; icon: Icons.download; clicked => { SettingsData.media("update", item.name); } } }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 3px;
-            Text { text: item.name; color: Theme.text; font-size: 14px; font-weight: 600; horizontal-alignment: Theme.start; }
-            Status { text: item.state; busy: item.busy; icon: item.ready ? Icons.check : ""; tint: item.ready ? Theme.success : Theme.muted; }
-            if item.facts != "": Hint { text: item.facts; }
-            if item.update != "": Text { text: item.update; color: item.action != "" ? Theme.accent-text : Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
-            Hint { text: item.upstream; color: Theme.subtle; }
-            if item.error != "": Text { text: item.error; color: Theme.danger; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
-        }
-        if !Theme.rtl && item.action != "": VerticalLayout { alignment: center; horizontal-stretch: 0; Button { text: item.action; icon: Icons.download; clicked => { SettingsData.media("update", item.name); } } }
-    }
-}
-
 // Settings (the web UI's SettingsView): what the daemon keeps is saved
 // with Save; what belongs to this computer applies at once.
 component SettingsPage inherits Rectangle {
@@ -724,21 +769,9 @@ component SettingsPage inherits Rectangle {
                         Toggle { text: SettingsData.crash-text; hint: SettingsData.crash-hint; checked <=> SettingsData.crash; toggled(on) => { SettingsData.desktop("crash", on); } }
                     }
 
-                    Section {
-                        title: SettingsData.media-title;
-                        Hint { text: SettingsData.media-hint; }
-                        for m in SettingsData.media-tools: MediaToolCard { item: m; }
-                        if SettingsData.has-media-tools: HorizontalLayout {
-                            alignment: Theme.rtl ? end : start;
-                            spacing: 10px;
-                            if Theme.rtl && SettingsData.media-last-check != "": Hint { text: SettingsData.media-last-check; vertical-alignment: center; }
-                            Button { text: SettingsData.media-check-text; icon: Icons.refresh; enabled: !SettingsData.media-checking; clicked => { SettingsData.media("check", ""); } }
-                            if !Theme.rtl && SettingsData.media-last-check != "": Hint { text: SettingsData.media-last-check; vertical-alignment: center; }
-                        }
-                        if SettingsData.media-checking: Status { busy: true; text: SettingsData.media-check-text; tint: Theme.muted; }
-                        if SettingsData.media-error != "": Text { text: SettingsData.media-error; color: Theme.danger; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
-                        if SettingsData.has-media-tools: Toggle { text: SettingsData.media-auto-text; hint: SettingsData.media-auto-hint; checked: SettingsData.media-auto; toggled(on) => { SettingsData.media(on ? "auto-on" : "auto-off", ""); } }
-                    }
+                    // yt-dlp, ffmpeg and the rest look after themselves (wdm-media's
+                    // tools: fetched, checked and updated in the background); nothing
+                    // about them needs a setting.
                 }
             }
         }
@@ -858,7 +891,7 @@ component HistoryPage inherits Rectangle {
                 spacing: 10px;
                 if !Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
                 if !Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
-                if Theme.rtl: Button { text: HistoryData.clear-text; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
                 if Theme.rtl: HorizontalLayout {
                     spacing: 4px;
                     accessible-role: tab-list;
@@ -867,7 +900,9 @@ component HistoryPage inherits Rectangle {
                 }
                 Rectangle { horizontal-stretch: 1; }
                 LineEdit {
-                    width: 220px;
+                    min-width: 120px;
+                    preferred-width: 220px;
+                    horizontal-stretch: 0;
                     text <=> HistoryData.query;
                     placeholder-text: HistoryData.search-placeholder;
                     accessible-label: HistoryData.search-label;
@@ -880,7 +915,7 @@ component HistoryPage inherits Rectangle {
                     accessible-label: HistoryData.filter-label;
                     for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
                 }
-                if !Theme.rtl: Button { text: HistoryData.clear-text; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+                if !Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
                 if Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
                 if Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
             }
@@ -899,7 +934,10 @@ component HistoryPage inherits Rectangle {
             vertical-stretch: 1;
             alignment: center;
             spacing: 8px;
-            Icon { name: HistoryData.empty == 1 ? Icons.history : Icons.search; tint: Theme.subtle; width: 36px; height: 36px; x: (parent.width - self.width) / 2; }
+            HorizontalLayout {
+                alignment: center;
+                Icon { name: HistoryData.empty == 1 ? Icons.history : Icons.search; tint: Theme.subtle; width: 36px; height: 36px; }
+            }
             Text { text: HistoryData.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
             if HistoryData.empty-body != "": Text { text: HistoryData.empty-body; color: Theme.muted; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
         }
@@ -1055,8 +1093,10 @@ component BrowsersPage inherits Rectangle {
 export component MainWindow inherits Window {
     title: "Whoosh Download Manager";
     icon: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
-    preferred-width: 1120px;
-    preferred-height: 700px;
+    // The size it opens at the first time; later, the one it was closed
+    // at (set from Rust, src/fit.rs).
+    preferred-width: 1240px;
+    preferred-height: 780px;
     min-width: 760px;
     min-height: 440px;
     background: Theme.surface;
@@ -1087,6 +1127,12 @@ export component MainWindow inherits Window {
 
     // The selected download.
     in property <bool> detail;
+    // The selected download's details are shown: a click on a download
+    // shows its details, a click on another one switches them to it; their
+    // x closes them until the next click on a download.
+    in property <bool> details-open: false;
+    // See Room.
+    out property <bool> wide: Room.wide;
     in property <string> d-name;
     in property <string> d-category;
     in property <string> d-state;
@@ -1144,34 +1190,7 @@ export component MainWindow inherits Window {
         VerticalLayout {
             HorizontalLayout {
                 vertical-stretch: 1;
-                if !Theme.rtl: sidebar-l := Rectangle {
-                    width: 224px;
-                    background: Theme.sunken;
-                    VerticalLayout {
-                        padding: 12px;
-                        spacing: 2px;
-                        HorizontalLayout {
-                            padding-left: 10px;
-                            padding-bottom: 10px;
-                            spacing: 8px;
-                            Image {
-                                source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
-                                width: 22px;
-                                height: 22px;
-                            }
-                            Text {
-                                text: "Whoosh";
-                                color: Theme.text;
-                                font-size: 17px;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                            }
-                        }
-                        for n in root.nav: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
-                        Rectangle { vertical-stretch: 1; }
-                        for n in root.nav-more: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
-                    }
-                }
+                if !Theme.rtl: SideNav { nav: root.nav; nav-more: root.nav-more; picked(id) => { root.nav-picked(id); } }
 
                 if root.page == 1: SettingsPage { horizontal-stretch: 1; }
                 if root.page == 2: HistoryPage { horizontal-stretch: 1; }
@@ -1187,24 +1206,24 @@ export component MainWindow inherits Window {
                             padding-top: 12px;
                             padding-bottom: 12px;
                             spacing: 8px;
-                            if !Theme.rtl: Button { text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
-                            if !Theme.rtl: Button { text: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
-                            if !Theme.rtl: Button { text: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
-                            if !Theme.rtl: Button { text: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if !Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
                             if !Theme.rtl: Rectangle { horizontal-stretch: 1; }
-                            search-box := LineEdit { width: 240px; text <=> root.query; placeholder-text: root.search-placeholder; horizontal-alignment: Theme.rtl ? right : left; edited(t) => { root.search(t); } }
+                            search-box := LineEdit { min-width: 120px; preferred-width: 240px; horizontal-stretch: 0; text <=> root.query; placeholder-text: root.search-placeholder; horizontal-alignment: Theme.rtl ? right : left; edited(t) => { root.search(t); } }
                             if Theme.rtl: Rectangle { horizontal-stretch: 1; }
-                            if Theme.rtl: Button { text: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
-                            if Theme.rtl: Button { text: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
-                            if Theme.rtl: Button { text: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
-                            if Theme.rtl: Button { text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.remove-text : ""; a11y-label: root.remove-text; icon: Icons.trash; enabled: root.can-remove; clicked => { root.action("remove"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.pause-text : ""; a11y-label: root.pause-text; icon: Icons.pause; enabled: root.can-pause; clicked => { root.action("pause"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: Room.words ? root.resume-text : ""; a11y-label: root.resume-text; icon: Icons.play; enabled: root.can-resume; clicked => { root.action("resume"); } }
+                            if Theme.rtl: Button { horizontal-stretch: 0; text: root.add-text; icon: Icons.plus; primary: true; clicked => { root.action("add"); } }
                         }
                         Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
                     }
 
                     HorizontalLayout {
                         vertical-stretch: 1;
-                        if Theme.rtl && root.detail: DetailPanel {
+                        if Theme.rtl && root.detail && root.details-open && root.wide: DetailPanel {
                             label: root.details-label;
                             name: root.d-name;
                             category: root.d-category;
@@ -1215,11 +1234,16 @@ export component MainWindow inherits Window {
                             progress-text: root.d-progress-text;
                             facts: root.d-facts;
                             actions: root.d-actions;
+                            close-label: root.close-details;
                             action(id) => { root.action(id); }
+                            close => { root.action("details-close"); }
                         }
                         // ------------------------------------------------ the list
-                        VerticalLayout {
+                        Rectangle {
                             horizontal-stretch: 1;
+                        VerticalLayout {
+                            width: 100%;
+                            height: 100%;
                             Rectangle {
                                 height: 34px;
                                 background: Theme.surface;
@@ -1228,13 +1252,13 @@ export component MainWindow inherits Window {
                                     padding-right: 14px;
                                     spacing: 14px;
                                     if !Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
-                                    if Theme.rtl && !root.detail: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
-                                    if Theme.rtl && !root.detail: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
                                     HeaderCell { column: root.columns[1]; width: Cols.size; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if !Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
-                                    if !Theme.rtl && !root.detail: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
-                                    if !Theme.rtl && !root.detail: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
                                 }
                                 Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
@@ -1258,7 +1282,7 @@ export component MainWindow inherits Window {
                                 accessible-label: root.view-title;
                                 for r[i] in root.rows: RowView {
                                     item: r;
-                                    compact: root.detail;
+                                    compact: Room.size-class == 0;
                                     pressed(ctrl, shift, right) => { keys.focus(); root.row-pressed(i, ctrl, shift, right); }
                                     activated => { root.row-activated(i); }
                                 }
@@ -1268,7 +1292,13 @@ export component MainWindow inherits Window {
                                 vertical-stretch: 1;
                                 alignment: center;
                                 spacing: 8px;
-                                Icon { name: Icons.inbox; tint: Theme.subtle; width: 40px; height: 40px; x: (parent.width - self.width) / 2; }
+                                // In a centred row of its own: as a fixed-width cell of this
+                                // column it capped the whole window's width at its minimum
+                                // (the window opened as small as it goes).
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Icon { name: Icons.inbox; tint: Theme.subtle; width: 40px; height: 40px; }
+                                }
                                 Text { text: root.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
                                 Text { text: root.empty-body; color: Theme.muted; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
                                 if root.empty-action != "": HorizontalLayout {
@@ -1277,7 +1307,12 @@ export component MainWindow inherits Window {
                                 }
                             }
                         }
-                        if !Theme.rtl && root.detail: DetailPanel {
+                        // Too narrow for both: the details open over the list.
+                        if root.detail && root.details-open && !root.wide: DetailPanel {
+                            width: min(300px, parent.width - 24px);
+                            x: Theme.rtl ? 0px : parent.width - self.width;
+                            height: parent.height;
+                            floating: true;
                             label: root.details-label;
                             name: root.d-name;
                             category: root.d-category;
@@ -1288,40 +1323,30 @@ export component MainWindow inherits Window {
                             progress-text: root.d-progress-text;
                             facts: root.d-facts;
                             actions: root.d-actions;
+                            close-label: root.close-details;
                             action(id) => { root.action(id); }
+                            close => { root.action("details-close"); }
+                        }
+                        }
+                        if !Theme.rtl && root.detail && root.details-open && root.wide: DetailPanel {
+                            label: root.details-label;
+                            name: root.d-name;
+                            category: root.d-category;
+                            state: root.d-state;
+                            tone: root.d-tone;
+                            progress: root.d-progress;
+                            known: root.d-known;
+                            progress-text: root.d-progress-text;
+                            facts: root.d-facts;
+                            actions: root.d-actions;
+                            close-label: root.close-details;
+                            action(id) => { root.action(id); }
+                            close => { root.action("details-close"); }
                         }
                     }
                 }
 
-                if Theme.rtl: Rectangle {
-                    width: 224px;
-                    background: Theme.sunken;
-                    VerticalLayout {
-                        padding: 12px;
-                        spacing: 2px;
-                        HorizontalLayout {
-                            padding-right: 10px;
-                            padding-bottom: 10px;
-                            spacing: 8px;
-                            alignment: end;
-                            Text {
-                                text: "Whoosh";
-                                color: Theme.text;
-                                font-size: 17px;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                            }
-                            Image {
-                                source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png");
-                                width: 22px;
-                                height: 22px;
-                            }
-                        }
-                        for n in root.nav: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
-                        Rectangle { vertical-stretch: 1; }
-                        for n in root.nav-more: NavEntry { item: n; picked => { root.nav-picked(n.id); } }
-                    }
-                }
+                if Theme.rtl: SideNav { nav: root.nav; nav-more: root.nav-more; picked(id) => { root.nav-picked(id); } }
             }
 
             // ---------------------------------------------------- status bar

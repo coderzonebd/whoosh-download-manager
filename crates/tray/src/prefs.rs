@@ -36,6 +36,10 @@ pub struct Prefs {
     /// The bundled media tools, for the daemon the tray starts (written by
     /// the app, which knows its resource directory). Empty: none.
     pub media_tools_dir: String,
+    /// The main window's size when it was last closed (logical pixels; 0:
+    /// never, it opens at its default).
+    pub main_width: f32,
+    pub main_height: f32,
 }
 
 impl Default for Prefs {
@@ -50,6 +54,8 @@ impl Default for Prefs {
             browser_setup_shown: false,
             login_item_set: false,
             media_tools_dir: String::new(),
+            main_width: 0.0,
+            main_height: 0.0,
         }
     }
 }

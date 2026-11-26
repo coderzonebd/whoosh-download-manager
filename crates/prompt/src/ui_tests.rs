@@ -106,6 +106,17 @@ impl Harness {
         w.set_size(PhysicalSize::new(MW, MH));
     }
 
+    /// Draws the main window at another size, once the window's poll has
+    /// seen it (whether the details fit beside the list follows the width).
+    fn main_shot_at(&self, name: &str, width: u32, height: u32) {
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        w.set_size(PhysicalSize::new(width, height));
+        self.wait(Duration::from_millis(400));
+        self.draw(&w, width, height, name);
+        w.set_size(PhysicalSize::new(MW, MH));
+        self.wait(Duration::from_millis(400));
+    }
+
     fn draw(&self, window: &Rc<MinimalSoftwareWindow>, w: u32, h: u32, name: &str) {
         let mut buffer = vec![Rgb8Pixel::default(); (w * h) as usize];
         window.request_redraw();
@@ -170,7 +181,13 @@ fn summary(v: Value) -> wdm_proto::DownloadSummary {
 
 fn setup() -> Harness {
     slint::platform::set_platform(Box::new(TestPlatform)).ok();
-    let dir = std::env::temp_dir().join(format!("wdm-prompt-ui-{}", std::process::id()));
+    // A folder of each test's own: tests run side by side, and each takes
+    // the prompt's lock in it.
+    let dir = std::env::temp_dir().join(format!(
+        "wdm-prompt-ui-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let lock = wdm_tray::locks::take(&dir, wdm_tray::locks::PROMPT).unwrap();
@@ -178,6 +195,10 @@ fn setup() -> Harness {
     let window = WINDOWS.with(|ws| ws.borrow()[0].clone());
     window.set_size(PhysicalSize::new(W, H));
     let (tx, cmds) = mpsc::unbounded_channel();
+    // desktop.json of this test's own, never the user's.
+    let prefs = dir.join(format!("desktop-{:?}.json", std::thread::current().id()));
+    let _ = std::fs::remove_file(&prefs);
+    ui::TEST_PREFS.with(|p| *p.borrow_mut() = Some(prefs));
     ui::Controller::install(&ui, dir.clone(), tx, lock);
     let shots = std::env::var_os("WDM_PROMPT_SHOTS").map(PathBuf::from);
     if let Some(d) = &shots {
@@ -457,11 +478,25 @@ fn the_prompt_window_from_start_to_end() {
     assert_eq!(names[0], "A walk through Dhaka at night.mp4");
     main.invoke_row_pressed(0, false, false, false);
     assert!(main.get_detail());
+    assert!(main.get_details_open());
     assert!(main.get_can_pause() && !main.get_can_resume());
     // Shift adds the run down to the fourth row.
     main.invoke_row_pressed(3, false, true, false);
     assert_eq!(main.get_rows().iter().filter(|r| r.selected).count(), 4);
     h.main_shot("main-selected");
+    // Wide enough: beside every column. Narrower (the default 1120): over
+    // the list, which keeps all its columns either way.
+    h.main_shot_at("main-selected-wide", 1366, 760);
+    h.main_shot_at("main-selected-narrow", 900, 600);
+    main.invoke_action("details-close".into());
+    assert!(!main.get_details_open());
+    h.main_shot("main-details-closed");
+    // A click shows them again (with Shift, so the four stay selected).
+    main.invoke_row_pressed(3, false, true, false);
+    assert!(main.get_details_open());
+    assert_eq!(main.get_rows().iter().filter(|r| r.selected).count(), 4);
+    // Short: the library scrolls instead of cutting off its last entries.
+    h.main_shot_at("main-short", 1120, 420);
     main.invoke_action("pause".into());
     let calls = h.calls();
     assert_eq!(calls[0].0, method::DOWNLOAD_PAUSE);
@@ -768,4 +803,251 @@ fn the_prompt_window_from_start_to_end() {
     assert!(h.followed().is_empty());
     h.wait(Duration::from_secs(2));
     let _ = std::fs::remove_dir_all(&h.dir);
+}
+
+// ------------------------------------------------------------------ by hand
+
+/// The element whose accessible name starts with `label` (and has `role`,
+/// when given), as a person would point at it.
+fn find(
+    main: &crate::MainWindow,
+    label: &str,
+    role: Option<i_slint_backend_testing::AccessibleRole>,
+) -> Option<i_slint_backend_testing::ElementHandle> {
+    use i_slint_backend_testing::ElementRoot as _;
+    main.root_element()
+        .query_descendants()
+        .find_all()
+        .into_iter()
+        .find(|e| {
+            e.accessible_label().is_some_and(|l| l.starts_with(label))
+                && role.is_none_or(|r| e.accessible_role() == Some(r))
+                && e.size().width > 0.0
+        })
+}
+
+impl Harness {
+    /// A left click in the middle of what is named `label`, as the mouse
+    /// does it. False when there is nothing by that name on the screen.
+    fn click(
+        &self,
+        main: &crate::MainWindow,
+        label: &str,
+        role: Option<i_slint_backend_testing::AccessibleRole>,
+    ) -> bool {
+        use slint::platform::{PointerEventButton, WindowEvent};
+        let Some(e) = find(main, label, role) else {
+            return false;
+        };
+        let p = e.absolute_position();
+        let s = e.size();
+        let position = slint::LogicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0);
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        let button = PointerEventButton::Left;
+        w.window()
+            .dispatch_event(WindowEvent::PointerMoved { position });
+        w.window()
+            .dispatch_event(WindowEvent::PointerPressed { position, button });
+        self.wait(Duration::from_millis(50));
+        w.window()
+            .dispatch_event(WindowEvent::PointerReleased { position, button });
+        self.wait(Duration::from_millis(50));
+        true
+    }
+
+    /// Resizes the main window as a person drags its edge, and lets its
+    /// poll see the new size.
+    fn resize(&self, width: u32, height: u32) {
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        w.set_size(PhysicalSize::new(width, height));
+        self.wait(Duration::from_millis(400));
+    }
+
+    fn snap(&self, name: &str) {
+        let w = WINDOWS.with(|ws| ws.borrow().last().cloned()).unwrap();
+        let size = w.window().size();
+        self.draw(&w, size.width, size.height, name);
+    }
+}
+
+/// The main window used as a person uses it: click a download (its details
+/// show), click another (they switch to it), close them with their x, click
+/// again, make the window wide, small and short, visit every page.
+#[test]
+fn the_main_window_by_hand() {
+    use i_slint_backend_testing::AccessibleRole as Role;
+    let h = setup();
+    h.settings("en", "light");
+    let item = |id: &str, name: &str, state: &str, done: u64, total: Option<u64>, speed: u64| {
+        json!({
+            "id": id, "url": format!("https://release-assets.githubusercontent.com/github-production-release-asset/1456124930/0ecc337b-c52b-4fe1-a162-65dd140aaa10?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-11-21T23%3A33%3A10Z&rscd=attachment%3B+filename%3D{name}"), "filename": name,
+            "directory": "/home/taherakib/Downloads/android-sdk-zips", "state": state, "totalBytes": total,
+            "downloadedBytes": done, "speedBps": speed, "etaSecs": 130,
+            "connections": if state == "downloading" { 8 } else { 0 }, "resumable": true,
+            "addedAt": done % 97, "activeMs": 61_000,
+        })
+    };
+    let mut list = Vec::new();
+    for i in 0..24u64 {
+        let (state, done, speed) = match i % 4 {
+            0 => ("downloading", 40_000_000 + i, 3_145_728),
+            1 => ("completed", 126_000_000, 0),
+            2 => ("paused", 10_000_000, 0),
+            _ => ("completed", 94_800, 0),
+        };
+        list.push(summary(item(
+            &format!("d{i}"),
+            &format!("platform-tools_r37.{i}-linux-with-a-rather-long-name.zip"),
+            state,
+            done,
+            Some(126_000_000),
+            speed,
+        )));
+    }
+    h.msg(Msg::List(list));
+    ui::with(ui::Controller::show_main);
+    let main = ui::with_ret(|c| c.main_window())
+        .flatten()
+        .expect("the main window");
+    h.resize(MW, MH);
+    h.snap("hand-1-start");
+
+    // A click on a download shows its details.
+    assert!(
+        h.click(&main, "platform-tools_r37.2-", Some(Role::ListItem)),
+        "a row to click"
+    );
+    assert!(main.get_detail(), "a click selects the download");
+    assert!(main.get_details_open(), "a click shows the details");
+    assert!(main.get_d_name().starts_with("platform-tools_r37.2-"));
+    h.snap("hand-2-details");
+
+    // A click on another one: its details, in place of the first one's.
+    assert!(h.click(&main, "platform-tools_r37.14-", Some(Role::ListItem)));
+    assert!(main.get_details_open());
+    assert!(
+        main.get_d_name().starts_with("platform-tools_r37.14-"),
+        "the details follow the click: {}",
+        main.get_d_name()
+    );
+    h.snap("hand-3-switched");
+
+    // Their x closes them.
+    assert!(
+        h.click(&main, "Close details", Some(Role::Button)),
+        "the details' close button"
+    );
+    assert!(!main.get_details_open(), "the x closes the details");
+    h.snap("hand-4-closed");
+
+    // The next click on a download shows them again.
+    assert!(h.click(&main, "platform-tools_r37.18-", Some(Role::ListItem)));
+    assert!(main.get_details_open(), "a click shows them again");
+    assert!(main.get_d_name().starts_with("platform-tools_r37.18-"));
+
+    // Wide, small and short.
+    h.resize(1366, 768);
+    h.snap("hand-5-wide");
+    h.resize(900, 560);
+    h.snap("hand-6-small");
+    h.resize(760, 440);
+    h.snap("hand-7-smallest");
+
+    // Every page, small (tall enough for the whole library).
+    h.resize(900, 720);
+    for (label, name) in [
+        ("Settings", "hand-8-settings"),
+        ("History", "hand-9-history"),
+        ("Connect your browser", "hand-10-browsers"),
+        ("All downloads", "hand-11-back"),
+    ] {
+        assert!(
+            h.click(&main, label, Some(Role::Button)),
+            "the {label} entry"
+        );
+        h.snap(name);
+    }
+
+    // In Bangla and dark, then Arabic (right to left), small, with details.
+    h.settings("bn", "dark");
+    h.resize(MW, MH);
+    h.snap("hand-12-bn-dark");
+    h.resize(900, 560);
+    h.snap("hand-13-bn-dark-small");
+    h.settings("ar", "light");
+    h.snap("hand-14-ar-small");
+    h.resize(1366, 768);
+    h.snap("hand-15-ar-wide");
+}
+
+/// The layout limits of the main window, as the window manager is told
+/// them: (min, max, preferred) width, then height.
+fn limits(main: &crate::MainWindow) -> [(f32, f32, f32); 2] {
+    use i_slint_core::item_tree::ItemTreeRc;
+    use i_slint_core::layout::Orientation;
+    let inner = i_slint_core::window::WindowInner::from_pub(main.window());
+    let tree = inner.component();
+    let tree = ItemTreeRc::borrow_pin(&tree);
+    [Orientation::Horizontal, Orientation::Vertical].map(|o| {
+        let i = tree.as_ref().layout_info(o);
+        (i.min, i.max, i.preferred)
+    })
+}
+
+/// A real window manager is told the layout's limits, and Slint keeps the
+/// window inside them when it shows it. A fixed-width icon in the empty
+/// list's column once capped the width at its minimum: the window opened
+/// as small as it goes (760 px, seen on Linux), whatever size was asked
+/// for. In every state the window must be free to grow, and fit in its
+/// minimum.
+#[test]
+fn the_main_window_can_be_any_size() {
+    let h = setup();
+    h.settings("en", "light");
+    ui::with(ui::Controller::show_main);
+    let main = ui::with_ret(|c| c.main_window())
+        .flatten()
+        .expect("the main window");
+    let check = |state: &str| {
+        for (w, ht) in [(1240, 780), (900, 600), (760, 440)] {
+            h.resize(w, ht);
+            let [(min_w, max_w, _), (min_h, max_h, _)] = limits(&main);
+            assert!(
+                max_w > 100_000.0,
+                "{state} at {w}x{ht}: no wider than {max_w}"
+            );
+            assert!(
+                max_h > 100_000.0,
+                "{state} at {w}x{ht}: no taller than {max_h}"
+            );
+            assert_eq!((min_w, min_h), (760.0, 440.0), "{state} at {w}x{ht}");
+        }
+    };
+    check("the empty list");
+    let item = |id: &str| {
+        summary(json!({
+            "id": id, "url": "https://e.org/a.zip", "filename": "a.zip",
+            "directory": "/d", "state": "completed", "totalBytes": 5, "downloadedBytes": 5,
+            "speedBps": 0, "etaSecs": 0, "connections": 0, "resumable": true, "addedAt": 1,
+            "activeMs": 1,
+        }))
+    };
+    h.msg(Msg::List(vec![item("a"), item("b")]));
+    assert_eq!(main.get_rows().row_count(), 2);
+    check("the list");
+    main.invoke_row_pressed(0, false, false, false);
+    assert!(main.get_detail() && main.get_details_open());
+    check("the details open");
+    main.invoke_action("remove".into());
+    check("the remove question");
+    main.invoke_remove_confirmed(false);
+    for (id, page) in [
+        ("page:settings", 1),
+        ("page:history", 2),
+        ("page:browsers", 3),
+    ] {
+        main.invoke_nav_picked(id.into());
+        assert_eq!(main.get_page(), page);
+        check(id);
+    }
 }

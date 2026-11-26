@@ -179,6 +179,31 @@ impl std::fmt::Debug for Controller {
     }
 }
 
+/// `desktop.json`: the user's in the app, a file of the test's own in tests
+/// (they used to write the user's).
+pub(crate) fn prefs_path() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        TEST_PREFS.with(|p| p.borrow().clone())
+    }
+    #[cfg(not(test))]
+    {
+        wdm_tray::prefs::path()
+    }
+}
+
+/// The prefs from [`prefs_path`]; defaults when there are none.
+pub(crate) fn load_prefs() -> wdm_tray::prefs::Prefs {
+    prefs_path()
+        .map(|p| wdm_tray::prefs::load_from(&p))
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_PREFS: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
 fn s(text: impl AsRef<str>) -> SharedString {
     SharedString::from(text.as_ref())
 }
@@ -274,7 +299,7 @@ const CATEGORIES: [&str; 7] = [
 
 impl Controller {
     pub fn install(ui: &PromptWindow, dir: PathBuf, cmds: UnboundedSender<Cmd>, lock: File) {
-        let prefs = wdm_tray::prefs::load();
+        let prefs = load_prefs();
         let system_dark = ui.get_system_dark();
         let ctrl = Controller {
             ui: ui.as_weak(),
@@ -829,6 +854,7 @@ impl Controller {
     }
 
     fn quit(&mut self) {
+        self.save_size();
         self.lock = None;
         if let Some(ui) = self.ui.upgrade() {
             let _ = ui.hide();
