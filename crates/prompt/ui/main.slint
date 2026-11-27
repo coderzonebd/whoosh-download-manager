@@ -50,7 +50,9 @@ component NavEntry inherits Rectangle {
     property <string> glyph: item.category != "" ? Category.icon(item.category) : item.icon;
     property <color> glyph-tint: item.category != "" ? Category.tint(item.category)
         : item.active ? Theme.accent-text : Theme.muted;
-    height: item.header ? 24px : 30px;
+    // A label too long for the sidebar takes a second line instead of
+    // being cut short (Bangla "Connect your browser" was).
+    height: item.header ? 24px : max(30px, label.preferred-height + 10px);
     border-radius: 8px;
     background: item.active ? Theme.selected : touch.has-hover && !item.header ? Theme.hover : transparent;
     accessible-role: button;
@@ -79,7 +81,7 @@ component NavEntry inherits Rectangle {
         }
         // The same weight chosen or not (the background and colour show
         // it): a bolder one no longer fitted and was cut short.
-        Text {
+        label := Text {
             horizontal-stretch: 1;
             text: item.label;
             color: item.header ? Theme.subtle : item.active ? Theme.accent-text : Theme.text;
@@ -87,6 +89,7 @@ component NavEntry inherits Rectangle {
             font-weight: item.header ? 600 : 400;
             vertical-alignment: item.header ? bottom : center;
             horizontal-alignment: Theme.start;
+            wrap: item.header ? no-wrap : word-wrap;
             overflow: elide;
         }
         if !Theme.rtl: Text {

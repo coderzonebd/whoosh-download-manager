@@ -1245,3 +1245,28 @@ fn wire_main(w: &MainWindow) {
         slint::CloseRequestResponse::HideWindow
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::breaks_anywhere;
+
+    #[test]
+    fn only_long_unbroken_runs_break_anywhere() {
+        // Names and plain text wrap between words (and at hyphens).
+        assert!(!breaks_anywhere(
+            "platform-tools_r37.18-linux-with-a-rather-long-name.zip"
+        ));
+        assert!(!breaks_anywhere("A walk through Dhaka at night.mp4"));
+        assert!(!breaks_anywhere(""));
+        // Paths and addresses with no place to break.
+        assert!(breaks_anywhere(
+            "/home/taherakib/Downloads/android_sdk_zips/platform_tools.zip"
+        ));
+        assert!(breaks_anywhere(
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1456124930"
+        ));
+        // Counted in characters, not bytes: 20 Bangla letters fit.
+        assert!(!breaks_anywhere(&"ক".repeat(20)));
+        assert!(breaks_anywhere(&"ক".repeat(25)));
+    }
+}
