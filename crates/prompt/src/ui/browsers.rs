@@ -55,11 +55,24 @@ pub struct Page {
     rows: Option<Vec<Row>>,
     /// Being linked.
     busy: Option<Browser>,
-    /// What the last link did, and whether it failed.
-    status: Option<(String, bool)>,
+    /// What the last link did, to which browser, and whether it failed
+    /// (shown on that browser's card).
+    status: Option<(Browser, String, bool)>,
     /// Answers older than the last look are dropped.
     seq: u64,
     pub source: Source,
+}
+
+/// What the last link did, on its browser's card (and nothing on the others).
+fn status(page: &Page, b: Browser) -> BrowserItem {
+    match &page.status {
+        Some((linked, text, error)) if *linked == b => BrowserItem {
+            status: s(text),
+            status_error: *error,
+            ..BrowserItem::default()
+        },
+        _ => BrowserItem::default(),
+    }
 }
 
 impl Controller {
@@ -97,10 +110,12 @@ impl Controller {
         let name = product(b);
         self.browsers.status = Some(match result {
             Ok(()) => (
+                b,
                 self.lang.tf("browsers.connected", &[("browser", name)]),
                 false,
             ),
             Err(message) => (
+                b,
                 self.lang.tf(
                     "browsers.connectFailed",
                     &[("browser", name), ("message", &message)],
@@ -163,9 +178,6 @@ impl Controller {
         g.set_recheck_text(t("browsers.recheck"));
         g.set_done_text(t("browsers.done"));
         g.set_later_text(t("browsers.later"));
-        let (status, error) = page.status.clone().unwrap_or_default();
-        g.set_status_text(s(status));
-        g.set_status_error(error);
         let rows = page.rows.as_deref().unwrap_or_default();
         let used: Vec<&Row> = rows.iter().filter(|r| r.in_use).collect();
         g.set_none_text(if page.rows.is_some() && used.is_empty() {
@@ -222,6 +234,7 @@ impl Controller {
                     action: s(action),
                     action_text: s(action_text),
                     busy: page.busy == Some(r.browser),
+                    ..status(page, r.browser)
                 }
             })
             .collect();

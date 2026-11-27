@@ -5,8 +5,8 @@
 // App.svelte. Rust (src/main_window.rs) fills in every text, already
 // translated, and every list in reading order for the language.
 
-import { CheckBox, ComboBox, LineEdit, ListView, Palette, ScrollView, Spinner } from "std-widgets.slint";
-import { Theme, Icons, Btn, Fact, Icon, Tile, Button, Hint, Label, Status } from "common.slint";
+import { ComboBox, LineEdit, ListView, Palette, ScrollView, Spinner } from "std-widgets.slint";
+import { Theme, Icons, Btn, Fact, Category, Check, Icon, Tile, Button, Hint, Label, Status } from "common.slint";
 
 // An entry of the library: a section title (`header`), or a view with its count.
 export struct NavItem {
@@ -14,6 +14,8 @@ export struct NavItem {
     label: string,
     count: string,
     icon: string,
+    // A category's view: its icon in its colour (as the list's tiles).
+    category: string,
     active: bool,
     header: bool,
 }
@@ -45,6 +47,9 @@ export struct Column {
 component NavEntry inherits Rectangle {
     in property <NavItem> item;
     callback picked();
+    property <string> glyph: item.category != "" ? Category.icon(item.category) : item.icon;
+    property <color> glyph-tint: item.category != "" ? Category.tint(item.category)
+        : item.active ? Theme.accent-text : Theme.muted;
     height: item.header ? 24px : 30px;
     border-radius: 8px;
     background: item.active ? Theme.selected : touch.has-hover && !item.header ? Theme.hover : transparent;
@@ -61,9 +66,9 @@ component NavEntry inherits Rectangle {
         padding-left: 10px;
         padding-right: 10px;
         spacing: 10px;
-        if item.icon != "" && !Theme.rtl: Icon {
-            name: item.icon;
-            tint: item.active ? Theme.accent-text : Theme.muted;
+        if root.glyph != "" && !Theme.rtl: Icon {
+            name: root.glyph;
+            tint: root.glyph-tint;
             y: (parent.height - self.height) / 2;
         }
         if Theme.rtl: Text {
@@ -72,12 +77,14 @@ component NavEntry inherits Rectangle {
             font-size: 12px;
             vertical-alignment: center;
         }
+        // The same weight chosen or not (the background and colour show
+        // it): a bolder one no longer fitted and was cut short.
         Text {
             horizontal-stretch: 1;
             text: item.label;
             color: item.header ? Theme.subtle : item.active ? Theme.accent-text : Theme.text;
             font-size: item.header ? 11px : 13px;
-            font-weight: item.header || item.active ? 600 : 400;
+            font-weight: item.header ? 600 : 400;
             vertical-alignment: item.header ? bottom : center;
             horizontal-alignment: Theme.start;
             overflow: elide;
@@ -88,9 +95,9 @@ component NavEntry inherits Rectangle {
             font-size: 12px;
             vertical-alignment: center;
         }
-        if item.icon != "" && Theme.rtl: Icon {
-            name: item.icon;
-            tint: item.active ? Theme.accent-text : Theme.muted;
+        if root.glyph != "" && Theme.rtl: Icon {
+            name: root.glyph;
+            tint: root.glyph-tint;
             y: (parent.height - self.height) / 2;
         }
     }
@@ -135,28 +142,29 @@ component ProgressCell inherits VerticalLayout {
         background: Theme.track;
         clip: true;
         Rectangle {
-            width: item.known ? parent.width * clamp(item.progress, 0, 1) : (item.tone == 1 ? parent.width * 0.3 : 0px);
+            // Done is all of it, its size known or not.
+            width: item.tone == 2 ? parent.width
+                : item.known ? parent.width * clamp(item.progress, 0, 1)
+                : (item.tone == 1 ? parent.width * 0.3 : 0px);
             x: Theme.rtl ? parent.width - self.width : 0px;
             height: parent.height;
             border-radius: 3px;
             background: item.tone == 3 ? Theme.danger : item.tone == 2 ? Theme.bar : item.tone == 1 ? Theme.bar : Theme.neutral;
         }
     }
+    // The state at the start, the percent at the far end.
     HorizontalLayout {
         spacing: 6px;
+        if Theme.rtl: Text { text: item.percent; color: Theme.muted; font-size: 11px; }
         Text {
-            text: Theme.rtl ? item.percent : item.status;
-            color: Theme.rtl ? Theme.muted : (item.tone == 3 ? Theme.danger : item.tone == 1 ? Theme.accent-text : item.tone == 2 ? Theme.success : Theme.muted);
+            text: item.status;
+            color: item.tone == 3 ? Theme.danger : item.tone == 1 ? Theme.accent-text : item.tone == 2 ? Theme.success : Theme.muted;
             font-size: 11px;
             horizontal-stretch: 1;
             horizontal-alignment: Theme.start;
             overflow: elide;
         }
-        Text {
-            text: Theme.rtl ? item.status : item.percent;
-            color: Theme.rtl ? (item.tone == 3 ? Theme.danger : item.tone == 1 ? Theme.accent-text : item.tone == 2 ? Theme.success : Theme.muted) : Theme.muted;
-            font-size: 11px;
-        }
+        if !Theme.rtl: Text { text: item.percent; color: Theme.muted; font-size: 11px; }
     }
 }
 
@@ -178,7 +186,8 @@ component NameCell inherits HorizontalLayout {
 
 component RowView inherits Rectangle {
     in property <Row> item;
-    // Speed and time left go while the details are open (they show there).
+    // Without Speed and Time left: below 900 px, and while the details are
+    // open over the list (they cover those columns, and show both).
     in property <bool> compact;
     in property <bool> odd;
     callback pressed(bool /* ctrl */, bool /* shift */, bool /* right */);
@@ -240,37 +249,45 @@ component HeaderCell inherits Rectangle {
     }
 }
 
-// The library: downloads by state, by category, then the pages. It scrolls
-// when the window is too short for all of it (the pages at the bottom were
-// cut off), and keeps the pages at the bottom when there is room.
+// The library: downloads by state, by category (they scroll when the
+// window is too short for all of them), then the pages, kept at the bottom
+// (they scrolled out of sight in a short window).
 component SideNav inherits Rectangle {
     in property <[NavItem]> nav;
     in property <[NavItem]> nav-more;
     callback picked(string);
     width: 224px;
     background: Theme.sunken;
-    sv := ScrollView {
-        // All of it, or the visible height when that is more (so the
-        // pages keep to the bottom); scrolls when the window is shorter.
-        content-height: max(nav-list.min-height, self.visible-height);
-        nav-list := VerticalLayout {
-            width: sv.visible-width;
-            height: sv.content-height;
-            padding: 12px;
-            spacing: 2px;
-            HorizontalLayout {
-                padding-left: Theme.rtl ? 0px : 10px;
-                padding-right: Theme.rtl ? 10px : 0px;
-                padding-bottom: 10px;
-                spacing: 8px;
-                alignment: Theme.rtl ? end : start;
-                if !Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
-                Text { text: "Whoosh"; color: Theme.text; font-size: 17px; font-weight: 700; vertical-alignment: center; }
-                if Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
+    VerticalLayout {
+        sv := ScrollView {
+            vertical-stretch: 1;
+            nav-list := VerticalLayout {
+                width: sv.visible-width;
+                padding: 12px;
+                spacing: 2px;
+                alignment: start;
+                HorizontalLayout {
+                    padding-left: Theme.rtl ? 0px : 10px;
+                    padding-right: Theme.rtl ? 10px : 0px;
+                    padding-bottom: 10px;
+                    spacing: 8px;
+                    alignment: Theme.rtl ? end : start;
+                    if !Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
+                    Text { text: "Whoosh"; color: Theme.text; font-size: 17px; font-weight: 700; vertical-alignment: center; }
+                    if Theme.rtl: Image { source: @image-url("../../../apps/desktop/src-tauri/icons/32x32.png"); width: 22px; height: 22px; }
+                }
+                for n in root.nav: NavEntry { item: n; picked => { root.picked(n.id); } }
             }
-            for n in root.nav: NavEntry { item: n; picked => { root.picked(n.id); } }
-            Rectangle { vertical-stretch: 1; min-height: 12px; }
-            for n in root.nav-more: NavEntry { item: n; picked => { root.picked(n.id); } }
+        }
+        Rectangle {
+            height: pages.preferred-height;
+            Rectangle { y: 0; height: 1px; background: Theme.border; }
+            pages := VerticalLayout {
+                padding: 12px;
+                padding-top: 10px;
+                spacing: 2px;
+                for n in root.nav-more: NavEntry { item: n; picked => { root.picked(n.id); } }
+            }
         }
     }
 }
@@ -280,6 +297,8 @@ component SideNav inherits Rectangle {
 component DetailPanel inherits Rectangle {
     in property <string> label;
     in property <string> name;
+    // The name has a stretch too long for a line: it breaks anywhere.
+    in property <bool> name-anywhere;
     in property <string> category;
     in property <string> state;
     in property <int> tone;
@@ -301,36 +320,28 @@ component DetailPanel inherits Rectangle {
     accessible-role: groupbox;
     accessible-label: root.label;
     Rectangle { x: Theme.rtl ? parent.width - 1px : 0; width: 1px; background: Theme.border; }
-    Button {
-        x: Theme.rtl ? 8px : parent.width - self.width - 8px;
-        y: 8px;
-        width: 34px;
-        height: 34px;
-        icon: Icons.x;
-        a11y-label: root.close-label;
-        clicked => { root.close(); }
-    }
-    panel-scroll := ScrollView {
-        y: 46px;
-        height: parent.height - 46px;
     VerticalLayout {
-        width: panel-scroll.visible-width;
-        padding: 18px;
-        padding-top: 0px;
-        spacing: 14px;
-        alignment: start;
+        // The file and its state, with the x at the end of the same row.
         HorizontalLayout {
+            padding-top: 14px;
+            padding-bottom: 14px;
+            padding-left: Theme.rtl ? 10px : 18px;
+            padding-right: Theme.rtl ? 18px : 10px;
             spacing: 12px;
-            if !Theme.rtl: Tile { category: root.category; }
+            if Theme.rtl: VerticalLayout {
+                alignment: start;
+                Button { icon: Icons.x; ghost: true; a11y-label: root.close-label; clicked => { root.close(); } }
+            }
+            if !Theme.rtl: Tile { category: root.category; y: (parent.height - self.height) / 2; }
             VerticalLayout {
+                horizontal-stretch: 1;
                 spacing: 4px;
                 alignment: center;
                 Text {
                     text: root.name;
                     color: Theme.text;
                     font-weight: 600;
-                    // File names often have no spaces to break at.
-                    wrap: char-wrap;
+                    wrap: root.name-anywhere ? char-wrap : word-wrap;
                     max-height: 3.9rem;
                     overflow: elide;
                     horizontal-alignment: Theme.start;
@@ -343,39 +354,53 @@ component DetailPanel inherits Rectangle {
                     horizontal-alignment: Theme.start;
                 }
             }
-            if Theme.rtl: Tile { category: root.category; }
+            if Theme.rtl: Tile { category: root.category; y: (parent.height - self.height) / 2; }
+            if !Theme.rtl: VerticalLayout {
+                alignment: start;
+                Button { icon: Icons.x; ghost: true; a11y-label: root.close-label; clicked => { root.close(); } }
+            }
         }
-        VerticalLayout {
-            spacing: 6px;
-            Rectangle {
-                height: 8px;
-                border-radius: 4px;
-                background: Theme.track;
-                clip: true;
-                accessible-role: progress-indicator;
-                accessible-value: root.progress-text;
-                Rectangle {
-                    width: root.known ? parent.width * clamp(root.progress, 0, 1) : (root.tone == 1 ? parent.width * 0.3 : 0px);
-                    x: Theme.rtl ? parent.width - self.width : 0px;
-                    height: parent.height;
-                    border-radius: 4px;
-                    background: root.tone == 3 ? Theme.danger : Theme.bar;
+        panel-scroll := ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                width: panel-scroll.visible-width;
+                padding: 18px;
+                padding-top: 0px;
+                spacing: 14px;
+                alignment: start;
+                VerticalLayout {
+                    spacing: 6px;
+                    Rectangle {
+                        height: 8px;
+                        border-radius: 4px;
+                        background: Theme.track;
+                        clip: true;
+                        accessible-role: progress-indicator;
+                        accessible-value: root.progress-text;
+                        Rectangle {
+                            width: root.known ? parent.width * clamp(root.progress, 0, 1) : (root.tone == 1 ? parent.width * 0.3 : 0px);
+                            x: Theme.rtl ? parent.width - self.width : 0px;
+                            height: parent.height;
+                            border-radius: 4px;
+                            background: root.tone == 3 ? Theme.danger : Theme.bar;
+                        }
+                    }
+                    Text { text: root.progress-text; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+                }
+                if root.actions.length > 0: HorizontalLayout {
+                    spacing: 8px;
+                    alignment: Theme.rtl ? end : start;
+                    for b in root.actions: Button { text: b.label; primary: b.primary; enabled: b.enabled; clicked => { root.action(b.id); } }
+                }
+                for f in root.facts: VerticalLayout {
+                    spacing: 2px;
+                    Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
+                    // Paths and addresses have no spaces to break at: they
+                    // break anywhere, the rest between words.
+                    Text { text: f.value; color: Theme.text; font-size: 13px; wrap: f.anywhere ? char-wrap : word-wrap; horizontal-alignment: Theme.start; }
                 }
             }
-            Text { text: root.progress-text; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
         }
-        if root.actions.length > 0: HorizontalLayout {
-            spacing: 6px;
-            alignment: Theme.rtl ? end : start;
-            for b in root.actions: Button { text: b.label; primary: b.primary; enabled: b.enabled; clicked => { root.action(b.id); } }
-        }
-        for f in root.facts: VerticalLayout {
-            spacing: 2px;
-            Text { text: f.label; color: Theme.muted; font-size: 12px; horizontal-alignment: Theme.start; }
-            // Paths and addresses have no spaces to break at.
-            Text { text: f.value; color: Theme.text; font-size: 13px; wrap: char-wrap; horizontal-alignment: Theme.start; }
-        }
-    }
     }
 }
 
@@ -403,19 +428,68 @@ component Section inherits VerticalLayout {
     }
 }
 
-// A check box with its explanation under it.
+// A check box with its explanation under it, in line with its text.
 component Toggle inherits VerticalLayout {
     in property <string> text;
     in property <string> hint;
     in-out property <bool> checked;
     callback toggled(bool);
     spacing: 2px;
-    CheckBox {
+    box := Check {
         text: root.text;
         checked <=> root.checked;
         toggled => { root.toggled(self.checked); }
     }
-    if root.hint != "": Hint { text: root.hint; }
+    if root.hint != "": HorizontalLayout {
+        padding-left: Theme.rtl ? 0px : box.indent;
+        padding-right: Theme.rtl ? box.indent : 0px;
+        Hint { text: root.hint; }
+    }
+}
+
+// The title bar of a page (Settings, History, Connect your browser), the
+// same on all of them: the title at the start, the page's own things after
+// it (in reading order), a line under it.
+component PageHeader inherits Rectangle {
+    in property <string> title;
+    height: 58px;
+    background: Theme.surface;
+    HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 10px;
+        if !Theme.rtl: Text { text: root.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+        @children
+        if Theme.rtl: Text { text: root.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+}
+
+// A page's content, the same on all of them: a column at the start side,
+// in line with the header's title, at most 760 px wide. Its maximum is set
+// inside a row aligned to the start, which leaves the window free to grow
+// (a fixed width in a stretching row capped the window's).
+component PageColumn inherits HorizontalLayout {
+    in property <length> gap: 14px;
+    in property <length> top: 20px;
+    in property <length> bottom: 28px;
+    // `start` keeps sections together in a tall window; a list fills it.
+    in property <LayoutAlignment> fill: LayoutAlignment.start;
+    alignment: Theme.rtl ? end : start;
+    padding-left: 24px;
+    padding-right: 24px;
+    VerticalLayout {
+        preferred-width: 760px;
+        max-width: 760px;
+        horizontal-stretch: 1;
+        alignment: root.fill;
+        padding-top: root.top;
+        padding-bottom: root.bottom;
+        spacing: root.gap;
+        @children
+    }
 }
 
 // A labelled text field with a hint, or an error in its place.
@@ -645,134 +719,118 @@ component SettingsPage inherits Rectangle {
     background: Theme.sunken;
     VerticalLayout {
         // The header with Save and Revert.
-        Rectangle {
-            height: 58px;
-            background: Theme.surface;
-            HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 12px;
-                padding-bottom: 12px;
-                spacing: 10px;
-                if !Theme.rtl: Text { text: SettingsData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
-                if !Theme.rtl && SettingsData.dirty: Text { text: "● " + SettingsData.unsaved-text; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
-                if !Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
-                if Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
-                if Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
-                Rectangle { horizontal-stretch: 1; }
-                if !Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
-                if !Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
-                if Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
-                if Theme.rtl && SettingsData.dirty: Text { text: SettingsData.unsaved-text + " ●"; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
-                if Theme.rtl: Text { text: SettingsData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
-            }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        PageHeader {
+            title: SettingsData.title;
+            if !Theme.rtl && SettingsData.dirty: Text { text: "● " + SettingsData.unsaved-text; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
+            if !Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
+            if Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
+            if Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
+            Rectangle { horizontal-stretch: 1; }
+            if !Theme.rtl: Button { text: SettingsData.revert-text; enabled: SettingsData.dirty; clicked => { SettingsData.revert(); } }
+            if !Theme.rtl: Button { text: SettingsData.save-text; primary: true; enabled: SettingsData.dirty && SettingsData.valid; clicked => { SettingsData.save(); } }
+            if Theme.rtl && !SettingsData.dirty && SettingsData.status-text != "": Text { text: SettingsData.status-text; color: SettingsData.status-error ? Theme.danger : Theme.success; font-size: 12px; vertical-alignment: center; }
+            if Theme.rtl && SettingsData.dirty: Text { text: SettingsData.unsaved-text + " ●"; color: Theme.warning; font-size: 12px; vertical-alignment: center; }
         }
-        ScrollView {
+        page-scroll := ScrollView {
             vertical-stretch: 1;
-            HorizontalLayout {
-                alignment: center;
-                VerticalLayout {
-                    width: min(680px, root.width - 48px);
-                    padding-top: 20px;
-                    padding-bottom: 28px;
-                    spacing: 22px;
+            PageColumn {
+                width: page-scroll.visible-width;
+                gap: 22px;
 
-                    Section {
-                        title: SettingsData.appearance-title;
-                        VerticalLayout {
-                            spacing: 6px;
-                            Label { text: SettingsData.language-label; }
-                            ComboBox { model: SettingsData.languages; current-index <=> SettingsData.language-index; selected => { SettingsData.changed(); } }
-                            if SettingsData.language-note != "": Hint { text: SettingsData.language-note; }
-                        }
-                        VerticalLayout {
-                            spacing: 6px;
-                            Label { text: SettingsData.theme-label; }
-                            ComboBox { model: SettingsData.themes; current-index <=> SettingsData.theme-index; selected => { SettingsData.changed(); } }
-                        }
+                Section {
+                    title: SettingsData.appearance-title;
+                    VerticalLayout {
+                        spacing: 6px;
+                        Label { text: SettingsData.language-label; }
+                        ComboBox { model: SettingsData.languages; current-index <=> SettingsData.language-index; selected => { SettingsData.changed(); } }
+                        if SettingsData.language-note != "": Hint { text: SettingsData.language-note; }
                     }
-
-                    Section {
-                        title: SettingsData.downloads-title;
-                        VerticalLayout {
-                            spacing: 6px;
-                            Label { text: SettingsData.folder-label; }
-                            HorizontalLayout {
-                                spacing: 8px;
-                                if Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
-                                LineEdit { text <=> SettingsData.folder; edited => { SettingsData.changed(); } }
-                                if !Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
-                            }
-                            if SettingsData.folder-error != "": Text { text: SettingsData.folder-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
-                        }
-                        Toggle { text: SettingsData.organize-text; hint: SettingsData.organize-hint; checked <=> SettingsData.organize; toggled => { SettingsData.changed(); } }
-                        Field { label: SettingsData.active-label; hint: SettingsData.active-hint; error: SettingsData.active-error; text <=> SettingsData.active; input-type: number; edited => { SettingsData.changed(); } }
-                        Field { label: SettingsData.connections-label; hint: SettingsData.connections-hint; error: SettingsData.connections-error; text <=> SettingsData.connections; input-type: number; edited => { SettingsData.changed(); } }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Label { text: SettingsData.theme-label; }
+                        ComboBox { model: SettingsData.themes; current-index <=> SettingsData.theme-index; selected => { SettingsData.changed(); } }
                     }
-
-                    Section {
-                        title: SettingsData.speed-title;
-                        Toggle { text: SettingsData.limit-text; checked <=> SettingsData.limit-on; toggled => { SettingsData.changed(); } }
-                        if SettingsData.limit-on: VerticalLayout {
-                            spacing: 6px;
-                            Label { text: SettingsData.limit-label; }
-                            HorizontalLayout {
-                                spacing: 8px;
-                                LineEdit { text <=> SettingsData.limit; input-type: decimal; horizontal-stretch: 1; edited => { SettingsData.changed(); } }
-                                ComboBox { model: SettingsData.units; current-index <=> SettingsData.unit-index; width: 110px; selected => { SettingsData.changed(); } }
-                            }
-                            if SettingsData.limit-error != "": Text { text: SettingsData.limit-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
-                        }
-                        Label { text: SettingsData.schedule-title; }
-                        Hint { text: SettingsData.schedule-hint; }
-                        for w[i] in SettingsData.windows: WindowEditor { item: w; index: i; }
-                        HorizontalLayout {
-                            alignment: Theme.rtl ? end : start;
-                            Button { text: SettingsData.win-add-text; icon: Icons.plus; clicked => { SettingsData.window(0, "add", ""); } }
-                        }
-                    }
-
-                    Section {
-                        title: SettingsData.computer-title;
-                        if SettingsData.has-login: Toggle { text: SettingsData.login-text; hint: SettingsData.login-hint; checked <=> SettingsData.login; toggled(on) => { SettingsData.desktop("login", on); } }
-                        Toggle { text: SettingsData.tray-text; hint: SettingsData.tray-hint; checked <=> SettingsData.tray; toggled(on) => { SettingsData.desktop("tray", on); } }
-                        Hint { text: SettingsData.computer-hint; }
-                    }
-
-                    Section {
-                        title: SettingsData.browsers-title;
-                        if SettingsData.has-confirm: Toggle { text: SettingsData.confirm-text; hint: SettingsData.confirm-hint; checked <=> SettingsData.confirm; toggled => { SettingsData.changed(); } }
-                        Hint { text: SettingsData.browsers-hint; }
-                        HorizontalLayout {
-                            alignment: Theme.rtl ? end : start;
-                            Button { text: SettingsData.browsers-open; clicked => { SettingsData.web("browsers"); } }
-                        }
-                    }
-
-                    Section {
-                        title: SettingsData.updates-title;
-                        Toggle { text: SettingsData.auto-update-text; hint: SettingsData.auto-update-hint; checked <=> SettingsData.auto-update; toggled(on) => { SettingsData.desktop("updates", on); } }
-                        HorizontalLayout {
-                            alignment: Theme.rtl ? end : start;
-                            spacing: 8px;
-                            if Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
-                            Button { text: SettingsData.check-now-text; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(false); } }
-                            if !Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
-                        }
-                        if SettingsData.update-busy: Status { busy: true; text: ""; tint: Theme.muted; }
-                        if SettingsData.update-text != "": Text { text: SettingsData.update-text; color: SettingsData.update-error ? Theme.danger : Theme.muted; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
-                    }
-
-                    if SettingsData.has-crash: Section {
-                        title: SettingsData.privacy-title;
-                        Toggle { text: SettingsData.crash-text; hint: SettingsData.crash-hint; checked <=> SettingsData.crash; toggled(on) => { SettingsData.desktop("crash", on); } }
-                    }
-
-                    // yt-dlp, ffmpeg and the rest look after themselves (wdm-media's
-                    // tools: fetched, checked and updated in the background); nothing
-                    // about them needs a setting.
                 }
+
+                Section {
+                    title: SettingsData.downloads-title;
+                    VerticalLayout {
+                        spacing: 6px;
+                        Label { text: SettingsData.folder-label; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            if Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
+                            LineEdit { text <=> SettingsData.folder; edited => { SettingsData.changed(); } }
+                            if !Theme.rtl: Button { text: SettingsData.browse-text; clicked => { SettingsData.browse(); } }
+                        }
+                        if SettingsData.folder-error != "": Text { text: SettingsData.folder-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+                    }
+                    Toggle { text: SettingsData.organize-text; hint: SettingsData.organize-hint; checked <=> SettingsData.organize; toggled => { SettingsData.changed(); } }
+                    Field { label: SettingsData.active-label; hint: SettingsData.active-hint; error: SettingsData.active-error; text <=> SettingsData.active; input-type: number; edited => { SettingsData.changed(); } }
+                    Field { label: SettingsData.connections-label; hint: SettingsData.connections-hint; error: SettingsData.connections-error; text <=> SettingsData.connections; input-type: number; edited => { SettingsData.changed(); } }
+                }
+
+                Section {
+                    title: SettingsData.speed-title;
+                    Toggle { text: SettingsData.limit-text; checked <=> SettingsData.limit-on; toggled => { SettingsData.changed(); } }
+                    if SettingsData.limit-on: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: SettingsData.limit-label; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            LineEdit { text <=> SettingsData.limit; input-type: decimal; horizontal-stretch: 1; edited => { SettingsData.changed(); } }
+                            ComboBox { model: SettingsData.units; current-index <=> SettingsData.unit-index; width: 110px; selected => { SettingsData.changed(); } }
+                        }
+                        if SettingsData.limit-error != "": Text { text: SettingsData.limit-error; color: Theme.danger; font-size: 12px; horizontal-alignment: Theme.start; }
+                    }
+                    Label { text: SettingsData.schedule-title; }
+                    Hint { text: SettingsData.schedule-hint; }
+                    for w[i] in SettingsData.windows: WindowEditor { item: w; index: i; }
+                    HorizontalLayout {
+                        alignment: Theme.rtl ? end : start;
+                        Button { text: SettingsData.win-add-text; icon: Icons.plus; clicked => { SettingsData.window(0, "add", ""); } }
+                    }
+                }
+
+                Section {
+                    title: SettingsData.computer-title;
+                    if SettingsData.has-login: Toggle { text: SettingsData.login-text; hint: SettingsData.login-hint; checked <=> SettingsData.login; toggled(on) => { SettingsData.desktop("login", on); } }
+                    Toggle { text: SettingsData.tray-text; hint: SettingsData.tray-hint; checked <=> SettingsData.tray; toggled(on) => { SettingsData.desktop("tray", on); } }
+                    Hint { text: SettingsData.computer-hint; }
+                }
+
+                Section {
+                    title: SettingsData.browsers-title;
+                    if SettingsData.has-confirm: Toggle { text: SettingsData.confirm-text; hint: SettingsData.confirm-hint; checked <=> SettingsData.confirm; toggled => { SettingsData.changed(); } }
+                    Hint { text: SettingsData.browsers-hint; }
+                    HorizontalLayout {
+                        alignment: Theme.rtl ? end : start;
+                        Button { text: SettingsData.browsers-open; clicked => { SettingsData.web("browsers"); } }
+                    }
+                }
+
+                Section {
+                    title: SettingsData.updates-title;
+                    Toggle { text: SettingsData.auto-update-text; hint: SettingsData.auto-update-hint; checked <=> SettingsData.auto-update; toggled(on) => { SettingsData.desktop("updates", on); } }
+                    HorizontalLayout {
+                        alignment: Theme.rtl ? end : start;
+                        spacing: 8px;
+                        if Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
+                        Button { text: SettingsData.check-now-text; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(false); } }
+                        if !Theme.rtl && SettingsData.can-install: Button { text: SettingsData.install-text; primary: true; enabled: !SettingsData.update-busy; clicked => { SettingsData.update-now(true); } }
+                    }
+                    if SettingsData.update-busy: Status { busy: true; text: ""; tint: Theme.muted; }
+                    if SettingsData.update-text != "": Text { text: SettingsData.update-text; color: SettingsData.update-error ? Theme.danger : Theme.muted; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                }
+
+                if SettingsData.has-crash: Section {
+                    title: SettingsData.privacy-title;
+                    Toggle { text: SettingsData.crash-text; hint: SettingsData.crash-hint; checked <=> SettingsData.crash; toggled(on) => { SettingsData.desktop("crash", on); } }
+                }
+
+                // yt-dlp, ffmpeg and the rest look after themselves (wdm-media's
+                // tools: fetched, checked and updated in the background); nothing
+                // about them needs a setting.
             }
         }
     }
@@ -831,8 +889,6 @@ component HistoryEntry inherits Rectangle {
     accessible-role: list-item;
     accessible-label: item.name + ", " + item.state + ", " + item.date;
     HorizontalLayout {
-        padding-left: 18px;
-        padding-right: 18px;
         spacing: 12px;
         if !Theme.rtl: Tile { category: item.category; size: 32px; y: (parent.height - self.height) / 2; }
         if Theme.rtl: VerticalLayout {
@@ -874,60 +930,58 @@ component HistoryEntry inherits Rectangle {
         }
         if Theme.rtl: Tile { category: item.category; size: 32px; y: (parent.height - self.height) / 2; }
     }
-    Rectangle { y: parent.height - 1px; x: 18px; width: parent.width - 36px; height: 1px; background: Theme.border; }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
 }
 
-// History (the web UI's HistoryView).
+// History (the web UI's HistoryView). "Clear history?" is asked over the
+// whole window (MainWindow), like "Remove?".
 component HistoryPage inherits Rectangle {
     background: Theme.surface;
     VerticalLayout {
-        Rectangle {
-            height: 58px;
-            HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 12px;
-                padding-bottom: 12px;
-                spacing: 10px;
-                if !Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
-                if !Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
-                if Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
-                if Theme.rtl: HorizontalLayout {
-                    spacing: 4px;
-                    accessible-role: tab-list;
-                    accessible-label: HistoryData.filter-label;
-                    for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
-                }
-                Rectangle { horizontal-stretch: 1; }
-                LineEdit {
-                    min-width: 120px;
-                    preferred-width: 220px;
-                    horizontal-stretch: 0;
-                    text <=> HistoryData.query;
-                    placeholder-text: HistoryData.search-placeholder;
-                    accessible-label: HistoryData.search-label;
-                    horizontal-alignment: Theme.rtl ? right : left;
-                    edited(t) => { HistoryData.search(t); }
-                }
-                if !Theme.rtl: HorizontalLayout {
-                    spacing: 4px;
-                    accessible-role: tab-list;
-                    accessible-label: HistoryData.filter-label;
-                    for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
-                }
-                if !Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
-                if Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
-                if Theme.rtl: Text { text: HistoryData.title; color: Theme.text; font-size: 18px; font-weight: 600; vertical-alignment: center; }
+        PageHeader {
+            title: HistoryData.title;
+            if !Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
+            if Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+            if Theme.rtl: HorizontalLayout {
+                spacing: 4px;
+                accessible-role: tab-list;
+                accessible-label: HistoryData.filter-label;
+                for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+            Rectangle { horizontal-stretch: 1; }
+            LineEdit {
+                min-width: 120px;
+                preferred-width: 220px;
+                horizontal-stretch: 0;
+                text <=> HistoryData.query;
+                placeholder-text: HistoryData.search-placeholder;
+                accessible-label: HistoryData.search-label;
+                horizontal-alignment: Theme.rtl ? right : left;
+                edited(t) => { HistoryData.search(t); }
+            }
+            if !Theme.rtl: HorizontalLayout {
+                spacing: 4px;
+                accessible-role: tab-list;
+                accessible-label: HistoryData.filter-label;
+                for f[i] in HistoryData.filters: Button { text: f; checkable: true; checked: HistoryData.filter == i; clicked => { HistoryData.pick-filter(i); } }
+            }
+            if !Theme.rtl: Button { text: Room.words ? HistoryData.clear-text : ""; a11y-label: HistoryData.clear-text; horizontal-stretch: 0; icon: Icons.trash; enabled: HistoryData.can-clear; clicked => { HistoryData.action("clear", ""); } }
+            if Theme.rtl && HistoryData.status-text != "": Text { text: HistoryData.status-text; color: Theme.success; font-size: 12px; vertical-alignment: center; }
         }
-        if HistoryData.empty == 0: ListView {
+        if HistoryData.empty == 0: PageColumn {
             vertical-stretch: 1;
-            accessible-role: list;
-            accessible-label: HistoryData.title + ", " + HistoryData.count-text;
-            for r in HistoryData.rows: HistoryEntry {
-                item: r;
-                action(a) => { HistoryData.action(a, r.id); }
+            fill: stretch;
+            top: 4px;
+            bottom: 0px;
+            gap: 0px;
+            ListView {
+                vertical-stretch: 1;
+                accessible-role: list;
+                accessible-label: HistoryData.title + ", " + HistoryData.count-text;
+                for r in HistoryData.rows: HistoryEntry {
+                    item: r;
+                    action(a) => { HistoryData.action(a, r.id); }
+                }
             }
         }
         if HistoryData.empty != 0: VerticalLayout {
@@ -940,34 +994,6 @@ component HistoryPage inherits Rectangle {
             }
             Text { text: HistoryData.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }
             if HistoryData.empty-body != "": Text { text: HistoryData.empty-body; color: Theme.muted; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
-        }
-    }
-    // "Clear N entries from history?"
-    if HistoryData.clearing: Rectangle {
-        background: #000000.with-alpha(0.35);
-        TouchArea {}
-        Rectangle {
-            width: min(420px, parent.width - 40px);
-            height: clear-card.preferred-height;
-            border-radius: 14px;
-            background: Theme.surface;
-            border-width: 1px;
-            border-color: Theme.border;
-            accessible-role: groupbox;
-            accessible-label: HistoryData.clear-title;
-            clear-card := VerticalLayout {
-                padding: 20px;
-                spacing: 12px;
-                Text { text: HistoryData.clear-title; color: Theme.text; font-size: 17px; font-weight: 600; wrap: word-wrap; horizontal-alignment: Theme.start; }
-                Hint { text: HistoryData.clear-body; font-size: 13px; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: Theme.rtl ? start : end;
-                    if Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
-                    Button { text: HistoryData.cancel-text; clicked => { HistoryData.action("clear-no", ""); } }
-                    if !Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
-                }
-            }
         }
     }
 }
@@ -986,6 +1012,9 @@ export struct BrowserItem {
     action: string,
     action-text: string,
     busy: bool,
+    // What the last link of this browser did, and whether it failed.
+    status: string,
+    status-error: bool,
 }
 
 export global BrowsersData {
@@ -997,8 +1026,6 @@ export global BrowsersData {
     in-out property <string> not-found-text;
     in-out property <[BrowserItem]> items;
     in-out property <bool> busy;
-    in-out property <string> status-text;
-    in-out property <bool> status-error;
     in-out property <string> recheck-text;
     in-out property <string> done-text;
     in-out property <string> later-text;
@@ -1037,6 +1064,8 @@ component BrowserCard inherits Rectangle {
             Text { text: item.name; color: Theme.text; font-size: 14px; font-weight: 600; horizontal-alignment: Theme.start; }
             Text { text: item.state; color: Theme.muted; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
             if item.hint != "": Hint { text: item.hint; }
+            // "Could not link Firefox: …", with the browser it is about.
+            if item.status != "": Text { text: item.status; color: item.status-error ? Theme.danger : Theme.success; font-size: 12px; wrap: word-wrap; horizontal-alignment: Theme.start; }
         }
         if !Theme.rtl && item.busy: Spinner { width: 16px; height: 16px; indeterminate: true; y: (parent.height - self.height) / 2; }
         if !Theme.rtl && item.action != "": VerticalLayout { alignment: center; Button { text: item.action-text; enabled: !BrowsersData.busy; clicked => { root.action(); } } }
@@ -1053,16 +1082,19 @@ component BrowserCard inherits Rectangle {
 // "Connect your browser" (the web UI's BrowsersView).
 component BrowsersPage inherits Rectangle {
     background: Theme.sunken;
-    ScrollView {
-        HorizontalLayout {
-            alignment: center;
-            VerticalLayout {
-                width: min(720px, root.width - 48px);
-                alignment: start;
-                padding-top: 24px;
-                padding-bottom: 28px;
-                spacing: 14px;
-                Text { text: BrowsersData.title; color: Theme.text; font-size: 20px; font-weight: 600; horizontal-alignment: Theme.start; }
+    VerticalLayout {
+        PageHeader {
+            title: BrowsersData.title;
+            if Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
+            if Theme.rtl: Button { text: Room.words ? BrowsersData.recheck-text : ""; a11y-label: BrowsersData.recheck-text; icon: Icons.refresh; enabled: !BrowsersData.loading; clicked => { BrowsersData.action("recheck", ""); } }
+            Rectangle { horizontal-stretch: 1; }
+            if !Theme.rtl: Button { text: Room.words ? BrowsersData.recheck-text : ""; a11y-label: BrowsersData.recheck-text; icon: Icons.refresh; enabled: !BrowsersData.loading; clicked => { BrowsersData.action("recheck", ""); } }
+            if !Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
+        }
+        page-scroll := ScrollView {
+            vertical-stretch: 1;
+            PageColumn {
+                width: page-scroll.visible-width;
                 Text { text: BrowsersData.intro; color: Theme.muted; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
                 if BrowsersData.loading: Status { busy: true; text: BrowsersData.loading-text; tint: Theme.muted; }
                 if BrowsersData.none-text != "": Text { text: BrowsersData.none-text; color: Theme.muted; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
@@ -1076,14 +1108,6 @@ component BrowsersPage inherits Rectangle {
                     }
                 }
                 if BrowsersData.not-found-text != "": Hint { text: BrowsersData.not-found-text; }
-                if BrowsersData.status-text != "": Text { text: BrowsersData.status-text; color: BrowsersData.status-error ? Theme.danger : Theme.success; font-size: 13px; wrap: word-wrap; horizontal-alignment: Theme.start; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: Theme.rtl ? start : end;
-                    if Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
-                    Button { text: BrowsersData.recheck-text; icon: Icons.refresh; enabled: !BrowsersData.loading; clicked => { BrowsersData.action("recheck", ""); } }
-                    if !Theme.rtl: Button { text: BrowsersData.done-text; primary: true; clicked => { BrowsersData.action("done", ""); } }
-                }
                 Hint { text: BrowsersData.later-text; }
             }
         }
@@ -1133,7 +1157,13 @@ export component MainWindow inherits Window {
     in property <bool> details-open: false;
     // See Room.
     out property <bool> wide: Room.wide;
+    // The details open over the list (too narrow for both side by side).
+    property <bool> floating-details: root.detail && root.details-open && !root.wide;
+    // The list leaves out Speed and Time left: below 900 px, and under the
+    // floating details (which cover them and show both).
+    property <bool> few-columns: Room.size-class == 0 || root.floating-details;
     in property <string> d-name;
+    in property <bool> d-name-anywhere;
     in property <string> d-category;
     in property <string> d-state;
     in property <int> d-tone;
@@ -1226,6 +1256,7 @@ export component MainWindow inherits Window {
                         if Theme.rtl && root.detail && root.details-open && root.wide: DetailPanel {
                             label: root.details-label;
                             name: root.d-name;
+                            name-anywhere: root.d-name-anywhere;
                             category: root.d-category;
                             state: root.d-state;
                             tone: root.d-tone;
@@ -1252,13 +1283,13 @@ export component MainWindow inherits Window {
                                     padding-right: 14px;
                                     spacing: 14px;
                                     if !Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
-                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
-                                    if Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && !root.few-columns: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if Theme.rtl && !root.few-columns: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
                                     HeaderCell { column: root.columns[1]; width: Cols.size; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if !Theme.rtl: HeaderCell { column: root.columns[2]; width: Cols.progress; align: Theme.start; sort(k) => { root.sort(k); } }
-                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
-                                    if !Theme.rtl && Room.size-class > 0: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && !root.few-columns: HeaderCell { column: root.columns[3]; width: Cols.speed; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
+                                    if !Theme.rtl && !root.few-columns: HeaderCell { column: root.columns[4]; width: Cols.eta; align: (Theme.rtl ? TextHorizontalAlignment.left : TextHorizontalAlignment.right); sort(k) => { root.sort(k); } }
                                     if Theme.rtl: HeaderCell { column: root.columns[0]; horizontal-stretch: 1; align: Theme.start; sort(k) => { root.sort(k); } }
                                 }
                                 Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
@@ -1282,7 +1313,7 @@ export component MainWindow inherits Window {
                                 accessible-label: root.view-title;
                                 for r[i] in root.rows: RowView {
                                     item: r;
-                                    compact: Room.size-class == 0;
+                                    compact: root.few-columns;
                                     pressed(ctrl, shift, right) => { keys.focus(); root.row-pressed(i, ctrl, shift, right); }
                                     activated => { root.row-activated(i); }
                                 }
@@ -1308,13 +1339,14 @@ export component MainWindow inherits Window {
                             }
                         }
                         // Too narrow for both: the details open over the list.
-                        if root.detail && root.details-open && !root.wide: DetailPanel {
+                        if root.floating-details: DetailPanel {
                             width: min(300px, parent.width - 24px);
                             x: Theme.rtl ? 0px : parent.width - self.width;
                             height: parent.height;
                             floating: true;
                             label: root.details-label;
                             name: root.d-name;
+                            name-anywhere: root.d-name-anywhere;
                             category: root.d-category;
                             state: root.d-state;
                             tone: root.d-tone;
@@ -1331,6 +1363,7 @@ export component MainWindow inherits Window {
                         if !Theme.rtl && root.detail && root.details-open && root.wide: DetailPanel {
                             label: root.details-label;
                             name: root.d-name;
+                            name-anywhere: root.d-name-anywhere;
                             category: root.d-category;
                             state: root.d-state;
                             tone: root.d-tone;
@@ -1385,13 +1418,42 @@ export component MainWindow inherits Window {
                     spacing: 12px;
                     Text { text: root.remove-title; color: Theme.text; font-size: 17px; font-weight: 600; wrap: word-wrap; horizontal-alignment: Theme.start; }
                     Hint { text: root.remove-body; font-size: 13px; }
-                    CheckBox { text: root.delete-files-text; checked <=> root.delete-files; }
+                    Check { text: root.delete-files-text; checked <=> root.delete-files; }
                     HorizontalLayout {
                         spacing: 8px;
                         alignment: Theme.rtl ? start : end;
                         if Theme.rtl: Button { text: root.confirm-remove-text; primary: true; clicked => { root.remove-confirmed(true); } }
                         Button { text: root.cancel-text; clicked => { root.remove-confirmed(false); } }
                         if !Theme.rtl: Button { text: root.confirm-remove-text; primary: true; clicked => { root.remove-confirmed(true); } }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------- "Clear N entries from history?"
+        if HistoryData.clearing: Rectangle {
+            background: #000000.with-alpha(0.35);
+            TouchArea {}
+            Rectangle {
+                width: min(420px, parent.width - 40px);
+                height: clear-card.preferred-height;
+                border-radius: 14px;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+                accessible-role: groupbox;
+                accessible-label: HistoryData.clear-title;
+                clear-card := VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+                    Text { text: HistoryData.clear-title; color: Theme.text; font-size: 17px; font-weight: 600; wrap: word-wrap; horizontal-alignment: Theme.start; }
+                    Hint { text: HistoryData.clear-body; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: Theme.rtl ? start : end;
+                        if Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
+                        Button { text: HistoryData.cancel-text; clicked => { HistoryData.action("clear-no", ""); } }
+                        if !Theme.rtl: Button { text: HistoryData.clear-confirm; primary: true; clicked => { HistoryData.action("clear-yes", ""); } }
                     }
                 }
             }

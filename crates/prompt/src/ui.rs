@@ -1305,6 +1305,7 @@ impl Controller {
                 value: s(a.1),
                 label2: s(l2),
                 value2: s(v2),
+                anywhere: false,
             }
         };
         let dash = || "—".to_owned();
