@@ -1,18 +1,18 @@
 # WDM usage numbers
 
-Updated 2026-11-26 by `.github/workflows/usage-stats.yml`. Nothing here identifies a person: downloads are GitHub's counters, and active copies are counted from update checks without IP addresses or IDs (docs/privacy.md).
+Updated 2026-11-27 by `.github/workflows/usage-stats.yml`. Nothing here identifies a person: downloads are GitHub's counters, and active copies are counted from update checks without IP addresses or IDs (docs/privacy.md).
 
 ## Downloads (all releases)
 
-**97** files downloaded from the releases page. Windows and Linux in-app updates download the installer too, so these include updates.
+**117** files downloaded from the releases page. Windows and Linux in-app updates download the installer too, so these include updates.
 
 | Platform | Downloads |
 |---|---:|
-| linux | 31 |
-| android | 29 |
-| windows | 24 |
-| macos | 8 |
-| chromium | 5 |
+| linux | 39 |
+| windows | 31 |
+| android | 31 |
+| macos | 10 |
+| chromium | 6 |
 
 ## Desktop copies in use
 
@@ -20,7 +20,8 @@ The desktop app checks for updates once a day, so update checks per day are clos
 
 | Day (UTC) | Update checks |
 |---|---:|
-| 2026-11-26 | 1 |
+| 2026-11-27 | 1 |
+| 2026-11-26 | 4 |
 | 2026-11-25 | 2 |
 | 2026-11-24 | 2 |
 | 2026-11-23 | 2 |
